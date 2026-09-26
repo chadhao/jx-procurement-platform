@@ -85,23 +85,40 @@ def check_file(path: str) -> list:
 
 
 def main() -> int:
-    root = os.path.join(os.path.dirname(os.path.abspath(__file__)), "docs")
-    if not os.path.isdir(root):
-        root = "docs"
+    # ★ 目标目录取「脚本所在目录的上一级的 docs/」，其次 CWD 下的 docs/。
+    # ★ 两者都不存在时必须**报错退出**，不能静默扫 0 个文件后打印 OK ——
+    #   那是典型的「静默假绿」：门禁看起来通过，实际什么都没检查。
+    here = os.path.dirname(os.path.abspath(__file__))
+    candidates = [
+        os.path.join(os.path.dirname(here), "docs"),  # <repo>/scripts/ 同级 docs/
+        os.path.join(here, "docs"),
+        "docs",
+    ]
+    root = next((c for c in candidates if os.path.isdir(c)), None)
+    if root is None:
+        print("FAIL 找不到 docs/ 目录；已检查：" + "，".join(candidates))
+        return 2
+
+    scanned = 0
     total = 0
     for dirpath, _dirnames, filenames in os.walk(root):
         for fn in sorted(filenames):
             if not fn.endswith(".md"):
                 continue
+            scanned += 1
             path = os.path.join(dirpath, fn)
             rel = os.path.relpath(path).replace("\\", "/")
             for ln, msg, want, got in check_file(path):
                 total += 1
                 print(f"FAIL {rel}:{ln} {msg}（期望 {want}，实际 {got}）")
+
+    if scanned == 0:
+        print(f"FAIL {root} 下没有 .md 文件；门禁未实际检查任何内容")
+        return 2
     if total:
-        print(f"\n共 {total} 处表格列数不一致")
+        print(f"\n共 {total} 处表格列数不一致（已扫 {scanned} 个文件）")
         return 1
-    print("OK 全部 Markdown 表格列数一致")
+    print(f"OK 全部 Markdown 表格列数一致（已扫 {scanned} 个文件）")
     return 0
 
 
