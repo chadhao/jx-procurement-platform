@@ -42,7 +42,7 @@
 flowchart TB
   subgraph EXT["外部系统 · 飞书开放平台（云端）"]
     FE_ENGINE["审批引擎 / 审批中心（审批流转发生地）"]
-    FE_EVENT["事件推送：approval_instance / approval_task"]
+    FE_EVENT["事件推送：approval_instance（★ 本期只订这类；approval_task 不订阅）"]
     FE_API["开放 API：4 个接口"]
   end
 
@@ -282,7 +282,7 @@ CREATE TABLE t_instance_status_history (
   id             INTEGER PRIMARY KEY AUTOINCREMENT,
   instance_code  TEXT    NOT NULL,
   status         TEXT    NOT NULL,
-  task_node      TEXT,                                -- 节点名（approval_task 事件）
+  task_node      TEXT,                                -- 节点名（approval_task 事件）。★ 预留未用：本期不订阅 approval_task，恒为 NULL（PRD N10 / B38）
   operator_open_id TEXT,
   opinion        TEXT,                                -- 审批意见（驳回原因等）
   occurred_at    TEXT    NOT NULL,                    -- 事件发生时间
@@ -295,7 +295,7 @@ CREATE INDEX idx_hist_instance ON t_instance_status_history(instance_code, event
 CREATE TABLE t_event_inbox (
   id             INTEGER PRIMARY KEY AUTOINCREMENT,
   idem_key       TEXT    NOT NULL,                    -- 幂等键 = 事件级唯一 ID（见 §4.3；2.0 版 header.event_id / 1.0 版 uuid）
-  event_type     TEXT    NOT NULL,                    -- approval_instance / approval_task
+  event_type     TEXT    NOT NULL,                    -- 本期只写 approval_instance；approval_task 不订阅（PRD N10）
   instance_code  TEXT    NOT NULL,
   status         TEXT,
   event_id       TEXT,                                -- 飞书事件/消息 ID（若可用，仅作辅助）
@@ -601,7 +601,7 @@ sequenceDiagram
   participant AU as audit
 
   Note over FS,LC: 出方向长连接（WS），无入站端口
-  FS->>LC: approval_instance / approval_task 事件
+  FS->>LC: approval_instance 事件（★ 本期只订这类；节点级 approval_task 不订阅）
   LC->>IB: Handle(event)
   IB->>DB: SELECT 幂等键是否存在
   alt 幂等键不存在
@@ -886,7 +886,10 @@ WantedBy=multi-user.target
 
 | 机制 | 说明 |
 |---|---|
-| 文件锁 | `flock -n` 于固定锁文件（`JX_LOCK_PATH`）；第二个实例获取失败 → **以非 0 退出码拒绝启动 + 告警**（TC-04） |
+| 文件锁 | 固定锁文件（`JX_LOCK_PATH`）：Unix 用 `flock(LOCK_EX\|LOCK_NB)`，Windows 用 `LockFileEx`（**强制锁**）。第二个实例获取失败 → **以非 0 退出码拒绝启动 + 告警**（TC-04） |
+| ★ 僵尸锁（stale-lock） | **本包不做检测、也不做强抢开关**。① `flock` / `LockFileEx` 在**进程消亡时由内核释放**，故「持有者已死但锁未释放」在**本机文件系统上结构上不可能**；② 「进程存活但僵死」时**持锁是正确行为**（强抢会让两实例同时写 SQLite），由 systemd 重启策略 + 端口独占兜底。**详见 §11 问题 3** |
+| ★ 锁文件内容＝**纯诊断** | 持锁后写入 `PID=` / `HOST=` / `START=`（不参与加锁判定），获取失败时随错误一并输出。★ 若 `HOST` ≠ 本机 → 提示「锁文件可能位于**共享存储**，该场景 flock 语义不可靠」——这是本包唯一真实的异常形态 |
+| ★ Windows 锁偏移 | 锁区间取 **1 MiB 处 1 字节**，**而非偏移 0**：Windows 字节范围锁是**强制锁，连读也挡**，锁 0 会让第二个实例读不到上面的诊断信息（实测表现为 `PID=未知`）。Unix `flock` 是劝告锁、作用于整文件，无此问题 |
 | 端口独占 | HTTP 监听端口独占绑定，作为第二道防线 |
 | 启动自检第 4 项 | 单实例状态纳入 `/readyz`；被占用时明确报告 |
 
@@ -1066,7 +1069,7 @@ flowchart LR
 |---|---|---|
 | M0 平台接入 | FR-M0-01 ~ FR-M0-12 | TC-02、TC-25、TC-29 |
 | M1 登记与查询 | FR-M1-01 ~ FR-M1-07 | UC-02、UC-05、UC-06 |
-| M2 实例与状态机 | FR-M2-01 ~ FR-M2-07 | TC-12、TC-20、TC-23 |
+| M2 实例与状态机 | FR-M2-01 ~ FR-M2-06（**FR-M2-07 本期降级**，PRD N10） | TC-12、TC-20、TC-23 |
 | M3 事件落库 | FR-M3-01 ~ FR-M3-07 | TC-01、TC-03、TC-30 |
 | M4 台账 | FR-M4-01 ~ FR-M4-09 | TC-17、TC-18、TC-19、TC-31 |
 | M5 看板与分权 | FR-M5-01 ~ FR-M5-08 | TC-06、TC-07、TC-11、TC-24、TC-32 |
@@ -1086,7 +1089,7 @@ flowchart LR
 |---|---|---|---|
 | 1 | **幂等键与"驳回重提留痕"存在潜在冲突**：严格 `instance_code + status` 会把"驳回后重提再次 APPROVED"幂等掉，导致历史链断裂 | FR-M3-02 vs FR-M3-05 / UC-15 / TC-16 | **已定案（2026-09-26）**：幂等键改用**事件级唯一 ID**（2.0 版 `header.event_id` / 1.0 版 `uuid`），依据飞书《事件概述》官方原文；`instance_code + status` **降级为仅用于状态收敛**，全量变迁落追加式状态历史表。**详见 §4.3**。遗留动作：实采一条 `approval_instance` 报文确认报文版本与字段（PRD **Q17**，高阻塞） |
 | 2 | **PRD 称"全案只用 4 个飞书接口"，但附件上传与下载实为两个接口**（upload / download） | README「4 个飞书接口」表内已列 upload 与"下载接口"两行；技术方案书 §6.1 同 | 措辞统一为"4 类 / 5 个调用"或明确"附件上传下载按一类计"。不影响实现，仅口径一致性问题 |
-| 3 | **健康检查 + systemd 与单实例锁的自愈边界未定义**：若进程僵死但未释放锁/端口，重启会获取锁失败而无法自愈 | FR-M8-02 vs FR-M8-01 / TC-04、TC-27 | 补充：锁采用 `flock`（进程退出自动释放）+ 启动前 stale-lock 检测与 PID 校验；TC-27 补"僵死进程"分支 |
+| 3 | **健康检查 + systemd 与单实例锁的自愈边界未定义**：若进程僵死但未释放锁/端口，重启会获取锁失败而无法自愈 | FR-M8-02 vs FR-M8-01 / TC-04、TC-27 | **已定案（2026-09-27）**：① **锁原语本身即自愈** —— `flock`(LOCK_EX\|LOCK_NB) 与 Windows `LockFileEx` 均在**进程消亡时由内核释放**，故「持有者已死但锁未释放」在本机锁文件上**结构上不可能**，无需额外 stale-lock 清理器；② 真正的风险是**进程存活但僵死**（持锁是正确行为，不应被第二个实例抢占）→ 由 systemd `Restart=on-failure` + 端口独占兜底，**不提供"强抢锁"开关**（强抢会导致双实例并发写库）；③ 锁文件写入 **PID + 主机名 + 启动时间**作为**纯诊断信息**，获取失败时随错误信息一并输出，用于人工判读「占用者是本机还是共享存储上的另一台机」；④ 不再承诺「启动前 stale-lock 检测」——该承诺在原语语义下是伪需求。**详见 §7.2** |
 | 4 | **Q3 权限口径未定，但 FR-M5-02/03 与 TC-06/07 已列为 P0 必测**：无口径则测试断言无法编写 | PRD Q3（高阻塞）；03-TestCase §5 高风险清单 | 按本设计**先以 PRD §4.2 建议值落规则表**，测试断言改为"按当前规则表内容生成"，并在 Q3 定案后回归。**Q3 是最需拍板项** |
 | 5 | **PO 口径存在"领先"**：技术方案书 V1.0-r1 已定"PO 不作独立单据、沿用 CT 号"，但 PRD §9 Q6 仍标"待确认"，工具表字段清单仍有 PO 字段 | 技术方案书 §4 callout / §10 变更记录 r1 vs PRD Q6 | PRD Q6 可据技术方案书 r1 直接关闭并回写；否则订单执行台账（L11）数据源定义悬空 |
 | 6 | **"3 个工作日提交时限"与集团侧"15/30/90 天建议值"（Q10）易被混用**：两者是不同主体、不同口径的时限 | FR-M6-03 vs PRD Q10 / UC-05 A4 | 实现上**只用内部作业时限 3 个工作日**；集团侧时限不进入系统阈值。建议在配置项中显式命名区分（§6.3） |

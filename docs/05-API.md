@@ -7,7 +7,7 @@
 | 项 | 内容 |
 |---|---|
 | 文档名称 | 采购与费用审批平台（自建侧）· 接口设计 |
-| 版本 | V1.8 |
+| 版本 | V1.9 |
 | 日期 | 2026-09-26 |
 | 上游文档 | `01-PRD.md`、`02-UseCase.md`、`03-TestCase.md`、`04-Architecture.md` |
 | 语言纪律 | 简体中文 |
@@ -246,6 +246,7 @@ sequenceDiagram
 | 权限要求 | 行级过滤 |
 | 路径参数 | `instance_code` |
 | 响应字段 | `events[]`：`status`、`task_node`、`operator`、`opinion`、`occurred_at`、`event_seq` |
+| ★ `task_node` 口径 | **预留未用：本期恒为 `null`**。节点级事件（`approval_task`）本期不订阅（PRD §3.2 **N10** / FR-M2-07 降级），字段保留以免将来启用时改表。**客户端不得依赖该字段非空**；逐审批人轨迹请以飞书审批详情页为准 |
 | 错误码 | 40301、40400 |
 | 关联 FR | FR-M3-04、FR-M3-05、FR-M7-02 |
 
@@ -657,7 +658,7 @@ sequenceDiagram
 
 ---
 
-## 6. 飞书侧接口（仅 4 个，出方向）
+## 6. 飞书侧接口（**实际调用 4 个，出方向**）
 
 > 以下路径**抄自输入文件**（README / 技术方案书 §6.1），不自造。
 
@@ -666,10 +667,12 @@ sequenceDiagram
 | 订阅审批事件 | `POST /open-apis/approval/v4/approvals/:approval_code/subscribe` | 出方向；审批 API（计入） |
 | 取实例详情 | `GET /open-apis/approval/v4/instances/:instance_id` | 出方向；计入 |
 | 批量取实例 ID（对账） | `GET /open-apis/approval/v4/instances` | 出方向；计入 |
-| 附件上传 / 下载 | `POST /open-apis/approval/openapi/v2/file/upload` 及下载接口 | 出方向；计入 |
-| 事件接收 | 长连接 WebSocket（`approval_instance` / `approval_task`） | 出方向；**事件订阅不计入调用量** |
+| 附件下载 | `GET`（飞书附件下载接口） | 出方向；计入 |
+| ~~附件上传~~ | ~~`POST /open-apis/approval/openapi/v2/file/upload`~~ | ★ **本期不调用**：模式 A 下本系统**不创建实例**，附件由申请人在飞书侧上传 → 上传链路属模式 B 遗留、**零调用点**（FR-M0-09 / 实现说明 §M.3）。**接口能力仍在飞书侧，只是本系统不用** |
+| 事件接收 | 长连接 WebSocket：**只订阅 `approval_instance`** | 出方向；**事件订阅不计入调用量**。★ `approval_task` **本期不订阅**（PRD §3.2 N10） |
 
 - **设计纪律**：**用事件订阅，绝不轮询**（FR-M0-12 / TC-25）。
+- ★ **只订阅 `approval_instance`**：`approval_task`（节点级）本期不订阅 —— 订阅了却无处理逻辑，等于凭空增加事件量与失败面。**逐模板订阅**时只开 `approval_instance`。
 - 调用量目标：**数百次/月量级**（FR-M0-08）。
 - `approval_code` 具体值：**待确认（Q1）**。
 
@@ -680,7 +683,7 @@ sequenceDiagram
 | 类别 | 取值 |
 |---|---|
 | 实例状态（飞书原始） | `PENDING` / `APPROVED` / `REJECTED` / `CANCELED` / `DELETED` / `REVERTED` / `OVERTIME_CLOSE` / `OVERTIME_RECOVER` |
-| 节点级事件（approval_task） | `TRANSFERRED` / `ROLLBACK` / `DONE` |
+| 节点级事件（approval_task） | `TRANSFERRED` / `ROLLBACK` / `DONE` —— ★ **本期不接收、不落库**（PRD §3.2 N10 / FR-M2-07 降级）；此处仅登记飞书侧取值域备用 |
 | 本地状态收敛 | 与飞书状态一一映射并保留历史（终态不被中间态覆盖，FR-M3-04） |
 | 单据类型 | `BA` / `PR` / `SA` / `RFQ` / `BJ` / `SS` / `CT` / `PC` / `GR` / `QC` / `SUB`（PO 沿用 `CT`，Q6） |
 | 报送状态 | 未提交 / 已提交 / 办理中 / 已付款 / 已驳回 |
@@ -709,6 +712,7 @@ sequenceDiagram
 | 审批流实时预警 / 事前硬校验拦截接口 | 甲案下无法在发起时拦截，只做台账红标 + 只读提示 | PRD §8.1 / N5；UC-02 |
 | 集团侧数据回传 / 对齐接口 | 集团侧全人工、**不回传**；湖南侧止于「提交集团」 | PRD N3 / FR-M6-07；UC-12 |
 | 发票验真接口 | 本期不做 | PRD N8 |
+| **`approval_task` 节点级事件订阅** | **本期不做**：`inbox` 只订阅 `approval_instance`；节点轨迹的权威来源在**飞书审批详情页**，本系统再存一份是冗余副本。★ 这条**不是遗漏**——`t_status_history.task_node` 列保留但恒为 `null` | PRD **N10** / FR-M2-07（降级）；实现说明 §M.2 |
 | 定时轮询审批状态的接口 / 任务 | 设计纪律：**用事件订阅，绝不轮询** | README 硬约束 7；FR-M0-12 |
 
 > **不存在上述接口是刻意的架构选择**：本系统是审批引擎的**旁路**，任何会让它"参与/影响审批流转"的能力都不提供。这条同时是 G1（自建系统故障不影响审批）的实现前提。
@@ -722,7 +726,7 @@ sequenceDiagram
 | `GET /auth/feishu/callback`、`POST /auth/logout`、`GET /api/me` | FR-M0-10、FR-M5-04 |
 | `GET /api/ledger/{table}`、`GET /api/ledger/{table}/{id}`、`PATCH /api/ledger/{table}/{id}` | FR-M4-01/03/04/05/09、FR-M5-02/03、FR-M7-01 |
 | `GET /api/dashboard/{id}`、`/export` | FR-M5-01/05/06/07/08、FR-M7-03 |
-| `GET /api/instances`、`/fields`、`/{code}`、`/{code}/timeline` | FR-M2-01~07、FR-M3-04/05、FR-M7-02 |
+| `GET /api/instances`、`/fields`、`/{code}`、`/{code}/timeline` | FR-M2-01~06、FR-M3-04/05、FR-M7-02；**FR-M2-07 本期降级**（`task_node` 预留未用，PRD N10） |
 | `POST /api/submission`、`GET /api/submission`、`/package` | FR-M6-01~08、FR-M7-03 |
 | `GET /api/petty-cash/balance`、`POST /receipt`、`/monthly-close` | FR-M1-01/04/05/07 |
 | `POST /api/reimbursement`、`GET /api/reimbursement`、`PATCH /api/reimbursement/{id}` | FR-M1-02 |
@@ -752,12 +756,13 @@ sequenceDiagram
 
 | 版本 | 日期 | 变更 | 作者 |
 |---|---|---|---|
-| V1.0 | 2026-09-26 | 首版。鉴权与会话、通用约定与错误码表、分模块业务接口、数据契约、幂等约定、飞书 4 接口、**明确不存在的接口**、FR 追溯与待确认影响。 | Bob（架构师） |
-| V1.1 | 2026-09-26 | **Q3 定案**：新增 **§3.9 系统管理（M5）** —— `GET/PUT /api/admin/permission-rules`、`GET/POST/PATCH /api/admin/users`；更新 §3 前言与 §11 Q3 行。 | 交付总监 |
-| V1.2 | 2026-09-26 | **幂等语义澄清（消除 B15 自相矛盾）**：§2.2 幂等头、§2.1 错误码 `40900`、§3.5 报送错误码、§8 报送登记四处统一为「**同键同载荷 → 200 复用首次结果；同键异载荷 → 40900**」，并写明载荷指纹构成（含关联项顺序不敏感、「未传金额」≠「传 0」）。对应实现 `internal/submission/idem.go`、TC-36 / TC-37。 | 交付总监 |
-| V1.3 | 2026-09-26 | **补齐两处缺口 + 一处口径硬化**：① §3.5 报送请求体标注 **`biz_no` 必填**（B20；SQLite 列级 `UNIQUE` 对 NULL 不生效，缺省会重复登记）；② 新增 **§3.10 集团报销跟踪（M1，FR-M1-02）** 与 **§3.11 变更链回溯（M4，FR-M4-07）**；③ §10 FR 追溯表补两行。 | 交付总监 |
+| V1.9 | 2026-09-27 | **B38/B39 降级标注落地（纯文档，零代码）**：① §3.4 `/{code}/timeline` 响应字段 **`task_node` 标注「预留未用，本期恒为 `null`」**；② §6 事件接收行标注**只订阅 `approval_instance`**（`approval_task` 本期不接收）；③ ★ **§6 飞书接口清单修正** —— 原「附件**上传** / 下载」并称「仅 4 个」→ 拆为「**附件下载**（实用）」与「~~附件上传~~（**本期不调用**，模式 A 零调用点）」，标题改「**实际调用 4 个**」；④ §7 节点级事件行标注**本期不落库**；⑤ §9「明确不存在的接口」新增 **`approval_task` 节点级事件订阅**一行；⑥ §10 FR 追溯表 FR-M2-07 标注**降级**。对应 PRD §3.2 **N10** 与实现说明 §M.2 / §M.3。 | 交付总监 |
 | V1.8 | 2026-09-27 | **对象存储接入 + 凭证包含附件**：① §3.12 补「对象存储装配」（S3 主存手写 SigV4 / RustFS 主备双写 / 本地兜底 / 全空降级）；② §3.5 凭证包补「包内容」含 **`附件清单.csv`**（B39 缺口②：否则集团收到的是只有清单没有文件的空包）。 | 交付总监 |
 | V1.7 | 2026-09-27 | **附件（B39）**：新增 **§3.12 附件** —— `GET /api/instances/{code}/attachments`（元数据列表）与 `GET /api/attachment/{file_id}`（**按需拉取 + 主存缓存**；行级以**所属实例**为准；未登记 file_id → 404）。★ 明确**不提供上传**：模式 A 下附件由申请人在飞书侧上传，本系统只做接收。 | 交付总监 |
 | V1.6 | 2026-09-26 | **架构完整性审查轮**：① §3.5 补登已实现但未文档化的三个端点（`/receipt` `/group` `/reject`，C-2）；② §1.2 澄清 **CSRF 现状**——代码未装 CSRF 中间件，跨站防护依赖 `SameSite=Lax` + 同源（C-1），不再声称已实现；③ 台账列表补 L11 派生视图说明（A-1 关联）。 | 交付总监 |
 | V1.5 | 2026-09-26 | **Q14 定案实施轮**：§3.7 增「字段定义来源 / 键名白名单（40901）」；§3.6 台账列表补 **L11 派生视图**语义（`derived:true`、无写入口、不支持按 id 读）；§11 Q14 行改为**已闭合**。 | 交付总监 |
 | V1.4 | 2026-09-26 | **据实修正 Q14 相关的三处表述（B27）**：原写「`archive` / `ops` 的具体键由 `t_ledger_field_def` 决定」，核查后发现**该表无写入通道、也无读取消费端**（`UpsertLedgerFieldDef` / `ListLedgerFieldDefs` 均零调用者，仅 `SensitiveFields` 被台账列表/详情/变更链使用）。改为：① §3.7 增「字段名校验」行，明确只按 `writable_fields` 白名单校验、**不校验字段定义**，键名口径属**约定**；② §3.7 权限行补「`writable_fields` 为空 → 整体只读（40901）」；③ §4.3 注记与 §11 Q14 行按实情改写。**同时修正头部版本号**（原停留在 V1.0，而变更记录已到 V1.3）。 | 交付总监 |
+| V1.3 | 2026-09-26 | **补齐两处缺口 + 一处口径硬化**：① §3.5 报送请求体标注 **`biz_no` 必填**（B20；SQLite 列级 `UNIQUE` 对 NULL 不生效，缺省会重复登记）；② 新增 **§3.10 集团报销跟踪（M1，FR-M1-02）** 与 **§3.11 变更链回溯（M4，FR-M4-07）**；③ §10 FR 追溯表补两行。 | 交付总监 |
+| V1.2 | 2026-09-26 | **幂等语义澄清（消除 B15 自相矛盾）**：§2.2 幂等头、§2.1 错误码 `40900`、§3.5 报送错误码、§8 报送登记四处统一为「**同键同载荷 → 200 复用首次结果；同键异载荷 → 40900**」，并写明载荷指纹构成（含关联项顺序不敏感、「未传金额」≠「传 0」）。对应实现 `internal/submission/idem.go`、TC-36 / TC-37。 | 交付总监 |
+| V1.1 | 2026-09-26 | **Q3 定案**：新增 **§3.9 系统管理（M5）** —— `GET/PUT /api/admin/permission-rules`、`GET/POST/PATCH /api/admin/users`；更新 §3 前言与 §11 Q3 行。 | 交付总监 |
+| V1.0 | 2026-09-26 | 首版。鉴权与会话、通用约定与错误码表、分模块业务接口、数据契约、幂等约定、飞书 4 接口、**明确不存在的接口**、FR 追溯与待确认影响。 | Bob（架构师） |
