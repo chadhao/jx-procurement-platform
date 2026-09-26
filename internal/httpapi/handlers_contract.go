@@ -104,6 +104,11 @@ func (d Deps) handleContractChanges(c echo.Context) error {
 		return fail(c, http.StatusForbidden, codeForbidden, "无权限访问变更链")
 	}
 
+	// ★ 禁金额角色：**必须在构造 item 之前就知道**，因为 `tier` 是"**含金额的格式化文本**"
+	// （`max 取档 → 5,000.00`）—— 光靠投影裁 `*_cents`/`*_display` **拦不住它**，
+	// 受限角色仍能从这段文本反推出金额（QA 复核缺陷 #1 / B44）。
+	hideAmounts := permission.RuleHidesAmounts(rule)
+
 	cond := permission.RowFilter("a", rule.RowScope, idn)
 	changes, err := d.DB.ListChangesByContract(ctx, contractNo, cond.SQL, cond.Args)
 	if err != nil {
@@ -130,13 +135,19 @@ func (d Deps) handleContractChanges(c echo.Context) error {
 			hasChange = true
 		}
 		// 档位：显式存了就用存的；否则按 max(变更差额, 原合同金额) 现算（A8）。
-		tier := pickStr(ext, tierKeys)
-		if tier == "" && hasChange && hasOriginal {
-			m := changeCents
-			if originalCents > m {
-				m = originalCents
+		//
+		// ★ 禁金额角色下**整体不产出 `tier`**（B44）：档位＝"取哪个金额对应的档"，其文本
+		//   必然携带金额（`max 取档 → 5,000.00`）或可反推金额。既不能裁键名，就索性不给。
+		tier := ""
+		if !hideAmounts {
+			tier = pickStr(ext, tierKeys)
+			if tier == "" && hasChange && hasOriginal {
+				m := changeCents
+				if originalCents > m {
+					m = originalCents
+				}
+				tier = "max 取档 → " + formatCents(m)
 			}
-			tier = "max 取档 → " + formatCents(m)
 		}
 		if hasChange {
 			cumulativeChange += changeCents
@@ -148,8 +159,10 @@ func (d Deps) handleContractChanges(c echo.Context) error {
 			"instance_code": ch.InstanceCode,
 			"department":    ch.Department,
 			"biz_date":      ch.BizDate,
-			"tier":          tier,
 			"archive":       ext,
+		}
+		if tier != "" {
+			item["tier"] = tier
 		}
 		if hasChange {
 			item["change_cents"] = changeCents
@@ -162,11 +175,7 @@ func (d Deps) handleContractChanges(c echo.Context) error {
 		items = append(items, permission.Project(item, rule.ColumnAllow, rule.ColumnDeny, sensitive))
 	}
 
-	// ★ 禁金额角色：不仅 `amount_cents` 要被裁，**变更链自己的金额键名**（`change_cents` /
-	// `original_cents` / `*_display`）与 `archive` 内嵌金额也必须一并消失（B31）。
-	// 投影层已按「金额类键名」统一裁剪（见 permission.ProjectDeep）；此处只负责不再额外输出汇总金额。
-	hideAmounts := permission.RuleHidesAmounts(rule)
-
+	// 投影层已按「金额类键名」统一裁剪（permission.ProjectDeep）；此处负责汇总金额与 `tier` 文本。
 	body := map[string]any{
 		"contract_no":   contractNo,
 		"count":         count,

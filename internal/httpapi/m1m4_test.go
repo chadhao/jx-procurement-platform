@@ -329,6 +329,11 @@ func TestContractChangesHidesAmountFlavouredKeys(t *testing.T) {
 			t.Errorf("禁金额角色仍收到 %s（同义键未被裁剪）", k)
 		}
 	}
+	// ★ B44（QA 复核缺陷 #1）：`tier` 是**含金额的格式化文本**（`max 取档 → 5,000.00`），
+	//   后缀规则裁不到它，受限角色可据此反推金额 —— 故禁金额角色下**整体不产出 tier**。
+	if v, ok := item["tier"]; ok {
+		t.Errorf("禁金额角色仍收到 tier=%v —— 该字段文本内嵌金额，等于绕过金额列保护", v)
+	}
 	// 嵌套 archive 块：金额类键同样必须消失，**非金额键必须留下**（allow 不递归套用）。
 	arc, ok := item["archive"].(map[string]any)
 	if !ok {
