@@ -1,6 +1,6 @@
 <script setup>
 // 应用外壳：左侧导航 + 顶栏。登录态由 store 统一探测。
-import { onMounted } from 'vue'
+import { computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { session, refreshSession, clearSession } from './store'
 import { logout } from './api'
@@ -28,12 +28,19 @@ async function onLogout() {
   router.push('/login')
 }
 
-const navItems = [
-  { to: '/dashboard', label: '看板' },
-  { to: '/instances', label: '审批实例' },
-  { to: '/ledger', label: '台账' },
-  { to: '/audit', label: '审计日志' },
-]
+// 「系统管理」仅在角色为「系统管理员」时显示（前端隐藏不构成安全边界，服务端仍二次校验）。
+const navItems = computed(() => {
+  const items = [
+    { to: '/dashboard', label: '看板' },
+    { to: '/instances', label: '审批实例' },
+    { to: '/ledger', label: '台账' },
+    { to: '/audit', label: '审计日志' },
+  ]
+  if (session.me && session.me.role === '系统管理员') {
+    items.push({ to: '/admin', label: '系统管理' })
+  }
+  return items
+})
 </script>
 
 <template>

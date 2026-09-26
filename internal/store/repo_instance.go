@@ -105,7 +105,7 @@ func (d *DB) ListInstances(ctx context.Context, f InstanceFilter) ([]Instance, i
 	}
 
 	var total int
-	if err := d.QueryRowContext(ctx, `SELECT COUNT(*) FROM t_instance`+clause, args...).Scan(&total); err != nil {
+	if err := d.QueryRowContext(ctx, `SELECT COUNT(*) FROM t_instance a`+clause, args...).Scan(&total); err != nil {
 		return nil, 0, err
 	}
 
@@ -283,7 +283,7 @@ SELECT id, instance_code, approval_code, COALESCE(doc_type,''), COALESCE(biz_no,
        status, COALESCE(status_raw,''), COALESCE(applicant_open_id,''), COALESCE(applicant_name,''),
        COALESCE(department,''), amount_cents, COALESCE(purpose_class_l1,''), COALESCE(purpose_class_l2,''),
        COALESCE(supplier,''), source, created_at, updated_at
-FROM t_instance`
+FROM t_instance a`
 
 func scanInstance(s interface {
 	Scan(dest ...any) error

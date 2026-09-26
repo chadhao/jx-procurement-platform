@@ -17,6 +17,7 @@ import (
 	"github.com/chadhao/jx-procurement-platform/internal/observ"
 	"github.com/chadhao/jx-procurement-platform/internal/permission"
 	"github.com/chadhao/jx-procurement-platform/internal/platform/feishu"
+	"github.com/chadhao/jx-procurement-platform/internal/seed"
 	"github.com/chadhao/jx-procurement-platform/internal/singlelock"
 	"github.com/chadhao/jx-procurement-platform/internal/store"
 	"github.com/chadhao/jx-procurement-platform/internal/sync"
@@ -69,6 +70,13 @@ func run(version string) error {
 	}
 	logger.Info("数据库迁移完成", "db_path", env.DBPath)
 
+	// ---- ②′ 播种 Q3 默认权限口径（幂等：INSERT OR IGNORE，不覆盖管理员已改规则）----
+	if n, err := seed.SeedQ3Defaults(ctx, db); err != nil {
+		return fmt.Errorf("播种 Q3 默认权限口径失败: %w", err)
+	} else if n > 0 {
+		logger.Info("Q3 默认权限口径已播种", "inserted", n)
+	}
+
 	// ---- ③ 启动自检：数据库可写（失败拒绝启动，避免半可用态，TC-28）----
 	if err := db.WritableProbe(ctx); err != nil {
 		health.SetDBWritable(false)
@@ -92,7 +100,12 @@ func run(version string) error {
 	}
 
 	// ---- ⑤ 飞书通道适配层 + inbox（长连接 sink）----
-	client := feishu.NewHTTPClient(env.AppID, env.AppSecret, logger, metrics)
+	// 开发模式且未配置凭据时，改用内存 dev 客户端：使 /internal/dev/inject-event 可端到端落库（不依赖飞书）。
+	var client feishu.Client = feishu.NewHTTPClient(env.AppID, env.AppSecret, logger, metrics)
+	if env.IsDev() && (env.AppID == "" || env.AppSecret == "") {
+		client = feishu.NewDevClient()
+		logger.Warn("开发模式且未配置飞书凭据：使用内存 dev 客户端（注入事件可端到端落库）")
+	}
 	inboxSvc := inbox.NewService(db, metrics, logger)
 	longconn := feishu.NewLongConn(env.AppID, env.AppSecret, inboxSvc, logger)
 

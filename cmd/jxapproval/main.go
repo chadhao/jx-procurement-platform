@@ -20,12 +20,13 @@ import (
 )
 
 // version 构建版本号（可由 -ldflags 注入）。
-var version = "0.1.0-s0s1"
+var version = "0.2.0-s2"
 
 const usage = `JX 采购与费用审批平台（自建侧）
 
 用法:
   jxapproval serve     启动服务（默认）
+  jxapproval seed      幂等播种 Q3 默认权限口径（可重复执行，不覆盖已改规则）
   jxapproval version   打印版本
   jxapproval help      打印本帮助
 
@@ -41,6 +42,11 @@ func main() {
 	case "serve":
 		if err := run(version); err != nil {
 			fmt.Fprintf(os.Stderr, "启动失败：%v\n", err)
+			os.Exit(1)
+		}
+	case "seed":
+		if err := runSeed(); err != nil {
+			fmt.Fprintf(os.Stderr, "播种失败：%v\n", err)
 			os.Exit(1)
 		}
 	case "version", "-v", "--version":

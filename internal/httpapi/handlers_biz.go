@@ -399,6 +399,7 @@ func (d Deps) handleAuditLogs(c echo.Context) error {
 			"resource":      a.Resource,
 			"target_id":     a.TargetID,
 			"result":        a.Result,
+			"detail_json":   a.DetailJSON, // 改前/改后 diff（TC-35）
 			"feishu_log_id": a.FeishuLogID,
 			"created_at":    a.CreatedAt.Format(time.RFC3339),
 		})
@@ -412,7 +413,7 @@ func (d Deps) handleAuditLogs(c echo.Context) error {
 func (d Deps) instanceAllowed(ctx context.Context, rule permission.Rule, idn permission.Identity, instanceCode string) (bool, error) {
 	cond := instanceRowCondition(rule, idn)
 	var n int
-	q := `SELECT COUNT(*) FROM t_instance WHERE instance_code = ? AND (` + cond.SQL + `)`
+	q := `SELECT COUNT(*) FROM t_instance a WHERE instance_code = ? AND (` + cond.SQL + `)`
 	args := append([]any{instanceCode}, cond.Args...)
 	if err := d.DB.QueryRowContext(ctx, q, args...).Scan(&n); err != nil {
 		return false, err

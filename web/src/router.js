@@ -9,6 +9,7 @@ const routes = [
   { path: '/instances/:code', name: 'instance-detail', component: () => import('./views/InstanceDetail.vue'), props: true },
   { path: '/ledger', name: 'ledger', component: () => import('./views/Ledger.vue') },
   { path: '/audit', name: 'audit', component: () => import('./views/Audit.vue') },
+  { path: '/admin', name: 'admin', component: () => import('./views/Admin.vue') },
   { path: '/:pathMatch(.*)*', redirect: '/dashboard' },
 ]
 

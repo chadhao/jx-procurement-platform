@@ -50,6 +50,7 @@ export const api = {
   get: (path, query) => request('GET', path, { query }),
   patch: (path, body) => request('PATCH', path, { body }),
   post: (path, body) => request('POST', path, { body }),
+  put: (path, body) => request('PUT', path, { body }),
 }
 
 /** 判断错误是否为「未登录 / 未映射角色」，用于跳转登录页。 */
@@ -85,6 +86,24 @@ export const patchLedgerRow = (table, id, fields) => api.patch(`/api/ledger/${en
 
 /** 审计日志。 */
 export const fetchAuditLogs = (params) => api.get('/api/audit/logs', params)
+
+// ---- 系统管理（M5，仅「系统管理员」；服务端二次校验）----
+
+/** 权限矩阵（角色 × 资源）+ 枚举。 */
+export const fetchPermissionRules = () => api.get('/api/admin/permission-rules')
+
+/** 整表覆盖保存权限矩阵（保存后服务端清缓存 → 下一请求生效）。 */
+export const savePermissionRules = (rules) => api.put('/api/admin/permission-rules', { rules })
+
+/** 人员角色列表（含已停用）。 */
+export const fetchAdminUsers = () => api.get('/api/admin/users')
+
+/** 新增人员角色。 */
+export const createAdminUser = (payload) => api.post('/api/admin/users', payload)
+
+/** 修改人员角色（部分字段）。 */
+export const patchAdminUser = (openId, payload) =>
+  api.patch(`/api/admin/users/${encodeURIComponent(openId)}`, payload)
 
 /** 注销。 */
 export const logout = () => api.post('/auth/logout')

@@ -57,3 +57,32 @@ func (f *FakeClient) DownloadAttachment(ctx context.Context, fileID string) ([]b
 	}
 	return nil, errors.New("feishu: FakeClient 未配置 DownloadFn")
 }
+
+// NewDevClient 返回开发模式用的内存客户端：按 instance_code 生成确定性样例详情，
+// 使 DEV_MODE 下 POST /internal/dev/inject-event 注入的事件可端到端落库（不依赖飞书凭据）。
+// ★ 仅开发/本地验证使用，绝不用于生产（生产走 NewHTTPClient）。
+func NewDevClient() *FakeClient {
+	return &FakeClient{
+		DetailFn: func(_ context.Context, instanceCode string) (*InstanceDetail, error) {
+			amount := int64(480000)
+			return &InstanceDetail{
+				InstanceCode:    instanceCode,
+				ApprovalCode:    "ac-dev",
+				StatusRaw:       "PENDING",
+				BizNo:           "PR-2609-0001",
+				ApplicantOpenID: "ou_applicant",
+				ApplicantName:   "张三",
+				Department:      "生产部",
+				AmountCents:     &amount,
+				PurposeClassL1:  "生产采购",
+				PurposeClassL2:  "备品备件",
+				Supplier:        "开发供应商",
+				OccurredAt:      time.Now().UTC(),
+				Fields: []FieldValue{
+					{FieldID: "f_amount", FieldName: "预估总金额", ValueText: "4800.00", ValueType: "number"},
+					{FieldID: "f_assigned", FieldName: "指定采购经办人", ValueText: "ou_dev_handler", ValueType: "user"},
+				},
+			}, nil
+		},
+	}
+}

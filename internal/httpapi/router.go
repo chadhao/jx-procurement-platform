@@ -84,6 +84,14 @@ func NewRouter(d Deps) *echo.Echo {
 	api.PATCH("/ledger/:table/:id", d.handleLedgerPatch)
 	api.GET("/audit/logs", d.handleAuditLogs)
 
+	// ---- 系统管理（M5，★ 仅「系统管理员」；服务端二次校验，见 handlers_admin.go）----
+	admin := api.Group("/admin")
+	admin.GET("/permission-rules", d.handleAdminPermissionRulesGet)
+	admin.PUT("/permission-rules", d.handleAdminPermissionRulesPut)
+	admin.GET("/users", d.handleAdminUsersGet)
+	admin.POST("/users", d.handleAdminUsersPost)
+	admin.PATCH("/users/:open_id", d.handleAdminUsersPatch)
+
 	// ---- 前端静态资源（embed 产物；缺失时 controller 降级为占位页）----
 	// ★ 注意：Echo 的通配路由 "/*" 不匹配根路径 "/"，须单独注册根路由，
 	//	否则访问站点根会命中 404（SPA 入口无法加载）。
