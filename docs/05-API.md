@@ -94,7 +94,7 @@ sequenceDiagram
 
 ## 3. 业务接口
 
-> 「权限要求」列同时给出**角色**与**行级范围**；具体角色-列映射由 `t_permission_rule` 决定（**默认 PRD §4.2 建议值，Q3 待定**）。
+> 「权限要求」列同时给出**角色**与**行级范围**；具体角色-列映射由 `t_permission_rule` 决定（**默认取 PRD §4.2 口径；Q3 已于 2026-09-26 定案**）。
 > 所有台账/看板接口**自动施加行·列过滤**，无需前端传权限参数。
 
 ### 3.1 鉴权
@@ -387,6 +387,46 @@ sequenceDiagram
 
 ---
 
+### 3.9 系统管理（M5，★ 仅「系统管理员」角色）
+
+> 供管理员**自助配置行·列权限**（FR-M5-09~11）。**任何写操作均写 `t_audit_log`（改前 / 改后 diff）**。
+> 非「系统管理员」调用 → `40300`（资源级无权限），并留痕。**本组接口不涉及任何审批流转。**
+
+#### `GET /api/admin/permission-rules`
+
+| 项 | 内容 |
+|---|---|
+| 用途 | 读取「角色 × 资源」权限矩阵（`row_scope`、`column_allow` / `column_deny`、`writable_fields`、`effective_from`） |
+| 权限要求 | 系统管理员 |
+| 响应字段 | `items[]`（同 `t_permission_rule` 行）＋ `resources[]`（可选资源枚举：`ledger:*` / `dashboard:1..4` / `api:*`）＋ `roles[]`（角色枚举）＋ `row_scopes[]`（6 令牌 + `DENY` 的语义说明，供前端下拉） |
+| 错误码 | 40300 |
+| 关联 FR | FR-M5-09 |
+
+#### `PUT /api/admin/permission-rules`
+
+| 项 | 内容 |
+|---|---|
+| 用途 | **批量保存**权限矩阵（按 `resource × role` 覆盖）；保存后**立即 `Invalidate()` 清缓存** → 即时生效 |
+| 权限要求 | 系统管理员 |
+| 请求体 | `{rules:[{resource, role, row_scope, column_allow[], column_deny[], writable_fields[]}]}` |
+| 校验 | `row_scope` 必须 ∈ {`SELF`,`DEPT`,`CHARGE_DEPT`,`ALL`,`ASSIGNED`,`PARTICIPATED`,`DENY`}；**不接受条件表达式**（Q3 定案） |
+| 响应字段 | `{saved:n, effective:"immediate"}` |
+| 错误码 | 40000（令牌非法）、40300 |
+| 关联 FR | FR-M5-09、FR-M5-11 |
+
+#### `GET /api/admin/users` · `POST /api/admin/users` · `PATCH /api/admin/users/{open_id}`
+
+| 项 | 内容 |
+|---|---|
+| 用途 | 人员角色管理：列出 / 新增 / 修改 `t_user_role`（角色、部门、分管部门、启用停用） |
+| 权限要求 | 系统管理员 |
+| 请求 / 响应字段 | `open_id`、`name`、`role`、`department`、`extra_depts[]`、`active` |
+| 错误码 | 40000、40300、40400（`open_id` 不存在） |
+| 关联 FR | FR-M5-10、FR-M5-11 |
+| 备注 | 停用 / 改角色后**下一次请求即时生效**（每请求实时解析角色，不缓存决策，TC-11） |
+
+---
+
 ## 4. 数据契约（关键对象 JSON 结构）
 
 > 所有时间为 ISO 8601 UTC；金额同时给 `*_cents` 与 `*_display`。
@@ -603,7 +643,7 @@ sequenceDiagram
 | 编号 | 事项 | 影响接口 | 当前处理 |
 |---|---|---|---|
 | Q1 | `approval_code` 清单 + 字段 `id` 映射 | `GET /api/instances*`（`approval_code`、`field_id` 取值）、`POST /internal/sync/subscribe` | 一律「待确认（Q1）」，走配置 |
-| Q3 | 行·列权限矩阵 | 全部业务接口的权限列 | 默认取 PRD §4.2 建议值，配置驱动 |
+| ~~Q3~~ | 行·列权限矩阵 | 全部业务接口的权限列 | ★ **已定案（2026-09-26）**：默认取 PRD §4.2 口径；新增 §3.9 系统管理接口（`/api/admin/*`）供管理员自助配置 |
 | Q6 | PO 是否独立单据 | `GET /api/ledger/L11`（订单执行台账数据源） | 按技术方案书 r1：PO 沿用 CT 号 |
 | Q7 | `####` 是否按月重置 | `biz_no_parts.seq` 语义 | 归档只读，不生成 |
 | Q8 | 代理人名单 | 角色解析 / 行范围 | 未实现代理模型，待定 |
@@ -616,3 +656,4 @@ sequenceDiagram
 | 版本 | 日期 | 变更 | 作者 |
 |---|---|---|---|
 | V1.0 | 2026-09-26 | 首版。鉴权与会话、通用约定与错误码表、分模块业务接口、数据契约、幂等约定、飞书 4 接口、**明确不存在的接口**、FR 追溯与待确认影响。 | Bob（架构师） |
+| V1.1 | 2026-09-26 | **Q3 定案**：新增 **§3.9 系统管理（M5）** —— `GET/PUT /api/admin/permission-rules`、`GET/POST/PATCH /api/admin/users`；更新 §3 前言与 §11 Q3 行。 | 交付总监 |
