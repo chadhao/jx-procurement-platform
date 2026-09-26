@@ -139,15 +139,21 @@ func run(version string) error {
 	auth := access.NewAuthenticator(db, sessions, oauth, env.IsDev(), logger)
 
 	// ---- ⑩ HTTP 路由 ----
-	// 附件对象存储（B39）：先本地落盘；置空则降级为"不缓存、直接转发"。
-	attachStore, err := objectstore.NewLocal(env.AttachDir)
+	// 附件对象存储（B39 / ADR-08）：主存 S3（手写 SigV4，零新增依赖）+ 异地备份 RustFS；
+	// 未配 S3 时退回本地落盘；两者皆无则降级为"不缓存、每次回源"。
+	attachStore, err := objectstore.Build(
+		s3ConfigOrNil(env.S3Endpoint, env.S3Bucket, env.S3Region, env.S3AK, env.S3SK, env.S3PathStyle),
+		s3ConfigOrNil(env.RustFSEndpoint, env.RustFSBucket, env.RustFSRegion, env.RustFSAK, env.RustFSSK, env.RustFSPathStyle),
+		env.AttachDir, logger,
+	)
 	if err != nil {
 		return err
 	}
-	if attachStore == nil {
-		logger.Warn("未配置 JX_ATTACH_DIR：附件将不做本地缓存（每次回源拉取）")
-	} else {
-		logger.Info("附件对象存储就绪", "kind", attachStore.Kind(), "dir", env.AttachDir)
+	switch {
+	case attachStore == nil:
+		logger.Warn("未配置对象存储（JX_S3_* / JX_ATTACH_DIR 均为空）：附件不做缓存，每次回源拉取")
+	default:
+		logger.Info("附件对象存储就绪", "kind", attachStore.Kind())
 	}
 
 	router := httpapi.NewRouter(httpapi.Deps{
@@ -217,4 +223,18 @@ func run(version string) error {
 	wk.Stop()
 	logger.Info("已优雅退出")
 	return nil
+}
+
+// s3ConfigOrNil 端点/AK/SK 三者齐备才返回配置，否则返回 nil（＝该层不启用）。
+//
+// ★ 为什么用"齐备才启用"而不是逐项降级：只配一半的 S3 会在**运行时报错**，
+// 而那时用户看到的是"附件下载失败"，排查成本高。宁可启动日志就说明"未启用"。
+func s3ConfigOrNil(endpoint, bucket, region, ak, sk string, pathStyle bool) *objectstore.S3Config {
+	if endpoint == "" || bucket == "" || ak == "" || sk == "" {
+		return nil
+	}
+	return &objectstore.S3Config{
+		Endpoint: endpoint, Bucket: bucket, Region: region,
+		AccessKey: ak, SecretKey: sk, PathStyle: pathStyle,
+	}
 }

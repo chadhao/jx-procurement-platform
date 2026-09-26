@@ -133,3 +133,42 @@ func scanAttachment(s interface {
 	a.UpdatedAt = parseTime(updated)
 	return &a, nil
 }
+
+// ListAttachmentsByBizNos 按业务单号批量取附件元数据（凭证包用；单号去重、空值忽略）。
+//
+// ★ 为什么按 biz_no 而不是 instance_code：凭证包的关联项是**业务单号**
+// （PR / CT / GR / 发票…），而附件登记时已带 `biz_no`，二者可直接对接、无需再回查实例。
+func (d *DB) ListAttachmentsByBizNos(ctx context.Context, bizNos []string) ([]Attachment, error) {
+	var uniq []string
+	seen := map[string]bool{}
+	for _, b := range bizNos {
+		b = strings.TrimSpace(b)
+		if b == "" || seen[b] {
+			continue
+		}
+		seen[b] = true
+		uniq = append(uniq, b)
+	}
+	if len(uniq) == 0 {
+		return nil, nil
+	}
+	ph := strings.TrimRight(strings.Repeat("?,", len(uniq)), ",")
+	args := make([]any, 0, len(uniq))
+	for _, b := range uniq {
+		args = append(args, b)
+	}
+	rows, err := d.QueryContext(ctx, attachmentSelectSQL+` WHERE biz_no IN (`+ph+`) ORDER BY biz_no, id`, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+	var out []Attachment
+	for rows.Next() {
+		a, err := scanAttachment(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, *a)
+	}
+	return out, rows.Err()
+}

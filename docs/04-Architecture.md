@@ -410,7 +410,8 @@ CREATE TABLE t_ledger_archive (
   source_doc_type TEXT,
   department     TEXT,
   applicant_open_id TEXT,
-  submitter_open_id TEXT,
+  submitter_open_id TEXT,                              -- ★ 预留未用（B42）：列已建，但 Ingest 不写、亦无读取者；
+                                                       --   保留以避免 SQLite 重建表；新用途前请先明确语义
   amount_cents   INTEGER,
   supplier       TEXT,
   purpose_class_l1 TEXT,
@@ -833,7 +834,12 @@ flowchart TB
 | `JX_S3_ENDPOINT` / `JX_S3_BUCKET` / `JX_S3_AK` / `JX_S3_SK` | 附件主存 S3 | AK/SK 敏感 |
 | `JX_RUSTFS_ENDPOINT` / `JX_RUSTFS_AK` / `JX_RUSTFS_SK` | 异地备份 | 敏感 |
 | `JX_LOCK_PATH` | 单实例锁文件路径 | 否 |
-| `JX_ATTACH_DIR` | 附件对象存储目录（B39 现状为本地落盘；置空＝不缓存、每次回源） | 否 |
+| `JX_ATTACH_DIR` | 附件对象存储目录（未配 `JX_S3_*` 时的本地兜底；置空且无 S3 ＝不缓存、每次回源） | 否 |
+| `JX_S3_REGION` | S3 区域（缺省 `us-east-1`） | 否 |
+| `JX_S3_PATH_STYLE` | S3 寻址（缺省 `true`＝`host/bucket/key`，MinIO/RustFS 常用；云 S3 置 `false`） | 否 |
+| `JX_RUSTFS_BUCKET` | RustFS 桶名（缺省取 `JX_S3_BUCKET`） | 否 |
+| `JX_RUSTFS_REGION` | RustFS 区域（缺省取 `JX_S3_REGION`） | 否 |
+| `JX_RUSTFS_PATH_STYLE` | RustFS 寻址（缺省取 `JX_S3_PATH_STYLE`） | 否 |
 | `JX_ENV` | 运行环境（prod/test）；test 开启可控时间窗 | 否 |
 
 > 全部走 `internal/config/env.go` 读取；**仓库内不出现任何凭据明文字面量**（FR-M8-06 / TC-25）。

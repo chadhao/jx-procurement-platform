@@ -305,6 +305,29 @@ func (d Deps) handleSubmissionPackage(c echo.Context) error {
 		return fail(c, http.StatusInternalServerError, codeInternal, err.Error())
 	}
 
+	// ★ 附件（B39 缺口②）：按**关联单据的业务单号**取附件元数据纳入凭证包 ——
+	//   否则集团收到的是「只有清单没有文件」的空包。读不到只记 warn、不使打包失败
+	//   （凭证包本身仍有效），但**必须留痕**。
+	bizNos := make([]string, 0, len(items))
+	for _, it := range items {
+		bizNos = append(bizNos, it.ItemBizNo)
+	}
+	attsRows, err := d.DB.ListAttachmentsByBizNos(ctx, bizNos)
+	if err != nil {
+		d.Log.Warn("凭证包：附件清单读取失败，本次包内附件清单为空", "submission_id", id, "error", err.Error())
+	}
+	atts := make([]submission.PackageAttachment, 0, len(attsRows))
+	for _, a := range attsRows {
+		var size int64
+		if a.SizeBytes != nil {
+			size = *a.SizeBytes
+		}
+		atts = append(atts, submission.PackageAttachment{
+			FileID: a.FileID, FileName: a.FileName, BizNo: a.BizNo,
+			Fetched: a.StorageKey != "", SizeBytes: size,
+		})
+	}
+
 	// ★ 导出留痕（TC-26）：先写审计，再返回文件流。
 	d.audit(ctx, &store.AuditLogRow{
 		ActorOpenID: idn.OpenID, ActorRole: idn.Role, Action: "export",
@@ -314,12 +337,12 @@ func (d Deps) handleSubmissionPackage(c echo.Context) error {
 
 	now := time.Now()
 	if format == "pdf" {
-		data := submission.BuildPackagePDF(*sub, items, now)
+		data := submission.BuildPackagePDF(*sub, items, atts, now)
 		c.Response().Header().Set(echo.HeaderContentDisposition,
 			`attachment; filename="submission-`+c.Param("id")+`.pdf"`)
 		return c.Blob(http.StatusOK, "application/pdf", data)
 	}
-	data, err := submission.BuildPackageZip(*sub, items, now)
+	data, err := submission.BuildPackageZip(*sub, items, atts, now)
 	if err != nil {
 		return fail(c, http.StatusInternalServerError, codeInternal, err.Error())
 	}

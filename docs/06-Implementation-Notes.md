@@ -1121,3 +1121,74 @@ PATCH。故同步修 `web/src/views/Ledger.vue`：行键退用 `biz_no`、只读
 | `docs/03-TestCase.md` | 新增 **TC-67~70**；版本 → **V1.10** |
 | `docs/06-Implementation-Notes.md` | 新增本节 §M |
 | `docs/README.md` | 关键定案 **#37–#40**；版本行同步 |
+
+---
+
+## N. 对象存储与凭证包收口轮（S3 主存 + 主备双写 + 凭证包附件 + B42）
+
+> 起因：用户「推送。继续完成开发」。本轮把 B39 遗留的两项缺口补完（主存口径 + 凭证包附件），并处置 B42。
+
+### N.1 S3 主存：手写 SigV4（**零新增依赖**）
+
+| 项 | 内容 |
+|---|---|
+| 为什么自己签 | 纪律「**新增依赖需先经用户同意**」，而 SigV4 用标准库（`crypto/hmac` + `crypto/sha256`）即可完整实现 → **手写、零依赖**；且天然兼容 S3 协议族（AWS S3 / MinIO / **RustFS**） |
+| 实现 | `internal/objectstore/s3.go`：CanonicalRequest → StringToSign → 四段派生密钥（date→region→service→aws4_request）；签名只覆盖 `host` / `x-amz-content-sha256` / `x-amz-date`（最小集，够用且不易错） |
+| 寻址 | `PathStyle=true`（缺省，MinIO/RustFS）＝`host/bucket/key`；`false`＝`bucket.host/key`（云 S3） |
+| 配置不完整 | **构造即失败**（不运行时静默降级）——只配一半的 S3 会表现为"附件下载失败"，排查成本高 |
+| key 安全 | `sanitizeKey` 拒绝路径分隔符与上跳（`../`），防读写目录外对象 |
+
+> ⚠️ **可信度声明**：签名的**协议形状**已由用例逐项断言；但**密码学校验只能在真实端点完成** ——
+> 离线无法证明该签名会被 AWS/MinIO 接受。故提供**默认跳过**的集成测试：
+> `JX_S3_TEST_ENDPOINT/BUCKET/AK/SK=... go test ./internal/objectstore/ -run TestS3Integration -v`。
+> **联调前务必先跑**；region / path-style / 参与签名的头若有偏差，它会**直接失败**而非静默。
+
+### N.2 主备双写（ADR-08：主存 S3 + 异地备份 RustFS）
+
+`MirrorStore` 语义**刻意不对称**（理由逐条写在代码注释）：
+
+| 动作 | 语义 | 理由 |
+|---|---|---|
+| `Put` | **先写主存**（失败即失败）→ **再写备份**（失败只记 warn） | 主存是权威副本；备份失败**不该**让用户下载失败，但**必须留痕** —— 否则"备份静默失效"无人察觉 |
+| `Get` | 先主存；404 或故障 → **回退备份** | 只写不读＝"备份从未被验证过"；主存故障时备份是唯一恢复手段 |
+| `Has` | 同 Get | 一致性 |
+| 装配 | 无备份→直接返回主存；**无主存→返回 nil** | 调用方据此**降级为不缓存、每次回源** |
+
+### N.3 凭证包纳入附件（补 B39 缺口②）
+
+- `submission.PackageAttachment` + 新文件 **`附件清单.csv`**（业务单号/附件名/`file_id`/是否已入库/字节数）；
+  `凭证包说明.txt` 与 PDF 同步给出附件数量与入库状态。
+- 数据来源 `store.ListAttachmentsByBizNos`（按**关联单据的业务单号**取；附件登记时已带 `biz_no`，无需回查实例）。
+- 读不到附件清单时**只记 warn、不使打包失败**（凭证包本身仍有效），但**必须留痕**。
+- **为什么非做不可**：凭证包是「报送集团」的交付物；只含单据清单而不含附件引用 → 集团收到**没有文件的空包**，
+  而接口仍返回 200（典型"静默不完整"）。
+
+### N.4 B42 处置：`submitter_open_id` 标注为**预留未用**
+
+该列 + model + repo 读写齐备，但 `Ingest` 从不赋值 → 恒 NULL（与 `biz_date` / `department` 同族）。
+本轮选择**标注为预留**而非删除：SQLite 删列需**重建表**，代价与风险高于收益；已在 `04-Architecture` §3 的 DDL
+注释中写明「列已建，但 Ingest 不写、亦无读取者；**新用途前请先明确语义**」。
+
+### N.5 本轮新增用例（顶层 133 → **146**）
+
+| 包 | 用例 | 断言要点 |
+|---|---|---|
+| `objectstore` | `TestS3RequestShape` | path-style 路径、三个签名头、`Authorization` 三段式 + Credential 作用域 + `SignedHeaders` 精确 + Signature 64 位十六进制 |
+| `objectstore` | `TestS3SignatureDeterministicAndSensitive` | 同输入签名**确定**；key / 请求体 / region 任一变化签名必变。★ 第一版踩坑：每次新建 httptest server → 端口不同 → host 不同 → 签名必然不同，测的成了"端口随机性" |
+| `objectstore` | `TestS3StatusCodeMapping` | 404 → `ErrNotFound`；5xx → **报错**（不得静默当成功） |
+| `objectstore` | `TestS3VirtualHostAddressing` | `PathStyle=false` → `bucket.host` 寻址。★ 用**假 Transport 只观察请求**（virtual-host 的 host 本机解析不了） |
+| `objectstore` | `TestS3RejectsBadConfig` | 五类非法配置**构造即失败**。★ 其中一条初版**值写错**（注释写"缺 scheme"、值却带 scheme），已修 |
+| `objectstore` | `TestS3RejectsPathTraversalKey` | `../` / 分隔符 / 空 key 一律拒绝 |
+| `objectstore` | `TestS3Integration` | **默认跳过**；设 `JX_S3_TEST_*` 后对真实端点验证签名与读写 |
+| `objectstore` | `TestMirrorDualWrite` / `...BackupFailureDoesNotFailPut` / `...PrimaryFailureFailsPut` | 双写生效；**备份失败不失败**；**主存失败必须失败** |
+| `objectstore` | `TestMirrorGetFallbackToBackup` / `TestMirrorHasFallback` / `TestNewMirrorDegrade` | 主存 404/故障回退备份；两侧皆无 → `ErrNotFound`；装配退化语义 |
+| `httpapi` | `TestSubmissionPackageIncludesAttachments` | 凭证包 zip **必须含 `附件清单.csv`**，且含预期 `file_id` / 文件名 / 未入库状态 |
+
+### N.6 本轮同步的文档
+
+| 文档 | 改动 |
+|---|---|
+| `docs/04-Architecture.md` | §6.4 补 `JX_S3_REGION` / `JX_S3_PATH_STYLE` / `JX_RUSTFS_BUCKET` / `JX_RUSTFS_REGION` / `JX_RUSTFS_PATH_STYLE`；§3 DDL 标注 `submitter_open_id` **预留未用**（B42） |
+| `docs/05-API.md` | §3.12 补「对象存储装配」；§3.5 凭证包补「包内容」含 `附件清单.csv`；版本 → **V1.8** |
+| `docs/06-Implementation-Notes.md` | 新增本节 §N |
+| `docs/README.md` | 关键定案 **#41–#43**；版本行同步 |

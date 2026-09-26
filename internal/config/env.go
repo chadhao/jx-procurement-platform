@@ -29,12 +29,19 @@ type Env struct {
 
 	S3Endpoint string // JX_S3_ENDPOINT
 	S3Bucket   string // JX_S3_BUCKET
-	S3AK       string // JX_S3_AK（敏感）
-	S3SK       string // JX_S3_SK（敏感）
+	S3Region   string // JX_S3_REGION（缺省 us-east-1）
+	// S3PathStyle 寻址方式：true＝http://host/bucket/key（MinIO / RustFS 常用）；false＝http://bucket.host/key（云 S3）。
+	S3PathStyle bool   // JX_S3_PATH_STYLE（缺省 true）
+	S3AK        string // JX_S3_AK（敏感）
+	S3SK        string // JX_S3_SK（敏感）
 
 	RustFSEndpoint string // JX_RUSTFS_ENDPOINT
-	RustFSAK       string // JX_RUSTFS_AK（敏感）
-	RustFSSK       string // JX_RUSTFS_SK（敏感）
+	// RustFSBucket 缺省取 JX_S3_BUCKET；RustFSRegion 缺省取 JX_S3_REGION。
+	RustFSBucket    string // JX_RUSTFS_BUCKET
+	RustFSRegion    string // JX_RUSTFS_REGION
+	RustFSPathStyle bool   // JX_RUSTFS_PATH_STYLE（缺省取 JX_S3_PATH_STYLE）
+	RustFSAK        string // JX_RUSTFS_AK（敏感）
+	RustFSSK        string // JX_RUSTFS_SK（敏感）
 
 	RunEnv            string // JX_ENV: prod / test
 	DevMode           bool   // DEV_MODE
@@ -64,9 +71,14 @@ func LoadEnv() (*Env, error) {
 		LockPath:          lockPath,
 		S3Endpoint:        getenv("JX_S3_ENDPOINT", ""),
 		S3Bucket:          getenv("JX_S3_BUCKET", ""),
+		S3Region:          getenv("JX_S3_REGION", "us-east-1"),
+		S3PathStyle:       getenvBool("JX_S3_PATH_STYLE", true),
 		S3AK:              getenv("JX_S3_AK", ""),
 		S3SK:              getenv("JX_S3_SK", ""),
 		RustFSEndpoint:    getenv("JX_RUSTFS_ENDPOINT", ""),
+		RustFSBucket:      getenv("JX_RUSTFS_BUCKET", getenv("JX_S3_BUCKET", "")),
+		RustFSRegion:      getenv("JX_RUSTFS_REGION", getenv("JX_S3_REGION", "us-east-1")),
+		RustFSPathStyle:   getenvBool("JX_RUSTFS_PATH_STYLE", getenvBool("JX_S3_PATH_STYLE", true)),
 		RustFSAK:          getenv("JX_RUSTFS_AK", ""),
 		RustFSSK:          getenv("JX_RUSTFS_SK", ""),
 		RunEnv:            getenv("JX_ENV", "prod"),

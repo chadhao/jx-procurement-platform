@@ -1,10 +1,13 @@
 package httpapi
 
 import (
+	"archive/zip"
+	"bytes"
 	"context"
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -198,4 +201,92 @@ func TestAttachmentDegradesWithoutStore(t *testing.T) {
 	if rec.Code != http.StatusOK || string(body) != "RAW" {
 		t.Fatalf("无存储时应直接转发: http=%d body=%q", rec.Code, string(body))
 	}
+}
+
+// TestSubmissionPackageIncludesAttachments 凭证包必须含**附件清单**（B39 缺口②）。
+//
+// ★ 为什么必须测：凭证包是「报送集团」的交付物。若只含单据清单、不含附件引用，
+// 集团收到的是**没有文件**的空包 —— 这条链在事实上不成立，而接口仍返回 200。
+func TestSubmissionPackageIncludesAttachments(t *testing.T) {
+	e, db, auth, _ := newAttachmentApp(t, func(_ context.Context, fileID string) ([]byte, error) {
+		return []byte("x"), nil
+	})
+	seedDefaultUsers(t, db,
+		store.UserRole{OpenID: "ou_ops", Role: roleOpsSupervisor, Active: true},
+		store.UserRole{OpenID: "ou_gm", Role: roleProjectGM, Active: true},
+	)
+	// 实例 + 附件（biz_no 与报送的关联单据一致）
+	seedAttachmentInstance(t, db, "I-PKG-1", "生产部", "ou_a")
+	if err := db.UpsertAttachment(context.Background(), &store.Attachment{
+		FileID: "fld_pkg", InstanceCode: "I-PKG-1", BizNo: "CT-2609-7777", FileName: "合同扫描件.pdf",
+	}); err != nil {
+		t.Fatalf("登记附件失败: %v", err)
+	}
+
+	cookie := auth.Establish("ou_ops")
+	// 建报送（关联单据 = 上面那个合同号）
+	rec, env := doRequest(e, http.MethodPost, "/api/submission", cookie,
+		`{"biz_no":"SUB-PKG-1","subject_type":"公户付款","pay_method":"公户转账",
+		  "items":[{"item_biz_no":"CT-2609-7777","item_type":"CT"}]}`)
+	if rec.Code != http.StatusOK || env.Code != codeOK {
+		t.Fatalf("建报送失败: http=%d code=%d body=%s", rec.Code, env.Code, rec.Body.String())
+	}
+	id := int64(mustData(t, env)["id"].(float64))
+
+	// 取凭证包（zip）并读回内容
+	pkgRec, body := doDownload(e, "/api/submission/"+itoa(id)+"/package?format=zip", cookie)
+	if pkgRec.Code != http.StatusOK {
+		t.Fatalf("取凭证包失败: http=%d body=%s", pkgRec.Code, string(body))
+	}
+	zr, err := zip.NewReader(bytes.NewReader(body), int64(len(body)))
+	if err != nil {
+		t.Fatalf("凭证包不是合法 zip: %v", err)
+	}
+	var attachCSV string
+	found := false
+	for _, f := range zr.File {
+		if f.Name != "附件清单.csv" {
+			continue
+		}
+		found = true
+		rc, err := f.Open()
+		if err != nil {
+			t.Fatalf("打开附件清单失败: %v", err)
+		}
+		b, _ := io.ReadAll(rc)
+		_ = rc.Close()
+		attachCSV = string(b)
+	}
+	if !found {
+		t.Fatalf("凭证包缺少「附件清单.csv」——集团会收到只有清单没有文件的空包")
+	}
+	if !strings.Contains(attachCSV, "fld_pkg") || !strings.Contains(attachCSV, "合同扫描件.pdf") {
+		t.Errorf("附件清单未含预期附件:\n%s", attachCSV)
+	}
+	if !strings.Contains(attachCSV, "否") {
+		t.Errorf("附件清单应标注未入库状态（尚未拉取）:\n%s", attachCSV)
+	}
+}
+
+// itoa 小工具（避免为本文件再引 strconv 造成无用导入告警）。
+func itoa(v int64) string {
+	if v == 0 {
+		return "0"
+	}
+	var b [20]byte
+	i := len(b)
+	neg := v < 0
+	if neg {
+		v = -v
+	}
+	for v > 0 {
+		i--
+		b[i] = byte('0' + v%10)
+		v /= 10
+	}
+	if neg {
+		i--
+		b[i] = '-'
+	}
+	return string(b[i:])
 }

@@ -267,12 +267,52 @@ type PackageFile struct {
 	Data []byte
 }
 
+// PackageAttachment 凭证包里的**附件项**（B39 缺口②）。
+//
+// ★ 凭证包必须能看到「有哪些附件、是否已入库」—— 否则集团收到的是**只有清单没有文件**的空包，
+// 「报送集团」这条链在事实上不成立。此处只回**引用与状态**；文件本体走附件下载端点
+// （`GET /api/attachment/{file_id}`，按需拉取 + 主存缓存）。
+type PackageAttachment struct {
+	FileID    string
+	FileName  string
+	BizNo     string
+	Fetched   bool
+	SizeBytes int64
+}
+
+// attachmentCSV 渲染附件清单（凭证包内的独立文件）。
+func attachmentCSV(atts []PackageAttachment) []byte {
+	var b strings.Builder
+	b.WriteString("序号,业务单号,附件名,file_id,是否已入库,字节数\n")
+	for i, a := range atts {
+		fetched := "否"
+		if a.Fetched {
+			fetched = "是"
+		}
+		b.WriteString(fmt.Sprintf("%d,%s,%s,%s,%s,%d\n",
+			i+1, csvField(a.BizNo), csvField(a.FileName), csvField(a.FileID), fetched, a.SizeBytes))
+	}
+	return []byte(b.String())
+}
+
+// countFetched 统计「已落主存」的附件数（未拉取的不计）。
+func countFetched(atts []PackageAttachment) int {
+	n := 0
+	for _, a := range atts {
+		if a.Fetched {
+			n++
+		}
+	}
+	return n
+}
+
 // PackageFiles 组装凭证包文件集合：
 //   - 报送登记.json（关联单据清单 + 移交凭证 + 湖南侧完成日期 + 付款方式等）；
 //   - 关联单据清单.csv；
+//   - 附件清单.csv（B39：附件引用与入库状态）；
 //   - 移交凭证.txt；
 //   - 凭证包说明.txt。
-func PackageFiles(s store.Submission, items []store.SubmissionItem, now time.Time) []PackageFile {
+func PackageFiles(s store.Submission, items []store.SubmissionItem, atts []PackageAttachment, now time.Time) []PackageFile {
 	rec := RecordMap(s, items, now)
 	jsonBytes, _ := json.MarshalIndent(rec, "", "  ")
 
@@ -298,15 +338,16 @@ func PackageFiles(s store.Submission, items []store.SubmissionItem, now time.Tim
 		{Name: "报送登记.json", Data: jsonBytes},
 		{Name: "关联单据清单.csv", Data: []byte(csv.String())},
 		{Name: "移交凭证.txt", Data: []byte(receipt.String())},
-		{Name: "凭证包说明.txt", Data: []byte(buildReadme(s, items, now))},
+		{Name: "附件清单.csv", Data: attachmentCSV(atts)},
+		{Name: "凭证包说明.txt", Data: []byte(buildReadme(s, items, atts, now))},
 	}
 }
 
 // BuildPackageZip 生成 zip 凭证包。
-func BuildPackageZip(s store.Submission, items []store.SubmissionItem, now time.Time) ([]byte, error) {
+func BuildPackageZip(s store.Submission, items []store.SubmissionItem, atts []PackageAttachment, now time.Time) ([]byte, error) {
 	var buf bytes.Buffer
 	zw := zip.NewWriter(&buf)
-	for _, f := range PackageFiles(s, items, now) {
+	for _, f := range PackageFiles(s, items, atts, now) {
 		w, err := zw.Create(f.Name)
 		if err != nil {
 			return nil, fmt.Errorf("submission: 创建凭证包文件失败: %w", err)
@@ -326,11 +367,11 @@ func BuildPackageZip(s store.Submission, items []store.SubmissionItem, now time.
 // 说明：本机无法新增第三方依赖，且 PDF 内置字体（Helvetica）不含中文字形，
 // 故 PDF 采用英文标签 + ASCII 降级渲染（非 ASCII 字符以 '.' 代替）；
 // 完整 UTF-8 数据以 zip 包内「报送登记.json」为准（zip 为凭证包规范格式）。
-func BuildPackagePDF(s store.Submission, items []store.SubmissionItem, now time.Time) []byte {
-	return minimalPDF(pdfLines(s, items, now))
+func BuildPackagePDF(s store.Submission, items []store.SubmissionItem, atts []PackageAttachment, now time.Time) []byte {
+	return minimalPDF(pdfLines(s, items, atts, now))
 }
 
-func buildReadme(s store.Submission, items []store.SubmissionItem, now time.Time) string {
+func buildReadme(s store.Submission, items []store.SubmissionItem, atts []PackageAttachment, now time.Time) string {
 	state := ComputeSubmitState(s.ReceiptRef, s.SubmitState)
 	var b strings.Builder
 	b.WriteString("报送凭证包\n==========\n")
@@ -358,6 +399,14 @@ func buildReadme(s store.Submission, items []store.SubmissionItem, now time.Time
 		b.WriteString("3 个工作日截止日：" + dl.Format(dateLayout) + "；是否超期：" + ov + "\n")
 	}
 	b.WriteString(fmt.Sprintf("关联单据数量：%d\n", len(items)))
+	b.WriteString(fmt.Sprintf("附件数量：%d（已入库 %d）\n", len(atts), countFetched(atts)))
+	for _, a := range atts {
+		mark := "未入库"
+		if a.Fetched {
+			mark = "已入库"
+		}
+		b.WriteString("  · " + a.BizNo + " / " + a.FileName + " [" + mark + "] " + a.FileID + "\n")
+	}
 	b.WriteString("\n集团侧字段（仅人工登记，不回填，FR-M6-07）：\n")
 	b.WriteString("  集团受理编号：" + s.GrpAcceptNo + "\n")
 	b.WriteString("  集团流程状态：" + s.GrpState + "\n")
@@ -365,7 +414,7 @@ func buildReadme(s store.Submission, items []store.SubmissionItem, now time.Time
 	return b.String()
 }
 
-func pdfLines(s store.Submission, items []store.SubmissionItem, now time.Time) []string {
+func pdfLines(s store.Submission, items []store.SubmissionItem, atts []PackageAttachment, now time.Time) []string {
 	state := ComputeSubmitState(s.ReceiptRef, s.SubmitState)
 	lines := []string{
 		"Submission Package",
@@ -378,6 +427,7 @@ func pdfLines(s store.Submission, items []store.SubmissionItem, now time.Time) [
 		"Submit Date: " + s.SubmitDate,
 		"Receipt Ref: " + s.ReceiptRef,
 		"State: " + stateASCII(state),
+		"Attachments: " + strconv.Itoa(len(atts)) + " (fetched " + strconv.Itoa(countFetched(atts)) + ")",
 		"Group(manual): accept_no=" + s.GrpAcceptNo + " state=" + s.GrpState + " paid_date=" + s.PaidDate,
 		"--- Items ---",
 	}
