@@ -64,8 +64,9 @@ func (d Deps) handleCreateSubmission(c echo.Context) error {
 	if strings.TrimSpace(req.SubjectType) == "" {
 		return fail(c, http.StatusBadRequest, codeBadRequest, "事项类型不能为空")
 	}
-	if req.AmountCents != nil && *req.AmountCents < 0 {
-		return fail(c, http.StatusBadRequest, codeBadRequest, "金额不得为负")
+	// ★ Q21 定案：单笔金额必须 **> 0**（0 与负数一律拒绝）。
+	if req.AmountCents != nil && *req.AmountCents <= 0 {
+		return fail(c, http.StatusBadRequest, codeBadRequest, "金额必须大于 0（Q21：不接受 0 元与负数）")
 	}
 	if req.HNFinishDate != "" && !submission.ValidDate(req.HNFinishDate) {
 		return fail(c, http.StatusBadRequest, codeBadRequest, "湖南侧完成日期格式应为 YYYY-MM-DD")

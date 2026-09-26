@@ -92,11 +92,14 @@ type Row struct {
 	AmountCents     int64
 	HasAmount       bool
 	Supplier        string
-	PurposeL1       string
-	PurposeL2       string
-	BizDate         string
-	ArchiveExt      map[string]any
-	Ops             map[string]any
+	// SupplierNorm 归一分组键（PRD Q20）：防拆分「同供应商当月累计」按它分组，
+	// 否则同一家换个写法（空格 / 全角 / 大小写）即绕过阈值。展示仍用 Supplier 原名。
+	SupplierNorm string
+	PurposeL1    string
+	PurposeL2    string
+	BizDate      string
+	ArchiveExt   map[string]any
+	Ops          map[string]any
 }
 
 // Builder 看板聚合器。
@@ -249,14 +252,24 @@ func (b *Builder) buildPurchase(ctx context.Context, res Result, period string, 
 	}
 	res.Charts = append(res.Charts, Chart{Key: "monthly_amount_trend", Type: "line", Series: trend})
 
-	// 同供应商当月累计 TOP（本期，按供应商聚合）。
+	// 同供应商当月累计 TOP（本期，**按归一分组键**聚合；Q20）。
+	// ★ 按原名聚合时，同一家换个写法即拆成两行、各自都达不到阈值 —— 防拆分形同虚设。
 	supSum := map[string]int64{}
+	supName := map[string]string{}
 	for _, r := range r11 {
-		if monthOf(r.BizDate) == period && strings.TrimSpace(r.Supplier) != "" {
-			supSum[r.Supplier] += r.AmountCents
+		if monthOf(r.BizDate) != period || strings.TrimSpace(r.Supplier) == "" {
+			continue
+		}
+		k := r.SupplierNorm
+		if k == "" { // 极端兜底：历史行未回填归一值时退回原名，绝不因缺归一值而漏计
+			k = r.Supplier
+		}
+		supSum[k] += r.AmountCents
+		if _, ok := supName[k]; !ok {
+			supName[k] = r.Supplier // 展示用：取该组**首个出现的原名**
 		}
 	}
-	res.Charts = append(res.Charts, Chart{Key: "top_supplier_month", Type: "bar", Series: topMoneyBars(supSum, 5)})
+	res.Charts = append(res.Charts, Chart{Key: "top_supplier_month", Type: "bar", Series: topMoneyBarsNamed(supSum, supName, 5)})
 
 	// ★ 监督指标（FR-M5-07）：需求提出人任经办人的笔数（应恒为 0） + 经办人指定集中度。
 	res.Supervision = buildSupervision(r03, period, q, b)
@@ -478,6 +491,7 @@ func (b *Builder) fetchLedgerRows(ctx context.Context, types []string, windowSta
 	query := `
 SELECT a.ledger_type, COALESCE(a.biz_no,''), COALESCE(a.instance_code,''), COALESCE(a.department,''),
        COALESCE(a.applicant_open_id,''), a.amount_cents, COALESCE(a.supplier,''),
+       COALESCE(a.supplier_norm,''),
        COALESCE(a.purpose_class_l1,''), COALESCE(a.purpose_class_l2,''), COALESCE(a.biz_date,''),
        COALESCE(a.ext_json,'{}'), COALESCE(o.ops_json,'{}')
 FROM t_ledger_archive a
@@ -499,7 +513,7 @@ WHERE ` + where
 			opsRaw string
 		)
 		if err := sqlRows.Scan(&r.LedgerType, &r.BizNo, &r.InstanceCode, &r.Department, &r.ApplicantOpenID,
-			&amount, &r.Supplier, &r.PurposeL1, &r.PurposeL2, &r.BizDate, &extRaw, &opsRaw); err != nil {
+			&amount, &r.Supplier, &r.SupplierNorm, &r.PurposeL1, &r.PurposeL2, &r.BizDate, &extRaw, &opsRaw); err != nil {
 			return nil, err
 		}
 		if amount.Valid {
@@ -572,7 +586,12 @@ func (b *Builder) countSplitSuspect(rows []Row) int {
 		if m == "" {
 			continue
 		}
-		k := gk{r.Supplier, r.PurposeL2, m}
+		// ★ Q20：按**归一分组键**分组 —— 用原名分组会让"换个写法"直接绕过转档预警。
+		sup := r.SupplierNorm
+		if sup == "" {
+			sup = r.Supplier
+		}
+		k := gk{sup, r.PurposeL2, m}
 		g := groups[k]
 		g.sum += r.AmountCents
 		g.cnt++
@@ -662,6 +681,20 @@ func groupMoney(rows []Row, keyFn func(Row) string, topN int) []map[string]any {
 		sums[k] += r.AmountCents
 	}
 	return topMoneyBars(sums, topN)
+}
+
+// topMoneyBarsNamed 同 topMoneyBars，但允许用**展示名**替换分组键（Q20：分组按归一值、
+// 展示按原名）。names 为空时等价于 topMoneyBars。
+func topMoneyBarsNamed(sums map[string]int64, names map[string]string, topN int) []map[string]any {
+	out := topMoneyBars(sums, topN)
+	for _, p := range out {
+		if k, ok := p["x"].(string); ok && names != nil {
+			if n, ok2 := names[k]; ok2 && n != "" {
+				p["x"] = n
+			}
+		}
+	}
+	return out
 }
 
 func topMoneyBars(sums map[string]int64, topN int) []map[string]any {

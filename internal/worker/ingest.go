@@ -71,6 +71,15 @@ func (g *Ingestor) Ingest(ctx context.Context, det *feishu.InstanceDetail, sourc
 	// ★ 必须早于 ParseBizNo —— 若模板未走流水号控件，单号来自表单字段，需先抽取再解析。
 	ExtractDetail(g.maps, docType, det)
 
+	// ★ Q21 定案（2026-09-27）：**单笔金额必须 > 0**。0 或负金额不作为有效金额落库
+	//   （保持 NULL）并记警告 —— 否则「0 元采购单」既被接受、又不被任何规则拦下，
+	//   还会以 0 参与看板金额统计与档位判定。
+	if det.AmountCents != nil && *det.AmountCents <= 0 {
+		g.log.Warn("实例金额非正，已忽略该金额（Q21：单笔金额必须 > 0）",
+			"instance_code", det.InstanceCode, "amount_cents", *det.AmountCents)
+		det.AmountCents = nil
+	}
+
 	// 台账 ext_json：承载非规范列的可检索字段（如关联合同号，供变更链回溯）。
 	extJSON := BuildExtJSON(g.maps, docType, det.Fields)
 
@@ -96,7 +105,7 @@ func (g *Ingestor) Ingest(ctx context.Context, det *feishu.InstanceDetail, sourc
 
 		// 状态史：追加式写入，保留全部变迁（含驳回重提链），永不覆盖（TC-16 / FR-M3-05）。
 		if strings.TrimSpace(det.StatusRaw) != "" {
-			if _, err := g.db.AppendStatusHistory(ctx, tx, &store.StatusHistory{
+			if _, _, err := g.db.AppendStatusHistory(ctx, tx, &store.StatusHistory{
 				InstanceCode:   det.InstanceCode,
 				Status:         det.StatusRaw,
 				OperatorOpenID: det.ApplicantOpenID,
@@ -155,7 +164,21 @@ func (g *Ingestor) Ingest(ctx context.Context, det *feishu.InstanceDetail, sourc
 			}
 		}
 
-		// 台账存档：仅当 doc_type→ledger_type 已配置时写入（口径 Q14 待定，未配置不写，避免虚构）。
+		// 附件元数据登记（B39）：**只登记、不下载** —— 事件处理有 3 秒窗口，
+		// 网络 IO 绝不能放在同步路径上；文件本体按需拉取（下载端点 / 凭证包）。
+		for _, ref := range CollectAttachments(det) {
+			if err := g.db.UpsertAttachmentTx(ctx, tx, &store.Attachment{
+				FileID:       ref.FileID,
+				InstanceCode: det.InstanceCode,
+				BizNo:        det.BizNo,
+				FileName:     ref.Name,
+				SizeBytes:    ref.Size,
+			}); err != nil {
+				return err
+			}
+		}
+
+		// 台账存档：仅当 doc_type→ledger_type 已配置时写入（未配置不写，避免虚构口径）。
 		if strings.TrimSpace(det.BizNo) != "" && g.maps != nil {
 			if lt, ok := g.maps.LedgerTypeFor(docType); ok {
 				if err := g.db.UpsertArchiveTx(ctx, tx, &store.LedgerArchive{

@@ -833,6 +833,7 @@ flowchart TB
 | `JX_S3_ENDPOINT` / `JX_S3_BUCKET` / `JX_S3_AK` / `JX_S3_SK` | 附件主存 S3 | AK/SK 敏感 |
 | `JX_RUSTFS_ENDPOINT` / `JX_RUSTFS_AK` / `JX_RUSTFS_SK` | 异地备份 | 敏感 |
 | `JX_LOCK_PATH` | 单实例锁文件路径 | 否 |
+| `JX_ATTACH_DIR` | 附件对象存储目录（B39 现状为本地落盘；置空＝不缓存、每次回源） | 否 |
 | `JX_ENV` | 运行环境（prod/test）；test 开启可控时间窗 | 否 |
 
 > 全部走 `internal/config/env.go` 读取；**仓库内不出现任何凭据明文字面量**（FR-M8-06 / TC-25）。

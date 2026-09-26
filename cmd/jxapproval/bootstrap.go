@@ -14,6 +14,7 @@ import (
 	"github.com/chadhao/jx-procurement-platform/internal/config"
 	"github.com/chadhao/jx-procurement-platform/internal/httpapi"
 	"github.com/chadhao/jx-procurement-platform/internal/inbox"
+	"github.com/chadhao/jx-procurement-platform/internal/objectstore"
 	"github.com/chadhao/jx-procurement-platform/internal/observ"
 	"github.com/chadhao/jx-procurement-platform/internal/permission"
 	"github.com/chadhao/jx-procurement-platform/internal/platform/feishu"
@@ -138,6 +139,17 @@ func run(version string) error {
 	auth := access.NewAuthenticator(db, sessions, oauth, env.IsDev(), logger)
 
 	// ---- ⑩ HTTP 路由 ----
+	// 附件对象存储（B39）：先本地落盘；置空则降级为"不缓存、直接转发"。
+	attachStore, err := objectstore.NewLocal(env.AttachDir)
+	if err != nil {
+		return err
+	}
+	if attachStore == nil {
+		logger.Warn("未配置 JX_ATTACH_DIR：附件将不做本地缓存（每次回源拉取）")
+	} else {
+		logger.Info("附件对象存储就绪", "kind", attachStore.Kind(), "dir", env.AttachDir)
+	}
+
 	router := httpapi.NewRouter(httpapi.Deps{
 		Env:        env,
 		DB:         db,
@@ -153,6 +165,8 @@ func run(version string) error {
 		Maps:       maps,
 		WebUI:      webui.Handler(),
 		Version:    version,
+		Feishu:     client,
+		Objects:    attachStore,
 	})
 	if env.IsDev() {
 		logger.Warn("开发模式已开启：已注册 POST /internal/dev/inject-event（仅本地验证用）")

@@ -6,6 +6,8 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+
+	"github.com/chadhao/jx-procurement-platform/internal/normalize"
 )
 
 // ---------- 台账·同步存档（只读，M4） ----------
@@ -22,8 +24,8 @@ func upsertArchive(ctx context.Context, q execer, a *LedgerArchive) error {
 	_, err := q.ExecContext(ctx, `
 INSERT INTO t_ledger_archive
   (ledger_type, biz_no, instance_code, source_doc_type, department, applicant_open_id, submitter_open_id,
-   amount_cents, supplier, purpose_class_l1, purpose_class_l2, biz_date, ext_json, created_at, updated_at)
-VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+   amount_cents, supplier, supplier_norm, purpose_class_l1, purpose_class_l2, biz_date, ext_json, created_at, updated_at)
+VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
 ON CONFLICT(ledger_type, biz_no) DO UPDATE SET
   instance_code = COALESCE(NULLIF(excluded.instance_code,''), t_ledger_archive.instance_code),
   source_doc_type = COALESCE(NULLIF(excluded.source_doc_type,''), t_ledger_archive.source_doc_type),
@@ -32,6 +34,7 @@ ON CONFLICT(ledger_type, biz_no) DO UPDATE SET
   submitter_open_id = COALESCE(NULLIF(excluded.submitter_open_id,''), t_ledger_archive.submitter_open_id),
   amount_cents = COALESCE(excluded.amount_cents, t_ledger_archive.amount_cents),
   supplier = COALESCE(NULLIF(excluded.supplier,''), t_ledger_archive.supplier),
+  supplier_norm = COALESCE(NULLIF(excluded.supplier_norm,''), t_ledger_archive.supplier_norm),
   purpose_class_l1 = COALESCE(NULLIF(excluded.purpose_class_l1,''), t_ledger_archive.purpose_class_l1),
   purpose_class_l2 = COALESCE(NULLIF(excluded.purpose_class_l2,''), t_ledger_archive.purpose_class_l2),
   biz_date = COALESCE(NULLIF(excluded.biz_date,''), t_ledger_archive.biz_date),
@@ -39,7 +42,10 @@ ON CONFLICT(ledger_type, biz_no) DO UPDATE SET
   updated_at = excluded.updated_at`,
 		a.LedgerType, nullStr(a.BizNo), nullStr(a.InstanceCode), nullStr(a.SourceDocType),
 		nullStr(a.Department), nullStr(a.ApplicantOpenID), nullStr(a.SubmitterOpenID), a.AmountCents,
-		nullStr(a.Supplier), nullStr(a.PurposeClassL1), nullStr(a.PurposeClassL2), nullStr(a.BizDate),
+		// ★ Q20：归一值在此**统一计算**（收口一处），调用方不需要（也不应该）自己算 ——
+		//   这样「列加了就一定有写入者」，不会重演 biz_date / department 那种「列存在但没人写」。
+		nullStr(a.Supplier), nullStr(normalize.Supplier(a.Supplier)),
+		nullStr(a.PurposeClassL1), nullStr(a.PurposeClassL2), nullStr(a.BizDate),
 		defaultStr(a.ExtJSON, "{}"), fmtTime(a.CreatedAt), fmtTime(a.UpdatedAt))
 	if err != nil {
 		return fmt.Errorf("store: 写入台账存档失败: %w", err)
@@ -65,7 +71,8 @@ type LedgerFilter struct {
 const archiveSelectSQL = `
 SELECT id, ledger_type, COALESCE(biz_no,''), COALESCE(instance_code,''), COALESCE(source_doc_type,''),
        COALESCE(department,''), COALESCE(applicant_open_id,''), COALESCE(submitter_open_id,''), amount_cents,
-       COALESCE(supplier,''), COALESCE(purpose_class_l1,''), COALESCE(purpose_class_l2,''), COALESCE(biz_date,''),
+       COALESCE(supplier,''), COALESCE(supplier_norm,''),
+       COALESCE(purpose_class_l1,''), COALESCE(purpose_class_l2,''), COALESCE(biz_date,''),
        COALESCE(ext_json,'{}'), created_at, updated_at
 FROM t_ledger_archive a`
 
@@ -88,8 +95,9 @@ func (d *DB) ListArchive(ctx context.Context, f LedgerFilter) ([]LedgerArchive, 
 		args = append(args, f.Department)
 	}
 	if f.Supplier != "" {
-		where = append(where, "supplier = ?")
-		args = append(args, f.Supplier)
+		// ★ Q20：按**归一值**比较，否则用户用同名异写的输入筛不出应有结果。
+		where = append(where, "supplier_norm = ?")
+		args = append(args, normalize.Supplier(f.Supplier))
 	}
 	if f.DateFrom != "" {
 		where = append(where, "biz_date >= ?")
@@ -151,7 +159,8 @@ func scanArchive(s interface {
 		updated string
 	)
 	if err := s.Scan(&a.ID, &a.LedgerType, &a.BizNo, &a.InstanceCode, &a.SourceDocType, &a.Department,
-		&a.ApplicantOpenID, &a.SubmitterOpenID, &amount, &a.Supplier, &a.PurposeClassL1, &a.PurposeClassL2,
+		&a.ApplicantOpenID, &a.SubmitterOpenID, &amount, &a.Supplier, &a.SupplierNorm,
+		&a.PurposeClassL1, &a.PurposeClassL2,
 		&a.BizDate, &a.ExtJSON, &created, &updated); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, ErrNotFound
@@ -215,8 +224,8 @@ func (d *DB) SumArchiveAmountBySupplierMonth(ctx context.Context, ledgerType, su
 	var sum sql.NullInt64
 	err := d.QueryRowContext(ctx, `
 SELECT COALESCE(SUM(amount_cents),0) FROM t_ledger_archive
-WHERE ledger_type = ? AND supplier = ? AND biz_date LIKE ?`,
-		ledgerType, supplier, month+"%").Scan(&sum)
+WHERE ledger_type = ? AND supplier_norm = ? AND biz_date LIKE ?`,
+		ledgerType, normalize.Supplier(supplier), month+"%").Scan(&sum)
 	if err != nil {
 		return 0, err
 	}

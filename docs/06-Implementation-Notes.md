@@ -1041,3 +1041,83 @@ PATCH。故同步修 `web/src/views/Ledger.vue`：行键退用 `biz_no`、只读
 > ★ **B44 是 B31 修复不完整的延续**，属同一根因的另一副面孔：**"按列名保护金额"挡不住"把金额写进文本"**。
 > 与本项目既往四次的差别在于——这次是**第三方复核找出来的**，且**原有 28 条 P0 用例全部通过**。
 > 结论再次收敛到同一条纪律：**要钉住"不该出现的东西"，而不是只断言"该出现的东西"**。
+
+---
+
+## M. 口径落地轮（Q18/Q20/Q21 闭合 + Q19 保持 + B39 附件最小集 + B46）
+
+> 起因：用户对架构审查提出的两项范围决策与四项口径，采纳交付总监建议并授权执行：
+> **B38 缓（但补洞）、B39 做一半、Q20/Q21 立即定、Q18 留挂点、Q19 待业务**。
+
+### M.1 Q18–Q21 处置
+
+| 项 | 决定 | 落地 |
+|---|---|---|
+| **Q18 工作日** | **不含法定节假日**（只跳周六日），并留**可注入挂点** | `submission.HolidayChecker`：`nil` ＝ 不含节假日；业务日后确认含节假日/调休时，只需在启动时注入函数，**`AddWorkingDays`/`Deadline`/`IsOverdue` 调用点零改动** |
+| **Q19 三单匹配容差** | **保持待定**（当前人工判定） | ★ **刻意不加配置键** —— 容差当前无消费端，加进去就是"假配置"（决策 #24）。待集团财务给数后再一并实现 |
+| **Q20 供应商归一** | **最小口径**：去空白 + 全角半角归一 + 大小写归一；**不做简称合并** | 新增 `internal/normalize`（`Supplier()`）；migration `0004` 加 `t_ledger_archive.supplier_norm` + 索引；**写入收口在 `store.upsertArchive` 一处**（保证"列加了就一定有写入者"）；三处聚合改为按归一值分组：防拆分累计 `SumArchiveAmountBySupplierMonth`、`countSplitSuspect`、看板 `top_supplier_month`（展示仍用原名，经 `topMoneyBarsNamed`） |
+| **Q21 金额 0** | **不允许**（必须 > 0） | 台账侧：`Ingest` 抽取后金额 ≤ 0 **不落库**（保持 NULL）并 `warn`；报送入口 `< 0` → `<= 0` |
+
+> ★ **Q20 的分寸**：归一 ≠ 模糊匹配。本包只处理**写法差异**（空格/全角/大小写）；
+> 「简称 ↔ 全称」这类**语义等价必须由业务给对照表** —— 否则包含式匹配会把不同公司并成一家，
+> 让防拆分预警指向无辜供应商。用例已用**反向断言**固化（`TestSupplierDoesNotMergeDifferentNames`）。
+
+### M.2 B38 的洞已补（B46）——**状态史同状态去重**
+
+架构审查指出：`t_instance_status_history` **无唯一约束**、`appendHistory` 是纯 INSERT，而 `inbox` 对
+`approval_instance` 与 `approval_task` **一视同仁** → 每个节点事件都追加一行，**同一状态反复堆积、时间线变噪声**。
+
+修法：`AppendStatusHistory` 追加前与**最近一行**比对 `(status, operator, opinion)`，**三者全同则跳过**，
+且**不消耗 `event_seq`**（序号保持稀疏、无空洞）。用"三者全同"而非"仅 status 相同"，
+是为了**不误杀有意义的变化**（换人、带新意见）—— 用例两个方向都钉住了。
+
+> ★ B38（节点级轨迹本体）仍按建议**缓到二期**：FR-M2-07 优先级是「**应该**」，
+> 且节点轨迹的**权威来源本来就在飞书审批详情页**，本系统再存一份是冗余副本。
+
+### M.3 B39 附件最小集（**砍掉上传那一半**）
+
+| 做了什么 | 说明 |
+|---|---|
+| **移除上传** | `Client` 接口删去 `UploadAttachment`（含 dto / Fake 的钩子）。理由：**模式 A 下本系统不创建实例**，附件由申请人在飞书侧上传，本系统只做**接收** —— 上传属模式 B 遗留，**零调用点** |
+| **下载实装** | `HTTPClient.DownloadAttachment` 由"恒返回 `nil,nil` 的骨架"改为**真实实现**：裸 GET 取字节流、识别 JSON 错误体、空内容报错 |
+| **元数据表** | migration `0005` `t_attachment`；**入库时只登记元数据（零网络 IO）** —— 事件有 3 秒窗口，绝不能在此下载 |
+| **按需拉取 + 缓存** | `GET /api/attachment/{file_id}`：主存命中直接返回；未命中回源 → 落主存 → 回填。**二次下载不回源**（有用例固化，避免白耗 API 配额） |
+| **对象存储抽象** | 新增 `internal/objectstore`（接口 + **`LocalStore`**）。**S3 待定**：接 S3 需 SDK 或自写 SigV4，**新增依赖按纪律需先经用户同意**，故只留接口与文档，凭据/依赖到位后换一行装配即可 |
+| **权限** | **不冗余身份列**：一律以 `instance_code` 回查 `t_instance` 的可见性。★ 这与 `t_submission`（0003 必须冗余）的选择**相反**，因为这里**有权威来源可回查** —— 见 §M.4 |
+| **降级** | 未配置 `JX_ATTACH_DIR` → **不缓存、每次回源**（链路可用、日志有痕迹），**不是静默丢功能** |
+
+> ★ **未能交付的部分（明确记录，不掩盖）**：
+> ① **S3 主存 + RustFS 异地备份**未接入（需依赖/凭据决策，且 `JX_S3_*` 目前无 Go 消费端）；
+> ② **凭证包纳入附件清单**未接线（`internal/submission` 的 package 仍只有单据清单）。
+> 二者均在 §M.5 列为本轮**已知缺口**。
+
+### M.4 一处踩坑（值得记下）
+
+`permission.RowFilterForInstances` 生成的谓词**带别名 `a`**（内部经 `RowFilter`，空别名会被兜底成 `a`）。
+新增的 `instanceVisible` 初版写 `FROM t_instance WHERE ...`（未起别名）→ 直接 500
+（`no such column: a.department`）。**教训：拼用现成的行级谓词时，必须确认目标表的别名与谓词一致** ——
+这类错误会以 500 暴露，还算幸运；若换成 `COUNT(*) = 0` 的写法就会**静默变"永远无权"**。
+
+### M.5 本轮新增 / 改写的用例（顶层 124 → **133**）
+
+| 包 | 用例 | 断言要点（含**负向**） |
+|---|---|---|
+| `normalize` | `TestSupplier` / `TestSupplierDoesNotMergeDifferentNames` / `TestSupplierEmpty` | 三规则逐条归一；**不同公司绝不能被并成一家**；空值不产生分组键 |
+| `worker` | `TestStatusHistoryDeduplicatesSameStatus` | 完全相同的状态**不重复追加**；**仅意见不同 / 仅换人 / 状态变化**三种都要追加（防去重过宽）；`event_seq` **无空洞** |
+| `worker` | `TestIngestIgnoresNonPositiveAmount` | 0 与负数**不落库**；正数正常落 `10000` 分 |
+| `worker` | `TestSupplierNormGroupingAcrossVariants` | 同一家的三种写法**合并计 180000 分**；另一家**不得并入** |
+| `httpapi` | `TestAttachmentDownloadAndCache` | 列表**不触发下载**；首次下载**回源 1 次** + 落主存 + 回填；**二次不回源** |
+| `httpapi` | `TestAttachmentRowScopeByInstance` | 本部门可下；**他部门 403**；**未登记 file_id → 404** |
+| `httpapi` | `TestAttachmentDegradesWithoutStore` | 无对象存储时**直接转发**（降级可用） |
+| `store` | `TestQAMigrationFreshAndIdempotent`（**同步**） | 迁移 5 份；`t_attachment` 与 `supplier_norm` 均生效 |
+
+### M.6 本轮同步的文档
+
+| 文档 | 改动 |
+|---|---|
+| `docs/01-PRD.md` | Q18/Q20/Q21 **闭合**、Q19 保持待定；版本 → **V1.5** |
+| `docs/04-Architecture.md` | §6.4 环境变量补 `JX_ATTACH_DIR` |
+| `docs/05-API.md` | 新增 **§3.12 附件**（两条端点 + 错误码 + 降级语义）；版本 → **V1.7** |
+| `docs/03-TestCase.md` | 新增 **TC-67~70**；版本 → **V1.10** |
+| `docs/06-Implementation-Notes.md` | 新增本节 §M |
+| `docs/README.md` | 关键定案 **#37–#40**；版本行同步 |

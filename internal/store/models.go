@@ -162,12 +162,16 @@ type LedgerArchive struct {
 	SubmitterOpenID string
 	AmountCents     *int64
 	Supplier        string
-	PurposeClassL1  string
-	PurposeClassL2  string
-	BizDate         string
-	ExtJSON         string
-	CreatedAt       time.Time
-	UpdatedAt       time.Time
+	// SupplierNorm 供应商名称**归一分组键**（PRD Q20）：去空白 + 全角半角归一 + 大小写归一。
+	// 仅用于分组/比较（防拆分「同供应商当月累计」）；**展示一律用 Supplier 原名**。
+	// 写入点收在 store.upsertArchive 一处，保证「列加了就一定有写入者」。
+	SupplierNorm   string
+	PurposeClassL1 string
+	PurposeClassL2 string
+	BizDate        string
+	ExtJSON        string
+	CreatedAt      time.Time
+	UpdatedAt      time.Time
 }
 
 // LedgerOps 台账·运营表行（可写，M4）。

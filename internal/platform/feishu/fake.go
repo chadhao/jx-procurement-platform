@@ -2,7 +2,6 @@ package feishu
 
 import (
 	"context"
-	"errors"
 	"time"
 )
 
@@ -12,8 +11,9 @@ type FakeClient struct {
 	SubscribeFn func(ctx context.Context, approvalCode string) (SubscribeResult, error)
 	DetailFn    func(ctx context.Context, instanceCode string) (*InstanceDetail, error)
 	ListIDsFn   func(ctx context.Context, req ListInstanceIDsRequest) (*ListInstanceIDsResult, error)
-	UploadFn    func(ctx context.Context, req UploadAttachmentRequest) (string, error)
 	DownloadFn  func(ctx context.Context, fileID string) ([]byte, error)
+	// DownloadBody 未配置 DownloadFn 时返回的默认字节（便于测试走通「下载→落主存」链路）。
+	DownloadBody []byte
 }
 
 var _ Client = (*FakeClient)(nil)
@@ -42,20 +42,15 @@ func (f *FakeClient) ListInstanceIDs(ctx context.Context, req ListInstanceIDsReq
 	return &ListInstanceIDsResult{}, nil
 }
 
-// UploadAttachment 默认返回占位 file_id。
-func (f *FakeClient) UploadAttachment(ctx context.Context, req UploadAttachmentRequest) (string, error) {
-	if f.UploadFn != nil {
-		return f.UploadFn(ctx, req)
-	}
-	return "fake_file_id", nil
-}
-
-// DownloadAttachment 默认返回空字节。
+// DownloadAttachment 默认返回 DownloadBody（未配置时为一小段占位字节，便于测试走通链路）。
 func (f *FakeClient) DownloadAttachment(ctx context.Context, fileID string) ([]byte, error) {
 	if f.DownloadFn != nil {
 		return f.DownloadFn(ctx, fileID)
 	}
-	return nil, errors.New("feishu: FakeClient 未配置 DownloadFn")
+	if len(f.DownloadBody) > 0 {
+		return f.DownloadBody, nil
+	}
+	return []byte("fake-attachment:" + fileID), nil
 }
 
 // NewDevClient 返回开发模式用的内存客户端：按 instance_code 生成确定性样例详情，

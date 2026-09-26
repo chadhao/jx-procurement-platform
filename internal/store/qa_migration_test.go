@@ -34,9 +34,10 @@ func qaColumns(t *testing.T, db *DB, table string) map[string]bool {
 	return out
 }
 
-// TestQAMigrationFresh0001To0003AndIdempotent 全新库依次跑 0001→0002→0003；t_submission 含 4 个新列；
+// TestQAMigrationFreshAndIdempotent 全新库依次跑全部迁移（0001→…→最新）；t_submission 含 0003 的 4 个新列、
+// t_ledger_archive 含 0004 的 supplier_norm；
 // 重复执行 Migrate 不得报错。
-func TestQAMigrationFresh0001To0003AndIdempotent(t *testing.T) {
+func TestQAMigrationFreshAndIdempotent(t *testing.T) {
 	ctx := context.Background()
 	db, err := Open(filepath.Join(t.TempDir(), "qa-migrate.db"))
 	if err != nil {
@@ -48,6 +49,18 @@ func TestQAMigrationFresh0001To0003AndIdempotent(t *testing.T) {
 		t.Fatalf("首次迁移失败: %v", err)
 	}
 
+	// t_attachment 必须存在（0005，B39 附件元数据）。
+	if n := qaColumns(t, db, "t_attachment"); len(n) == 0 {
+		t.Errorf("t_attachment 表不存在（migrations/0005 未生效）")
+	} else if !n["file_id"] || !n["instance_code"] || !n["storage_key"] {
+		t.Errorf("t_attachment 关键列缺失: %v", n)
+	}
+
+	// t_ledger_archive 必须含 0004 补上的 supplier_norm（Q20 分组键）。
+	if c := qaColumns(t, db, "t_ledger_archive"); !c["supplier_norm"] {
+		t.Errorf("t_ledger_archive 缺列 supplier_norm（migrations/0004 未生效）")
+	}
+
 	// t_submission 必须含 0003 补上的 4 个真实列。
 	cols := qaColumns(t, db, "t_submission")
 	for _, c := range []string{"department", "applicant_open_id", "assigned_open_id", "acceptors"} {
@@ -56,7 +69,9 @@ func TestQAMigrationFresh0001To0003AndIdempotent(t *testing.T) {
 		}
 	}
 	// 三个迁移版本均已登记。
-	for _, v := range []string{"0001_init.sql", "0002_idem_unique.sql", "0003_submission_scope.sql"} {
+	// ★ 迁移版本清单随新增迁移同步（0004 为 Q20 供应商归一列）。
+	for _, v := range []string{"0001_init.sql", "0002_idem_unique.sql", "0003_submission_scope.sql",
+		"0004_supplier_norm.sql", "0005_attachment.sql"} {
 		var n int
 		if err := db.QueryRowContext(ctx,
 			`SELECT COUNT(*) FROM t_schema_migrations WHERE version = ?`, v).Scan(&n); err != nil {
@@ -76,8 +91,10 @@ func TestQAMigrationFresh0001To0003AndIdempotent(t *testing.T) {
 	if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM t_schema_migrations`).Scan(&total); err != nil {
 		t.Fatalf("查版本总数失败: %v", err)
 	}
-	if total != 3 {
-		t.Errorf("迁移版本总数 = %d, 期望 3（重复执行不得重复登记）", total)
+	// ★ 期望值＝仓库内迁移文件数（新增迁移时同步此处；0004 Q20 supplier_norm、0005 附件元数据）。
+	const wantMigrations = 5
+	if total != wantMigrations {
+		t.Errorf("迁移版本总数 = %d, 期望 %d（重复执行不得重复登记）", total, wantMigrations)
 	}
 }
 

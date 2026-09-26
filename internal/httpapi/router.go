@@ -16,8 +16,10 @@ import (
 	"github.com/chadhao/jx-procurement-platform/internal/access"
 	"github.com/chadhao/jx-procurement-platform/internal/config"
 	"github.com/chadhao/jx-procurement-platform/internal/inbox"
+	"github.com/chadhao/jx-procurement-platform/internal/objectstore"
 	"github.com/chadhao/jx-procurement-platform/internal/observ"
 	"github.com/chadhao/jx-procurement-platform/internal/permission"
+	"github.com/chadhao/jx-procurement-platform/internal/platform/feishu"
 	"github.com/chadhao/jx-procurement-platform/internal/store"
 	jsync "github.com/chadhao/jx-procurement-platform/internal/sync"
 	"github.com/chadhao/jx-procurement-platform/internal/worker"
@@ -39,6 +41,10 @@ type Deps struct {
 	Maps       *config.Maps
 	WebUI      http.Handler
 	Version    string
+	// Feishu 飞书客户端：附件**按需拉取**需要（B39）。为 nil 时下载端点返回 502。
+	Feishu feishu.Client
+	// Objects 附件对象存储（主存）。为 nil 时**不缓存、直接转发**（降级，不是静默丢功能）。
+	Objects objectstore.Store
 }
 
 // NewRouter 装配 Echo 路由与中间件。
@@ -79,6 +85,9 @@ func NewRouter(d Deps) *echo.Echo {
 	api.GET("/instances/:code", d.handleGetInstance)
 	api.GET("/instances/:code/fields", d.handleInstanceFields)
 	api.GET("/instances/:code/timeline", d.handleInstanceTimeline)
+	// 附件（B39）：元数据列表 + 按需下载（行级以所属实例为准）。
+	api.GET("/instances/:code/attachments", d.handleInstanceAttachments)
+	api.GET("/attachment/:file_id", d.handleAttachmentDownload)
 	api.GET("/ledger/:table", d.handleLedgerList)
 	api.GET("/ledger/:table/:id", d.handleLedgerGet)
 	api.PATCH("/ledger/:table/:id", d.handleLedgerPatch)

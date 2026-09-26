@@ -62,13 +62,6 @@ type ListInstanceIDsResult struct {
 	NextPageToken string
 }
 
-// UploadAttachmentRequest 附件上传请求。
-type UploadAttachmentRequest struct {
-	Name string
-	Type string // 附件类型（如 contract）
-	Data []byte
-}
-
 // Client 飞书接口抽象（便于 mock 与后续联调）。仅暴露 4 类接口，无创建实例方法。
 type Client interface {
 	// SubscribeApprovalEvent 订阅审批事件：POST /open-apis/approval/v4/approvals/:approval_code/subscribe
@@ -77,8 +70,9 @@ type Client interface {
 	GetInstanceDetail(ctx context.Context, instanceCode string) (*InstanceDetail, error)
 	// ListInstanceIDs 批量取实例 ID（对账用）：GET /open-apis/approval/v4/instances
 	ListInstanceIDs(ctx context.Context, req ListInstanceIDsRequest) (*ListInstanceIDsResult, error)
-	// UploadAttachment 附件上传：POST /open-apis/approval/openapi/v2/file/upload
-	UploadAttachment(ctx context.Context, req UploadAttachmentRequest) (string, error)
 	// DownloadAttachment 附件下载：GET /open-apis/approval/openapi/v2/file/download
+	//
+	// ★ 模式 A 下**只做下载**：本系统不创建审批实例，附件由申请人在飞书侧上传，
+	// 本系统是接收方 —— 故不提供上传方法（原 `UploadAttachment` 属模式 B 遗留，已移除）。
 	DownloadAttachment(ctx context.Context, fileID string) ([]byte, error)
 }

@@ -113,13 +113,26 @@ func CurrentPeriod(now time.Time) string {
 // AddWorkingDays 在给定日期上叠加 n 个工作日（跳过周六 / 周日）。
 //
 // 口径说明：仅按「自然周的周六 / 周日」剔除，不引入法定节假日日历（节假日配置文件不在本期范围）。
+// HolidayChecker 节假日判定挂点（PRD **Q18**）。
+//
+// ★ 口径现状：**默认为 nil ＝ 不含法定节假日**（只跳周六日）。
+// 业务确认「工作日是否含节假日/调休」后，只需在进程启动时注入日历函数，
+// **无需改动任何调用点**（`AddWorkingDays` / `Deadline` / `IsOverdue` 自动跟随）。
+// 这样避免"口径一变就要改代码"的老问题。
+var HolidayChecker func(time.Time) bool
+
+// AddWorkingDays 在 from 之后推 n 个工作日（跳周六日；HolidayChecker 非空时一并跳节假日）。
 func AddWorkingDays(from time.Time, n int) time.Time {
 	d := time.Date(from.Year(), from.Month(), from.Day(), 0, 0, 0, 0, time.UTC)
 	for i := 0; i < n; {
 		d = d.AddDate(0, 0, 1)
-		if d.Weekday() != time.Saturday && d.Weekday() != time.Sunday {
-			i++
+		if d.Weekday() == time.Saturday || d.Weekday() == time.Sunday {
+			continue
 		}
+		if HolidayChecker != nil && HolidayChecker(d) {
+			continue
+		}
+		i++
 	}
 	return d
 }

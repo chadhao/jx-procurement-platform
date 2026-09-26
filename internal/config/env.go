@@ -12,9 +12,15 @@ import (
 
 // Env 承载全部运行期环境变量（对应架构 §6.4 清单）。
 type Env struct {
-	AppID         string // JX_APP_ID（敏感）
-	AppSecret     string // JX_APP_SECRET（敏感）
-	DataDir       string // JX_DATA_DIR
+	AppID     string // JX_APP_ID（敏感）
+	AppSecret string // JX_APP_SECRET（敏感）
+	DataDir   string // JX_DATA_DIR
+	// AttachDir 附件对象存储目录（JX_ATTACH_DIR）。
+	//
+	// ★ 现状（B39）：先提供**本地落盘**作为可运行的最小实现；生产口径是**云侧 S3 主存 +
+	// RustFS 异地备份**（架构 §7.5 / ADR-08），待接入 S3 后只需替换 objectstore 实现。
+	// 置空＝**不缓存、直接转发**（降级可用，不是静默丢功能）。
+	AttachDir     string // JX_ATTACH_DIR
 	DBPath        string // JX_DB_PATH
 	ListenAddr    string // JX_LISTEN_ADDR
 	SessionKey    string // JX_SESSION_KEY（敏感）
@@ -50,6 +56,7 @@ func LoadEnv() (*Env, error) {
 		AppID:             getenv("JX_APP_ID", ""),
 		AppSecret:         getenv("JX_APP_SECRET", ""),
 		DataDir:           dataDir,
+		AttachDir:         getenv("JX_ATTACH_DIR", filepath.Join(dataDir, "attachments")),
 		DBPath:            dbPath,
 		ListenAddr:        getenv("JX_LISTEN_ADDR", "127.0.0.1:8080"),
 		SessionKey:        getenv("JX_SESSION_KEY", ""),

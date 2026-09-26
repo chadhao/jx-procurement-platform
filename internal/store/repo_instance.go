@@ -325,16 +325,51 @@ func (d *DB) UpsertInstanceTx(ctx context.Context, tx *sql.Tx, in *Instance) err
 
 // AppendStatusHistory 在事务内追加一条状态变更史（自动分配递增 event_seq）。
 // 追加式写入，永不覆盖历史，天然满足「驳回重提原单留痕」（TC-16）。
-func (d *DB) AppendStatusHistory(ctx context.Context, tx *sql.Tx, h *StatusHistory) (int64, error) {
+//
+// ★ B46（架构审查：`inbox` 对 `approval_instance` 与 `approval_task` **一视同仁**）：
+// 每个节点事件都会走到这里；而本表**没有唯一约束**、`appendHistory` 又是纯 INSERT →
+// 同一状态被反复追加，**状态历史堆满重复行、时间线变噪声**（该表直接不可用）。
+//
+// 故做**同状态去重**：与最近一行 (status, operator, opinion) **三者全同**则跳过，
+// 且**不消耗 event_seq**（序号保持稀疏无空洞）。用「三者全同」而非「仅 status 相同」，
+// 是为了不误杀有意义的变化（换人、带新意见）。
+//
+// 返回：seq（跳过时为最近一行的序号）、appended（本次是否真的追加）。
+func (d *DB) AppendStatusHistory(ctx context.Context, tx *sql.Tx, h *StatusHistory) (int64, bool, error) {
+	prevStatus, prevOp, prevOpinion, prevSeq, found, err := latestHistory(ctx, tx, h.InstanceCode)
+	if err != nil {
+		return 0, false, err
+	}
+	if found && prevStatus == h.Status &&
+		strings.TrimSpace(prevOp) == strings.TrimSpace(h.OperatorOpenID) &&
+		strings.TrimSpace(prevOpinion) == strings.TrimSpace(h.Opinion) {
+		return prevSeq, false, nil
+	}
 	seq, err := nextEventSeq(ctx, tx, h.InstanceCode)
 	if err != nil {
-		return 0, err
+		return 0, false, err
 	}
 	h.EventSeq = seq
 	if err := appendHistory(ctx, tx, h); err != nil {
-		return 0, err
+		return 0, false, err
 	}
-	return seq, nil
+	return seq, true, nil
+}
+
+// latestHistory 读取某实例**最近一行**状态史（去重比对用）；无行时 found=false。
+func latestHistory(ctx context.Context, q execer, instanceCode string) (
+	status, operator, opinion string, seq int64, found bool, err error) {
+	row := q.QueryRowContext(ctx, `
+SELECT status, COALESCE(operator_open_id,''), COALESCE(opinion,''), event_seq
+FROM t_instance_status_history WHERE instance_code = ?
+ORDER BY event_seq DESC LIMIT 1`, instanceCode)
+	switch err = row.Scan(&status, &operator, &opinion, &seq); {
+	case err == sql.ErrNoRows:
+		return "", "", "", 0, false, nil
+	case err != nil:
+		return "", "", "", 0, false, err
+	}
+	return status, operator, opinion, seq, true, nil
 }
 
 // UpsertArchiveTx 在事务内幂等写台账存档。
