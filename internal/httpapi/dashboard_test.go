@@ -67,6 +67,20 @@ func seedArchive(t *testing.T, db *store.DB, lt, bizNo, applicant, dept, supplie
 	}
 }
 
+// seedArchiveDocExt 写入台账行，可指定 source_doc_type 与 ext_json（供 L11 派生路径的用例）。
+func seedArchiveDocExt(t *testing.T, db *store.DB, lt, bizNo, docType, applicant, dept, supplier, bizDate string, amount int64, ext string) {
+	t.Helper()
+	now := time.Now().UTC()
+	amt := amount
+	if err := db.UpsertArchive(context.Background(), db, &store.LedgerArchive{
+		LedgerType: lt, BizNo: bizNo, InstanceCode: "I-" + bizNo, SourceDocType: docType,
+		Department: dept, ApplicantOpenID: applicant, AmountCents: &amt,
+		Supplier: supplier, BizDate: bizDate, ExtJSON: ext, CreatedAt: now, UpdatedAt: now,
+	}); err != nil {
+		t.Fatalf("写入台账存档失败: %v", err)
+	}
+}
+
 func seedOps(t *testing.T, db *store.DB, lt, bizNo, opsJSON string) {
 	t.Helper()
 	if err := db.UpsertOps(context.Background(), &store.LedgerOps{
@@ -206,9 +220,18 @@ func TestDashboardSourceFromOps(t *testing.T) {
 	}
 	seedRole(t, db, "ou_pm", "项目总经理", "")
 
-	// L11 订单执行：仅运营表带「实际到货 / 完成日期」；存档表不带（ext_json={}）。
-	seedArchive(t, db, "L11", "CT-2609-0001", "ou_a1", "生产部", "某某五金", "生产采购", "备品备件", "2026-09-01", 130000)
-	seedOps(t, db, "L11", "CT-2609-0001", `{"实际到货":"2026-09-08","完成日期":"2026-09-08"}`)
+	// ★ L11 订单执行台账是**派生视图**（Q14 定案）：看板不再读 t_ledger_archive 的 L11 行，
+	//   而由「L04 合同台账（骨架）+ L07 到货验收（GR）」派生（架构审查 A-1 修复）。
+	//   故这里必须造**真实路径**的数据，而不是伪造一行 L11 存档 + 一行 L11 运营。
+	seedArchiveDocExt(t, db, "L04", "CT-2609-0001", "CT", "ou_a1", "生产部", "某某五金", "2026-09-01", 130000,
+		`{"delivery_date":"2026-09-06"}`)
+	seedArchiveDocExt(t, db, "L07", "GR-2609-0001", "GR", "ou_a1", "生产部", "某某五金", "2026-09-08", 130000,
+		`{"related_biz_no":"CT-2609-0001"}`)
+	// ★ 负向断言素材：故意塞一行「看起来像 L11」的存档 + 运营，证明看板**不会**再读它。
+	//   （若旧实现回归，下面 avg_cycle_days 会被这条脏数据影响而失败。）
+	seedArchiveDocExt(t, db, "L11", "CT-9999-9999", "CT", "ou_zz", "生产部", "脏数据供应商", "2026-09-01", 99999999,
+		`{"delivery_date":"2026-09-01"}`)
+	seedOps(t, db, "L11", "CT-9999-9999", `{"实际到货":"2026-09-02","完成日期":"2026-09-02","延期天数":999}`)
 
 	// L03 采购经办登记：被指定经办人仅存在于运营表。
 	seedArchive(t, db, "L03", "PR-2609-0010", "ou_a9", "生产部", "", "", "备品备件", "2026-09-05", 100000)
@@ -220,7 +243,8 @@ func TestDashboardSourceFromOps(t *testing.T) {
 	}
 	data := mustData(t, env)
 
-	// 平均采购周期：2026-09-01 → 2026-09-08 = 7 天（来自运营表）。
+	// 平均采购周期：合同业务日期 2026-09-01 → 到货 2026-09-08 = 7 天（派生路径）。
+	// ★ 该值同时是 A-1 的回归断言：脏 L11 存档行若被读入，这里会变成别的数字。
 	avg, ok := cardValue(t, data, "avg_cycle_days")
 	if !ok {
 		t.Fatal("缺 avg_cycle_days 指标卡")

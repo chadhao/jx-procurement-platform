@@ -37,15 +37,13 @@ const (
 )
 
 // 运营表（ops_json）与存档表（ext_json）中使用的业务键。
-// ★ Q14「运营表字段清单」尚未定案，此处按键值对的建议键读取（架构 §3.4 / API §4.3）；
-// 键名以数据为准，代码不硬编码模板控件 id。
+// ★ Q14 已定案（2026-09-26）：L11 订单执行台账为**派生视图**，其键名见 order_execution.go；
+// 本块只保留**运营表确实可写**的中文键（L01/L03/L08/L09/L12 等）。键名以数据为准，不硬编码控件 id。
 const (
 	keyAssigned   = "assigned_open_id" // 被指定经办人（优先 ops，回退 archive ext）
 	keyAssignedCN = "指定经办人"            // 中文等价键（兼容人工登记口径）
 	keyStatus     = "经办状态"
 	keyDoneDate   = "完成日期"
-	keyArrival    = "实际到货"
-	keyDelayDays  = "延期天数"
 	keyClosed     = "是否已核销闭合"
 	keyMethod     = "采购方式"
 	keyAcctChange = "账户变更"
@@ -173,17 +171,24 @@ func (b *Builder) Build(ctx context.Context, id int, period string, q Query) (Re
 // ---------- 14 采购执行看板 ----------
 
 func (b *Builder) buildPurchase(ctx context.Context, res Result, period string, q Query) (Result, error) {
-	rows, err := b.fetchLedgerRows(ctx, []string{"L11", "L03"}, windowStart(period, defaultCycleMonths-1), q)
+	win := windowStart(period, defaultCycleMonths-1)
+	// ★ L11 是**派生视图**（Q14 定案），不落 `t_ledger_archive` —— 此处改走与台账派生视图
+	//   同一口径（L04 骨架 + 关联 L07）。原实现直接读 ledger_type='L11'，而该值永不落行
+	//   → 本看板五项指标恒空/恒 0 且不报错（架构审查 A-1）。
+	r11, err := b.orderExecutionRows(ctx, win, q)
 	if err != nil {
 		return res, err
 	}
-	byType := splitByType(rows, "L11", "L03")
-	r11, r03 := byType["L11"], byType["L03"]
+	// 经办登记台账（L03）仍读存档行（它是实例级台账）。
+	r03, err := b.fetchLedgerRows(ctx, []string{"L03"}, win, q)
+	if err != nil {
+		return res, err
+	}
 
 	// 在途订单数：订单执行台账中尚无「实际到货」的订单。
 	inFlight := 0
 	for _, r := range r11 {
-		if strings.TrimSpace(r.OpsStr(keyArrival)) == "" {
+		if strings.TrimSpace(r.OpsStr(keyActualArrival)) == "" {
 			inFlight++
 		}
 	}
@@ -313,7 +318,8 @@ func (b *Builder) buildExpense(ctx context.Context, res Result, period string, q
 // ---------- 16 异常预警面板 ----------
 
 func (b *Builder) buildAnomaly(ctx context.Context, res Result, period string, q Query) (Result, error) {
-	types := []string{"L01", "L03", "L06", "L08", "L09", "L11", "L12"}
+	// L11 已为派生视图、不落行，不再列入（原列入但从未消费 byType["L11"]）。
+	types := []string{"L01", "L03", "L06", "L08", "L09", "L12"}
 	rows, err := b.fetchLedgerRows(ctx, types, windowStart(period, defaultCycleMonths-1), q)
 	if err != nil {
 		return res, err
@@ -869,7 +875,7 @@ func cycleDays(r Row) (int, bool) {
 	}
 	doneStr := r.OpsStr(keyDoneDate)
 	if doneStr == "" {
-		doneStr = r.OpsStr(keyArrival)
+		doneStr = r.OpsStr(keyActualArrival) // L11 派生行的到货日期
 	}
 	end, ok := parseDayStrict(doneStr)
 	if !ok {
