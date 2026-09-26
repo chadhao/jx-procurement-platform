@@ -1,0 +1,53 @@
+# ---- Go ----
+/bin/
+/dist/
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+vendor/
+
+# ---- 构建产物（内嵌前的前端产物不入库，由 CI/构建脚本生成）----
+web/dist/
+internal/web/dist/
+
+# ---- 本地数据库与运行时数据（绝不入库）----
+*.db
+*.db-shm
+*.db-wal
+*.sqlite
+*.sqlite3
+/data/
+/tmp/
+/logs/
+*.log
+
+# ---- 密钥与配置（绝不入库）----
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+config.local.*
+secrets/
+
+# ---- Node / 前端 ----
+node_modules/
+.pnpm-store/
+*.tsbuildinfo
+
+# ---- 编辑器 / 系统 ----
+.idea/
+.vscode/
+*.swp
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ---- 临时 ----
+*.bak
+*.tmp
+~$*
