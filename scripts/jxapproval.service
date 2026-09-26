@@ -1,0 +1,33 @@
+# scripts/jxapproval.service —— systemd unit 草案（架构 §7.1）。
+# 部署：复制到 /etc/systemd/system/jxapproval.service，凭据写入 /etc/jxapproval/env（权限 600）。
+# ★ 单实例硬约束：ExecStartPre 以 flock -n 抢占锁文件，抢占失败即拒绝本次启动（TC-04）。
+
+[Unit]
+Description=JX Procurement & Expense Approval Platform (single-instance)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=jxapp
+Group=jxapp
+WorkingDirectory=/opt/jxapproval
+# App ID / Secret 等从独立 EnvironmentFile 注入（文件权限 600，不入库不进仓）
+EnvironmentFile=/etc/jxapproval/env
+ExecStart=/opt/jxapproval/jxapproval serve
+Restart=always
+RestartSec=5
+# 单实例硬约束：不留并发启动窗口
+ExecStartPre=/usr/bin/flock -n /var/lock/jxapproval.lock -c /opt/jxapproval/scripts/preflight.sh
+# 优雅退出：先停长连接，再排空 worker
+KillSignal=SIGTERM
+TimeoutStopSec=30
+# 收紧权限与资源
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/jxapproval
+LimitNOFILE=65536
+
+[Install]
+WantedBy=multi-user.target

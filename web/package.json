@@ -1,0 +1,21 @@
+{
+  "name": "jx-procurement-web",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "description": "湖南江熙新材料科技 · 采购与费用审批平台（自建侧）前端",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview --port 4173"
+  },
+  "dependencies": {
+    "echarts": "^5.5.1",
+    "vue": "^3.5.13",
+    "vue-router": "^4.4.5"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-vue": "^5.2.1",
+    "vite": "^5.4.11"
+  }
+}

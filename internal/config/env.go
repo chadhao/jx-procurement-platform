@@ -1,0 +1,121 @@
+// Package config 负责配置加载：环境变量（密钥）优先 + 配置表（映射/规则）装载。
+// 纪律：密钥一律来自环境变量，不入库、不进版本库（FR-M8-06）。
+package config
+
+import (
+	"os"
+	"path/filepath"
+	"strconv"
+	"strings"
+	"time"
+)
+
+// Env 承载全部运行期环境变量（对应架构 §6.4 清单）。
+type Env struct {
+	AppID         string // JX_APP_ID（敏感）
+	AppSecret     string // JX_APP_SECRET（敏感）
+	DataDir       string // JX_DATA_DIR
+	DBPath        string // JX_DB_PATH
+	ListenAddr    string // JX_LISTEN_ADDR
+	SessionKey    string // JX_SESSION_KEY（敏感）
+	InternalToken string // JX_INTERNAL_TOKEN（敏感）
+	LockPath      string // JX_LOCK_PATH
+
+	S3Endpoint string // JX_S3_ENDPOINT
+	S3Bucket   string // JX_S3_BUCKET
+	S3AK       string // JX_S3_AK（敏感）
+	S3SK       string // JX_S3_SK（敏感）
+
+	RustFSEndpoint string // JX_RUSTFS_ENDPOINT
+	RustFSAK       string // JX_RUSTFS_AK（敏感）
+	RustFSSK       string // JX_RUSTFS_SK（敏感）
+
+	RunEnv            string // JX_ENV: prod / test
+	DevMode           bool   // DEV_MODE
+	ReconcileInterval time.Duration
+}
+
+// LoadEnv 从环境变量加载配置并填充默认值。
+func LoadEnv() (*Env, error) {
+	dataDir := getenv("JX_DATA_DIR", "./data")
+	dbPath := getenv("JX_DB_PATH", filepath.Join(dataDir, "jxapproval.db"))
+	lockPath := getenv("JX_LOCK_PATH", filepath.Join(dataDir, "jxapproval.lock"))
+
+	intervalHours := getenvInt("JX_RECONCILE_INTERVAL_HOURS", 24)
+	if intervalHours <= 0 {
+		intervalHours = 24
+	}
+
+	return &Env{
+		AppID:             getenv("JX_APP_ID", ""),
+		AppSecret:         getenv("JX_APP_SECRET", ""),
+		DataDir:           dataDir,
+		DBPath:            dbPath,
+		ListenAddr:        getenv("JX_LISTEN_ADDR", "127.0.0.1:8080"),
+		SessionKey:        getenv("JX_SESSION_KEY", ""),
+		InternalToken:     getenv("JX_INTERNAL_TOKEN", ""),
+		LockPath:          lockPath,
+		S3Endpoint:        getenv("JX_S3_ENDPOINT", ""),
+		S3Bucket:          getenv("JX_S3_BUCKET", ""),
+		S3AK:              getenv("JX_S3_AK", ""),
+		S3SK:              getenv("JX_S3_SK", ""),
+		RustFSEndpoint:    getenv("JX_RUSTFS_ENDPOINT", ""),
+		RustFSAK:          getenv("JX_RUSTFS_AK", ""),
+		RustFSSK:          getenv("JX_RUSTFS_SK", ""),
+		RunEnv:            getenv("JX_ENV", "prod"),
+		DevMode:           getenvBool("DEV_MODE", false),
+		ReconcileInterval: time.Duration(intervalHours) * time.Hour,
+	}, nil
+}
+
+// IsDev 是否开发模式（决定是否注册 /internal/dev/inject-event）。
+func (e *Env) IsDev() bool { return e.DevMode }
+
+// IsTest 是否测试环境（test 开启可控时间窗，架构 §4.5）。
+func (e *Env) IsTest() bool { return strings.EqualFold(e.RunEnv, "test") }
+
+// MissingSecrets 返回尚未配置的敏感项键名列表（用于启动告警，不阻断开发模式）。
+func (e *Env) MissingSecrets() []string {
+	var missing []string
+	check := func(key, val string) {
+		if strings.TrimSpace(val) == "" {
+			missing = append(missing, key)
+		}
+	}
+	check("JX_APP_ID", e.AppID)
+	check("JX_APP_SECRET", e.AppSecret)
+	check("JX_SESSION_KEY", e.SessionKey)
+	check("JX_INTERNAL_TOKEN", e.InternalToken)
+	return missing
+}
+
+func getenv(key, def string) string {
+	if v := strings.TrimSpace(os.Getenv(key)); v != "" {
+		return v
+	}
+	return def
+}
+
+func getenvBool(key string, def bool) bool {
+	v := strings.TrimSpace(os.Getenv(key))
+	if v == "" {
+		return def
+	}
+	b, err := strconv.ParseBool(v)
+	if err != nil {
+		return def
+	}
+	return b
+}
+
+func getenvInt(key string, def int) int {
+	v := strings.TrimSpace(os.Getenv(key))
+	if v == "" {
+		return def
+	}
+	n, err := strconv.Atoi(v)
+	if err != nil {
+		return def
+	}
+	return n
+}
