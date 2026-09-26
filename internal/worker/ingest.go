@@ -66,6 +66,14 @@ func (g *Ingestor) Ingest(ctx context.Context, det *feishu.InstanceDetail, sourc
 			docType = t
 		}
 	}
+
+	// 规范字段抽取（FR-M2-08）：把表单控件值搬到 t_instance 的规范列。
+	// ★ 必须早于 ParseBizNo —— 若模板未走流水号控件，单号来自表单字段，需先抽取再解析。
+	ExtractDetail(g.maps, docType, det)
+
+	// 台账 ext_json：承载非规范列的可检索字段（如关联合同号，供变更链回溯）。
+	extJSON := BuildExtJSON(g.maps, docType, det.Fields)
+
 	parts := ParseBizNo(det.BizNo)
 
 	return g.db.WithTx(ctx, func(tx *sql.Tx) error {
@@ -161,9 +169,13 @@ func (g *Ingestor) Ingest(ctx context.Context, det *feishu.InstanceDetail, sourc
 					Supplier:        det.Supplier,
 					PurposeClassL1:  det.PurposeClassL1,
 					PurposeClassL2:  det.PurposeClassL2,
-					ExtJSON:         "{}",
-					CreatedAt:       now,
-					UpdatedAt:       now,
+					// ★ 业务日期（B32）：此前**生产端从不写入**该列，导致 L11 派生的到货字段、
+					//   看板全部按月指标、以及「同供应商当月累计」口径**恒为空**。
+					//   口径统一为 `YYYY-MM-DD`（全系统唯一格式）：取实例提交/发生日期。
+					BizDate:   occurred.Format("2006-01-02"),
+					ExtJSON:   extJSON,
+					CreatedAt: now,
+					UpdatedAt: now,
 				}); err != nil {
 					return err
 				}

@@ -195,9 +195,15 @@ type Submission struct {
 	GrpState     string
 	PaidDate     string
 	RejectReason string
-	CreatedBy    string
-	CreatedAt    time.Time
-	UpdatedAt    time.Time
+	// ★ Q14-B 第 5 项（2026-09-26）：行级权限按真实列重建 —— 以下四列由 migrations/0003 加入，
+	//   使 DEPT / CHARGE_DEPT / ASSIGNED / PARTICIPATED 四个 row_scope 令牌不再降级为 created_by。
+	Department      string // 申请人所属部门（DEPT / CHARGE_DEPT）
+	ApplicantOpenID string // 申请人（SELF）
+	AssignedOpenID  string // 被指定经办人（ASSIGNED）
+	Acceptors       string // 验收人集合（PARTICIPATED，JSON 数组串）
+	CreatedBy       string
+	CreatedAt       time.Time
+	UpdatedAt       time.Time
 }
 
 // SubmissionItem 报送关联单据行（M6）。
@@ -206,6 +212,27 @@ type SubmissionItem struct {
 	SubmissionID int64
 	ItemBizNo    string
 	ItemType     string
+}
+
+// ExpenseTrack 集团报销跟踪表行（M1，人工登记，FR-M1-02）。
+//
+// 口径：报销类由人工走集团，**不进入本办法审批流程**；本表只做「审批外登记」，
+// 供台账与看板引用（关联事前申请单号 → 移交 → 集团付款）。
+type ExpenseTrack struct {
+	ID              int64
+	SrcBizNo        string
+	ApplicantOpenID string
+	Department      string
+	ActualCents     *int64
+	InvoiceCount    *int
+	ReviewState     string
+	HandoverDate    string
+	PaidDate        string
+	PaidCents       *int64
+	OverrunNote     string
+	CreatedBy       string
+	CreatedAt       time.Time
+	UpdatedAt       time.Time
 }
 
 // AuditLogRow 审计日志行（M7）。

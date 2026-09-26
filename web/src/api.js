@@ -107,3 +107,38 @@ export const patchAdminUser = (openId, payload) =>
 
 /** 注销。 */
 export const logout = () => api.post('/auth/logout')
+
+// ---- 看板（M5，FR-M5-01~08）----
+// 说明：以下为新增导出，未改动上方任何既有导出（request / api / isAuthError / fetch* / save* 等）。
+// 看板只读；数据由服务端按角色施加行级过滤 + 列级投影后返回，前端不传任何权限参数。
+
+/** 看板指标数据。id：13 预算执行 / 14 采购执行 / 15 费用结构 / 16 异常预警。 */
+export const fetchDashboard = (id, period) => api.get(`/api/dashboard/${id}`, { period })
+
+/** 看板导出下载地址（format：csv / xlsx）。服务端复用同一行·列投影器，并写审计留痕。 */
+export function dashboardExportUrl(id, period, format = 'csv') {
+  const q = new URLSearchParams()
+  if (period) q.set('period', period)
+  q.set('format', format)
+  return `/api/dashboard/${id}/export?${q.toString()}`
+}
+
+// ---- 集团报销跟踪表（M1，FR-M1-02）----
+// 报销不进入本办法审批流程（人工走集团）；本资源承接「关联事前申请单号 → 移交 → 集团付款」的登记与查询。
+// 权限：写＝综合运营主管；读＝综合运营主管 / 主管领导 / 项目总经理 / 系统管理员（服务端二次校验）。
+
+/** 集团报销跟踪列表（分页；可按 src_biz_no / department / review_state 过滤）。 */
+export const fetchReimbursements = (params) => api.get('/api/reimbursement', params)
+
+/** 集团报销跟踪登记（综合运营主管）。 */
+export const createReimbursement = (payload) => api.post('/api/reimbursement', payload)
+
+/** 集团报销跟踪部分更新（集团侧付款字段仅人工登记，不回填）。 */
+export const patchReimbursement = (id, payload) =>
+  api.patch(`/api/reimbursement/${encodeURIComponent(id)}`, payload)
+
+// ---- 变更链回溯（M4，FR-M4-07）----
+
+/** 按合同号回溯历次变更（次数 / 累计金额 / 所取档位；行·列权限服务端裁剪）。 */
+export const fetchContractChanges = (bizNo) =>
+  api.get(`/api/contract/${encodeURIComponent(bizNo)}/changes`)

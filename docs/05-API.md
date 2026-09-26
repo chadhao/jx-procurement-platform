@@ -7,7 +7,7 @@
 | 项 | 内容 |
 |---|---|
 | 文档名称 | 采购与费用审批平台（自建侧）· 接口设计 |
-| 版本 | V1.0 |
+| 版本 | V1.5 |
 | 日期 | 2026-09-26 |
 | 上游文档 | `01-PRD.md`、`02-UseCase.md`、`03-TestCase.md`、`04-Architecture.md` |
 | 语言纪律 | 简体中文 |
@@ -70,7 +70,7 @@ sequenceDiagram
 | 分页 | 台账/审计等列表支持**页码分页**（`page`/`page_size`，默认 1/50，上限 200）与**游标分页**（`cursor`，用于大表/导出）；不混用 |
 | 时间格式 | 所有时间为 **ISO 8601 UTC**（`2026-09-26T08:30:00Z`）；账期用 `YYYY-MM` |
 | 金额 | 出参统一 `*_cents`（整数分）与 `*_display`（字符串）；避免浮点 |
-| 幂等头 | 写操作支持 `Idempotency-Key` 请求头（可选）；服务端命中则返回首次结果（用于报送登记等易重试写操作） |
+| 幂等头 | 写操作支持 `Idempotency-Key` 请求头（可选）。语义三分支：**同键 + 同载荷 → 200 且返回首次结果**（响应附 `idempotent_replay:true`）；**同键 + 异载荷 → 40900**；未带键 → 不做幂等保护。用于报送登记等易重试写操作 |
 | 敏感列 | 列级投影在**序列化阶段**裁剪；无权限字段**不出现在响应 JSON 中**（连字段名都没有） |
 | 错误包裹 | 出错时 `code != 0`，`data` 为空，`message` 为可读文案，附 `trace_id` |
 
@@ -84,7 +84,7 @@ sequenceDiagram
 | 403 | 40300 | 无权限（资源级） | 该角色无该看板/接口权限（TC-06/07） |
 | 403 | 40301 | 行级越权 | 按 ID 访问他人/他部门记录（TC-06） |
 | 404 | 40400 | 资源不存在 | 实例/台账记录不存在 |
-| 409 | 40900 | 冲突 | 幂等键冲突、唯一约束（重复事件写入） |
+| 409 | 40900 | 冲突 | **幂等键冲突（同一键用于不同请求载荷）**、唯一约束（重复事件写入 / 业务单号重复） |
 | 409 | 40901 | 状态不允许该操作 | 向只读同步存档表写入（TC-31）、已提交再改状态 |
 | 429 | 42900 | 限流 | 触发速率限制（对应飞书 429 语义的可观测化） |
 | 500 | 50000 | 服务器内部错误 | 未预期异常 |
@@ -136,6 +136,8 @@ sequenceDiagram
 
 #### `GET /api/ledger/{table}`
 
+> ★ **派生台账**：`{table}=L11`（订单执行台账）**不读 `t_ledger_archive` 的 L11 行**，而以 `L04`（合同台账）为骨架、关联 `L07`（到货验收）**查询时派生**。响应含 `derived:true` 与 `source:["L04","L07"]`；派生行**无 `id`**，故不支持 `GET /api/ledger/L11/{id}`（400）与任何写入（40901）。`delay_days` 仅在合同交期与实际到货**都能解析为日期**时出现（缺数据不臆造 0）。
+
 | 项 | 内容 |
 |---|---|
 | 用途 | 台账列表查询；**自动施加行级过滤 + 列级投影**；返回公式列红标 |
@@ -161,12 +163,14 @@ sequenceDiagram
 
 | 项 | 内容 |
 |---|---|
-| 用途 | **仅运营表可写字段**的登记/回填（如付款凭据号、抽查状态、经办状态、集团侧人工字段等，Q14 待定） |
-| 权限要求 | 按 `t_permission_rule.writable_fields` 限定角色（如综合运营主管、被指定经办人）；**同步存档字段一律不可写** |
+| 用途 | **仅运营表可写字段**的登记/回填（付款凭据号、抽查状态、经办状态、集团侧人工字段等）——★ **Q14 已定案** |
+| 权限要求 | ① `t_permission_rule.writable_fields` 限定角色（如综合运营主管、被指定经办人）；`writable_fields` 为空 → 该台账整体只读（**40901**）。② ★ **该台账在 `t_ledger_field_def` 登记过字段定义时，`fields` 的键名必须已在其中**（否则 **40901**）——白名单**逐台账逐步生效**，未登记任何字段的台账仍只按 `writable_fields` 校验（向后兼容） |
+| 字段定义来源 | 由 `jxapproval import-config` 的第五类映射 **`ledger_field`** 写入 `t_ledger_field_def`（只开放 `ledger_type` / `field_key` / `is_sensitive` 三项；其余无消费端故不开放）。该表同时是 `SensitiveFields` 的**敏感列清单**来源 |
+| 首次引入 | 2026-09-26（docs/06 §K.1 第 4 项 / §K-2） |
 | 路径参数 | `{table}`、`{id}` |
 | 请求体 | `{ "fields": { "<business_field>": <value> } }`（业务字段名，非控件 id） |
 | 响应字段 | 更新后的运营字段 + 审计回执 |
-| 错误码 | 40300（无写权）、40901（同步存档表/只读字段）、40000 |
+| 错误码 | 40300（无写权/字段不可写）、40901（同步存档表 / 只读台账 / 派生视图 / **字段未在台账字段定义中登记**）、40000 |
 | 关联 FR | FR-M1-03、FR-M4-03、FR-M4-09、FR-M6-07 |
 
 > 说明：**同步存档表无写入口**（TC-31）；若 `{table}` 对应纯只读台账（如 `L02` / `L10`）则一律 40901。
@@ -253,9 +257,9 @@ sequenceDiagram
 |---|---|
 | 用途 | 提交集团登记（含关联单据清单、事项类型、金额、付款方式、湖南侧完成日期） |
 | 权限要求 | 综合运营主管（归口核心）；行范围 ALL |
-| 请求体 | 见 §4.5；支持 `Idempotency-Key` |
-| 响应字段 | 新建 `submission.id`、`submit_state`（无凭证 → 未提交） |
-| 错误码 | 40300、40000、40900（幂等冲突） |
+| 请求体 | 见 §4.5；支持 `Idempotency-Key`。★ `biz_no` **必填**（业务唯一键 + 去重锚点；SQLite 列级 `UNIQUE` 对 NULL 不生效，缺省会造成重复登记） |
+| 响应字段 | 新建 `submission.id`、`submit_state`（无凭证 → 未提交）；幂等复用额外含 `idempotent_replay: true` |
+| 错误码 | 40300、40000（缺 `biz_no` / 事项类型 / 日期格式 / 非法状态 / **无凭证登记「未提交」以外的状态**）、40900（同键异载荷的幂等冲突 / 业务单号重复） |
 | 关联 FR | FR-M6-01、FR-M6-02、FR-M6-05；3 个工作日内提交（FR-M6-03） |
 
 #### `GET /api/submission`
@@ -288,7 +292,7 @@ sequenceDiagram
 | 项 | 内容 |
 |---|---|
 | 用途 | 备付金余额**只读**展示（做法 A：综合运营主管审批前查看） |
-| 权限要求 | 综合运营主管（可加：主管领导只读，Q3 待定） |
+| 权限要求 | **综合运营主管**（登记岗，读写）+ **主管领导**（只读，做法 A）；项目总经理是否可见列入待确认 Q20（当前**不可见**） |
 | 请求参数 | `period`（可空，默认当月） |
 | 响应字段 | `issued_cents`、`spent_cents`、`balance_cents`、`as_of` |
 | 错误码 | 40300 |
@@ -324,7 +328,7 @@ sequenceDiagram
 | 项 | 内容 |
 |---|---|
 | 用途 | 审计日志查询（操作日志 + 状态变更史 + 越权留痕 + 导出留痕） |
-| 权限要求 | 系统管理员（ALL，只读）；项目总经理可查（只读，Q3 待定） |
+| 权限要求 | **系统管理员**（ALL，只读）+ **项目总经理**（只读）；其余角色默认拒绝（Q3 已定案） |
 | 请求参数 | `actor`、`role`、`action`、`resource`、`result`（allow/deny）、`date_from`、`date_to`、分页 |
 | 响应字段 | `items[]`：`actor_open_id`、`actor_role`、`action`、`resource`、`target_id`、`result`、`feishu_log_id`、`created_at` |
 | 错误码 | 40300 |
@@ -425,6 +429,66 @@ sequenceDiagram
 | 关联 FR | FR-M5-10、FR-M5-11 |
 | 备注 | 停用 / 改角色后**下一次请求即时生效**（每请求实时解析角色，不缓存决策，TC-11） |
 
+### 3.10 集团报销跟踪（M1）
+
+> ★ 口径：报销**不进入本办法审批流程**（五条前提第 ④ 条：报销类可提前支出、公户转账一律走集团），
+> 由人工走集团。本资源只承接「关联事前申请单号 → 初审 → 移交集团 → 集团付款」的**审批外登记**，
+> 供台账（L06 集团提交与付款衔接台账）与看板引用。与 §3.5 报送（`t_submission`）是**两条独立业务**：
+> 报送 = 湖南侧流程完成后的对外报送（含移交凭证 / 集团受理 / 驳回处置）；报销跟踪 = 报销类事前申请的单独跟踪（票据张数 / 初审状态 / 超支说明）。
+>
+> ★ 与 §3.5 / §3.6 同口径：**不进行·列权限矩阵**，只由处理器显式校验角色（避免「矩阵可配、处理器更严」的假配置，README 定案 #10）。
+
+#### `POST /api/reimbursement`
+
+| 项 | 内容 |
+|---|---|
+| 用途 | 集团报销跟踪登记（人工） |
+| 权限要求 | 综合运营主管（登记岗） |
+| 请求体 | ★ `src_biz_no` **必填**（关联事前申请单号，业务关联键）、`applicant_open_id`、`department`、`actual_cents`（**必须为正整数**）、`invoice_count`（≥0）、`review_state`、`handover_date`（`YYYY-MM-DD`） |
+| 响应字段 | `id`、`src_biz_no`、`actual_cents`、`amount_display` |
+| 错误码 | 40300、40000（缺 `src_biz_no` / 金额非正 / 票据张数为负 / 状态非法 / 日期格式） |
+| 关联 FR | FR-M1-02 |
+| 备注 | `review_state` 枚举：待初审 / 初审通过 / 初审退回 / 已移交集团 / 集团已付款（空 = 未填） |
+
+#### `GET /api/reimbursement`
+
+| 项 | 内容 |
+|---|---|
+| 用途 | 集团报销跟踪列表（分页） |
+| 权限要求 | 综合运营主管 / 主管领导 / 项目总经理 / 系统管理员（**只读**，服务端二次校验） |
+| 请求参数 | 筛选：`src_biz_no`、`department`、`review_state`；分页 `page` / `page_size`（上限 200） |
+| 响应字段 | `items[]`：`id`、`src_biz_no`、`applicant`、`department`、`actual_cents`+`amount_display`、`invoice_count`、`review_state`、`handover_date`、`paid_date`、`paid_cents`+`paid_display`、`overrun_note`、`source`（恒为 `人工登记`）、`created_at` |
+| 错误码 | 40300 |
+| 关联 FR | FR-M1-02 |
+
+#### `PATCH /api/reimbursement/{id}`
+
+| 项 | 内容 |
+|---|---|
+| 用途 | 更新报销跟踪记录（集团侧付款字段人工登记） |
+| 权限要求 | 综合运营主管 |
+| 请求体 | 至少一项：`review_state`、`handover_date`、`paid_date`、`paid_cents`、`overrun_note`（**指针语义**：未提供 = 不改动，可传空串清空文本字段） |
+| 响应字段 | `{id, updated:true}` |
+| 错误码 | 40300、40000（未提供任何字段 / 状态非法 / 日期格式 / 金额为负）、40400（记录不存在） |
+| 关联 FR | FR-M1-02 |
+| ★ | 集团侧字段**只接受人工传入值，不做任何派生或回填**（与 FR-M6-07 同源口径） |
+
+### 3.11 变更链回溯（M4）
+
+#### `GET /api/contract/{biz_no}/changes`
+
+| 项 | 内容 |
+|---|---|
+| 用途 | 按**合同号**回溯历次变更：**次数 / 累计变更金额 / 所取档位**（制度第五十二条） |
+| 权限要求 | 沿用台账口径：以资源 `ledger:L09`（例外事项台账）解析行·列规则；无权限 → 40300 且留痕 |
+| 行级 / 列级 | 行级过滤在 **SQL 层**（`RowFilter`），列级投影在**序列化层**（`Project`）；越权行不返回、无权列连字段名都不出现 |
+| 响应字段 | `contract_no`、`count`、`cumulative_change_cents`+`cumulative_change_display`、`amount_hidden`、`items[]`：`biz_no`、`instance_code`、`department`、`biz_date`、`change_cents`+`change_display`、`original_cents`+`original_display`、`tier`、`archive` |
+| 错误码 | 40000（合同号为空）、40300 |
+| 关联 FR | FR-M4-07 |
+| ★ 档位口径 | 变更审批档位 = **max（变更差额, 原合同金额）**（批复 A8，化整为零通道已关闭）。显式存了 `tier` 就用存的；否则按 max 现算并标注「max 取档 → …」 |
+| ★ 匹配方式 | 变更单指向原合同的 **JSON 键名尚未定稿（Q14）**，故匹配做成**键名无关的精确值比较**：`json_each(ext_json)` 展开对象后对**任意键的值**做等值比较（**绝不使用 `LIKE`**，防止 `ou_ab` 命中 `ou_abc` 式前缀越权，见 docs/06 §H.10 P0-A）；脏 JSON 由 `json_valid` 守卫，不使整条查询失败（同 §H.10 P0-B） |
+| 备注 | `ext_json` 键名候选：变更差额 `change_cents`/`change_amount_cents`/`delta_cents`；原合同金额 `original_cents`/`contract_cents`；档位 `tier`/`approval_tier`/`档位`。定稿后收敛为单键 |
+
 ---
 
 ## 4. 数据契约（关键对象 JSON 结构）
@@ -490,7 +554,7 @@ sequenceDiagram
 }
 ```
 
-> `archive` / `ops` 的具体键由 `t_ledger_field_def` 决定（Q14 待定）；无权限列被**移除**（不出现在 JSON）。
+> `archive` / `ops` 的具体键**口径属约定**（Q14 待定）：`ops` 的键名不受系统约束（写接口只按 `writable_fields` 白名单校验，见 §3.7）；`t_ledger_field_def` 当前**无写入通道**、仅承载 `is_sensitive` 敏感列清单（docs/06 §J.5 **B27**）。无权限列被**移除**（不出现在 JSON）。
 
 ### 4.4 看板指标（Dashboard）
 
@@ -599,7 +663,7 @@ sequenceDiagram
 | 场景 | 约定 |
 |---|---|
 | 事件接收（内部） | 幂等键 = **事件级唯一 ID**（2.0 版 `header.event_id` / 1.0 版 `uuid`，见架构 §4.3）；重复 → 200 直接返回，不新增。★ **不用 `instance_code + status`**（会吞掉驳回重提的第二次 PENDING） |
-| 报送登记 | 支持 `Idempotency-Key` 头；命中返回首次结果（409 仅在业务唯一键冲突时） |
+| 报送登记 | 支持 `Idempotency-Key` 头。**载荷指纹 = 规范化业务字段的 SHA-256**（业务单号 / 事项类型 / 金额 / 付款方式 / 湖南侧完成日期 / 提交日期 / 移交凭证号 / 状态 / 关联单据集合；**关联项按「单号:类型」排序后参与指纹，顺序不敏感**；「未传金额」与「传 0」视为不同载荷）。① **同键 + 同指纹 → 200 复用首次结果**（响应附 `idempotent_replay:true`，不重复落库）；② **同键 + 异指纹 → 40900**；③ 历史无指纹的键按**保守冲突**（40900）处理。★ 携带键但**业务单号重复** → 40900（唯一键路径，与幂等无关） |
 | 台账写（PATCH） | 天然幂等（按业务单号 UPSERT 运营字段）；重复提交同值不产生副作用 |
 | 对账补录 | 幂等 UPSERT，`source=reconcile` |
 
@@ -630,6 +694,8 @@ sequenceDiagram
 | `GET /api/instances`、`/fields`、`/{code}`、`/{code}/timeline` | FR-M2-01~07、FR-M3-04/05、FR-M7-02 |
 | `POST /api/submission`、`GET /api/submission`、`/package` | FR-M6-01~08、FR-M7-03 |
 | `GET /api/petty-cash/balance`、`POST /receipt`、`/monthly-close` | FR-M1-01/04/05/07 |
+| `POST /api/reimbursement`、`GET /api/reimbursement`、`PATCH /api/reimbursement/{id}` | FR-M1-02 |
+| `GET /api/contract/{biz_no}/changes` | FR-M4-07 |
 | `GET /api/audit/logs` | FR-M7-01~04 |
 | `GET /healthz`、`/readyz` | FR-M8-02、FR-M0-04/05 |
 | `POST /internal/sync/reconcile` | FR-M0-07、FR-M0-08 |
@@ -647,7 +713,7 @@ sequenceDiagram
 | Q6 | PO 是否独立单据 | `GET /api/ledger/L11`（订单执行台账数据源） | 按技术方案书 r1：PO 沿用 CT 号 |
 | Q7 | `####` 是否按月重置 | `biz_no_parts.seq` 语义 | 归档只读，不生成 |
 | Q8 | 代理人名单 | 角色解析 / 行范围 | 未实现代理模型，待定 |
-| Q14 | 运营表字段清单 | `PATCH /api/ledger/...` 的 `fields`、`ops` 键 | 由 `t_ledger_field_def` 决定，待定 |
+| ~~Q14~~ | 运营表字段清单 + 登记责任人 | `PATCH /api/ledger/...` 的 `fields`、`ops` 键；`t_permission_rule.writable_fields`；`t_ledger_field_def` | ★ **已闭合（2026-09-26）**：可写范围与责任人＝纯配置；字段定义已补写入通道（映射 `ledger_field`）并成为写接口键名白名单。详见 docs/06 §K |
 
 ---
 
@@ -657,3 +723,7 @@ sequenceDiagram
 |---|---|---|---|
 | V1.0 | 2026-09-26 | 首版。鉴权与会话、通用约定与错误码表、分模块业务接口、数据契约、幂等约定、飞书 4 接口、**明确不存在的接口**、FR 追溯与待确认影响。 | Bob（架构师） |
 | V1.1 | 2026-09-26 | **Q3 定案**：新增 **§3.9 系统管理（M5）** —— `GET/PUT /api/admin/permission-rules`、`GET/POST/PATCH /api/admin/users`；更新 §3 前言与 §11 Q3 行。 | 交付总监 |
+| V1.2 | 2026-09-26 | **幂等语义澄清（消除 B15 自相矛盾）**：§2.2 幂等头、§2.1 错误码 `40900`、§3.5 报送错误码、§8 报送登记四处统一为「**同键同载荷 → 200 复用首次结果；同键异载荷 → 40900**」，并写明载荷指纹构成（含关联项顺序不敏感、「未传金额」≠「传 0」）。对应实现 `internal/submission/idem.go`、TC-36 / TC-37。 | 交付总监 |
+| V1.3 | 2026-09-26 | **补齐两处缺口 + 一处口径硬化**：① §3.5 报送请求体标注 **`biz_no` 必填**（B20；SQLite 列级 `UNIQUE` 对 NULL 不生效，缺省会重复登记）；② 新增 **§3.10 集团报销跟踪（M1，FR-M1-02）** 与 **§3.11 变更链回溯（M4，FR-M4-07）**；③ §10 FR 追溯表补两行。 | 交付总监 |
+| V1.5 | 2026-09-26 | **Q14 定案实施轮**：§3.7 增「字段定义来源 / 键名白名单（40901）」；§3.6 台账列表补 **L11 派生视图**语义（`derived:true`、无写入口、不支持按 id 读）；§11 Q14 行改为**已闭合**。 | 交付总监 |
+| V1.4 | 2026-09-26 | **据实修正 Q14 相关的三处表述（B27）**：原写「`archive` / `ops` 的具体键由 `t_ledger_field_def` 决定」，核查后发现**该表无写入通道、也无读取消费端**（`UpsertLedgerFieldDef` / `ListLedgerFieldDefs` 均零调用者，仅 `SensitiveFields` 被台账列表/详情/变更链使用）。改为：① §3.7 增「字段名校验」行，明确只按 `writable_fields` 白名单校验、**不校验字段定义**，键名口径属**约定**；② §3.7 权限行补「`writable_fields` 为空 → 整体只读（40901）」；③ §4.3 注记与 §11 Q14 行按实情改写。**同时修正头部版本号**（原停留在 V1.0，而变更记录已到 V1.3）。 | 交付总监 |

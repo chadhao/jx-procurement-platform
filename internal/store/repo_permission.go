@@ -174,6 +174,33 @@ ON CONFLICT(ledger_type, field_key) DO UPDATE SET
 	return err
 }
 
+// LedgerFieldKeys 返回某台账类型**已登记**的字段键集合（无登记时返回空集合，不返回错误）。
+//
+// 用途（Q14-B 第 4 项）：让 `PATCH /api/ledger/{table}/{id}` 用「台账字段定义」做 `fields` 的
+// **键名白名单**——这样 `t_ledger_field_def` 才真正有消费端，不再是"配了没人读"的空表。
+//
+// ★ 语义：**该台账登记过字段定义 → 只接受登记过的键**；**未登记任何字段 → 不做键名限制**
+// （保持向后兼容，避免把既有部署的写入口一次性打死）。
+func (d *DB) LedgerFieldKeys(ctx context.Context, ledgerType string) (map[string]bool, error) {
+	rows, err := d.QueryContext(ctx,
+		`SELECT field_key FROM t_ledger_field_def WHERE ledger_type = ?`, ledgerType)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+	out := map[string]bool{}
+	for rows.Next() {
+		var k string
+		if err := rows.Scan(&k); err != nil {
+			return nil, err
+		}
+		// ★ 键名归一（去空白 + 小写）：写侧会用同一归一后的形式比对，
+		//   避免"登记时带空格/大写、写入时对不上"导致的整行写不进去（B34）。
+		out[strings.ToLower(strings.TrimSpace(k))] = true
+	}
+	return out, rows.Err()
+}
+
 // ListLedgerFieldDefs 列出某台账类型的字段定义。
 func (d *DB) ListLedgerFieldDefs(ctx context.Context, ledgerType string) ([]LedgerFieldDef, error) {
 	rows, err := d.QueryContext(ctx, `

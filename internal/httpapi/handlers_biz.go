@@ -246,6 +246,10 @@ func (d Deps) handleLedgerList(c echo.Context) error {
 		d.audit(ctx, &store.AuditLogRow{ActorOpenID: idn.OpenID, ActorRole: idn.Role, Action: "view", Resource: "ledger:" + table, Result: "deny"})
 		return fail(c, http.StatusForbidden, codeForbidden, "无权限访问该台账")
 	}
+	// 派生台账（L11 订单执行台账）走查询侧聚合，不读 t_ledger_archive 的 L11 行（Q14-B 第 2 项）。
+	if config.IsDerivedLedger(table) {
+		return d.handleLedgerDerivedList(c, idn, rule)
+	}
 	cond := permission.RowFilter("a", rule.RowScope, idn)
 	sensitive, _ := d.DB.SensitiveFields(ctx, table)
 	page, size, offset := pageParams(c)
@@ -267,11 +271,18 @@ func (d Deps) handleLedgerList(c echo.Context) error {
 	}
 
 	items := make([]map[string]any, 0, len(rows))
+	// L07 到货验收台账：批量取关联的 QC 检验结论（各写一行 + 查询侧关联，Q14-B 第 1 项）。
+	var qcByRelated map[string]store.LedgerArchive
+	if table == "L07" {
+		qcByRelated = d.loadLinkedInspections(ctx, rows, cond)
+	}
 	for _, a := range rows {
 		ops := d.loadOps(ctx, table, a.BizNo)
 		row := ledgerRowMap(a, ops, d.formulaFlags(ctx, table, a))
-		// ★ 列级投影在序列化阶段裁剪，无权限字段连字段名都不出现（TC-07）。
-		row = permission.Project(row, rule.ColumnAllow, rule.ColumnDeny, sensitive)
+		attachLinkedInspection(row, a, qcByRelated)
+		// ★ 列级投影在序列化阶段裁剪，无权限字段连字段名都不出现（TC-07）；
+		//   用递归版，使嵌套块（formula_flags / archive / inspection）同样受 deny 与敏感列约束（B19）。
+		row = permission.ProjectDeep(row, rule.ColumnAllow, rule.ColumnDeny, sensitive)
 		items = append(items, row)
 	}
 	d.audit(ctx, &store.AuditLogRow{ActorOpenID: idn.OpenID, ActorRole: idn.Role, Action: "view", Resource: "ledger:" + table, Result: "allow"})
@@ -293,6 +304,11 @@ func (d Deps) handleLedgerGet(c echo.Context) error {
 	if err != nil {
 		return fail(c, http.StatusBadRequest, codeBadRequest, "非法的记录 id")
 	}
+	// 派生台账的行在查询时聚合产生、没有稳定主键，故不支持按 id 读取。
+	if config.IsDerivedLedger(table) {
+		return fail(c, http.StatusBadRequest, codeBadRequest,
+			"该台账为派生视图（行由查询时聚合产生），不支持按 id 读取，请用列表接口")
+	}
 	sensitive, _ := d.DB.SensitiveFields(ctx, table)
 	cond := permission.RowFilter("a", rule.RowScope, idn)
 
@@ -307,7 +323,11 @@ func (d Deps) handleLedgerGet(c echo.Context) error {
 		return fail(c, http.StatusNotFound, codeNotFound, "记录不存在")
 	}
 	ops := d.loadOps(ctx, table, a.BizNo)
-	row := permission.Project(ledgerRowMap(*a, ops, d.formulaFlags(ctx, table, *a)), rule.ColumnAllow, rule.ColumnDeny, sensitive)
+	row := ledgerRowMap(*a, ops, d.formulaFlags(ctx, table, *a))
+	if table == "L07" {
+		attachLinkedInspection(row, *a, d.loadLinkedInspections(ctx, []store.LedgerArchive{*a}, cond))
+	}
+	row = permission.ProjectDeep(row, rule.ColumnAllow, rule.ColumnDeny, sensitive)
 	return ok(c, row)
 }
 
@@ -326,6 +346,11 @@ func (d Deps) handleLedgerPatch(c echo.Context) error {
 	if len(rule.WritableFields) == 0 {
 		return fail(c, http.StatusConflict, codeReadOnly, "该台账为只读同步存档表，无写入口")
 	}
+	// ★ 派生视图 / 只读汇总 / 本期未启用：一律无写入口（Q14 定稿 2026-09-26）。
+	if config.IsReadOnlyLedger(table) {
+		return fail(c, http.StatusConflict, codeReadOnly,
+			"该台账无写入口（派生视图 / 只读汇总 / 本期未启用）")
+	}
 	id, err := parseInt64(c.Param("id"))
 	if err != nil {
 		return fail(c, http.StatusBadRequest, codeBadRequest, "非法的记录 id")
@@ -337,6 +362,12 @@ func (d Deps) handleLedgerPatch(c echo.Context) error {
 	a, err := d.DB.GetArchiveByID(ctx, id)
 	if err != nil {
 		return fail(c, http.StatusNotFound, codeNotFound, "记录不存在")
+	}
+	// ★ 台账必须与 URL 一致（B36）：否则可用某台账的 id 往 ops 写一条挂在**别的台账**名下的记录，
+	//   而读侧按 (ledger_type, biz_no) 取 → 写进去了却读不到（错位数据）。
+	if a.LedgerType != table {
+		return fail(c, http.StatusBadRequest, codeBadRequest,
+			"记录不属于该台账：URL="+table+"，记录="+a.LedgerType)
 	}
 
 	var req struct {
@@ -350,10 +381,27 @@ func (d Deps) handleLedgerPatch(c echo.Context) error {
 	}
 
 	ops := d.loadOps(ctx, table, a.BizNo)
+	// 台账字段定义白名单（Q14-B 第 4 项）：该台账**登记过**字段定义时，只接受登记过的键名，
+	// 使 t_ledger_field_def 具备消费端（不再是"配了没人读"的空表）；未登记则不做键名限制（向后兼容）。
+	declared, err := d.DB.LedgerFieldKeys(ctx, table)
+	if err != nil {
+		return fail(c, http.StatusInternalServerError, codeInternal, err.Error())
+	}
+	// ★ 键名比较与 `permission.CanWrite` 同口径（TrimSpace + 忽略大小写），
+	//   否则会出现「白名单命中、字段定义未命中」的不一致（B34）。
 	for k, v := range req.Fields {
 		if !permission.CanWrite(rule, k) {
 			d.audit(ctx, &store.AuditLogRow{ActorOpenID: idn.OpenID, ActorRole: idn.Role, Action: "update", Resource: "ledger:" + table, TargetID: c.Param("id"), Result: "deny"})
 			return fail(c, http.StatusForbidden, codeForbidden, "字段不可写: "+k)
+		}
+		// ★ 仅当**该台账登记过字段定义**、且这是一个**未登记的新键**时才拒绝（B34）。
+		//   行内既有的历史键（登记字段定义之前就写进去的）予以放行 —— 否则前端“整行 ops 回写”
+		//   会因携带一个遗留键而**整行写不进去**（把无关字段一起挡住，代价远大于收益）。
+		if len(declared) > 0 && !declared[strings.ToLower(strings.TrimSpace(k))] {
+			if _, existed := ops[k]; !existed {
+				d.audit(ctx, &store.AuditLogRow{ActorOpenID: idn.OpenID, ActorRole: idn.Role, Action: "update", Resource: "ledger:" + table, TargetID: c.Param("id"), Result: "deny"})
+				return fail(c, http.StatusConflict, codeReadOnly, "字段未在台账字段定义中登记: "+k)
+			}
 		}
 		ops[k] = v
 	}
@@ -460,17 +508,17 @@ func (d Deps) formulaFlags(ctx context.Context, ledgerType string, a store.Ledge
 		}
 	}
 	if a.Supplier != "" && a.BizDate != "" && d.Maps != nil {
-		prefix := strings.ReplaceAll(a.BizDate, "-", "")
-		if len(prefix) > 4 {
-			prefix = prefix[:4]
-		}
-		if sum, err := d.DB.SumArchiveAmountBySupplierMonth(ctx, ledgerType, a.Supplier, prefix); err == nil {
+		// ★ 月份口径统一为 `YYYY-MM`（B32）：biz_date 全系统统一 `YYYY-MM-DD`，
+		//   取前 7 位即月份。原实现把连字符去掉再截前 4 位 → 得到 `"2026"`（整年），
+		//   与 `biz_date` 的存法对不上，「同供应商当月累计」实际统计的是**整年**。
+		month := monthKey(a.BizDate)
+		if sum, err := d.DB.SumArchiveAmountBySupplierMonth(ctx, ledgerType, a.Supplier, month); err == nil {
 			over := false
 			if th, ok := d.Maps.ThresholdCents("split_supplier_month"); ok {
 				over = sum >= th
 			}
 			flags["supplier_month_sum"] = map[string]any{
-				"supplier": a.Supplier, "month": prefix, "sum_cents": sum, "over_threshold": over,
+				"supplier": a.Supplier, "month": month, "sum_cents": sum, "over_threshold": over,
 			}
 		}
 	}

@@ -117,11 +117,14 @@ func (d *DB) CreateSubmission(ctx context.Context, s *Submission) (int64, error)
 	_, err := d.ExecContext(ctx, `
 INSERT INTO t_submission
   (biz_no, subject_type, amount_cents, pay_method, hn_finish_date, submit_date, receipt_ref, submit_state,
-   grp_accept_no, grp_state, paid_date, reject_reason, created_by, created_at, updated_at)
-VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+   grp_accept_no, grp_state, paid_date, reject_reason,
+   department, applicant_open_id, assigned_open_id, acceptors,
+   created_by, created_at, updated_at)
+VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
 		nullStr(s.BizNo), nullStr(s.SubjectType), s.AmountCents, nullStr(s.PayMethod),
 		nullStr(s.HNFinishDate), nullStr(s.SubmitDate), nullStr(s.ReceiptRef), s.SubmitState,
 		nullStr(s.GrpAcceptNo), nullStr(s.GrpState), nullStr(s.PaidDate), nullStr(s.RejectReason),
+		nullStr(s.Department), nullStr(s.ApplicantOpenID), nullStr(s.AssignedOpenID), nullStr(s.Acceptors),
 		nullStr(s.CreatedBy), fmtTime(now), fmtTime(now))
 	if err != nil {
 		return 0, fmt.Errorf("store: 新建报送登记失败: %w", err)
@@ -197,6 +200,7 @@ const submissionSelectSQL = `
 SELECT id, COALESCE(biz_no,''), COALESCE(subject_type,''), amount_cents, COALESCE(pay_method,''),
        COALESCE(hn_finish_date,''), COALESCE(submit_date,''), COALESCE(receipt_ref,''), submit_state,
        COALESCE(grp_accept_no,''), COALESCE(grp_state,''), COALESCE(paid_date,''), COALESCE(reject_reason,''),
+       COALESCE(department,''), COALESCE(applicant_open_id,''), COALESCE(assigned_open_id,''), COALESCE(acceptors,''),
        COALESCE(created_by,''), created_at, updated_at
 FROM t_submission`
 
@@ -211,7 +215,8 @@ func scanSubmission(s interface {
 	)
 	if err := s.Scan(&sub.ID, &sub.BizNo, &sub.SubjectType, &amount, &sub.PayMethod, &sub.HNFinishDate,
 		&sub.SubmitDate, &sub.ReceiptRef, &sub.SubmitState, &sub.GrpAcceptNo, &sub.GrpState, &sub.PaidDate,
-		&sub.RejectReason, &sub.CreatedBy, &created, &updated); err != nil {
+		&sub.RejectReason, &sub.Department, &sub.ApplicantOpenID, &sub.AssignedOpenID, &sub.Acceptors,
+		&sub.CreatedBy, &created, &updated); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, ErrNotFound
 		}
@@ -299,7 +304,7 @@ func (d *DB) GetPettyCashBalance(ctx context.Context, period string) (int64, err
 	return bal.Int64, nil
 }
 
-// InsertExpenseTrack 集团报销跟踪表人工登记。
+// InsertExpenseTrack 集团报销跟踪表人工登记（FR-M1-02）。
 func (d *DB) InsertExpenseTrack(ctx context.Context, srcBizNo, applicantOpenID, department string, actualCents int64, invoiceCount int, reviewState, handoverDate string) (int64, error) {
 	now := fmtTime(timeNow().UTC())
 	res, err := d.ExecContext(ctx, `
@@ -312,4 +317,134 @@ VALUES (?,?,?,?,?,?,?,?,?)`,
 		return 0, fmt.Errorf("store: 登记集团报销跟踪失败: %w", err)
 	}
 	return res.LastInsertId()
+}
+
+// ExpenseTrackFilter 集团报销跟踪表查询条件。
+type ExpenseTrackFilter struct {
+	Department  string
+	ReviewState string
+	SrcBizNo    string
+	Limit       int
+	Offset      int
+}
+
+// ListExpenseTracks 查询集团报销跟踪表（人工登记的审批外数据，FR-M1-02）。
+func (d *DB) ListExpenseTracks(ctx context.Context, f ExpenseTrackFilter) ([]ExpenseTrack, int64, error) {
+	where := []string{"1=1"}
+	args := []any{}
+	if s := strings.TrimSpace(f.Department); s != "" {
+		where = append(where, "department = ?")
+		args = append(args, s)
+	}
+	if s := strings.TrimSpace(f.ReviewState); s != "" {
+		where = append(where, "review_state = ?")
+		args = append(args, s)
+	}
+	if s := strings.TrimSpace(f.SrcBizNo); s != "" {
+		where = append(where, "src_biz_no = ?")
+		args = append(args, s)
+	}
+	clause := " WHERE " + strings.Join(where, " AND ")
+
+	var total int64
+	if err := d.QueryRowContext(ctx, "SELECT COUNT(*) FROM t_expense_track"+clause, args...).Scan(&total); err != nil {
+		return nil, 0, fmt.Errorf("store: 统计集团报销跟踪失败: %w", err)
+	}
+
+	limit := f.Limit
+	if limit <= 0 || limit > 200 {
+		limit = 50
+	}
+	pageArgs := append(append([]any{}, args...), limit, f.Offset)
+	rows, err := d.QueryContext(ctx, `
+SELECT id, COALESCE(src_biz_no,''), COALESCE(applicant_open_id,''), COALESCE(department,''),
+       actual_cents, invoice_count, COALESCE(review_state,''), COALESCE(handover_date,''),
+       COALESCE(paid_date,''), paid_cents, COALESCE(overrun_note,''), COALESCE(created_by,''),
+       created_at, updated_at
+FROM t_expense_track`+clause+` ORDER BY id DESC LIMIT ? OFFSET ?`, pageArgs...)
+	if err != nil {
+		return nil, 0, fmt.Errorf("store: 查询集团报销跟踪失败: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	var out []ExpenseTrack
+	for rows.Next() {
+		var (
+			e       ExpenseTrack
+			actual  sql.NullInt64
+			invoice sql.NullInt64
+			paid    sql.NullInt64
+			created string
+			updated string
+		)
+		if err := rows.Scan(&e.ID, &e.SrcBizNo, &e.ApplicantOpenID, &e.Department, &actual, &invoice,
+			&e.ReviewState, &e.HandoverDate, &e.PaidDate, &paid, &e.OverrunNote, &e.CreatedBy,
+			&created, &updated); err != nil {
+			return nil, 0, err
+		}
+		if actual.Valid {
+			v := actual.Int64
+			e.ActualCents = &v
+		}
+		if invoice.Valid {
+			v := int(invoice.Int64)
+			e.InvoiceCount = &v
+		}
+		if paid.Valid {
+			v := paid.Int64
+			e.PaidCents = &v
+		}
+		e.CreatedAt = parseTime(created)
+		e.UpdatedAt = parseTime(updated)
+		out = append(out, e)
+	}
+	return out, total, rows.Err()
+}
+
+// ExpenseTrackUpdate 集团报销跟踪表可更新字段（指针为 nil 表示「未提供、不改动」）。
+//
+// ★ 口径（FR-M6-07 同源）：集团侧字段只接受人工传入值，**不做任何派生 / 回填**。
+type ExpenseTrackUpdate struct {
+	ReviewState  *string
+	HandoverDate *string
+	PaidDate     *string
+	PaidCents    *int64
+	OverrunNote  *string
+}
+
+// UpdateExpenseTrack 更新集团报销跟踪表；返回是否命中记录。
+func (d *DB) UpdateExpenseTrack(ctx context.Context, id int64, u ExpenseTrackUpdate) (bool, error) {
+	set := make([]string, 0, 6)
+	args := make([]any, 0, 7)
+	appendStr := func(col string, v *string) {
+		if v == nil {
+			return
+		}
+		set = append(set, col+" = ?")
+		args = append(args, nullStr(strings.TrimSpace(*v)))
+	}
+	appendStr("review_state", u.ReviewState)
+	appendStr("handover_date", u.HandoverDate)
+	appendStr("paid_date", u.PaidDate)
+	appendStr("overrun_note", u.OverrunNote)
+	if u.PaidCents != nil {
+		set = append(set, "paid_cents = ?")
+		args = append(args, *u.PaidCents)
+	}
+	if len(set) == 0 {
+		return false, nil
+	}
+	set = append(set, "updated_at = ?")
+	args = append(args, fmtTime(timeNow().UTC()))
+	args = append(args, id)
+
+	res, err := d.ExecContext(ctx, "UPDATE t_expense_track SET "+strings.Join(set, ", ")+" WHERE id = ?", args...)
+	if err != nil {
+		return false, fmt.Errorf("store: 更新集团报销跟踪失败: %w", err)
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return false, err
+	}
+	return n > 0, nil
 }

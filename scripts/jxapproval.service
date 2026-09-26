@@ -17,6 +17,11 @@ EnvironmentFile=/etc/jxapproval/env
 ExecStart=/opt/jxapproval/jxapproval serve
 Restart=always
 RestartSec=5
+# 日志：追加写入文件，以便按大小 / 时间滚动（见 scripts/logrotate.d/jxapproval，FR-M8-08）。
+# LogsDirectory= 由 systemd 创建 /var/log/jxapproval 并设置属主，无需手工 chown。
+LogsDirectory=jxapproval
+StandardOutput=append:/var/log/jxapproval/app.log
+StandardError=append:/var/log/jxapproval/err.log
 # 单实例硬约束：不留并发启动窗口
 ExecStartPre=/usr/bin/flock -n /var/lock/jxapproval.lock -c /opt/jxapproval/scripts/preflight.sh
 # 优雅退出：先停长连接，再排空 worker

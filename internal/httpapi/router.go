@@ -84,6 +84,32 @@ func NewRouter(d Deps) *echo.Echo {
 	api.PATCH("/ledger/:table/:id", d.handleLedgerPatch)
 	api.GET("/audit/logs", d.handleAuditLogs)
 
+	// ---- 看板（M5，只读；行级过滤在 SQL 层、列级投影在序列化层）----
+	//	★ dashboard:{1..4} 权限资源按看板 id 分派，见 handlers_dashboard.go / docs/05-API.md §3.3。
+	api.GET("/dashboard/:id", d.handleDashboard)
+	api.GET("/dashboard/:id/export", d.handleDashboardExport)
+
+	// ---- 备付金（M1）/ 报送（M6）----
+	//	★ 两资源暂以角色口径显式鉴权（authorizeRole），不进入行·列权限矩阵，
+	//	  避免出现「矩阵可配但处理器更严」的假配置；待资源枚举入库后平滑迁移。
+	api.GET("/petty-cash/balance", d.handlePettyCashBalance)
+	api.POST("/petty-cash/receipt", d.handlePettyCashReceipt)
+	api.POST("/petty-cash/monthly-close", d.handlePettyCashMonthlyClose)
+	api.POST("/submission", d.handleCreateSubmission)
+	api.GET("/submission", d.handleListSubmissions)
+	api.GET("/submission/:id/package", d.handleSubmissionPackage)
+	api.POST("/submission/:id/receipt", d.handleRegisterSubmissionReceipt)
+	api.POST("/submission/:id/group", d.handleRegisterSubmissionGroup)
+	api.POST("/submission/:id/reject", d.handleRejectSubmission)
+
+	// ---- 集团报销跟踪表（M1，FR-M1-02；同上：角色口径显式鉴权，不进权限矩阵）----
+	api.POST("/reimbursement", d.handleCreateReimbursement)
+	api.GET("/reimbursement", d.handleListReimbursements)
+	api.PATCH("/reimbursement/:id", d.handlePatchReimbursement)
+
+	// ---- 变更链回溯（M4，FR-M4-07；按合同号查历次变更，行级过滤在 SQL 层）----
+	api.GET("/contract/:biz_no/changes", d.handleContractChanges)
+
 	// ---- 系统管理（M5，★ 仅「系统管理员」；服务端二次校验，见 handlers_admin.go）----
 	admin := api.Group("/admin")
 	admin.GET("/permission-rules", d.handleAdminPermissionRulesGet)

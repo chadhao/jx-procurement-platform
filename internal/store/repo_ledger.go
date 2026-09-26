@@ -202,14 +202,21 @@ FROM t_ledger_ops WHERE ledger_type = ? AND biz_no = ?`, ledgerType, bizNo)
 	return &o, nil
 }
 
-// SumArchiveAmountBySupplierMonth 统计同供应商在指定月份（biz_date 前缀，如 "2609"）的累计金额（分）。
+// SumArchiveAmountBySupplierMonth 统计同供应商在指定月份的累计金额（分）。
 // 用于「同供应商当月累计」防拆分公式列（FR-M4-04/05，含跨部门、跨品类）。
-func (d *DB) SumArchiveAmountBySupplierMonth(ctx context.Context, ledgerType, supplier, monthPrefix string) (int64, error) {
+//
+// ★ 月份参数格式为 **`YYYY-MM`**（如 `2026-09`）。`biz_date` 全系统统一为 `YYYY-MM-DD`
+// （B32），故用 `LIKE 'YYYY-MM%'` 精确落到该月——**不要**再传 `YYMM` 之类的旧格式。
+func (d *DB) SumArchiveAmountBySupplierMonth(ctx context.Context, ledgerType, supplier, month string) (int64, error) {
+	month = strings.TrimSpace(month)
+	if month == "" {
+		return 0, nil
+	}
 	var sum sql.NullInt64
 	err := d.QueryRowContext(ctx, `
 SELECT COALESCE(SUM(amount_cents),0) FROM t_ledger_archive
 WHERE ledger_type = ? AND supplier = ? AND biz_date LIKE ?`,
-		ledgerType, supplier, monthPrefix+"%").Scan(&sum)
+		ledgerType, supplier, month+"%").Scan(&sum)
 	if err != nil {
 		return 0, err
 	}

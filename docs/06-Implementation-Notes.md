@@ -2,7 +2,7 @@
 
 > 本文件为**工程侧补充记录**，不改动任何既有文档（PRD / UseCase / TestCase / 架构 / 接口 / README）。
 > 记录范围：落地 S0/S1 地基代码过程中发现的**文档间冲突 / 歧义**、采取的实现决策与遗留动作。
-> 编制：Alex（开发经理）· 版本：V0.1 · 对应代码 tag：`0.1.0-s0s1`
+> 编制：Alex（开发经理）· 版本：**V1.5**（§A–§B 为 S0/S1 原始记录，§G/§H 为 S2 与集成轮，§H.13 为第二轮对抗性复核，§I 为缺口补齐轮，§J 为模板建立配套轮，**§K 为 Q14 定案实施轮**）· 最新代码 tag：`0.2.0-s2`
 
 ## A. 已落地范围（S0/S1）
 
@@ -313,4 +313,667 @@ permission_update 条数= 1
 - 未修改 `docs/01-PRD.md`、`02-UseCase.md`、`03-TestCase.md`、`04-Architecture.md`、`05-API.md` 与仓库根 `README.md`；仅**新增本节 §G**。
 - 未引入 cgo（SQLite 全程 `modernc.org/sqlite`）；未使用 `npm install -g`；未新增第三方 Go 依赖（`go mod tidy` 无变化）。
 - 系统管理中数据视图为**运维只读、不含金额列**；「系统管理员」不参与任何业务审批。
+
+---
+
+## H. 集成轮实现说明（看板 + 备付金 + 报送 · 路由统一注册 · 前端构建）
+
+> 背景：S2 之后有两条并行交付（E1 = 看板 M5；E2 = 备付金 M1 + 报送 M6）。
+> 两者均**未自行注册路由、未构建前端**（遵「路由由主 Agent 统一注册」的约定），
+> 故本轮由主 Agent 完成**集成、补齐缺口、加测试、过门禁**。两名交付者均已结束，无法回问。
+
+### H.1 本轮范围
+
+| 项 | 内容 |
+|---|---|
+| 路由统一注册 | `internal/httpapi/router.go` 新增 **2 条看板 + 9 条备付金/报送**路由（共 11 条） |
+| 幂等语义修正 | 由「命中即 40900」改为「**同键同载荷 → 200 复用首次结果；同键异载荷 → 40900**」 |
+| 行过滤缺陷修正 | `ASSIGNED` / `PARTICIPATED` 行过滤由「只查 `t_ledger_archive.ext_json`」改为**双源匹配**（+ `t_ledger_ops.ops_json`） |
+| 前端幂等键修正 | 由「每次调用新生成键」改为「**按登记意图持有、成功后轮换**」（否则幂等形同虚设） |
+| 前端菜单口径对齐 | 备付金菜单去掉「项目总经理」（服务端 allow-list 本就不含该角色，原会造成「点得进、取数 40300」的假入口） |
+| 前端构建与内嵌 | `web/` → `web/dist` → `internal/webui/dist`（15 个产物）→ `go build` 单二进制通过 |
+
+### H.2 变更文件清单
+
+**新增**
+- `internal/submission/idem.go` —— 幂等载荷指纹（`IdemPayload` / `Fingerprint`，SHA-256，字段间以 `0x1F` 分隔防拼接歧义，项按 `单号:类型` 排序后参与指纹）
+- `internal/submission/idem_test.go` —— 5 个指纹单测（稳定性 / 顺序不敏感 / 空白不敏感 / 关键字段可区分 / 未传金额≠0 / 空单号项不参与 / 跨字段无歧义）
+- `internal/permission/dataset_test.go` —— 4 个双源行过滤回归测试
+- `internal/httpapi/router_test.go` —— 4 个**真实路由**集成测试（见 H.4）
+
+**修改**
+- `internal/httpapi/router.go` —— 注册 11 条新路由（含「两资源暂不进权限矩阵」的口径注释）
+- `internal/permission/dataset.go` —— `ScopeAssigned` / `ScopeParticipated` 双源匹配
+- `internal/submission/repo.go` —— `FindIdem` 返回 `*IdemRecord{SubmissionID, PayloadHash}`；`RecordIdem` 增 `payloadHash` 参数
+- `internal/httpapi/handlers_submission.go` —— 幂等三分支（首次 / 复用 / 冲突）+ `replaySubmission` + `submissionCreateBody` + `shortHint`（审计只落键的 SHA-256 前 8 字节，不落原键）
+- `internal/httpapi/submission_test.go` —— 原「命中即 409」用例拆为 4 个用例（见 H.4）
+- `web/src/api-m1m6.js` —— `createSubmission(payload, idempotencyKey)` 改为**外部传键**；导出 `genIdempotencyKey`
+- `web/src/views/Submission.vue` —— 持有 `idemKey` 跨重试复用、成功后轮换；新增 `submitting` 防抖；提示区分「新登记 / 幂等复用」
+- `web/src/App.vue` —— 备付金菜单可见性对齐服务端 allow-list
+- `internal/webui/dist/**` —— 前端产物重刷（含 `PettyCash-*.js`、`Submission-*.js`、`api-m1m6-*.js`、`Dashboard-*.css`）
+
+### H.3 主 Agent 裁定
+
+| 编号 | 事项 | 裁定 |
+|---|---|---|
+| **H-1** | 幂等键命中语义（交付方原实现「命中一律 40900」） | **改为三分支**：① 同键 + 同载荷 → **200**，响应体为首次登记结果并附 `idempotent_replay:true`；② 同键 + 异载荷 → **40900**；③ 历史无 `payload_hash` 的键 → 按**保守冲突**（40900）处理，不猜测。依据 `docs/05-API.md` §2.2「服务端命中则返回首次结果」与 §8「报送登记：命中返回首次结果，409 仅在业务唯一键冲突时」。**理由**：网络重试 / 重复点击是同一意图的同一载荷，一律 409 会让调用方无法区分「已成功」与「请求被改坏了」；而真正的键复用必须显式报错，否则静默丢弃写入意图。 |
+| **H-2** | `api:petty-cash` / `api:submission` 是否进行·列权限矩阵 | **不进**。两者已由处理器 `authorizeRole` 做**更严**的角色硬校验；若同时写进 `t_permission_rule`，会出现「矩阵可配、处理器更严」的**假配置**（改矩阵不生效，误导运维）。待资源枚举入库后统一迁移。 |
+| **H-3** | 备付金余额的可见角色 | **综合运营主管 + 主管领导**（依 FR-M1-04 与 API §3.6）。「项目总经理是否应可见」PRD 未列 → **暂按不可见**并列入待确认（H.7），**不擅自放宽**；前端菜单同口径，避免假入口。 |
+| **H-4** | `replaySubmission` 的响应形状 | 与首次登记**同一形状**（`id`/`biz_no`/`submit_state`/`overdue`），仅**附加** `idempotent_replay:true`。不复用 `submission.RecordMap`（那是列表用的更宽形状），避免同一接口出现两种响应结构。 |
+
+### H.4 测试清单（本轮新增 / 改写，共 13 个用例）
+
+**新增（9）**
+
+| 用例 | 断言要点 |
+|---|---|
+| `TestFingerprintStableAndOrderInsensitive` | 同载荷指纹稳定；**项顺序调换不改变指纹**；前后空白不影响 |
+| `TestFingerprintDistinguishesPayloads` | 业务单号 / 事项类型 / 完成日期 / 金额 / 凭证号 任一变化 → 指纹必变（否则幂等误复用） |
+| `TestFingerprintAmountZeroVsAbsent` | 「未传金额」与「传 0」指纹不同（不同登记意图） |
+| `TestFingerprintIgnoresEmptyItemNo` | 空单号关联项不参与指纹（与处理器「跳过空单号」一致） |
+| `TestFingerprintNoFieldConcatenationCollision` | `"AB"+"C"` 与 `"A"+"BC"` 指纹不同（跨字段无歧义） |
+| `TestRowFilterAssignedDualSource` | `ASSIGNED`：**仅 ops 命中** / **仅 archive 命中** / 双源都不命中 → 0 行 / 空身份 → 拒绝 |
+| `TestRowFilterParticipatedDualSource` | `PARTICIPATED` 同上（`acceptors` LIKE） |
+| `TestRowFilterAssignedNotCrossLedgerType` | 跨 `ledger_type` 不串行（`biz_no` 相同的不同台账类型不得互相命中） |
+| `TestRowFilterForInstancesStillDenies` | `t_instance` 的 `FOR_INSTANCES` 映射在 `DENY` 下仍为拒绝（fail-closed） |
+
+**新增 —— 真实路由集成（4）**
+
+| 用例 | 断言要点 |
+|---|---|
+| `TestRouterRegistersExpectedRoutes` | `e.Routes()` 含全部 **11 条新路由 + 15 条基线路由**；且**无重复注册**（Echo 路由冲突早发现） |
+| `TestRouterNewRoutesRequireSession` | 11 条新路由**不带会话**访问 → `401 / 40100`（未注册会是 404/SPA 兜底 → 本用例即失败） |
+| `TestRouterPettyCashRoleGateViaRealRouter` | 综合运营主管 / 主管领导 → 200；**项目总经理 → 40300**（与前端菜单同口径） |
+| `TestRouterSubmissionRoleGateViaRealRouter` | 综合运营主管可写 / 项目总经理可读**不可写** / 申请人 → 40300 |
+
+**改写（原 1 个 → 现 4 个）**
+
+| 原用例 | 现用例 | 变化 |
+|---|---|---|
+| `TestSubmissionIdempotencyKeyConflict`（断言「重复键 → 409」） | `TestSubmissionIdempotencySameKeySamePayloadReplays` | 改为断言 **200 + 同 id + `idempotent_replay:true` + 业务字段与首次一致 + 仅 1 行** |
+| ↑ 同上 | `TestSubmissionIdempotencySameKeyDifferentPayloadConflicts` | **同键异载荷 → 409**，且仍只 1 行 |
+| ↑ 同上 | `TestSubmissionIdempotencyItemsOrderInsensitive` | 关联项顺序不同但集合相同 → 200 复用（载荷等价） |
+| ↑ 同上 | `TestSubmissionIdempotencyNoKeyStillAllowsDuplicateBizNo` | 不带键时重复业务单号 → 40900（唯一键路径未被破坏） |
+
+> ★ 上面这条是本轮**最重要的测试缺口修复**：`submission_test.go` 自建最小 Echo，**完全不经过 `router.go`**，
+> 因此「路由漏注册」这类缺陷只有 `router_test.go` 能抓到。原 11 条路由若任一漏注册，
+> 前端页面会静默 404，而单元测试全绿。
+
+### H.5 验收命令原始输出
+
+```
+$ go version
+go version go1.24.5 windows/amd64
+
+$ gofmt -l .
+(空 —— 无未格式化文件)
+
+$ go build ./...
+(无输出 —— 编译通过)
+
+$ go vet ./...
+(无输出 —— 静态检查通过)
+
+$ go test ./... -count=1
+ok  	github.com/chadhao/jx-procurement-platform/internal/httpapi	1.153s
+ok  	github.com/chadhao/jx-procurement-platform/internal/inbox	0.684s
+ok  	github.com/chadhao/jx-procurement-platform/internal/permission	1.173s
+ok  	github.com/chadhao/jx-procurement-platform/internal/submission	0.819s
+ok  	github.com/chadhao/jx-procurement-platform/internal/worker	0.919s
+
+$ go test ./... -count=1 -v | grep -c '^--- PASS'
+53
+```
+
+前端构建（`web/`）：
+
+```
+$ npm run build
+vite v5.4.21 building for production...
+✓ 597 modules transformed.
+dist/index.html                             0.45 kB │ gzip:   0.33 kB
+dist/assets/Dashboard-CYsVrG5V.css          0.42 kB │ gzip:   0.21 kB
+dist/assets/index-BSKrx1J1.css              3.69 kB │ gzip:   1.30 kB
+dist/assets/api-m1m6-EZo7bu6Q.js            1.13 kB │ gzip:   0.68 kB
+dist/assets/PettyCash-C3g8Qe1-.js           4.69 kB │ gzip:   2.05 kB
+dist/assets/Submission-B9sRg7HK.js          7.33 kB │ gzip:   3.26 kB
+dist/assets/index-D1CIvhxP.js             101.06 kB │ gzip:  39.76 kB
+dist/assets/Dashboard-DeGGCbYZ.js       1,040.84 kB │ gzip: 346.23 kB
+✓ built in 4.04s
+```
+
+单二进制：`go build -o bin/jxapproval.exe ./cmd/jxapproval` → **20,452,352 B**（`internal/webui/dist` 15 个产物已内嵌）。
+
+### H.6 冲突与歧义记录（续 B / G，编号 B15–B18）
+
+| 编号 | 级别 | 冲突 / 现象 | 决策 |
+|---|---|---|---|
+| **B15** | 中 | API §2.2 / §8 说「命中返回首次结果」，而 §3.5 错误码列 `40900（幂等冲突）`；交付方按后者实现为「命中一律 409」→ **内部自相矛盾** | 以 §2.2 / §8 的**语义**为准并**澄清 §3.5 的 40900 仅指「同键异载荷」**（已同步 §3.5 与 §8 的措辞，见 H.9）。两处不再冲突 |
+| **B16** | 中 | 前端 `createSubmission` 每次调用 `genIdempotencyKey()` 新生成键 → **服务端幂等永不触发**（双击 = 两条记录），后端实现再正确也无效 | 改为**外部传键**：`Submission.vue` 按「登记意图」持有、成功后轮换、失败保留；并加 `submitting` 防抖。**前端不构成安全/正确性边界，但会架空后端机制**，属必须修 |
+| **B17** | 低 | `App.vue` 备付金菜单含「项目总经理」，但服务端 `handlePettyCashBalance` 只放行「综合运营主管 + 主管领导」→ 该角色点进去必 40300 | 菜单**收窄对齐**服务端（H-3）。「菜单可见性必须与服务端 allow-list 逐条对齐」已写进 `App.vue` 注释，防再犯 |
+| **B18** | 低（沿用 B14） | 本机 safe-delete 守卫在 `web/dist` 已存在且文件数超阈值时可能拒绝 `vite build` 清空 `outDir` | 本轮**未复现**（`npm run build` 一次通过）；`internal/webui/dist` 用 `rm -rf` + `cp -R` 重建，未受阻 |
+| **B19** | 低（潜伏） | `handlers_dashboard.go` 的 `projectResult` 对 `res.Supervision` **只投影 `handler_concentration` 列表项**，其**标量键**（`requester_as_handler_count` / `concentration_max_count` / `handler_total` / `split_threshold_cents`）**完全不经过列投影**；且该处用 `.([]map[string]any)` 类型断言，**断言失败即静默跳过投影**（无日志、无报错） | ① **当前无实际越权**：已核对 `Supervision` 现有键均为计数或政策阈值（`split_threshold_cents` 即 1,000 元防拆分阈值，非业务金额），且默认 `amountDeny` 的 3 个键（`amount_cents` / `amount_display` / `formula_flags`）在其中均不出现 → 定为 **P2 潜伏项**，不擅自改投影契约（改 `allow` 语义可能让合法数据消失，须与列口径一并定夺）。② 已列入 §H.12 建议项：**「标量键也走同一投影器 + 类型断言失败要记日志」**，建议在 Q14 定稿时一并处理 |
+
+### H.7 仍未解决 / 待确认（本轮新增 1 项，其余沿 G.5）
+
+- **★ 新增 Q20（低）**：**项目总经理是否应可见「备付金余额」？** PRD / API 均未列该角色（FR-M1-04 只写「供综合运营主管审批前查看」）。当前实现为**不可见**。若业务上「分管领导应能随时看到备付金余额」，需①在 `handlePettyCashBalance` 的 allow-list 加 `roleProjectGM`；②前端菜单同步放开；③`docs/05-API.md` §3.6 权限要求补记。**改数据/改一行代码即生效，无架构影响。**
+- Q1（高）、Q14（中）、Q17（高）、Q2、Q4 沿 G.5 / 早期记录不变。
+- `permission.Project` 递归投影（B9 彻底方案）仍待 Q14 定稿后一并处理。
+
+### H.8 纪律确认（本轮）
+
+- **未执行 `git commit` / `git push`**；工作区保留供复核与用户确认后再提交。
+- 未引入 cgo；未新增第三方 Go 依赖；未使用 `npm install -g`；前端构建**未触发任何下载**（`node_modules` 已存在）。
+- 未修改 `docs/01-PRD.md`、`02-UseCase.md`、`03-TestCase.md`、`04-Architecture.md`；本轮仅新增本节 §H 并按 H.9 澄清 `docs/05-API.md` 幂等措辞。
+
+### H.9 本轮同步的文档
+
+| 文档 | 改动 |
+|---|---|
+| `docs/05-API.md` | §2.2 幂等头、§3.5 错误码、§8 幂等约定 —— 三处措辞统一为「**同键同载荷 → 200 复用首次结果；同键异载荷 → 40900**」，消除 B15 的自相矛盾 |
+| `docs/06-Implementation-Notes.md` | 新增本节 §H |
+| `docs/03-TestCase.md` | 新增 **TC-36 / TC-37**（幂等复用 / 幂等冲突），覆盖矩阵同步 |
+| `docs/README.md` | 关键决策新增 **#9**（幂等三分支裁定）+ 版本行更新 |
+
+### H.10 自检追加修复：两个 P0 缺陷（均在集成复核阶段发现）
+
+集成完成后主 Agent 对「双源行过滤」做了一次对抗性自检（`LIKE` 语义复盘 + SQLite JSON 函数边界实测），
+查出**两个此前未暴露的 P0 缺陷**，均已修复并补回归测试。
+
+#### P0-A　`PARTICIPATED` 行过滤越权可见（前缀误命中）
+
+| 项 | 内容 |
+|---|---|
+| 现象 | 原实现 `json_extract(a.ext_json,'$.acceptors') LIKE '%'||me||'%'`。**open_id 之间存在前缀包含关系**（如 `ou_ab` 是 `ou_abc` 的前缀），故 `ou_ab` 会命中「验收人只有 `ou_abc`」的记录 |
+| 后果 | **行级权限被放大**——非验收人看到自己无权查看的记录。这是本系统「唯一不可替代价值」（行级权限）被直接击穿，属 P0 |
+| 影响面 | 存档表与运营表**两侧**（原实现两处都用 LIKE） |
+| 修复 | 改为对 JSON 数组**逐元素精确比较**：`EXISTS (SELECT 1 FROM json_each(col,'$.acceptors') WHERE json_each.value = ?)`。同时保留双源匹配（存档 + 运营） |
+| 回归测试 | `TestRowFilterParticipatedNoPrefixLeak`（4 个子用例，含存档/运营两侧的前缀对照）；`TestRowFilterAssignedNoPrefixLeak`（`ASSIGNED` 侧对照） |
+| 验证方法 | 旧实现下 `me="ou_ab"` 会返回 **2** 行（3001 含 `ou_abc` + 3002 含 `ou_ab`），新实现返回 **1** 行 → 测试为**真回归测试** |
+
+#### P0-B　脏 `ext_json` 会炸掉整条查询（潜伏缺陷，先于本轮即存在）
+
+| 项 | 内容 |
+|---|---|
+| 现象 | SQLite 的 `json_extract` / `json_each` 遇**非法 JSON** 会抛 `SQL logic error: malformed JSON`——这是**整条查询失败**，而非仅该行被过滤 |
+| 后果 | `t_ledger_archive.ext_json` / `t_ledger_ops.ops_json` 里**只要有一行被写脏**（人工补录、迁移截断、部分写入），台账列表 / 看板 / 实例查询**全部 500**，且现象是「整页打不开」而非「少一行」，极难定位。属 P0（可用性） |
+| 实测证据 | `json_each('not json','$.acceptors')` → `err=SQL logic error: malformed JSON`；`json_extract('not json','$.assigned_open_id')` → 同错。加上 `CASE WHEN json_valid(col)` 守卫后 → `err=<nil> count=0` |
+| 修复 | 新增两个生成器 `jsonScalarEquals` / `jsonArrayContains`，**统一外层套 `CASE WHEN json_valid(col) THEN … ELSE 0 END`**。★ 用 `CASE` 而非 `AND`：SQL **不保证** `AND` 操作数的求值顺序，只有 `CASE` 有条件求值保证（先判 JSON 合法性，再调用 JSON 函数） |
+| 回归测试 | `TestRowFilterMalformedJSONDoesNotBreakQuery`（脏行 + 空串 + 合法行混合，断言①合法行仍可见 ②脏行不被放行 ③不报错）；`TestRowFilterDenyAndEmptyFailClosed`（未知 scope / 空身份 fail-closed） |
+| 附带收益 | `json_each(col,'$.key')` 对**标量字符串、数组、键不存在、列为 NULL** 均安全（分别 1 行 / 逐元素 / 0 行 / 0 行，均不报错），故本次修复**同时兼容两种序列化形态**：标准数组 `["ou_a","ou_b"]` 与历史逗号串 `ou_a,ou_b`——后者退化为整体等值比较（**保守，宁可少不可多**），即 Q14 台账字段口径最终无论怎么定都不会越权放行 |
+
+> ★ 说明：P0-B 的**触发概率**低于 P0-A，但一旦触发即是「全面不可用」；
+> 两者的共同根因是「把 JSON 当字符串随手处理」。本次统一收敛到两个生成器函数，
+> 后续新增 scope 必须复用，不得再手写 `LIKE` / 裸 `json_extract`。
+
+**本轮用例总数变化**：53（集成前）→ **57**（顶层用例，含子用例 74 个断言点）。
+
+### H.11 交付物最终状态
+
+| 项 | 状态 |
+|---|---|
+| `gofmt -l .` | 空（无未格式化文件） |
+| `go build ./...` | 通过 |
+| `go vet ./...` | 通过 |
+| `go test ./... -count=1` | 5 个包全绿（顶层用例 **57**，子用例 **74**） |
+| 前端 `npm run build` | 通过（597 modules，无告警） |
+| `internal/webui/dist` | 15 个产物已刷新并内嵌 |
+| 单二进制 | `bin/jxapproval.exe` 20,452,352 B（**未入库**，`.gitignore` 已忽略 `/bin/`、`*.exe`） |
+| git 状态 | **未提交**（46 项变更待复核） |
+
+### H.12 建议项（不阻塞交付，待口径定稿时一并处理）
+
+| # | 建议 | 理由 | 建议时机 |
+|---|---|---|---|
+| 1 | **`projectResult` 对 `Supervision` 的标量键也施加列投影**，并去掉 `.([]map[string]any)` 类型断言（改 `switch` 兼容 `[]any` + **断言失败写 warn 日志**） | 见 B19：当前无越权，但「投影器静默跳过」是一类高危失败形态——投影漏了不会报错，只会悄悄多给数据 | Q14 台账/看板字段口径定稿时 |
+| 2 | **`permission.Project` 的 `allow` 语义需澄清**：现在 `allow` 非空时，未列入 allow 的键**一律删除**。这在看板场景下可能让合法指标消失 | 建议明确「`allow` 是白名单还是叠加放行」并补一个用例锁定语义 | 与建议 1 同批 |
+| 3 | **`jsonScalarEquals` / `jsonArrayContains` 收敛为唯一入口**，禁止再手写 `LIKE` 或裸 `json_extract` | 见 H.10 两个 P0 的共同根因 | 立即（已在代码注释中写明，可加 lint 检查） |
+| 4 | `internal/submission/repo.go` 复用 `t_audit_log` 存幂等键（`action='submission_idem'`）属**权宜之计**（避免新增迁移脚本） | 幂等键与审计日志混表：① 审计查询需排除该 action；② 无唯一约束，`FindIdem` → `RecordIdem` 为先查后写（TOCTOU）。**但重复数据风险为零**：`t_submission.biz_no` 有 `UNIQUE` 约束（migrations L273），同一载荷 → 同一 `biz_no` → 并发下第二个 INSERT 必被唯一约束拒绝。**实际影响仅限语义瑕疵**：极窄竞态窗口内，同键同载荷可能返回 `40900`（业务单号已存在）而非 `200` 复用——不产生脏数据，但调用方拿到的是「冲突」而非「已成功」。建议后续建独立表 `t_idem_key(key TEXT PRIMARY KEY, submission_id, payload_hash, created_at)`，以主键冲突替代先查后写 | 下个迭代（需迁移脚本） |
+| 5 | `docs/03-TestCase.md` §3 总览表此前漏列 TC-33~35（本轮已补） | 说明「新增用例须同步两处」——建议加一个校验脚本：解析 §4 的 `### TC-` 与 §3 表格行，二者必须一致 | 下个迭代 |
+
+## H.13 第二轮对抗性复核与修复（P0 ×2 / P1 ×2 / P2 ×6）
+
+> 背景：§H 集成完成后，主 Agent 派出**两个只读审查员**（一名 QA 对抗性复核、一名 FR 覆盖度审计），
+> 对 M1/M5/M6 三条业务链做独立挑刺。共收到 **1×P0 + 2×P1 + 13×P2**；其中 P0/P1 与 6 项 P2 本轮**已修并补回归测试**，
+> 其余列为建议项。**本轮全部为「读到的代码与自己写的代码互相打脸」，说明单侧自检不足以收敛。**
+
+### H.13.1 已修缺陷清单
+
+| 编号 | 级别 | 缺陷 | 根因 | 修复 | 回归测试 |
+|---|---|---|---|---|---|
+| **P0-1** | P0 | 幂等键「先查后写」竞态（TOCTOU）**＋** `biz_no` 为 NULL 时绕过 `UNIQUE` | `FindIdem → CreateSubmission → RecordIdem` 是**三条独立语句**；连接池 `SetMaxOpenConns(1)` 只串行化**单条语句**、**不串行化语句序列**，两并发请求可各自通过 `FindIdem` 后各建一条。且 SQLite **列级 `UNIQUE` 对 NULL 不生效**（实测：两条 `biz_no=NULL` 均可插入）→「未填业务单号」时业务唯一键形同虚设 | ① 新增迁移 `migrations/0002_idem_unique.sql`：幂等键建**部分唯一索引** `ux_audit_idem_key(target_id, actor_open_id) WHERE action='submission_idem'`；`t_submission(COALESCE(biz_no,''))` 建表达式唯一索引；② `Repo.CreateWithIdem` 在**单事务**内「**先占位幂等键 → 建报送 → 建关联项 → 回填 `submission_id`**」；③ `biz_no` **改为必填**（400） | `TestSubmissionConcurrentSameKeyOnlyOneRow`（8 并发 goroutine，断言最终**仅 1 行**）、`TestSubmissionConcurrentDifferentBizNoSameKeyIsolated`、`TestSubmissionIdemPartialUniqueIndexExists`、`TestSubmissionRequiresBizNo`、`TestSubmissionNoKeyRejectsDuplicateBizNo` |
+| **P1-1** | P1 | `/group`、`/reject` 可把状态静默写成「已付款 / 已驳回」，但读取路径 `ComputeSubmitState` 又按「无凭证视为未提交」**盖回「未提交」** | 写入路径与读取路径对「无凭证」的处理**不一致**：写时放行、读时回退 → 用户以为登记成功，实际被抹掉 | 任何状态（除「未提交」）**必须已有 `receipt_ref`**，否则 400；两条路径口径统一 | `TestSubmissionStateGuardRequiresReceipt` |
+| **P1-2** | P1 | 看板指标 `group_rejected_undisposed`（集团驳回未处置）是**全表 `COUNT(*)`**，而 `dashboard:4` 已种子给全部 10 个角色 → **行级越权**：无权看某报送的人也能从计数推断其存在问题 | 该指标由 `internal/dashboard` 独立 SQL 统计，**未接入行过滤**；看板的其它指标走了 `permission.Project`，唯独此处漏 | 新增 `permission.RowFilterForSubmission(scope, id)`（`t_submission` 无部门/申请人列，`ALL→1=1`、其余令牌与未知/DENY 分别降级为 `created_by=?` / `1=0`）；`dashboard.Query` 增 `SubmissionRowSQL/Args`，计数 SQL 拼接该条件 | `TestDashboardGroupRejectedScopedByRowScope`、`TestRowFilterForSubmissionScoping` |
+| **P2-2** | P2 | 看板 `period` 非法（如 `2026-13`）**静默退化为全历史**统计 | 未做格式校验，`LIKE '2026-13%'` 匹配 0 行后语义漂移 | `submission.NormalizePeriod` 校验 `YYYY-MM`，非法 → `errBadPeriod` → **400（40000）** | `TestDashboardInvalidPeriodRejected` |
+| **P2-3** | P2 | 幂等载荷指纹的 `单号:类型` 关联项分隔符用**逗号**，与业务单号内容可能含逗号冲突 → 不同载荷可能撞同一指纹 | 指纹拼接未用**输入中不可能出现的分隔符** | 字段内、字段间、项间**统一改为 `0x1F`（Unit Separator）** | `TestFingerprintNoItemDelimiterCollision`、`TestFingerprintItemCountMatters` |
+| **P2-6** | P2 | 测试名 `TestSubmissionIdempotencyNoKeyStillAllowsDuplicateBizNo` 与其断言（**拒绝**重复 `biz_no`）**语义相反**，会误导后来者 | 命名与行为不一致 | 更名 `TestSubmissionNoKeyRejectsDuplicateBizNo` | —— |
+| **P2-7** | P2 | `dataset_test.go` 的「空串 `ext_json`」子用例实际是**空操作**（存储层把空串规范化为 `{}`），未真正覆盖非法 JSON | 测的是被规范化后的输入 | 改为**真·非法 JSON**与**类型不匹配**（`ext_json` 为字符串而非对象）两类输入 | `TestRowFilterMalformedJSONDoesNotBreakQuery` |
+| **P2-8** | P2 | 幂等键**未按调用方隔离**：甲方登记的键被乙方复用时，乙方会读到**甲方的报送记录** | `FindIdem` 只按 `key` 查，未带 `actor` | `FindIdem(ctx, key, actor)` 加调用方维度；与 0002 迁移的**双列唯一索引**一致 | `TestSubmissionIdemKeyIsolatedPerActor` |
+
+> ★ **P0-1 推翻了 §H.12 建议项 4 的判断**：当时判「重复数据风险为零，因为 `t_submission.biz_no` 有 `UNIQUE`（migrations L273）」。
+> 该推理**只在 `biz_no` 非空时成立**；实现允许 `biz_no` 为空 → `NULL` 绕过 `UNIQUE` → 风险不为零。
+> 结论：**「有唯一约束」不等于「唯一性成立」，必须同时确认「键列 NOT NULL」**。这也是本轮把 `biz_no` 改为必填的实证依据。
+
+### H.13.2 本轮新增 / 改写用例（顶层 +12：57 → 69）
+
+| 文件 | 新增用例 |
+|---|---|
+| `internal/httpapi/submission_idem_test.go`（新） | `TestSubmissionConcurrentSameKeyOnlyOneRow`、`TestSubmissionConcurrentDifferentBizNoSameKeyIsolated`、`TestSubmissionIdemPartialUniqueIndexExists` |
+| `internal/httpapi/submission_test.go` | `TestSubmissionNoKeyRejectsDuplicateBizNo`（更名）、`TestSubmissionRequiresBizNo`、`TestSubmissionIdemKeyIsolatedPerActor`、`TestSubmissionStateGuardRequiresReceipt` |
+| `internal/httpapi/dashboard_test.go` | `TestDashboardAmountStrippedFromJSONAndExport`、`TestDashboardGroupRejectedScopedByRowScope`、`TestDashboardInvalidPeriodRejected` |
+| `internal/submission/idem_test.go` | `TestFingerprintNoItemDelimiterCollision`、`TestFingerprintItemCountMatters` |
+| `internal/permission/dataset_test.go` | `TestRowFilterParticipatedNoPrefixLeak`、`TestRowFilterAssignedNoPrefixLeak`、`TestRowFilterMalformedJSONDoesNotBreakQuery`、`TestRowFilterDenyAndEmptyFailClosed`、`TestRowFilterForSubmissionScoping`（P0-A/P0-B 回归，见 §H.10，计入上一轮） |
+
+**用例总数**（`go test ./... -count=1 -v` 实测）：顶层 `--- PASS` **69** 行；`--- PASS` 总行数（含子用例）**100** 行；5 个测试包全绿。
+
+### H.13.3 本轮变更文件（相对 §H）
+
+- **新增**：`migrations/0002_idem_unique.sql`、`internal/httpapi/submission_idem_test.go`
+- **修改**：`internal/submission/repo.go`（`CreateWithIdem` + 哨兵错误 + `FindIdem` 加 actor）、`internal/submission/idem.go`（分隔符 0x1F）、`internal/httpapi/handlers_submission.go`（`biz_no` 必填 + 三分支错误映射 + 状态守卫）、`internal/permission/dataset.go`（`RowFilterForSubmission`）、`internal/dashboard/dashboard.go`（`SubmissionRowSQL/Args`）、`internal/httpapi/handlers_dashboard.go`（`errBadPeriod` + `dashboardError`）
+
+### H.13.4 冲突与歧义（续 B15–B19，编号 B20–B21）
+
+| 编号 | 级别 | 冲突 / 现象 | 决策 |
+|---|---|---|---|
+| **B20** | 高 | API §3.5 未声明 `biz_no` 必填，实现此前也允许为空；而 §3.5 又列「业务单号重复 → 40900」——**在 `biz_no` 可为空时该约定不可能成立** | 三处口径收敛为「`biz_no` **必填**」（§3.5 请求体 + 错误码 + §4.5；缺失 → 40000）。理由：它是业务唯一键，也是幂等指纹的去重锚点；不填则重复登记无解 |
+| **B21** | 中 | `t_submission` **没有部门 / 申请人字段**，无法表达 `DEPT` / `CHARGE_DEPT` / `ASSIGNED` / `PARTICIPATED` 的真实语义 | 过渡口径：这些令牌统一降级为 `created_by = me`（保守收紧，**宁可少不可多**），未知 / `DENY` / 空身份 → `1=0`（fail-closed）。待 Q14 台账字段口径定稿后按真实列重建；此降级**绝不越权** |
+
+### H.13.5 仍未解决 / 待确认（本轮新增 0 项）
+
+沿 §H.7：Q1（高）、Q14（中）、Q17（高）、Q2、Q4、**Q20（低：项目总经理是否可见备付金余额）**不变。
+
+### H.13.6 纪律确认（本轮）
+
+- **未执行 `git commit` / `git push`**；工作区保留供复核与用户确认后再提交。
+- 未引入 cgo、未新增第三方 Go 依赖、未触发任何下载。
+- 本轮仅新增本节 §H.13 并同步 `docs/05-API.md` §3.5（`biz_no` 必填）、`docs/README.md`（决策 #9 措辞 + 新增版本行）。
+
+## I. 缺口补齐轮实现说明（M1 集团报销跟踪 · M4 变更链回溯 · 前端台账键纠正 · 归档与日志滚动）
+
+> 背景：第二轮对抗性复核之后，对照 FR 覆盖度审计列出的缺口，补做**尚未实现但 PRD 已列为必须 / 应该**的四项。
+> 本轮**不引入任何新表**——`t_expense_track` 自 S0/S1 起即存在，一直只有写入函数、没有读路径与页面（属「有表无功能」）。
+
+### I.1 本轮范围
+
+| 项 | 内容 | 对应 FR |
+|---|---|---|
+| 集团报销跟踪表 | `t_expense_track` 补齐**列表 / 更新**能力 + HTTP 接口 + 前端页（此前只有 `InsertExpenseTrack` 一个写入函数） | **FR-M1-02**（必须） |
+| 变更链回溯 | 按合同号回溯历次变更的**次数 / 累计金额 / 所取档位**；新增只读查询 | **FR-M4-07**（必须） |
+| 前端台账类型键纠正 | `Ledger.vue` 原本用 `purchase` / `expense` / `petty_cash` 三个**自造键**，与后端 `ledger_type`＝`L01..L12` 不匹配 → 台账列表**恒空**；改为按 `L01..L12` 枚举 | **FR-M4-01**（必须） |
+| 年度归档 | 新增 `scripts/archive-year.sh`（**只读导出**，不删在线数据） | **FR-M4-08**（应该） |
+| 日志滚动 | 新增 `scripts/logrotate.d/jxapproval`；`jxapproval.service` 增 `LogsDirectory=` + `StandardOutput/Error=append:` | **FR-M8-08**（应该） |
+
+### I.2 变更文件清单
+
+**新增**
+- `internal/httpapi/handlers_reimbursement.go` —— 集团报销跟踪登记 / 列表 / 更新（角色显式鉴权，同 §3.10）
+- `internal/httpapi/handlers_contract.go` —— 变更链回溯（复用台账 `ledger:L09` 的行·列权限）
+- `internal/store/repo_contract.go` —— `GetArchiveByKey`（按业务主键取台账行）与 `ListChangesByContract`
+- `internal/httpapi/m1m4_test.go` —— 9 个用例（见 I.4）
+- `web/src/ledgerTypes.js` —— `L01..L12` 台账类型枚举（唯一出处，供台账页与后续复用）
+- `web/src/views/Reimbursement.vue` —— 集团报销跟踪页（登记 / 查询 / 集团付款字段人工登记）
+- `scripts/archive-year.sh` —— 年度归档（CSV + SQL + MANIFEST + SHA256SUMS + tar.gz）
+- `scripts/logrotate.d/jxapproval` —— 日志滚动配置
+
+**修改**
+- `internal/store/models.go` —— 新增 `ExpenseTrack` 模型
+- `internal/store/repo_misc.go` —— `ExpenseTrackFilter` / `ListExpenseTracks` / `ExpenseTrackUpdate` / `UpdateExpenseTrack`
+- `internal/httpapi/router.go` —— 注册 **4 条新路由**（报销 3 + 变更链 1）
+- `internal/httpapi/router_test.go` —— `expectRoutes` 与会话保护用例同步补 4 条
+- `web/src/api.js` —— 追加 4 个 helper（不改动任何既有导出）
+- `web/src/views/Ledger.vue` —— 台账类型键改 `L01..L12` + 新增「变更链」面板
+- `web/src/router.js` / `web/src/App.vue` —— 新增 `/reimbursement` 路由与菜单项（菜单可见性与服务端 allow-list 逐条对齐）
+- `scripts/jxapproval.service` —— 日志落盘 + `LogsDirectory`
+
+### I.3 主 Agent 裁定
+
+| 编号 | 事项 | 裁定 |
+|---|---|---|
+| **I-1** | 报销跟踪与报送（§3.5）是否合并为一个资源 | **不合并**。二者业务对象不同：报送 = 湖南侧流程完成后的**对外报送**（移交凭证 / 集团受理 / 驳回处置）；报销跟踪 = **报销类事前申请**的单独跟踪（票据张数 / 初审状态 / 超支说明）。合并会让「无凭证视为未提交」这类报送专属判定污染报销行。 |
+| **I-2** | 变更链如何按合同号匹配（Q14 未定稿，键名未知） | **键名无关的精确值匹配**：`json_each(ext_json)` 展开对象后对**任意键的值**做等值比较。**刻意不用 `LIKE`**——`LIKE '%ou_ab%'` 会命中 `ou_abc`（与 §H.10 P0-A 同一根因）；**也刻意不写死 `$.contract_no`**——键名随 Q14 变，写死即脆。脏 JSON 由 `CASE WHEN json_valid(...)` 守卫（同 P0-B）。 |
+| **I-3** | 变更档位「所取档位」取值 | 台账里**显式存了 `tier` 就用存的**；未存时按 **max（变更差额, 原合同金额）** 现算并标注 `max 取档 → …`（批复 A8）。二者都缺（只有差额）时 `tier` 留空，**不猜测**。 |
+| **I-4** | 年度归档是否顺带删除在线数据 | **不删**。PRD FR-M4-08 验收标准原文「**归档后历史仍可查**」；脚本只导出，MANIFEST 中明写「未删除或改写任何在线数据」，在线库瘦身须**独立批准**后另行执行。 |
+| **I-5** | 台账类型键应由前端还是后端定义 | 后端 `ledger_type` 是权威（`L01..L12`）；前端新增**单一枚举出处** `ledgerTypes.js`，台账页从中取选项，避免再次各行其是（本次缺陷即「前端自造键、后端不认」）。 |
+
+### I.4 测试清单（本轮新增 5 个用例，顶层 69 → 74；另改写 2 个路由用例）
+
+| 用例 | 断言要点 |
+|---|---|
+| `TestReimbursementCreateListPatchRoles` | 综合运营主管建 + 改；主管领导 / 项目总经理可读；申请人读与写均 40300；`PATCH` 后 `paid_cents` 生效且 `source` 恒为「人工登记」 |
+| `TestReimbursementValidation` | 缺 `src_biz_no` / 金额非正 / 状态非法 / 日期格式 → 40000 |
+| `TestContractChangesBacktrace` | `count=2`（**键名不同的两笔都命中**）、累计金额之和、`tier` 为 `max 取档 → 5,000.00`；不相关合同与脏 JSON 行**不混入且不报错** |
+| `TestContractChangesRowScope` | 生产部主管只见本部门变更（`count=1`） |
+| `TestContractChangesDeniedRole` | 集团财务（默认拒绝）→ 40300 |
+| `TestRouterRegistersExpectedRoutes` / `TestRouterNewRoutesRequireSession`（**改写**） | `expectRoutes` 与会话保护用例补 4 条新路由，继续由**真实路由**抓「漏注册」 |
+
+**用例总数**（`go test ./... -count=1 -v` 实测）：顶层 `--- PASS` **74** 行；`--- PASS` 总行数（含子用例）**105** 行；5 个测试包全绿。
+
+### I.5 验收命令原始输出
+
+```
+$ gofmt -l .
+(空)
+
+$ go build ./...
+(无输出)
+
+$ go vet ./...
+(无输出)
+
+$ go test ./... -count=1
+ok  	github.com/chadhao/jx-procurement-platform/internal/httpapi	1.518s
+ok  	github.com/chadhao/jx-procurement-platform/internal/inbox	0.807s
+ok  	github.com/chadhao/jx-procurement-platform/internal/permission	1.454s
+ok  	github.com/chadhao/jx-procurement-platform/internal/submission	0.917s
+ok  	github.com/chadhao/jx-procurement-platform/internal/worker	0.974s
+
+$ npm run build        # web/
+✓ 599 modules transformed.   （含 Reimbursement-*.js、Ledger-*.js、api-*.js）
+```
+
+单二进制：`go build -o bin/jxapproval.exe ./cmd/jxapproval` → **20,524,032 B**。
+
+归档脚本实拍（临时库端到端）：`scripts/archive-year.sh` 对 2025 年度导出 2 行、生成 `MANIFEST.txt` / `SHA256SUMS.txt` / `archives.tar.gz`，
+并对无 `created_at` 的表（`t_event_inbox` / `t_ledger_ops` / `t_submission_item`）**显式跳过并记录原因**，不静默遗漏。
+
+### I.6 冲突与歧义（续 B15–B21，编号 B22–B23）
+
+| 编号 | 级别 | 冲突 / 现象 | 决策 |
+|---|---|---|---|
+| **B22** | 中 | `internal/store/repo_misc.go` 自 S0/S1 起就有 `InsertExpenseTrack`，前端 `Ledger.vue` 也早已有 `petty_cash` 选项——但**两者口径从未对齐**：报销跟踪有写无读、无页面；台账类型键自造。属「代码与文档都写了、功能却不可用」的**沉默缺口**，任何单测都抓不到（无调用即无失败） | 本轮补齐读路径与页面，并把台账类型键收敛为 `ledgerTypes.js` 单一出处。**教训：新增写入函数必须同时给出读路径或明确标注「仅供内部调用」，否则等于没做** |
+| **B23** | 低 | 归档脚本在 Windows 开发机（Git Bash）下，`sqlite3` CLI 输出编码随控制台代码页，可能与 shell 写入的 UTF-8 注释行不同；部署目标（Linux + UTF-8 locale）不受影响 | 记录为开发机观测现象；脚本本身按 UTF-8 语义编写，**不在脚本内做平台分支**（避免为开发机特例污染部署脚本） |
+
+### I.7 仍未解决 / 待确认（本轮新增 0 项）
+
+沿 §H.7 / §H.13.5：Q1（高）、Q14（中）、Q17（高）、Q2、Q4、Q20（低）不变。
+其中 **Q14 直接决定** I-2/I-3 的键名收敛（候选键 → 单键）与档位取值口径，建议优先推动。
+
+### I.8 纪律确认（本轮）
+
+- **未执行 `git commit` / `git push`**；工作区保留供复核与用户确认后提交。
+- 未引入 cgo、未新增第三方 Go 依赖、未触发任何下载（`node_modules` 已存在）。
+- 新增 `scripts/archive-year.sh` 已 `chmod +x`；`.gitignore` 已忽略 `/bin/`、`*.exe`。
+
+### I.9 本轮同步的文档
+
+| 文档 | 改动 |
+|---|---|
+| `docs/05-API.md` | 新增 **§3.10 集团报销跟踪**、**§3.11 变更链回溯**；§10 FR 追溯表补两行；版本 → **V1.3** |
+| `docs/03-TestCase.md` | 新增 **TC-40 / TC-41**；§3 总览、§5 高风险清单（第 19/20 项）、§6 覆盖矩阵（FR-M1-02、FR-M4-07）同步；版本 → **V1.4**，用例合计 **41** |
+| `docs/06-Implementation-Notes.md` | 新增本节 §I |
+| `README.md`（仓库根） | 版本段与相关产物路径更新（去掉「本地 git、暂不同步远端」的失效描述） |
+| `docs/README.md` | 版本行更新（03 / 05 / 06） |
+
+---
+
+## J. 模板建立配套轮实现说明（配置映射导入 · 规范字段抽取 · 模板建立指引）
+
+> 本轮起因：用户指令「先完成所有开发，**最后建模板**」。模板本身**不能由 API 建**
+> （开放平台限制，见 `07-Template-Build-Guide.md` §1），故本轮把「**让 11 张模板建成后可一次配通**」
+> 的全部工具补齐——**配置映射导入**与**规范字段抽取**。过程中发现并修复 **2 个 P0 缺陷**。
+
+### J.1 本轮范围
+
+1. **配置映射导入（Q1 闭合路径）**：`jxapproval import-config [--check] <file.json>`，
+   四类映射（`approval_code` / `field_id` / `ledger_type` / `threshold`）严格校验 + 幂等落库 + 回读自证。
+2. **规范字段抽取（FR-M2-08）**：`internal/worker/extract.go`，把 `field_id → biz_field` 映射的**结果**
+   真正落到 `t_instance` 规范列，并把非规范列字段汇入台账 `ext_json`。
+3. **模板建立指引**：`docs/07-Template-Build-Guide.md`（11 张模板的审批链 / 控件 / 采集步骤 / 订阅 / 自检）。
+4. 样例配置：`docs/reference/config-mapping.sample.json`。
+
+### J.2 ★ 本轮发现并修复的缺陷
+
+| 编号 | 级别 | 缺陷 | 根因 | 修复 |
+|---|---|---|---|---|
+| **P0-C** | **P0** | `t_instance.amount_cents` / `supplier` / `purpose_class_l1` / `purpose_class_l2` / `department` **恒为空**（生产路径） | `field_id → biz_field` 映射只被用于写 `t_instance_field`；**没有任何代码把值搬到规范列**。`InstanceDetail` 的 `AmountCents` / `Supplier` 等字段只有 `fake.go`（测试）在填 | 新增 `internal/worker/extract.go`：`ExtractDetail()` 按映射抽取，`Ingest` 中在 `ParseBizNo` **之前**调用（模板未走流水号控件时单号来自表单，须先抽取） |
+| **P0-D** | **P0** | `t_ledger_archive.ext_json` **被写死 `"{}"`** → **变更链回溯（FR-M4-07）恒为空** | 归档写入时硬编码空对象；而 `store.ListChangesByContract` 依赖 `json_each(ext_json)` 按**关联合同号**匹配 | 新增 `BuildExtJSON()`：把**已映射**字段汇总为 JSON（文本存为 JSON 字符串，保证 `json_each(...).value = '<合同号>'` 等值命中）；`Ingest` 改用它 |
+
+**这两个缺陷的共同特征**：**都不报错**，只是数据恒空。P0-C 使看板金额类指标为 0、防拆分「同供应商当月
+累计」失效、800–1,000 元抽查清单为空；P0-D 使变更链恒为空。**均属本项目最危险的「静默无数据」缺陷类**
+——与 §H.10 的 P0-A / P0-B（`biz_no` 为 NULL 绕过 UNIQUE、前端自造台账键导致列表恒空）同一族。
+
+> **纪律收获**：凡「配置映射」类机制，**必须验证映射的*消费端*真的读了映射结果**。
+> P0-C 的映射链路是「配置 → 映射表 → `t_instance_field`」，**缺最后一跳**；
+> P0-D 是「表里有列，但写入方写了常量」。两者用「跑一遍端到端、断言规范列非空」即可暴露——
+> 本轮起，`worker` 包的用例**一律做端到端断言**（入库后回读 `t_instance`），不再只断言解析函数。
+
+### J.3 主 Agent 裁定
+
+| # | 议题 | 裁定 |
+|---|---|---|
+| **J-1** | 样例文件里放占位符会不会被误导入 | 会，且后果是「写入一批指向不存在 `approval_code` 的映射 → 模板永远订阅不到事件、系统无数据、无报错」。→ **在 `Validate()` 里直接拒绝含 `REPLACE_ME` / `替换` / `TODO:` / `<待填>` 的取值**。代价：样例**必然**在填完前校验失败——这是**刻意的**，并已在 `07` 指引中说明 |
+| **J-2** | `biz_field` 写错一个字母怎么办 | 不阻断（业务可能需要新增字段名），但**必须可见**：登记「可抽取」9 个 + 「透传 `ext_json`」若干个，**不在册者导入时提示**（多为拼写错误）。若把 `amount` 写成 `amout`，若不提示则金额列恒空且无报错 |
+| **J-3** | `doc_type → ledger_type` 能否指向任意台账 | **不能**。写入模型是「一实例一行」，而 `L08` 是**手工主数据**、`L10` 是**只读汇总**、`L11` 是**派生**（数据源＝CT+GR）、`L12` **本期不启用**（架构 §3.4）。指向它们会往汇总表里逐单插行 → 台账数字翻倍。→ **导入层硬拦**，错误信息带成因说明 |
+| **J-4** | `L07` 的「检验结论」要求把 `QC` 并入 `GR` 行 | 当前写入模型是「一实例一行」，**做不到跨单据合成一行**。本轮**不预设结论**（属 **Q14**），已在 `07` §3.1 显式标记为待确认，并在 `06` §J.5 记录 |
+| **J-5** | 抽取匹配用控件中文名还是 `field_id` | 只用 `field_id → biz_field` **精确匹配**（大小写不敏感、去空白），**绝不按中文名模糊猜**。原因：模板改名极常见，按中文名匹配会在改名后**静默抽错列** |
+| **J-6** | 抽取时表单值能否覆盖接口值 | **不能**。接口的 `serial_number` / `open_id` 是权威值，抽取一律「**只填空、不覆盖**」，避免手填单号把系统流水号顶掉 |
+| **J-7** | `PC`（采购变更单）落哪张台账 | 落 **`L09` 例外事项台账**——因**采购变更属「例外流程三条」**（采购变更 / 独家采购 / 紧急采购）。故 `SS` 与 `PC` **两个 doc_type 同指 `L09`**（映射按 `doc_type` 键单一，允许 value 相同） |
+| **J-8** | `RFQ` / `BJ` / `QC` 是否落账 | **不落账**。它们不构成独立台账（`QC` 的结论并入 `L07`）。未配置 → **不写台账**，是设计意图而非遗漏；已在 `07` §3.1 写明 |
+| **J-9** | 阈值键与 `enum` 是否全部做成可配 | **只登记代码真正读的**。`purchase_tier` / `emergency_hours` / `submit_workdays` **当前无消费端** → 导入时**提示「假配置」**（不阻断，口径可先行登记）；`enum.*` **故意不纳入导入**——枚举值尚在代码里，做成可配而无人读就是重现 §J.2 P0-C 的同类缺陷。**新增阈值键必须同时有消费端**（决策 #24） |
+| **J-10** | 未登记的 `biz_field` 是阻断还是提示 | **提示**（写入 stderr、导入仍成功）。阻断会误伤业务新增字段；但**必须可见**——`amount` → `amout` 这类拼写错误若不提示，后果是金额列恒空且无报错 |
+
+### J.4 测试清单（本轮新增 21 个用例：`config` 11 + `worker` 10）
+
+| 包 | 用例 | 断言要点 |
+|---|---|---|
+| `config` | `TestImportValidateAcceptsValid` | 四类齐全的合法载荷通过 |
+| `config` | `TestImportValidateRejects`（19 子用例） | 逐条注入非法值**全部被拒**；含**占位符**、**指向非实例级台账**（`L08`/`L10`/`L11`/`L12` 各一） |
+| `config` | `TestImportPayloadRejectsUnknownField` | 未知顶层键报错（防拼错键名静默丢配置，`DisallowUnknownFields`） |
+| `config` | `TestLoadImportFileReportsPath` | 错误信息带文件路径（不存在 / 内容非法两条路径） |
+| `config` | `TestParseImportPayloadRoundTrip` | JSON 往返不丢字段 |
+| `config` | `TestImportMappingsIdempotent` | 两跑 30 条仍 30 行；同键改值可覆盖 |
+| `config` | `TestImportMappingsRejectsInvalidWithoutWriting` | 非法载荷**一行都不写**（整体拒绝） |
+| `config` | `TestImportMappingsReadback` | 四类映射均可经 `LoadMaps` 反查；阈值「元→分」、区间左闭右闭 |
+| `config` | `TestLedgerTypesWhitelistMatchesDocTypes` | `DocTypes` 11 类 / `LedgerTypes` 12 张；无重复 |
+| `config` | `TestPerInstanceLedgerWhitelist` | 实例级白名单 8 张（`L01–L07`+`L09`），恰好排除 `L08/L10/L11/L12`，且每个都有成因说明 |
+| `worker` | `TestParseAmountCents`（18 子用例） | 千分位 / 货币符号 / 四舍五入进位 / 负数 / 省略整数部分 / 拒绝科学计数法与溢出 |
+| `worker` | `TestParseAmountCentsObjectForm` | 金额控件返回对象形态时按 `amount`/`value` 取值 |
+| `worker` | `TestExtractDetailCanonicalFields` | 金额 / 供应商 / 用途 / 部门 / 申请人姓名各自**落到正确列** |
+| `worker` | `TestExtractDetailDoesNotOverrideAuthoritativeValues` | `serial_number` 与适配层已有的金额**不被表单值覆盖** |
+| `worker` | `TestExtractDetailIgnoresUnmappedFields` | 字段名叫「采购金额」但**未映射** → 不抽（不得按中文名猜） |
+| `worker` | `TestExtractDetailNilSafe` | 空 maps / 空 det 不 panic |
+| `worker` | `TestIngestExtractsIntoInstanceColumns` | **端到端**：入库后回读 `t_instance`，金额 = 100000 分、供应商 / 用途非空；台账落 `L04` 一行 |
+| `worker` | `TestBuildExtJSONCarriesMappedFields` | `ext_json` 含已映射字段、**不含未映射字段**；无映射返回 `{}` |
+| `worker` | `TestIngestArchiveExtJSONQueryable` | **端到端**：两笔变更单入库后，按关联合同号经 `json_each` 检索到 **2** 笔（原实现会得 0） |
+| `config` | `TestUnconsumedThresholdKeys` | 「已登记但无消费端」的阈值键被识别（`purchase_tier` / `submit_workdays`）；已消费键**不得误报** |
+| `worker` | `TestNonExtractableBizFields` | 既非抽取列也非透传的名字被提示；已登记字段（`contract_no`）不误报 |
+| `config` | `TestUnconsumedThresholdKeys` | 「已登记但无消费端」的阈值键被识别（`purchase_tier` / `submit_workdays`）；已消费键**不得误报** |
+
+**统计口径**（本轮实测，统一用 `grep -cE "^--- PASS"` / `PASS:`）：
+
+| 指标 | 本轮前 | 本轮后 |
+|---|---|---|
+| 顶层测试函数（`^func Test`） | 75 | **96** |
+| 顶层 `--- PASS` 行 | 75 | **96** |
+| `PASS:` 总行（含子测试） | ~105 | **147** |
+
+### J.5 冲突与歧义（续 B15–B23，编号 B24–B27）
+
+| 编号 | 级别 | 问题 | 现状与处置 |
+|---|---|---|---|
+| **B24** | **P0** | `field_id → biz_field` 映射**未被消费**，规范列恒空（见 §J.2 P0-C） | **已修**（`internal/worker/extract.go` + `Ingest` 调用点） |
+| **B25** | **P0** | `ext_json` 写死 `"{}"` → 变更链恒为空（见 §J.2 P0-D） | **已修**（`BuildExtJSON`） |
+| **B26** | 中 | `doc_type → ledger_type` 是 **1:1**，但业务上存在**跨单据合成一行**（`L07` ＝ `GR` + `QC`；§3.4 又说 `L11` 数据源＝`CT`+`GR`） | **部分处置**：导入层已拦住「指向非实例级台账」；**合成口径本身属 Q14，本轮不预设结论**，在 `07` §3.1 标记待确认 |
+| **B27** | 中 | **`t_ledger_field_def` 无写入通道、也基本无读取消费端**——`UpsertLedgerFieldDef` 与 `ListLedgerFieldDefs` **均为零调用者**（无 API 路由、`seed` 不写）；唯一消费端是 `SensitiveFields`（读 `is_sensitive=1`），被台账列表 / 详情 / 变更链 3 处使用 | **据实修正文档**：`05-API.md` 原写「`archive` / `ops` 的具体键由 `t_ledger_field_def` 决定」，实际**该表当前只承担「敏感列清单」一个职能**。故 **Q14 的「运营表字段清单」不能靠改配置落地**——要真正配置驱动，须先补一个写入端口（**属编码**）。已同步：本行 + `05-API.md` §3.7 / §4.3 注记 |
+
+> ★ **B27 的教训与 §J.2 同源**：又一处「文档说有配置、实际没有通道/没有消费端」。
+> 本轮三次遇到同一形态（P0-C 映射没消费端、P0-D 列写了常量、B27 表没写入通道），
+> 故在 `06` §J.3 **J-9** 已确立纪律：**新增配置键必须同时有消费端**；
+> 本行补充其对称条款——**文档宣称"由配置决定"时，必须同时存在写入通道与消费端**，
+> 否则应在文档中标「文档约定、尚未实现」。
+
+### J.6 仍未解决 / 待确认（本轮新增 1 项）
+
+沿 §H.13.5 / §I.7，另加：
+
+| # | 事项 | 说明 |
+|---|---|---|
+| **B27 衍生** | **是否为 `t_ledger_field_def` 补写入端口** | 若不补：Q14 的「字段清单」只能停留在文档约定，`ops` 键名不受任何约束（写接口只校验 `writable_fields` 白名单，不校验字段定义）。若补：需新增管理端点 + 后台页，属**编码**。**建议与 Q14 一并决策** |
+
+**Q14 的紧迫度上升**：`L07`＝`GR`+`QC` 的合成口径
+（B26）已成为「台账能否落对」的直接前提。
+
+### J.7 纪律确认（本轮）
+
+- **未执行 `git commit` / `git push`**；工作区保留，待用户确认。
+- **未触发任何下载**；未新增第三方 Go 依赖（仅用标准库 `encoding/json` / `math` / `strings`）、未引入 cgo。
+- 导入路径**幂等**已实测（连跑两次仍 30 行）；非法载荷**零写入**已实测。
+- CLI 已在**临时目录**的独立 DB 上冒烟（`import-config` 两次 + `--check`），**未触碰任何生产库**。
+
+### J.8 本轮同步的文档
+
+| 文档 | 改动 |
+|---|---|
+| `docs/07-Template-Build-Guide.md` | **新增**（11 张模板建立指引，项目最后一步） |
+| `docs/reference/config-mapping.sample.json` | **新增**（带占位符的配置样例） |
+| `docs/01-PRD.md` | 新增 **FR-M2-08**；版本 → **V1.2** |
+| `docs/06-Implementation-Notes.md` | 新增本节 §J |
+| `docs/03-TestCase.md` | 新增 **TC-42/43/44**；版本 → **V1.5**，用例合计 **44** |
+| `docs/README.md` | 版本行更新（01 / 03 / 06）+ 新增 07；关键定案 #18–#20 |
+| `README.md`（仓库根） | 补 `import-config` 子命令用法与 07 指引入口 |
+
+---
+
+## K. Q14 定案实施轮（六项编码改动）
+
+> 本轮起因：用户对《Q14 待确认清单》表态「**全部按你的建议执行**」——
+> 即 Q14 的**配置侧**（可写字段与登记责任人）按建议值**定案**，Q14-B 的**六项编码事项**按建议方案**实施**。
+> 这是 Q14 从「阻塞级别：中」转为「**已闭合**」的一轮。
+
+### K.1 本轮实施清单（对应 Q14-B 六项）
+
+| Q14-B 项 | 决定方案 | 落地 |
+|---|---|---|
+| 1 L07 检验结论 ＝ GR + QC | ① **各写一行 + 查询侧关联** | `handlers_ledger_derived.go`：`attachLinkedInspection` / `loadLinkedInspections`；QC 以 `ext_json.related_biz_no` 指向 GR |
+| 2 L11 订单执行台账 | ① **派生视图（不落行）** | `handleLedgerDerivedList` + `orderExecutionRow`；以 L04 为骨架、关联 L07 派生 |
+| 3 变更链键名收敛 | ② **收敛单键** | `store/ext_key`：`ExtKey`（`contract_no` / `related_biz_no`）+ `ListArchiveByExtKey(In)`；`ListChangesByContract` 改用 `json_extract('$.contract_no')` |
+| 4 `t_ledger_field_def` 写入端口 | ① 补通道（轻量版） | 新增第五类映射 `ledger_field`（`import-config`），**并让写接口消费它**（`fields` 键名白名单） |
+| 5 报送行级权限按真实列重建 | ① 按真实列重建 | `migrations/0003_submission_scope.sql` 加四列；`RowFilterForSubmission` 恢复四令牌真实语义 |
+| 6 看板列投影（B19） | ① 标量键同投影 + 断言失败记日志 | `permission.ProjectDeep` 递归投影；`projectResult` 整块投影 + 类型异常写 warn |
+
+**顺带**：因 #6 需要一个递归投影器，一并把台账行、变更链 `archive` 的**嵌套金额泄漏**一并修掉（同一根因，见 §K.2）。
+
+**顺带（前端）**：L11 改为派生视图后，**派生行没有 `id`** —— 前端台账页若继续用 `row.id`，会出现
+① `v-for :key` 全为 `undefined`（Vue 重复 key + 渲染异常）；② 「写运营字段」按钮对派生行发出必然失败的
+PATCH。故同步修 `web/src/views/Ledger.vue`：行键退用 `biz_no`、只读台账隐藏写按钮、并在标题旁标示
+「派生视图 / 只读」。`web/src/ledgerTypes.js` 新增 `READ_ONLY_LEDGER_TYPES` + `isReadOnlyLedger`，
+**与后端 `config.ReadOnlyLedgerTypes` 同口径**（两处口径不一致就会出现「必然 40901 的按钮」——见 §I-5 同类教训）。
+
+### K.2 ★ 本轮修掉的三处「静默」形态
+
+| # | 形态 | 后果（不报错） | 修法 |
+|---|---|---|---|
+| **P1-A** | 列投影只裁**顶层**键 | 台账 `formula_flags`、变更链 `archive`、看板 `Supervision` 里的金额/敏感标量**原样泄漏** | `ProjectDeep`：**deny 与敏感列在任意层级生效** |
+| **P1-B** | `ProjectDeep` 若把 `allow` 也递归套用 | 会把嵌套块的**结构键**一并删掉 → **丢合法数据** | 刻意不对称：**allow 只在顶层生效**（`keepKey` 只管顶层；`projectNested` 只做 deny 收缩） |
+| **P1-C** | 审核块/关联块的查询**漏加行级过滤** | 把**别部门**的检验结论挂到本部门行上 = 越权可见 | `loadLinkedInspections` / L11 派生 均传入 `permission.RowFilter` 的 SQL 与参数 |
+
+> 三者共同的教训与 §J 一致：**「不报错」不等于「对」**。故本轮新用例一律**端到端断言**（HTTP → 落库 → 回读），
+> 且**刻意包含「他部门数据不得挂过来」这一负向断言**。
+
+### K.3 主 Agent 裁定
+
+| # | 议题 | 裁定 |
+|---|---|---|
+| **K-1** | 变更链的键名收敛后，旧用例前提失效怎么办 | **改用例**，不改代码。旧用例断言「合同号写在 `related_contract` 这类**非约定键**上也必须命中」——那正是**键名未定时的兼容做法**；键名成为契约后，这种「猜任意键」会把**恰好等于合同号的无关值**也拉进来。故改为断言**非约定键不得命中**，并新增 `TestContractChangesSingleKeyContract` 固化该契约 |
+| **K-2** | `ledger_field` 白名单「部分启用」是否危险 | 采用 **「该台账登记过才校验、未登记不校验」**：一刀切强制会让**既有部署的写入口全被拒**（回归）。代价：白名单能力是**逐台账逐步生效**的——已在 `05-API` §3.7 写明 |
+| **K-3** | `ledger_field` 为何只开放 `ledger_type`/`field_key`/`is_sensitive` | 依纪律 **J-9**（新增配置键必须同时有消费端）：这三项分别被**写接口白名单**与 **`SensitiveFields`** 消费。`field_label`/`is_formula`/`formula_kind` **刻意不开放**——当前公式红标由 `formulaFlags` 在代码里现算，放进来就是"配了没人读"（**B27** 同一教训） |
+| **K-4** | `is_sensitive` 能不能随手填 | **不能**。它的语义是「**未显式 allow 即不可见**」——若把 `amount_cents` 标为敏感，而某角色规则里没有显式 allow，该角色的金额会**凭空消失**（默认口径靠 `column_deny` 已处理金额，无需在字段定义里重复）。故样例 **16 条全部 `is_sensitive=false`**，并在 07 指引中写明启用条件 |
+| **K-5** | 报送身份字段是否进幂等指纹 | **进**。同一 `biz_no` 换了归属部门 / 申请人 / 验收人，属**不同载荷**，不该被判「同键同载荷」而复用旧结果；`acceptors` 排序后参与（顺序不敏感） |
+| **K-6** | 派生行（L11）的主键与分页 | 派生行**无稳定主键** → 不支持按 id 读（400）、不支持写（40901）。分页与 `total` **以骨架表（合同台账）为准**，响应里 `derived:true` + `source:["L04","L07"]` 明示口径 |
+| **K-7** | 关联块取多份检验报告时取哪一份 | **保留较早的一份**（`id` 升序首条），避免结果随写入顺序抖动 |
+| **K-8** | L07 关联查询失败是否使整页失败 | **不**。关联块属**增强信息**，取不到只写 `warn` 日志并留空——但**必须留痕、不静默** |
+| **K-9** | `delay_days` 缺数据时取值 | **不产出该字段**（而非填 0）。`parseISODate` 解析失败即跳过，避免把「未到货」显示成「按期 0 天延期」 |
+| **K-10** | 嵌套投影 `[]map[string]any` 怎么处理 | `projectNested` 显式处理 `[]any` 与 `[]map[string]any` 两种；`ProjectDeep` 会把 `[]map[string]any` **规范化为 `[]any`**（测试已固化） |
+
+### K.4 本轮新增 / 改写的用例（顶层 96 → **110**；`PASS:` 行 147 → **179**）
+
+| 包 | 用例 | 断言要点 |
+|---|---|---|
+| `permission` | `TestProjectDeepDenyAndSensitiveAtAnyDepth` | deny 与敏感列**穿透任意层级**（含 `[]any` 元素内的金额） |
+| `permission` | `TestProjectDeepAllowOnlyTopLevel` | allow **不得**删掉嵌套块结构键（防「递归套用 allow 丢数据」） |
+| `permission` | `TestProjectDeepSupervisionScalars` | Supervision 的**标量键**也走投影（B19 原始症状）；`[]map[string]any` 规范化为 `[]any` |
+| `permission` | `TestProjectDeepMatchesProjectOnFlatRow` | 扁平行上与旧 `Project` **行为完全一致**（防回归） |
+| `permission` | `TestRowFilterForSubmissionScoping`（**重写**，18 子用例） | 四令牌**按真实列**断言（SELF/DEPT/CHARGE_DEPT/ASSIGNED/PARTICIPATED）；**前缀不同不得命中**（`ou_h` 不匹配 `ou_h_a`）；空身份/DENY/未知 scope → 0 |
+| `httpapi` | `TestLedgerL07LinkedInspection` | GR 行带上 QC 的结论；QC 行反向给出 GR；**脏 JSON 行不使整页失败** |
+| `httpapi` | `TestLedgerL07InspectionRespectsRowScope` | **他部门检验结论不得挂到本部门行**（越权负向断言） |
+| `httpapi` | `TestLedgerL11Derived` | 派生行数＝合同数；已到货有 `actual_arrival` 与 `delay_days=3`；未到货**不得出现** `delay_days` |
+| `httpapi` | `TestLedgerL11ReadOnly` | 写 → 40901；按 id 读 → 400 |
+| `httpapi` | `TestLedgerFieldWhitelist` | 已登记字段可写；**writable_fields 内但未登记字段 → 40901** |
+| `httpapi` | `TestLedgerFieldWhitelistAbsentKeepsBackwardCompat` | 未登记任何字段定义时**不做键名限制**（向后兼容，不把既有写入口打死） |
+| `httpapi` | `TestContractChangesBacktrace`（**改写**） | 单一键契约：非约定键**不得命中** |
+| `httpapi` | `TestContractChangesSingleKeyContract` | 键名写错 → 查不到；改用约定键 → 命中 |
+| `httpapi` | `TestExtKeyRelatedBizNo` | `ListArchiveByExtKey` + `ExtString`；**脏 JSON 不炸查询** |
+| `config` | `TestImportValidateRejects`（**+4 子用例**） | `ledger_field` 的台账键非法 / 字段名空 / 占位符 / 重复 |
+| `config` | `TestImportMappingsIdempotent`（**改写**） | 幂等含 `t_ledger_field_def`（两跑仍 2 条） |
+| `config` | `TestImportMappingsRejectsInvalidWithoutWriting`（**改写**） | 非法载荷对**两张表**都零写入 |
+| `httpapi` | `TestContractChangesHidesAmountFlavouredKeys`（**复核轮新增**） | **B31 回归**：禁金额角色在变更链的顶层与 `archive` 内都读不到金额类键；非金额键仍在；不禁金额角色照常可见 |
+| `permission` | `TestProjectDeepFlatRowHardcoded`（**复核轮改写**） | 扁平行行为用**硬编码期望键集合**固化（原写法是同义反复） |
+| `permission` | `TestIsAmountKey`（**复核轮新增**） | 金额类键名识别的**正反例**（`amount_note` / `cents` 不得误裁） |
+| `worker` | （本文件外） | — |
+
+> ★ 本轮**改写**了 3 个既有用例（`TestRowFilterForSubmissionScoping` / `TestContractChangesBacktrace` /
+> `TestDashboardGroupRejectedScopedByRowScope`）——它们断言的正是**本轮决定废弃的旧口径**。
+> 改写时**逐个写明「旧前提为何作废」**，避免后人误以为是为过测试而改断言。
+
+### K.5 冲突与歧义（续 B15–B27，编号 B28–B30）
+
+| 编号 | 级别 | 问题 | 现状与处置 |
+|---|---|---|---|
+| **B28** | 中 | 测试夹具 `seedArchiveExt` 把 `source_doc_type` **写死为 `"CT"`** | 它使 L07 的跨单据关联用例**走不通真实路径**（关联方向依赖单据类型）。本轮新增 `seedArchiveDoc`（可指定单据类型）并改用它；**旧 helper 保留**（其他用例仍在用）。★ 教训：夹具的「默认值」会悄悄缩窄被测路径 |
+| **B29** | 中 | `t_submission` 的两处写入点（`store.CreateSubmission` 与 `submission.CreateWithIdem`）与共享 `submissionSelectSQL`/`scanSubmission` **必须同步改列**，否则列数错位 | 本轮四处一并改齐并跑通用例；已在 §K.1 记录。**风险仍在**：该表列定义分散在 4 个位置，未来加列必须四处同改 |
+| **B30** | 低 | `seed` 的 `writable_fields` 是**一份清单套全部 `ledger:*`**（非逐台账），无法表达「L11 无写入口」 | 已由**代码层**兜住（`config.IsReadOnlyLedger` → 40901），不依赖种子精度；记录备查 |
+
+### K.6 仍未解决 / 待确认
+
+沿 §J.6。**Q14 已闭合**（配置侧定案 + 编码侧实施）。仍待外部输入：**Q1 / Q17 / Q2 / Q4**（模板与联调前置）。
+另：`L10 用途分类汇总台账` 按 Q14 决定**维持只读、不做派生视图**（汇总口径由看板承担）——故该台账查询返回空集是**设计意图**，非缺陷。
+
+### K.7 纪律确认（本轮）
+
+- **未执行 `git commit` / `git push`**（交用户确认）。
+- 未新增第三方依赖；未引入 cgo；未触发任何下载。
+- 新增迁移 `0003` 为 **ALTER TABLE ADD COLUMN**（SQLite 不支持 `IF NOT EXISTS`），由 `t_schema_migrations` 保证只执行一次；已在临时库实测三份迁移依次生效。
+- 含公式/金额的行级与列级约束**双向验证**：既验证「该看到的还在」，也验证「不该看到的（他部门、金额、前缀近似 open_id）确实不在」。
+
+### K.8 本轮同步的文档
+
+| 文档 | 改动 |
+|---|---|
+| `docs/01-PRD.md` | **Q14 标记已闭合**；§5.5 与 FR-M4-03 按定案改写；版本 → **V1.3** |
+| `docs/03-TestCase.md` | 新增 **TC-45~48**；用例合计 **44 → 48**；版本 → **V1.6** |
+| `docs/04-Architecture.md` | §3.4 台账表补「可写字段 / 登记责任人 / 派生·只读」；§3.3 补派生说明 |
+| `docs/05-API.md` | §3.6 补 L11 派生语义；§3.7 补字段定义白名单与 40901；§11 Q14 行改为已闭合；版本 → **V1.5** |
+| `docs/06-Implementation-Notes.md` | 新增本节 §K |
+| `docs/07-Template-Build-Guide.md` | 补第五类映射 `ledger_field` 与样例条数；版本 → **V1.1** |
+| `docs/README.md` | 关键定案 **#27–#31**；各版本行同步 |
+| `README.md`（仓库根） | 版本段补本轮 |
+
+### K.9 ★ 独立复核轮（子代理对抗性审查 · 2026-09-26）
+
+本轮改动**先经独立子代理对抗性复核**（只读、可自行取证、不许改文件），复核**确认了 1 个 P0 与若干 P1/P2**，
+全部已修。★ 结论：**「测试全绿」不等于「正确」**——被查出的 P0 在原有用例下**全部通过**。
+
+| 编号 | 级别 | 问题 | 修法 |
+|---|---|---|---|
+| **B31** | **P0（越权）** | **金额同义键绕过 deny**：`amountDeny` 写的是规范键 `amount_cents`，而变更链接口返回 `change_cents` / `original_cents` / `*_display`，且 `archive` 块里还有一份原样回出的 ext_json → **禁金额角色（采购经办人 / 验收人 / 系统管理员）照常读到金额，且不报错** | `permission`：新增 `isAmountKey`（**后缀规则**：`*_cents` / `*_display` / `amount` / `formula_flags`）＋ `AmountsDenied`；`ProjectDeep` 在规则禁金额时**于任意层级一并裁掉金额类键名**；`handleContractChanges` 据此置 `amount_hidden` 且不再输出汇总金额。★ 用**后缀规则**而非枚举，是为让将来新增的金额键名**自动被覆盖**——枚举漏一处就是一次越权 |
+| **B32** | **P1（静默无数据）** | ① **`biz_date` 生产端从不写入**（`Ingest` 未给该列赋值）→ L11 派生的到货字段、看板全部按月指标、「同供应商当月累计」**恒为空**；② **三种日期格式并存**：`SumArchiveAmountBySupplierMonth` 期望 `YYMM`、`formulaFlags` 去连字符后截 4 位得到 `"2026"`（**整年**）、看板期望 `YYYY-MM` | 口径统一为 **`biz_date` ＝ `YYYY-MM-DD`**（全系统唯一格式）：`Ingest` 写入 `occurred.Format("2006-01-02")`；新增唯一归一入口 `monthKey()`（`YYYY-MM`）；`SumArchiveAmountBySupplierMonth` 参数语义改为 `YYYY-MM`；`formulaFlags` 改用 `monthKey`。★ 原实现「同供应商当月累计」实际统计的是**整年**——防拆分指标本身是错的 |
+| **B33** | P1（假配置） | `original_biz_no` 被登记为「已知透传键」，但**无任何消费端**（既不读也不参与匹配）→ 诱导填表人以为"填了就生效" | 从 `PassthroughBizFields` **移除**；并把「不在册 = 导入时提示」的纪律写进该文件注释 |
+| **B34** | P2（可用性陷阱） | 字段定义白名单有两个不一致：① `declared[k]` 精确匹配 vs `CanWrite` 的 `EqualFold` → 「白名单命中、定义未命中」；② 前端「整行 ops 回写」一旦携带**遗留键**就**整行写不进去**（把无关字段一起挡住） | ① `LedgerFieldKeys` 与写侧统一 `TrimSpace + ToLower`；② 改为**只拒绝"未登记的**新**键"**——行内既有键放行 |
+| **B35** | P1（静默无数据） | 报送身份列在**真实路径**下无人写入（前端从不发送 department）→ `DEPT` / `CHARGE_DEPT` 过滤恒命中 0 条 | `handleCreateSubmission`：`department` 缺省时**退用登记人本人部门**（`GetUserRole`）；`applicant_open_id` 已退用登记人 |
+| **B36** | P2（错位数据） | `PATCH /api/ledger/{table}/{id}` 不校验「URL 台账 == 该行的 `ledger_type`」→ 可用某台账的 id 往 ops 写一条挂在**别的台账**名下的记录，读侧按 (ledger_type, biz_no) 取 → **写进去了却读不到** | 取到行后校验 `a.LedgerType != table` → 40000 |
+
+**同时修正的两处「测试通过但证明不了正确」**（复核专项指出）：
+
+| # | 问题 | 修法 |
+|---|---|---|
+| **P2-1** | `TestProjectDeepMatchesProjectOnFlatRow` **是同义反复**：`Project` 已委托给 `ProjectDeep`（同一实现），「两者输出一致」恒成立 | 改为 `TestProjectDeepFlatRowHardcoded`：逐例写出**硬编码的期望键集合**；另加 `TestIsAmountKey` 覆盖后缀规则的**正反例**（含 `amount_note` / `cents` 等**不得误裁**的反例） |
+| **P2-2** | `TestIngestArchiveExtJSONQueryable` **自造了一段 SQL**（且正是已废弃的"任意键名匹配"口径）→ 通过也证明不了生产路径 | 改为调用**生产入口** `store.ListArchiveByExtKey`，并补**反向断言**（非约定键不得命中） |
+
+**复核也明确记录了"检查过但未发现问题"的项**：L07 关联与 L11 派生的行级过滤、SQL 占位符绑定顺序、`[]map[string]any` 的规范化、
+`ProjectDeep` 的边界（空 map / 非 map / nil 值 / ASCII 大小写）、越权缺失路径（`hasAllow` 为空时仍裁敏感列）、参数注入面（键名一律来自常量或绑定参数）。
+
+> ★ 本轮**最值得记住的一条**：被查出的 P0（B31）在**原有 48 条用例下全部通过**——
+> 因为原用例只断言「规范金额键被裁」，没人断言「**同义键**也得被裁」。
+> 这与 §J 的 P0-C/P0-D、§K.2 的 P1-A 是同一族的第三次出现：
+> **「不报错」不等于「对」；「测试绿」也不等于「对」——要用负向断言把"不该出现的"钉住。**
 

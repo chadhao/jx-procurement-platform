@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -128,7 +129,79 @@ func ledgerRowMap(a store.LedgerArchive, ops map[string]any, flags map[string]an
 	return row
 }
 
+// firstNonEmptyStr 返回首个非空（去空白后）字符串。
+func firstNonEmptyStr(vals ...string) string {
+	for _, v := range vals {
+		if s := strings.TrimSpace(v); s != "" {
+			return s
+		}
+	}
+	return ""
+}
+
+// marshalStringList 把字符串切片序列化为 JSON 数组串（去空白、去空项、去重、升序）。
+// 全空时返回空串——空串不是合法 JSON，行过滤侧会退化为等值比较（即不放行），符合 fail-closed。
+func marshalStringList(vals []string) string {
+	list := normaliseStringList(vals)
+	if len(list) == 0 {
+		return ""
+	}
+	b, err := json.Marshal(list)
+	if err != nil {
+		return ""
+	}
+	return string(b)
+}
+
+// normaliseStringList 去空白、去空项、去重、升序（幂等与序列化共用同一规范化，避免两处口径漂移）。
+func normaliseStringList(vals []string) []string {
+	seen := map[string]bool{}
+	out := make([]string, 0, len(vals))
+	for _, v := range vals {
+		s := strings.TrimSpace(v)
+		if s == "" || seen[s] {
+			continue
+		}
+		seen[s] = true
+		out = append(out, s)
+	}
+	sort.Strings(out)
+	return out
+}
+
+// monthKey 把业务日期归一为月份的 `YYYY-MM` 键；无法识别时返回空串。
+//
+// ★ `biz_date` 全系统统一为 `YYYY-MM-DD`（B32）；此函数是**唯一**的月份归一入口，
+// 避免各处再各自 `ReplaceAll` / 截位（历史上正是这样产生了 `"2026"`（整年）这种错前缀）。
+func monthKey(v string) string {
+	s := strings.TrimSpace(v)
+	if len(s) >= 7 && (s[4] == '-' || s[4] == '/') {
+		return s[:4] + "-" + s[5:7]
+	}
+	return ""
+}
+
 // instanceFilterCondition 组装实例行过滤条件。
 func instanceRowCondition(rule permission.Rule, id permission.Identity) permission.Condition {
 	return permission.RowFilterForInstances(rule.RowScope, id)
+}
+
+// parseISODate 把 any 形态的日期（string / time.Time）解析为 `YYYY-MM-DD` 日期。
+// 解析不出来返回 false —— 调用方据此**不产出该字段**，而不是臆造成 0（延期天数等）。
+func parseISODate(v any) (time.Time, bool) {
+	switch t := v.(type) {
+	case time.Time:
+		return t, true
+	case string:
+		s := strings.TrimSpace(t)
+		if s == "" {
+			return time.Time{}, false
+		}
+		for _, layout := range []string{"2006-01-02", "2006/01/02", time.RFC3339} {
+			if d, err := time.Parse(layout, s); err == nil {
+				return d, true
+			}
+		}
+	}
+	return time.Time{}, false
 }

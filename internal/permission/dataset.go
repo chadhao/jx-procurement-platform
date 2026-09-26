@@ -104,18 +104,75 @@ func RowFilter(alias string, scope RowScope, id Identity) Condition {
 		if me == "" {
 			return Condition{SQL: "1=0"}
 		}
-		// 指定经办人位于运营/扩展字段（口径 Q14 待定）；此处按约定键读取。
-		return Condition{SQL: "json_extract(" + col("ext_json") + ",'$.assigned_open_id') = ?", Args: []any{me}}
+		// ★ 双源匹配（2026-09-26 修正）：指定经办人可能落在「存档表 ext_json」或「运营表 ops_json」
+		// 任一处（口径 Q14 未定）→ 只看存档表会让「采购经办人」看到 0 条记录。两者命中其一即可见。
+		return Condition{
+			SQL: "(" + jsonScalarEquals(col("ext_json"), "$.assigned_open_id") + " OR EXISTS (" +
+				"SELECT 1 FROM t_ledger_ops o WHERE o.ledger_type = " + col("ledger_type") +
+				" AND o.biz_no = " + col("biz_no") +
+				" AND " + jsonScalarEquals("o.ops_json", "$.assigned_open_id") + "))",
+			Args: []any{me, me},
+		}
 
 	case ScopeParticipated:
 		if me == "" {
 			return Condition{SQL: "1=0"}
 		}
-		return Condition{SQL: "json_extract(" + col("ext_json") + ",'$.acceptors') LIKE ?", Args: []any{"%" + me + "%"}}
+		// ★ 同上：验收人集合同样双源匹配（存档 ext_json 或运营表 ops_json）。
+		// ★★ 必须是**逐元素精确匹配**，不得用 `LIKE '%me%'`：
+		//	open_id 之间存在前缀包含关系（如 "ou_ab" 是 "ou_abc" 的前缀），子串匹配会把
+		//	「只含 ou_abc」的记录判给 "ou_ab" → **越权可见**。
+		return Condition{
+			SQL: "(" + jsonArrayContains(col("ext_json"), "$.acceptors") + " OR EXISTS (" +
+				"SELECT 1 FROM t_ledger_ops o WHERE o.ledger_type = " + col("ledger_type") +
+				" AND o.biz_no = " + col("biz_no") +
+				" AND " + jsonArrayContains("o.ops_json", "$.acceptors") + "))",
+			Args: []any{me, me},
+		}
 
 	default: // ScopeDeny 或未知 → 拒绝
 		return Condition{SQL: "1=0"}
 	}
+}
+
+// jsonScalarEquals 生成「JSON 标量字段等于 :me」的谓词，占位符恰好 1 个。
+//
+// ★ 为什么必须套 `CASE WHEN json_valid(col)`：SQLite 的 JSON 函数遇到非法 JSON 会抛
+// `SQL logic error: malformed JSON` —— 这是**整条查询失败**（而非仅该行被过滤）。
+// 即 `ext_json` 里只要有一行被写脏，整个台账列表/看板/实例查询就全部 500。
+// 用 `CASE` 而非 `AND` 是因为 SQL 不保证 `AND` 操作数的求值顺序，`CASE` 才有条件求值保证。
+func jsonScalarEquals(jsonCol, path string) string {
+	return "(CASE WHEN json_valid(" + jsonCol + ") THEN json_extract(" + jsonCol + ",'" + path +
+		"') = ? ELSE 0 END)"
+}
+
+// jsonArrayContains 生成「JSON 数组字段含 :me 元素」的**精确匹配**谓词，占位符恰好 1 个。
+//
+// `json_each(col,'$.key')` 对标量字符串、数组、键不存在、列为 NULL 均安全
+// （分别是 1 行 / 逐元素 / 0 行 / 0 行，均不报错）。
+//
+// ★ 非法 JSON 的处置是 `ELSE 0`（**不放行**）——历史注释曾写成“退化为整体等值比较”，
+//
+//	与实现相反。以代码为准：脏 JSON 行**不参与匹配**（fail-closed）。
+//	若确需兼容普通文本列，请用 `textOrJSONContains`（它对非法 JSON 走整体等值，占位符 2 个）。
+func jsonArrayContains(jsonCol, path string) string {
+	return "(CASE WHEN json_valid(" + jsonCol + ") THEN EXISTS (SELECT 1 FROM json_each(" +
+		jsonCol + ",'" + path + "') WHERE json_each.value = ?) ELSE 0 END)"
+}
+
+// textOrJSONContains 生成「可能是 JSON 数组、也可能是普通文本」的列的**精确匹配**谓词，占位符 2 个。
+//
+// ★ 用于 t_submission 的 `assigned_open_id` / `acceptors` 这类**普通 TEXT 列**（非 ext_json）：
+//
+//	JSON 合法 → `json_each(col,'$')` 展开后逐元素比较（数组、标量、对象成员均可）；
+//	非法/普通文本 → 退化为**整体等值比较**（宁可少不可多，绝不越权）。
+//
+// ★ 仍然绝不用 LIKE：open_id 之间存在前缀包含关系（`ou_ab` 是 `ou_abc` 的前缀），
+//
+//	子串匹配会把「只含 ou_abc」的记录判给 `ou_ab` → 越权可见。
+func textOrJSONContains(col string) string {
+	return "(CASE WHEN json_valid(" + col + ") THEN EXISTS (SELECT 1 FROM json_each(" +
+		col + ",'$') WHERE json_each.value = ?) ELSE " + col + " = ? END)"
 }
 
 // RowFilterForInstances 针对 t_instance（无 ext_json 列）的行过滤。
@@ -126,6 +183,74 @@ func RowFilterForInstances(scope RowScope, id Identity) Condition {
 		return Condition{SQL: "1=0"}
 	default:
 		return RowFilter("", scope, id)
+	}
+}
+
+// RowFilterForSubmission 针对 t_submission（报送登记）的行过滤。
+//
+// ★ 为什么必须收敛：异常面板的「集团驳回后未处置」等指标原为**全表 COUNT(*)**，
+// 而默认种子把 `dashboard:4` 发给了**全部 10 个角色**（含申请人 SELF、采购经办人 ASSIGNED、
+// 验收人 PARTICIPATED）→ 任何能打开该看板的角色都会拿到自己无权查看的**全局聚合值**：
+// 既是行级越权，也让「指标数字」与「他实际能看到的数据」互相矛盾（对账时必然对不上）。
+//
+// ★ Q14-B 第 5 项（2026-09-26 决定「按真实列重建」）：migrations/0003 为 t_submission 补上了
+// `department` / `applicant_open_id` / `assigned_open_id` / `acceptors` 四列，故四个令牌
+// **不再降级为 `created_by = me`**（原降级见 docs/06 B21），恢复其应有语义：
+//
+//	SELF          → applicant_open_id = me
+//	DEPT          → department IN (本人部门 + 兼任部门)
+//	CHARGE_DEPT   → department IN (分管部门)
+//	ASSIGNED      → assigned_open_id 含 me（标量或数组均可，精确匹配）
+//	PARTICIPATED  → acceptors 含 me（同上）
+//
+// 未知 / DENY / 空身份 → `1=0`（fail-closed，绝不越权）。
+func RowFilterForSubmission(scope RowScope, id Identity, alias string) Condition {
+	if alias == "" {
+		alias = "s"
+	}
+	col := func(name string) string { return alias + "." + name }
+	me := strings.TrimSpace(id.OpenID)
+
+	switch scope {
+	case ScopeAll:
+		return Condition{SQL: "1=1"}
+
+	case ScopeSelf:
+		if me == "" {
+			return Condition{SQL: "1=0"}
+		}
+		return Condition{SQL: col("applicant_open_id") + " = ?", Args: []any{me}}
+
+	case ScopeDept:
+		depts := uniqueNonEmpty(append([]string{id.Department}, id.ExtraDepts...))
+		if len(depts) == 0 {
+			return Condition{SQL: "1=0"}
+		}
+		return Condition{SQL: col("department") + " IN (" + placeholders(len(depts)) + ")", Args: toAny(depts)}
+
+	case ScopeChargeDept:
+		depts := uniqueNonEmpty(id.ExtraDepts)
+		if len(depts) == 0 {
+			return Condition{SQL: "1=0"}
+		}
+		return Condition{SQL: col("department") + " IN (" + placeholders(len(depts)) + ")", Args: toAny(depts)}
+
+	case ScopeAssigned:
+		if me == "" {
+			return Condition{SQL: "1=0"}
+		}
+		// 与台账侧同口径：**逐元素精确匹配**，兼容 JSON 数组与普通文本两种存量形态；
+		// 绝不用 LIKE（open_id 存在前缀包含关系，子串匹配会越权）。占位符 2 个。
+		return Condition{SQL: textOrJSONContains(col("assigned_open_id")), Args: []any{me, me}}
+
+	case ScopeParticipated:
+		if me == "" {
+			return Condition{SQL: "1=0"}
+		}
+		return Condition{SQL: textOrJSONContains(col("acceptors")), Args: []any{me, me}}
+
+	default: // DENY 或未知 → 拒绝
+		return Condition{SQL: "1=0"}
 	}
 }
 

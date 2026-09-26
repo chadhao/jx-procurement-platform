@@ -20,17 +20,21 @@ import (
 )
 
 // version 构建版本号（可由 -ldflags 注入）。
-var version = "0.2.0-s2"
+var version = "0.3.0-s3"
 
 const usage = `JX 采购与费用审批平台（自建侧）
 
 用法:
-  jxapproval serve     启动服务（默认）
-  jxapproval seed      幂等播种 Q3 默认权限口径（可重复执行，不覆盖已改规则）
-  jxapproval version   打印版本
-  jxapproval help      打印本帮助
+  jxapproval serve                       启动服务（默认）
+  jxapproval seed                        幂等播种 Q3 默认权限口径（可重复执行，不覆盖已改规则）
+  jxapproval import-config <config.json>  导入五类配置（approval_code / field_id / ledger_type / threshold / ledger_field）
+  jxapproval import-config --check <config.json>
+                                        只校验配置文件、不写入库（填完样例后先自检）
+  jxapproval version                     打印版本
+  jxapproval help                        打印本帮助
 
-配置全部通过环境变量注入，见 .env.example 与部署文档（架构 §7）。`
+配置全部通过环境变量注入，见 .env.example 与部署文档（架构 §7）。
+配置映射样例见 docs/reference/config-mapping.sample.json；模板建立步骤见 docs/07-Template-Build-Guide.md。`
 
 func main() {
 	cmd := "serve"
@@ -47,6 +51,23 @@ func main() {
 	case "seed":
 		if err := runSeed(); err != nil {
 			fmt.Fprintf(os.Stderr, "播种失败：%v\n", err)
+			os.Exit(1)
+		}
+	case "import-config":
+		// 支持：jxapproval import-config <file.json>
+		//      jxapproval import-config --check <file.json>   （只校验、不落库）
+		args := os.Args[2:]
+		checkOnly := false
+		if len(args) > 0 && args[0] == "--check" {
+			checkOnly = true
+			args = args[1:]
+		}
+		var path string
+		if len(args) > 0 {
+			path = args[0]
+		}
+		if err := runImportConfig(checkOnly, path); err != nil {
+			fmt.Fprintf(os.Stderr, "导入配置映射失败：%v\n", err)
 			os.Exit(1)
 		}
 	case "version", "-v", "--version":

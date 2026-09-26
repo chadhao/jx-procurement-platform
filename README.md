@@ -59,18 +59,37 @@
 ## 目录结构
 
 ```
-docs/     需求与设计文档（PRD / UseCase / TestCase / 架构 / 接口）
+docs/     需求与设计文档（PRD / UseCase / TestCase / 架构 / 接口 / 实现说明 / 模板建立指引）
 cmd/      可执行入口
 internal/ 业务实现
 web/      前端源码（构建产物 embed 进二进制）
 scripts/  构建、备份、部署脚本
 ```
 
+## 子命令
+
+```bash
+jxapproval serve                                   # 启动服务（默认；供 systemd 使用）
+jxapproval seed                                    # 幂等播种 Q3 默认权限口径
+jxapproval import-config --check <config.json>     # 只校验配置映射（模板建好后先跑这个）
+jxapproval import-config <config.json>             # 导入四类映射 + 回读自证
+jxapproval version | help
+```
+
+> **配置映射**（`approval_code` / `field_id` / `ledger_type` / `threshold`）是**唯一**「错一处就全线静默无数据」
+> 的口子——模板订阅不到事件时系统不报错，只是永远没有数据。故导入带**严格校验**（占位符 / 白名单 /
+> 非实例级台账一律拒绝）、**幂等**、以及按 `approval_code` 的**回读自证**。
+> 样例见 `docs/reference/config-mapping.sample.json`，建模板步骤见 `docs/07-Template-Build-Guide.md`。
+
 ## 相关产物（非本仓库）
 
 - `费用管理办法V3.0.html` · `审批流程图集V3.0.html` · `配置工具表_v3.0.xlsx` · `飞书适配性评估V1.9.html`
-- `技术方案书V1.0.html`（本仓库的输入，位于 WorkBuddy 交付目录 `deliverables/procurement-system/`）
+- `技术方案书V1.0.html`（本仓库的输入，位于 WorkBuddy 交付目录 `deliverables/procurement-approval/`）
 
 ## 版本
 
-V0.0 · 立项阶段（本地 git，暂不同步远端）
+- 开发进度与提交记录见 `docs/README.md` 与 `docs/06-Implementation-Notes.md`。
+- 最近阶段：S0/S1 地基 → S2 实例闭环 + 系统管理后台 → 集成轮（看板 M5 / 备付金 M1 / 报送 M6）→ 第二轮对抗性复核修复 → M1 集团报销跟踪（FR-M1-02）/ M4 变更链回溯（FR-M4-07）/ 前端台账类型键纠正（FR-M4-01）/ 年度归档与日志滚动（FR-M4-08、FR-M8-08）→ **模板建立配套轮**（配置映射导入 + 规范字段抽取 FR-M2-08，修复两个「静默无数据」P0）→ **Q14 定案实施轮**（六项编码：`L07` GR+QC 各写一行+查询侧关联 / `L11` 派生视图不落行 / 变更链键名收敛 / `t_ledger_field_def` 补写入端口并作写接口白名单 / 报送行级权限按真实列重建 / 看板标量键同投影）。
+- **Q14 已闭合**（原阻塞级别：中）。配置侧＝`t_permission_rule.writable_fields`（纯配置，空＝只读）；编码侧六项见 `docs/06-Implementation-Notes.md` §K。
+- **下一步（项目最后一步）**：人工在飞书审批后台建 11 张模板，然后采集映射 → 导入 → **逐模板订阅**，见 `docs/07-Template-Build-Guide.md`。
+- 远端：`git@github.com:chadhao/jx-procurement-platform.git`（分支 `main`；**未经用户明确要求不推送**）。
