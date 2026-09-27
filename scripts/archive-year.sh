@@ -16,6 +16,7 @@
 #   JX_ARCHIVE_KEEP  本地保留年度份数      默认 0（不清理；>0 时仅保留最近 N 个年度目录）
 set -euo pipefail
 
+SELF="${BASH_SOURCE[0]}"
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
@@ -57,6 +58,27 @@ TABLES=(
   t_submission_item
   t_audit_log
 )
+
+# ---- 锁号前提自检门禁（04a §6.4 / §10 S13；把纪律变成可执行门禁，比写在文档里靠人记可靠）----
+# 单号「终态永久不复用」依赖三前提（P1–P3）。本脚本最容易破坏其中两条：
+#   P1 `t_doc_seq` 不参与归档/清理（否则归档后游标归零 → 号被重发）；
+#   P2 不做硬删除（否则旧行 UNIQUE(biz_no) 消失 → 锁号失效）。
+# 二者被破坏的后果都是**静默**的（台账/审计出现「同号两笔」），故在此**主动拦截**：
+# 违反即失败退出，绝不静默继续。
+require_lock_number_preconditions() {
+  # ① TABLES 数组不得包含 t_doc_seq（P1）。
+  if printf '%s\n' "${TABLES[@]}" | grep -qx 't_doc_seq'; then
+    echo "错误：TABLES 含 t_doc_seq → 破坏锁号前提 P1（04a §6.4），拒绝执行" >&2
+    exit 1
+  fi
+  # ② 脚本正文不得含行首的 DELETE FROM / DROP TABLE（P2）。
+  #    仅匹配「行首（可含缩进）即为该 SQL 语句」的行 —— 注释/字符串里提及同名字样不算。
+  if grep -nE '^[[:space:]]*(DELETE[[:space:]]+FROM|DROP[[:space:]]+TABLE)\b' "$SELF" >/dev/null 2>&1; then
+    echo "错误：脚本正文含 DELETE FROM / DROP TABLE → 破坏锁号前提 P2（04a §6.4），拒绝执行" >&2
+    exit 1
+  fi
+}
+require_lock_number_preconditions
 
 echo "==> 年度归档 $YEAR → $DEST"
 MANIFEST="$DEST/MANIFEST.txt"

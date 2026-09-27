@@ -2,7 +2,7 @@
 
 > 本文件为**工程侧补充记录**，不改动任何既有文档（PRD / UseCase / TestCase / 架构 / 接口 / README）。
 > 记录范围：落地 S0/S1 地基代码过程中发现的**文档间冲突 / 歧义**、采取的实现决策与遗留动作。
-> 编制：Alex（开发经理）· 版本：**V1.7**（§A–§B 为 S0/S1 原始记录，§G/§H 为 S2 与集成轮，§H.13 为第二轮对抗性复核，§I 为缺口补齐轮，§J 为模板建立配套轮，§K 为 Q14 定案实施轮，§L 为架构完整性审查轮，§M 为口径落地轮，§N 为对象存储收口轮，**§O 为降级口径收口轮**）· 最新代码 tag：`0.3.2-s3`
+> 编制：Alex（开发经理）· 版本：**V1.9**（§A–§B 为 S0/S1 原始记录，§G/§H 为 S2 与集成轮，§H.13 为第二轮对抗性复核，§I 为缺口补齐轮，§J 为模板建立配套轮，§K 为 Q14 定案实施轮，§L 为架构完整性审查轮，§M 为口径落地轮，§N 为对象存储收口轮，§O 为降级口径收口轮，§P 为控件口径修正轮，**§Q 为架构转向 ③ 地基层轮**）· 最新代码 tag：`0.3.2-s3`
 
 ## A. 已落地范围（S0/S1）
 
@@ -1315,9 +1315,178 @@ API **§3.4 `task_node` 口径 / §6 / §7 / §9 / §10**。
 **为什么不在本轮直接修**：这是一处**设计决策**，涉及工具线台账口径（改映射模型）与看板取数口径，
 属「范围/结构变更」，按本项目纪律应先拍板再改。三条候选与推荐（推荐 **A：一对一放宽为一对多**，
 `PR` 同时落 `L02` 与 `L03`）已写入
-`deliverables/procurement-approval/审批模板人工建立指引V1.0.html` **§12 S-1**，
+`deliverables/procurement-approval/审批模板人工建立指引V1.1.html` **§12 S-1**，
 并在 `docs/07-Template-Build-Guide.md` §3.1 末留了指针。
 
 > ★ 本条的教训值得单列：**「错误表现为正确」是静默缺陷族里最危险的一支** ——
 > 前六次的症状是「数据恒空 / 恒 0 但指标本身有意义」，这一次是「**恒 0 恰好等于期望值**」，
 > 连"多看一眼数字"都发现不了。**检验方法只能是：确认数据源真的在产生行**（而非只看数字对不对）。
+
+## P. 控件口径修正轮（「人员／部门（当前登录人）」是错误口径 · B48）
+
+> 起因：用户（项目负责人）在**飞书审批后台看过实际控件面板**后指出 ——
+> **「系统没有空间可以带入当前登录的人员和部门。」**
+> 复核一手证据后确认：《审批模板人工建立指引》把控件写成 **「人员／部门（当前登录人）」**、
+> 并要求 **「系统带入、不可手改」**，是**两处事实性错误**，并**漏记了一个真实能力**（默认值设置）。
+> ★ 本轮**不改任何代码**（代码本就正确：申请人取实例、部门取控件值），只改**文档与交付物**。
+
+### P.1 现象（我们错在哪）
+
+| 文档位点 | 原写法（错误） | 真相 |
+|---|---|---|
+| 指引 §3 各模板控件清单（BA／PR／SA…） | 控件类型＝**「人员／部门（当前登录人）」**（把两个控件并成一个） | 飞书**没有「人员」控件**；要选人只能用 **`联系人`**，要记部门只能用 **`部门`**（两个独立控件） |
+| 指引 §4 通用控件规范第 ③ 条 | 「取当前登录人，**不可手改**」 | 部门／联系人控件的**默认值可被发起人修改**（**默认值 ≠ 只读**） |
+| 指引 §5 分支二 | 用**表单部门控件**判「主管领导是谁」 | 官方支持**条件分支的「发起人 → 部门」条件**（Default field＝发起人，身份不可被改）→ 这才是首选 |
+
+### P.2 一手证据（用户截图 ＋ 飞书官方三处来源）
+
+**证据 1｜控件清单（飞书开放平台《原生审批定义概述》＋ 用户后台实拍）**
+审批后台的控件是：单行文本 / 多行文本 / 说明 / 数字 / 金额 / 计算公式 / 单选 / 多选 / 日期 / 日期区间 /
+明细（表格）/ 引用多维表格 / 图片视频 / 附件 / **部门** / **联系人** / 关联审批 / 地址 / 定位 / 收款账户 / 电话 / 流水号 / 飞书云文档。
+→ **根本没有「人员」控件**；要选人只能用 **`联系人`**。
+
+**证据 2｜默认值能力（此前被我们漏记的真实能力）**
+- 飞书帮助中心《表单控件支持设置默认值》：当前支持**单行文本 / 多行文本 / 单选 / 部门 / 联系人** 5 种控件设置默认值。
+- 飞书官方《为控件设置默认值 API 说明文档》：**联系人**控件默认值类型＝「**申请人**（即发起审批用户）／指定人员」；
+  **部门**控件默认值类型＝「**申请人部门**（即发起审批用户所在部门）／指定部门」。
+- ★ 两处都明确「**支持员工在发起表单时修改**」→ **默认值 ≠ 只读**。
+- 设置位置：**点击控件后，在右侧「基础设置 → 默认值设置」**（**不在左侧控件面板里** —— 这正是用户"没找到"的原因）。
+
+**证据 3｜条件分支可用字段（Lark 帮助中心 FAQ，英文原文照录）**
+可用字段：**Requester（发起人）** —— **Default field，不需要任何表单控件**；以及
+Widget：Number / Amount / Calculation formula / Single option / Multiple options / Date / Date interval /
+**Department** / Contact person / Address / Details（Number/Amount/Formula）。
+
+- 原文：「If the condition requires the Requester to belong to certain departments and set multiple departments as the scope,
+  the corresponding branch will be activated when the requester belongs to any of the departments.」
+- 原文：「**Conditions can only apply to required fields**」→ **条件只能作用于「必填」的控件**。
+
+**证据 4｜代码事实（本轮核实，代码本就正确）**
+- `internal/worker/extract.go:81-83`：`department` 来自**表单控件的值**（`biz_field=department` 抽取）。
+- `internal/platform/feishu/instance.go:49`：`ApplicantOpenID` 来自**实例自带**的 `open_id`／`user_id`，**不是**表单控件值。
+
+### P.3 结论与处置（正确口径）
+
+| 需求 | 正确做法 |
+|---|---|
+| 记录「申请人」 | **不需要控件** —— 实例自带发起人，`applicant_open_id` 直接取实例 |
+| 表单上要显示／引用申请人 | 用 **`联系人`** 控件，默认值类型设「**申请人**」 |
+| 记录「所属部门」 | **必须有 `部门` 控件**（`department` 只能来自控件值），默认值类型设「**申请人部门**」 |
+| 决定「主管领导是谁」 | ★ **不依赖表单部门控件**（可被发起人手改）→ 用**条件分支的「发起人 → 部门」条件**（官方支持，不可被改） |
+| 内控代价 | 部门／联系人控件**可被发起人修改** → 属平台限制，写进模板说明 ＋ 事后核对 |
+
+### P.4 影响面（本轮同步的文档）
+
+| 位点 | 改动 |
+|---|---|
+| `deliverables/procurement-approval/审批模板人工建立指引V1.1.html`（页头/页脚版本 **V1.1**） | 由其构建脚本 `_build/tplguide/{data_templates.py,build.py}` 重新生成：控件清单改 `联系人`／`部门`；§4 ③ 重写为「联系人控件 与 部门控件（含默认值设置）」；§5 分支二改「发起人部门条件」＋ 新增「条件只能作用于必填控件」；§6 新增第 4 项（默认值不可设为只读）；§2 增加「控件面板无『人员』控件」醒目提示；§10 自检清单补两条；页头／页脚 V1.0→V1.1 |
+| `docs/07-Template-Build-Guide.md` | 版本 **V1.2 → V1.3**；§3 补控件口径块；§3 各模板表人员／部门控件标注类型；**§4.5 整节改写**为「联系人控件 与 部门控件」；**§4.4 新增第 4 项**（默认值不可设为只读）；§9 自检清单补两条 |
+| `docs/06-Implementation-Notes.md` | 新增本节 §P（编号 **B48**）；文件头版本 V1.7 → **V1.8** |
+| `docs/README.md` | `06` 的 B 条目到 **B48**、版本 → V1.8；`07` 版本 → V1.3 |
+
+> ★ 本轮**未改任何代码**：`applicant_open_id` 取实例、`department` 取控件值，代码侧本就与此口径一致（P.2 证据 4）。
+> 错的只是**文档对飞书控件能力的描述** —— 与 §O 同族：**决策/事实正确，落地到文档时才走样**。
+
+### P.5 待确认项（官方未明确，需在审批后台实测）
+
+- **部门／联系人控件的默认值能否设为「不可改」**：官方两处只说「支持员工在发起表单时修改」，
+  **未明确**能否把默认值锁为只读。→ **待确认**，须在审批后台实测；在此之前一律按「**默认值 ≠ 只读**」处理。
+
+---
+
+## Q. 架构转向 ③ 地基层（T01 + T02）实施记录（B51）
+
+> 本节记录 `docs/04a-Architecture-Increment-V2.md` §13 **T01（三方审批适配层 + 定义注册表）** 与
+> **T02（编号器 + 我方实例/任务状态机）** 的落地：新增代码、关键决策（每处写「理由与代价」）与
+> **与 `04a` 不一致/需补之处**。
+> ★ 本期**只做「增」**：不作废、不删除任何既有链路（原生控件解析链 `parseForm`/`valueToText`/
+> `extract.go`、事件订阅路径**保持原样**）；对 `t_instance` 只**加列**、不改既有列语义。
+
+### Q.1 新增 / 改动文件清单
+
+| 类别 | 文件 | 说明 |
+|---|---|---|
+| 迁移 | `migrations/0007_approval_core.sql` | §1.1 六张新表（`t_doc_seq`/`t_flow_task`/`t_flow_op_log`/`t_approval_def`/`t_push_record`/`t_notify_log`）+ `t_instance` 增 6 列 + `UNIQUE(biz_no)` 兜底索引 |
+| 适配层 | `internal/platform/feishu/external.go` | `external_approvals` 封装（**只暴露创建/更新 + 查询**，**无删除**）+ `FakeExternalApprovalClient` |
+| 存储 | `internal/store/models.go` | `Instance` 增 6 字段；新增 `DocSeq`/`FlowTask`/`FlowOpLog`/`ApprovalDef`/`PushRecord`/`NotifyLog` 结构体 |
+| 存储 | `internal/store/repo_instance.go` | select/scan/upsert **追加**新列；新增 `GetInstanceByBizNo(+Tx)` |
+| 存储 | `internal/store/repo_docseq.go` | `t_doc_seq` 事务内读改写（`NextDocSeqTx`）+ `PeekDocSeq`/`CountDocSeq` |
+| 存储 | `internal/store/repo_approval_def.go` | `t_approval_def` upsert（按 `approval_code`）+ 查询/计数 |
+| 存储 | `internal/store/repo_flow.go` | `t_flow_task` + `t_flow_op_log` 读写（含回调幂等 `INSERT OR IGNORE`） |
+| 服务 | `internal/number/gen.go` | 单号器 `{前缀}-{YYMM}-{####}`（`AllocTx`/`Alloc`） |
+| 服务 | `internal/flow/service.go` | 提交 / 节点聚合 / 推进 / 撤回（我方状态机） |
+| 服务 | `internal/approval/defregistry.go` | 三方定义注册/更新服务（幂等、失败可见） |
+| 测试 | `internal/number/gen_test.go`、`internal/flow/service_test.go`、`internal/approval/defregistry_test.go` | 含**负向断言** |
+| 测试 | `internal/store/qa_migration_test.go` | 迁移期望数 6 → **7**，并断言六表/六列/`ux_instance_biz_no` 生效 |
+| 脚本 | `scripts/archive-year.sh` | 新增**锁号前提自检门禁**（04a §6.4 / §10 S13） |
+| 测试(既改) | `internal/httpapi/admin_test.go` | `seedInstance` fixture 修正（见 Q.3-①） |
+
+### Q.2 关键决策（理由与代价）
+
+| # | 决策 | 理由 | 代价 / 边界 |
+|---|---|---|---|
+| D1 | `instance_code = {app_id}:{biz_no}`（`appID` 空则退化裸单号） | 04a §3.3：裸单号多环境复用会**静默撞 ID**（审批中心空白） | 依赖配置 `JX_APP_ID`；开发/测试可退化为裸单号 |
+| D2 | **PO 归并回 CT**（号段 key = `CT`，前缀 = `CT`） | 04a §6.1「PO 沿用 CT」：若 PO 与 CT 各占一个号段 → 均生成 `CT-YYMM-0001` → **同号两笔**，锁号失效 | 由 `number.NumberKey` 单点归并，避免两处真相 |
+| D3 | 提交时**一次性建全链任务**（`t_flow_task`） | `t_flow_task` 是唯一持久化"审批链"处（§1.1 无独立链路表），推进需据此判"下一节点" | 未来节点任务同为 `PENDING`，故以**"只有当前节点可操作"门禁**（更小 seq 节点须全通过）防"提前审批" |
+| D4 | 会签聚合**在我方**（按 `node_id` 聚合全部 task 状态） | 04a §2.3：节点聚合**始终以我方状态机为准**，不依赖飞书 `task_list[].type` | 我方承担全部聚合正确性；`type` 仅影响飞书展示（T03 处理） |
+| D5 | `update_time` 单调：upsert 冲突时取 `MAX(旧值, 新值)` | §3.1：版本**回退会让推送静默失败** | 任何写入都不会使版本回退，安全但需调用方显式 +1 |
+| D6 | 编号器上限 `>9999` **显式报错** | 静默产出 5 位号会让格式契约与台账/检索口径**悄悄漂移** | 极少触发（按月重置）；触发即交人工 |
+| D7 | 0007 同时建 `t_push_record`/`t_notify_log`/`t_flow_op_log`（本期空表） | 04a §13 **T01 明确**的 6 表清单；避免后续迁移再动 DDL | 三表消费端在 T03/T04；本期仅建表 + `t_flow_op_log` 已由状态机写入 |
+
+### Q.3 与 `04a` 不一致 / 需补之处（★ 重点）
+
+① **`UNIQUE(biz_no)` 实际并不存在（`04a §6.4` P3 描述有误）**：P3 称"迁移 `0002` 表达式唯一索引；
+`t_instance.instance_code UNIQUE`"——实测 `t_instance` **从来没有** `biz_no` 唯一约束（0001 仅
+`instance_code UNIQUE`；0002 的表达式唯一索引属 `t_submission`/`t_audit_log`）。而「终态锁号」
+的最终兜底正是 `UNIQUE(biz_no)`（§1.3 / §6.4 P3 / 负例 N-11）。故本次在 `0007` **补建**
+`ux_instance_biz_no`（`CREATE UNIQUE INDEX`；SQLite 唯一索引对 `NULL` 不生效 → 存量/事件空号行不受影响）。
+★ 连带修正 `internal/httpapi/admin_test.go` 的 `seedInstance`：原 fixture 令**两个不同实例共用同一
+`biz_no`**（`PR-2609-0001`），这本身就是「同号两笔」，在新不变量下应被拒；改为按实例唯一取号
+（该改动只修 fixture 数据，不改断言）。
+
+② **`t_instance.instance_code` 语义（C11 / FR-M9-13）**：本层按 `{app_id}:{biz_no}` 生成，与
+`04a §1.1` 括注一致；DDL `UNIQUE` 不变，仅**值来源**由"飞书下发"改"我方生成"。
+
+③ **锁号前提 P1–P3 已落地为可执行物**：P1 在 `scripts/archive-year.sh` 加**启动自检门禁**
+（断言 `TABLES` 不含 `t_doc_seq`、正文无行首 `DELETE FROM`/`DROP TABLE`，违反即失败退出）；
+P2 由"实例永不硬删除"（撤回＝软状态 `CANCELED`）保证；P3 由 `ux_instance_biz_no` 保证。
+★ 破坏任一条，终态锁号**静默失效**（表现为台账/审计「同号两笔」）。
+
+④ **迁移 0007 的幂等口径**：`CREATE TABLE/INDEX` 用 `IF NOT EXISTS`；`ALTER TABLE ADD COLUMN`
+SQLite **不支持** `IF NOT EXISTS`，与 0003 同一约定——由 `t_schema_migrations` 保证只执行一次
+（重复 `Migrate` 因版本表跳过而不报错）。
+
+### Q.4 负向断言（测试，静态可复跑）
+
+| 断言 | 用例 |
+|---|---|
+| 编号器**并发不重号** | `number.TestAllocNoDuplicateUnderConcurrency`（64 并发，任一重号即失败） |
+| **终态单号复用被拒** | `number.TestTerminalBizNoReuseRejected`（`UNIQUE(biz_no)` 拦截 + 原实例不被污染） |
+| 游标**只增不减** | `number.TestDocSeqMonotonic`（P1 可执行检查） |
+| PO/CT **不撞号** | `number.TestPOCollapsesToCT` |
+| 会签**未全员同意不得推进** | `flow.TestCoSignNodeRequiresAllApproved` |
+| 未来节点**不得提前审批** | `flow.TestFutureNodeCannotApproveEarly` |
+| **终态不得回退** | `flow.TestTerminalInstanceNoRegression` |
+| **CANCELED 后不可推进** | `flow.TestCanceledCannotAdvance` |
+| `update_time` **严格递增** | `flow.TestUpdateTimeStrictlyIncreases` |
+| 定义**重复注册=更新**（不产生第二条） | `approval.TestRegistryRepeatRegistrationIsUpdate` |
+| 定义同步**失败可见**（不写本地行） | `approval.TestRegistryFailureVisible` |
+
+### Q.5 遗留 / 交接（交 T03 / T04）
+
+| 项 | 说明 |
+|---|---|
+| 推送与快照 | `t_push_record`/`push_hash`/`push_at` 列已就绪，`PushService`/`SnapshotBuilder` 交 **T03** |
+| 对账 | `t_instance.update_time` 已可作版本锚点，自适应对账交 **T03** |
+| 回调与四操作 | `t_flow_op_log` 回调幂等索引已建；转交/加签/回退/撤回（T04）将复用本层 `Approve/Reject/Cancel` 与状态机原语 |
+| 通知 | `t_notify_log` 已建，通知服务交 **T04** |
+| 待实测 | `external_approvals` 请求/响应字段名、查询端点路径 —— 以 `04a` 参数表实现，**真机联调按 QV2 校准**（本次未做真机） |
+
+### Q.6 门禁结果（原始输出见 commit 报告）
+
+- `gofmt -l .` → **空**
+- `go build ./...` → **通过**
+- `go vet ./...` → **通过**
+- `go test ./... -count=1` → **13 个测试包全绿**（原 10 包 + 新增 `number`/`flow`/`approval`）
+- `python scripts/check_md_tables.py` → `OK 全部 Markdown 表格列数一致（已扫 14 个文件）`
+- `scripts/archive-year.sh` 锁号门禁：真实迁移库上 **exit 0**；注入 `DELETE FROM` 后被检出并拒绝

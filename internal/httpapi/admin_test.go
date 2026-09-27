@@ -98,8 +98,10 @@ func seedDefaultUsers(t *testing.T, db *store.DB, rows ...store.UserRole) {
 func seedInstance(t *testing.T, db *store.DB, code, applicant, dept string) {
 	t.Helper()
 	now := time.Now().UTC()
+	// ★ 单据号按实例唯一：架构转向 ③ 起 t_instance.biz_no 有 UNIQUE 兜底（migration 0007），
+	//   两个不同实例共用同一单号＝「同号两笔」，本就非法（原 fixture 用固定号属历史遗留）。
 	if err := db.UpsertInstance(context.Background(), &store.Instance{
-		InstanceCode: code, ApprovalCode: "ac-todo-q1", DocType: "PR", BizNo: "PR-2609-0001",
+		InstanceCode: code, ApprovalCode: "ac-todo-q1", DocType: "PR", BizNo: "PR-2609-" + code,
 		Status: "APPROVED", StatusRaw: "APPROVED", ApplicantOpenID: applicant,
 		Department: dept, Source: "event", CreatedAt: now, UpdatedAt: now,
 	}); err != nil {

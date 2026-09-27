@@ -33,6 +33,15 @@ type Instance struct {
 	Source          string
 	CreatedAt       time.Time
 	UpdatedAt       time.Time
+
+	// ★ 架构转向 ③（04a §1.1）：以下 6 列为 migration 0007 新增，**只加列、不改既有列语义**。
+	//   UpdateTime 为推送版本号，**单调递增**——不递增会让飞书侧推送**被拒且静默**（04a §3.1）。
+	UpdateTime   int64      // 推送版本号（逻辑版本，非时间戳）
+	PrevBizNo    string     // 重新发起时指向旧单号（撤回/驳回重提的因果链，04a §5.4）
+	CancelReason string     // 撤回原因
+	CancelAt     *time.Time // 撤回时刻
+	PushHash     string     // 上次推送快照 hash（相同则跳过推送，不消耗 update_time）
+	PushAt       *time.Time // 上次推送成功时刻
 }
 
 // InstanceField 实例表单字段（键值对，M2）。
@@ -263,4 +272,94 @@ type LedgerFieldDef struct {
 	IsFormula   bool
 	FormulaKind string
 	IsSensitive bool
+}
+
+// ---------- 架构转向 ③ · 审批核心（migration 0007，04a §1.1） ----------
+
+// DocSeq 单据编号器游标行（PK(doc_type,yymm)）。
+//
+// ★ 锁号前提 P1：本表**单调递增、只增不减、不参与任何归档/清理**（04a §6.4）。
+// 破坏（如归档后清表使游标归零）会导致**终态单号被复用**，且**静默**。
+type DocSeq struct {
+	DocType   string
+	YYMM      string
+	LastSeq   int64
+	UpdatedAt time.Time
+}
+
+// FlowTask 我方任务/节点行（t_flow_task，04a §1.1）。
+// 状态：PENDING/APPROVED/REJECTED/TRANSFERRED/DONE；会签聚合按 NodeID 分组。
+type FlowTask struct {
+	TaskID         string // 确定性 task_id（{node_id}-{assignee}-{round}-{seq}）
+	BizNo          string // 关联业务单号
+	NodeID         string // 节点标识（会签聚合键）
+	NodeName       string // 节点名（展示）
+	NodeSeq        int    // 节点顺序
+	Round          int    // 轮次（回退重激活 +1）
+	AssigneeOpenID string // 审批人
+	AssigneeName   string // 审批人姓名（展示）
+	Status         string // PENDING/APPROVED/REJECTED/TRANSFERRED/DONE
+	ActionContext  string // 回调定位（原样回传）
+	CreatedAt      time.Time
+	UpdatedAt      time.Time
+	ClosedAt       *time.Time // 终结时刻
+}
+
+// FlowOpLog 操作留痕行（t_flow_op_log，04a §1.1）。
+type FlowOpLog struct {
+	OpID        int64
+	BizNo       string
+	NodeID      string
+	TaskID      string
+	OpType      string // SUBMIT/APPROVE/REJECT/TRANSFER/ADDSIGN/ROLLBACK/CANCEL
+	ActorOpenID string
+	FromStatus  string
+	ToStatus    string
+	Reason      string
+	ExtraJSON   string
+	CreatedAt   time.Time
+}
+
+// ApprovalDef 三方审批定义注册表行（t_approval_def，04a §1.1 / §3）。
+type ApprovalDef struct {
+	ApprovalCode     string // PK（命中即更新、未命中即新建）
+	DocType          string // 我方单据类型（11 类；唯一）
+	Name             string
+	GroupName        string
+	VisibleScopeJSON string
+	CreateLinkPC     string
+	CreateLinkMobile string
+	CallbackURL      string
+	CallbackToken    string
+	CallbackKey      string
+	FormSummaryJSON  string
+	DefVersion       int
+	UpdatedAt        time.Time
+}
+
+// PushRecord 推送流水行（t_push_record，04a §1.1 / §10 S4）。
+type PushRecord struct {
+	ID           int64
+	BizNo        string
+	PushSeq      int64
+	SnapshotHash string
+	Status       string // PENDING/SENT/FAILED
+	Attempts     int
+	LastError    string
+	CreatedAt    time.Time
+	SentAt       *time.Time
+}
+
+// NotifyLog 通知流水行（t_notify_log，04a §1.1 / §5.5；漏发可检出）。
+type NotifyLog struct {
+	ID           int64
+	BizNo        string
+	TargetOpenID string
+	Channel      string // feishu_bot / inapp
+	Event        string
+	Status       string // PENDING/SENT/FAILED
+	Attempts     int
+	LastError    string
+	SentAt       *time.Time
+	CreatedAt    time.Time
 }

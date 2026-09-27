@@ -68,10 +68,32 @@ func TestQAMigrationFreshAndIdempotent(t *testing.T) {
 			t.Errorf("t_submission 缺列 %s（migrations/0003 未生效）", c)
 		}
 	}
-	// 三个迁移版本均已登记。
-	// ★ 迁移版本清单随新增迁移同步（0004 为 Q20 供应商归一列）。
+	// 架构转向 ③ 地基层（migration 0007）新增 6 表 + t_instance 增列，必须生效。
+	for _, tb := range []string{"t_doc_seq", "t_flow_task", "t_flow_op_log",
+		"t_approval_def", "t_push_record", "t_notify_log"} {
+		if n := qaColumns(t, db, tb); len(n) == 0 {
+			t.Errorf("表 %s 不存在（migrations/0007 未生效）", tb)
+		}
+	}
+	instCols := qaColumns(t, db, "t_instance")
+	for _, c := range []string{"update_time", "prev_biz_no", "cancel_reason", "cancel_at", "push_hash", "push_at"} {
+		if !instCols[c] {
+			t.Errorf("t_instance 缺列 %s（migrations/0007 未生效）", c)
+		}
+	}
+	// ★ 前提 P3：UNIQUE(biz_no) 兜底必须存在（锁号不被静默破坏）。
+	var nBizUx int
+	if err := db.QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM sqlite_master WHERE type='index' AND name='ux_instance_biz_no'`).Scan(&nBizUx); err != nil {
+		t.Fatalf("查索引失败: %v", err)
+	}
+	if nBizUx != 1 {
+		t.Errorf("唯一索引 ux_instance_biz_no 不存在（锁号前提 P3 被破坏）")
+	}
+
+	// 迁移版本清单随新增迁移同步（0004 供应商归一、0005 附件、0006 台账一对多、0007 审批核心）。
 	for _, v := range []string{"0001_init.sql", "0002_idem_unique.sql", "0003_submission_scope.sql",
-		"0004_supplier_norm.sql", "0005_attachment.sql"} {
+		"0004_supplier_norm.sql", "0005_attachment.sql", "0006_ledger_multi.sql", "0007_approval_core.sql"} {
 		var n int
 		if err := db.QueryRowContext(ctx,
 			`SELECT COUNT(*) FROM t_schema_migrations WHERE version = ?`, v).Scan(&n); err != nil {
@@ -91,8 +113,9 @@ func TestQAMigrationFreshAndIdempotent(t *testing.T) {
 	if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM t_schema_migrations`).Scan(&total); err != nil {
 		t.Fatalf("查版本总数失败: %v", err)
 	}
-	// ★ 期望值＝仓库内迁移文件数（新增迁移时同步此处；0004 Q20 supplier_norm、0005 附件元数据）。
-	const wantMigrations = 5
+	// ★ 期望值＝仓库内迁移文件数（新增迁移时同步此处；
+	//   0004 Q20 supplier_norm、0005 附件元数据、0006 台账映射一对多 B47、0007 审批核心转向③）。
+	const wantMigrations = 7
 	if total != wantMigrations {
 		t.Errorf("迁移版本总数 = %d, 期望 %d（重复执行不得重复登记）", total, wantMigrations)
 	}

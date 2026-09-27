@@ -22,8 +22,9 @@ func upsertInstance(ctx context.Context, q execer, in *Instance) error {
 INSERT INTO t_instance (
   instance_code, approval_code, doc_type, biz_no, biz_no_prefix, biz_no_yymm, biz_no_seq,
   status, status_raw, applicant_open_id, applicant_name, department, amount_cents,
-  purpose_class_l1, purpose_class_l2, supplier, source, created_at, updated_at
-) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+  purpose_class_l1, purpose_class_l2, supplier, source, created_at, updated_at,
+  update_time, prev_biz_no, cancel_reason, cancel_at, push_hash, push_at
+) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
 ON CONFLICT(instance_code) DO UPDATE SET
   approval_code     = excluded.approval_code,
   doc_type          = COALESCE(NULLIF(excluded.doc_type,''), t_instance.doc_type),
@@ -41,13 +42,23 @@ ON CONFLICT(instance_code) DO UPDATE SET
   purpose_class_l2  = COALESCE(NULLIF(excluded.purpose_class_l2,''), t_instance.purpose_class_l2),
   supplier          = COALESCE(NULLIF(excluded.supplier,''), t_instance.supplier),
   source            = excluded.source,
-  updated_at        = excluded.updated_at
+  updated_at        = excluded.updated_at,
+  -- ★ update_time 单调递增（04a §3.1）：取两值较大者，**任何写入都不得使其回退**
+  --   （版本回退会让飞书侧推送静默失败）。
+  update_time       = MAX(COALESCE(t_instance.update_time,0), COALESCE(excluded.update_time,0)),
+  prev_biz_no       = COALESCE(NULLIF(excluded.prev_biz_no,''), t_instance.prev_biz_no),
+  cancel_reason     = COALESCE(NULLIF(excluded.cancel_reason,''), t_instance.cancel_reason),
+  cancel_at         = COALESCE(NULLIF(excluded.cancel_at,''), t_instance.cancel_at),
+  push_hash         = COALESCE(NULLIF(excluded.push_hash,''), t_instance.push_hash),
+  push_at           = COALESCE(NULLIF(excluded.push_at,''), t_instance.push_at)
 `,
 		in.InstanceCode, in.ApprovalCode, nullStr(in.DocType), nullStr(in.BizNo),
 		nullStr(in.BizNoPrefix), nullStr(in.BizNoYYMM), nullStr(in.BizNoSeq),
 		in.Status, nullStr(in.StatusRaw), nullStr(in.ApplicantOpenID), nullStr(in.ApplicantName),
 		nullStr(in.Department), in.AmountCents, nullStr(in.PurposeClassL1), nullStr(in.PurposeClassL2),
 		nullStr(in.Supplier), defaultStr(in.Source, "event"), fmtTime(in.CreatedAt), fmtTime(in.UpdatedAt),
+		in.UpdateTime, nullStr(in.PrevBizNo), nullStr(in.CancelReason), nullStr(fmtMaybeTime(in.CancelAt)),
+		nullStr(in.PushHash), nullStr(fmtMaybeTime(in.PushAt)),
 	)
 	if err != nil {
 		return fmt.Errorf("store: 写入实例 %s 失败: %w", in.InstanceCode, err)
@@ -58,6 +69,18 @@ ON CONFLICT(instance_code) DO UPDATE SET
 // GetInstance 按 instance_code 读取实例；不存在返回 ErrNotFound。
 func (d *DB) GetInstance(ctx context.Context, instanceCode string) (*Instance, error) {
 	row := d.QueryRowContext(ctx, instanceSelectSQL+` WHERE instance_code = ?`, instanceCode)
+	return scanInstance(row)
+}
+
+// GetInstanceByBizNo 按业务单号读取实例（我方审批核心以 biz_no 为业务键）；不存在返回 ErrNotFound。
+func (d *DB) GetInstanceByBizNo(ctx context.Context, bizNo string) (*Instance, error) {
+	row := d.QueryRowContext(ctx, instanceSelectSQL+` WHERE biz_no = ?`, bizNo)
+	return scanInstance(row)
+}
+
+// GetInstanceByBizNoTx 在事务内按业务单号读取实例。
+func (d *DB) GetInstanceByBizNoTx(ctx context.Context, tx *sql.Tx, bizNo string) (*Instance, error) {
+	row := tx.QueryRowContext(ctx, instanceSelectSQL+` WHERE biz_no = ?`, bizNo)
 	return scanInstance(row)
 }
 
@@ -277,12 +300,16 @@ FROM t_instance_status_history WHERE instance_code = ? ORDER BY event_seq`, inst
 
 // ---------- 扫描辅助 ----------
 
+// instanceSelectSQL ★ 0007 增列（update_time/prev_biz_no/cancel_reason/cancel_at/push_hash/push_at）
+// 追加在末尾（只加列，不改既有列顺序与语义）。
 const instanceSelectSQL = `
 SELECT id, instance_code, approval_code, COALESCE(doc_type,''), COALESCE(biz_no,''),
        COALESCE(biz_no_prefix,''), COALESCE(biz_no_yymm,''), COALESCE(biz_no_seq,''),
        status, COALESCE(status_raw,''), COALESCE(applicant_open_id,''), COALESCE(applicant_name,''),
        COALESCE(department,''), amount_cents, COALESCE(purpose_class_l1,''), COALESCE(purpose_class_l2,''),
-       COALESCE(supplier,''), source, created_at, updated_at
+       COALESCE(supplier,''), source, created_at, updated_at,
+       COALESCE(update_time,0), COALESCE(prev_biz_no,''), COALESCE(cancel_reason,''),
+       COALESCE(cancel_at,''), COALESCE(push_hash,''), COALESCE(push_at,'')
 FROM t_instance a`
 
 func scanInstance(s interface {
@@ -294,10 +321,15 @@ func scanInstance(s interface {
 		created string
 		updated string
 	)
+	var (
+		cancelAt string
+		pushAt   string
+	)
 	if err := s.Scan(&in.ID, &in.InstanceCode, &in.ApprovalCode, &in.DocType, &in.BizNo,
 		&in.BizNoPrefix, &in.BizNoYYMM, &in.BizNoSeq, &in.Status, &in.StatusRaw,
 		&in.ApplicantOpenID, &in.ApplicantName, &in.Department, &amount,
-		&in.PurposeClassL1, &in.PurposeClassL2, &in.Supplier, &in.Source, &created, &updated); err != nil {
+		&in.PurposeClassL1, &in.PurposeClassL2, &in.Supplier, &in.Source, &created, &updated,
+		&in.UpdateTime, &in.PrevBizNo, &in.CancelReason, &cancelAt, &in.PushHash, &pushAt); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, ErrNotFound
 		}
@@ -309,6 +341,8 @@ func scanInstance(s interface {
 	}
 	in.CreatedAt = parseTime(created)
 	in.UpdatedAt = parseTime(updated)
+	in.CancelAt = parseTimePtr(cancelAt)
+	in.PushAt = parseTimePtr(pushAt)
 	return &in, nil
 }
 
