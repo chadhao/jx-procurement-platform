@@ -7,7 +7,7 @@
 | 项 | 内容 |
 |---|---|
 | 文档名称 | 采购与费用审批平台（自建侧）· 接口设计 |
-| 版本 | **V2.8**（+ 2026-09-27 实测：**§6 接口计数 4 → 5**，新增 **§6.1「发通知（Bot 消息）」`POST /open-apis/approval/v1/message/send`（`template_id=1008`）** —— 落实**③ 口径 2 的「通知」**；含 V2.7 §6.1 出方向契约 ＋ V2.6 §3.8 入参校正 ＋ V2.5 `#74` 批量 A） |
+| 版本 | **V2.9**（+ 2026-09-27 实测：**§3.14 回调报文按官方实测校准** ＋ **新增「实测缺口清单（6 条，属 P0）」** —— 顶层字段名不一致 / `biz_no` 传递链路未闭合 / `open_id` 应为 `user_id`；含 V2.8 §6 计数 4→5 与 §6.1 通知契约 ＋ V2.7 §6.1 出方向契约 ＋ V2.6 §3.8 入参校正） |
 | 日期 | 2026-09-26 |
 | 上游文档 | `01-PRD.md`、`02-UseCase.md`、`03-TestCase.md`、`04-Architecture.md` |
 | 语言纪律 | 简体中文 |
@@ -657,7 +657,7 @@ sequenceDiagram
 | 用途 | 飞书 → 我方：`action_callback_url`；**仅 `APPROVE` / `REJECT`**（四操作**不在回调内**） |
 | ★ **鉴权＝绕开会话 / OIDC 中间件** | **不在 `/api` 组**、**绝不挂 `requireSession`** —— `docs/11 R14`：飞书回调请求**无 cookie**，挂上会话中间件＝ **401 全失败且静默**；本路由在会话路由组**之外**单独注册 |
 | 鉴权（业务层） | 校验 `token`（定义下发；非法 → **拒绝 + 告警**，`S5`）；`encrypt` 体按约定解密 |
-| 请求体 | `action_type` · `action_context`（定位 `biz_no`/`task_id`/节点）· `user_id` · `task_id` · `reason`/`attachments` · `token`/`encrypt` |
+| 请求体 | ★★ **官方报文（2026-09-27 实测校准，来源《三方快捷审批回调》）**：`action_type`(必) · **`user_id`**(必，**操作人的 user_id**) · **`approval_code`**(必) · `token`(必) · `action_context` · `instance_id` · `task_id` · `message_id` · `id` · `reason` · `attachments` · `encrypt`。★★ **官方【不发】顶层 `biz_no`** ⇒ 本系统的 `biz_no` **只能靠 `action_context` 携带 JSON 回传**（★ **推实例时必须把 `task_list[].action_context` 设为含 `biz_no` 的 JSON 字符串**，如 `{"biz_no":"PR-…","task_id":"…"}`；本字段为**我方自定义**、飞书原样回传）。★ **不要**在顶层找 `biz_no` / `open_id` / `instance_code` —— 官方字段名是 `approval_code` / `user_id` / `instance_id` |
 | ★ **幂等键** | `t_flow_op_log`（`biz_no`,`task_id`,`op_type`）**唯一约束**；重复 → `INSERT OR IGNORE`、**直接回 200**（`04a §4.3`） |
 | ★ **响应＝落盘即 200** | 同步路径**只做**「校验 + 写 `op_log` + 入队」→ **毫秒级返回 HTTP 200**（官方口径 ≤10s，本设计**远低于**）；★ **不是**"按 10s 设计业务"；**业务（状态机推进 / 重推）全在异步侧**（`04a §4.4`） |
 | 错误码 | 40000（体非法）、40900（幂等冲突路径）、50000；★ **非法 token → 拒绝（40300）+ 告警**（**不返回 401**，避免暴露会话语义给飞书） |
@@ -691,6 +691,21 @@ sequenceDiagram
 | 修复循环不变量 | ★ **按 `round` 对齐**（`op_log.round == task.round`）；**`HELD` 不动**；**实例终态不动**；**幂等**（重驱动不产生二次副作用） |
 
 > ★ **门禁（`C5`）**：本节与 §3.13 的端点**必须与 `router.go` 已注册路由双向一致** —— 否则 `scripts/audit_silent.py` 的 **C5**（路由 ↔ 05-API 双向差集）报「已注册但未提及」（`docs/11 §4.2` 注）。
+
+#### ★★ 实测缺口清单（2026-09-27，**待修复，属 P0**）
+
+> 场景：审批人在飞书 Bot 卡片点「同意」⇒ 飞书回调我方 ⇒ **实测返回 400，客户端零反馈**。实测证据与根因如下。
+
+| # | 缺口 | 实测证据 | 修复方向 |
+|---|---|---|---|
+| 1 | ★★★ **顶层字段名与官方不一致** | 用**官方报文格式**打我方 ⇒ `回调缺少 biz_no/task_id`；用**我方自造格式**（含顶层 `biz_no`）⇒ 才走到 `无对应实例` | 按官方字段为准：`user_id` / `approval_code` / `instance_id`；**不要在顶层取 `biz_no`** |
+| 2 | ★★★ **`biz_no` 传递链路未闭合** | 官方**不发**顶层 `biz_no`；本系统依赖 **`action_context` 携带 JSON** | ★ **推实例时**把 `task_list[].action_context` 设为 `{"biz_no":…,…}`；★ 当前推的是纯 `task_id` 字符串 ⇒ 回调必然取不到 `biz_no` |
+| 3 | ★★ **`open_id` 应为 `user_id`** | 官方字段表：`user_id`（操作人 user_id）**必填**，无 `open_id` | 双读兼容：`user_id` 优先、`open_id` 兜底；★ 注意两者**不同域**，需转换或统一存储口径 |
+| 4 | ★ **`message_id` 未解析** | 官方：**卡片操作时必填**；且「卡片更新失败时需调【更新审批 Bot 消息】」 | 解析并暂存 `message_id`，供卡片状态更新用 |
+| 5 | ★ **失败无用户反馈** | 官方：失败时卡片**退化为"只显示查看详情"**；超时才报错 | 回调必须可成功；失败路径需有可见反馈（"更新审批 Bot 消息"） |
+| 6 | ★ **本地无数据（P0-2）** | `t_approval_def` / `t_instance` 均 **0 行** | 定义装载（`defregistry` 接通）＋ 实例/任务落库 |
+
+> ★ **修复顺序**：#2 与 #1 必须**同批**（否则回调永远取不到 `biz_no`）；#6 是 #1/#2 的前置（否则过了字段关也过不了实例关）。
 
 ---
 
@@ -951,6 +966,7 @@ sequenceDiagram
 
 | 版本 | 日期 | 变更 | 作者 |
 |---|---|---|---|
+| V2.9 | 2026-09-27 | ★★ **§3.14 回调报文按官方实测校准 ＋ 新增「实测缺口清单」**：① **「请求体」行重写** —— 官方真实报文字段为 `action_type` / **`user_id`**（操作人 **user_id**）/ **`approval_code`** / `token` / `action_context` / `instance_id` / `task_id` / `message_id` / `id` / `reason` / `attachments` / `encrypt`；★★ **官方【不发】顶层 `biz_no`** ⇒ `biz_no` **只能靠 `action_context` 携带 JSON 回传**（★ 推实例时须把 `task_list[].action_context` 设为含 `biz_no` 的 JSON）。② **新增「实测缺口清单（6 条，属 P0）」** —— 顶层字段名不一致 / **`biz_no` 传递链路未闭合** / `open_id` 应为 `user_id` / `message_id` 未解析 / 失败无用户反馈 / 本地无数据（P0-2）。③ 实测证据：**用官方报文格式打我方 ⇒ `回调缺少 biz_no/task_id`**；用含顶层 `biz_no` 的自造格式才走到"无对应实例"⇒ ★ 定位「用户点同意后回调 400、界面零反馈」的**真实原因**。 | 交付总监 |
 | V2.8 | 2026-09-27 | ★★ **补齐「通知」链路（实测驱动）**：① **§6 标题计数 4 → 5** 并新增行「**发审批 Bot 消息**」`POST /open-apis/approval/v1/message/send`（`template_id=1008` 收到审批待办）；② **§6.1 新增该接口契约** —— ★★ **「待办进列表」与「发消息通知」是两个独立动作**（官方原文「当有新的审批待办…时，**可以通过**飞书审批的 Bot 告知用户」），**仅推 `external_instances` 不会产生任何提醒**；★ `actions[]` **四个 URL 缺一不可**（`url`+`pc_url`+`android_url`+`ios_url`；缺 ⇒ `60001 actionUrls incomplete error`）；★ 本接口 **`texts` 接受 map**（与 `external_approvals` 的数组形态**相反**）；成功返回 `data.message_id`（实测 `{"code":0,…}`）。③ 与 `01a §…` **通知渠道「飞书 Bot（主）＋ 站内兜底」口径对齐** —— PRD 已规划、**此前代码零实现**。 | 交付总监 |
 | V2.7 | 2026-09-27 | **新增 §6.1「转向 ③ 新增的出方向接口」（契约按实测校准）**：① **`POST /external_approvals`** —— ★ **`approval_code` 走「自定义 code」池**（命中即更新、**未命中静默新建**）；★ **`i18n_resources[].texts` 必须是数组**（传 map ⇒ `9499`，**与官方文档示例不符**）；★ `locale`/`is_default` 飞书**不校验**，须自查。② **`GET /external_approvals/{真实code}`** —— ★ 路径参数须「真实 code」，而读回字段返回「自定义 code」。③ **`POST /external_instances`** —— ★ 审批人在 **`task_list[].open_id`/`user_id`**（**官方无 `assignees`**，传错**静默忽略** ⇒ 任务不进「待办」）；★ 两键在 **`task_list[].action_configs`**；★ 单据编号走 **`extra.business_key`**；★ 成功回显 `data.data` 双层。④ **`check`** 成功返回 `data.diff_instances`。⑤ ★ 归纳**三类静默缺陷**（未知字段忽略 / 不校验 `locale` / 列表接口缺权限报误导性 `99991663`）⇒ **不得以 `code:0` 判通过**。 | 交付总监 |
 | V2.6 | 2026-09-27 | 依 team-lead 飞书**实测裁定**（**纯文档**）：**§3.8 `POST /internal/approval/check`** 补两条上游契约 —— ① **`external_instances/check` 入参字段名校正为 `instances[]`，且每项必须含 `update_time` ＋ `tasks`**（只给 `instance_id` ⇒ `99992402 field validation failed`）；② **`external_approvals` 读回须用创建响应返回的 `approval_code` 作路径参数**（**`?approval_code=` 形态不通**）；并**写清 `approval_code` 字段名歧义**（创建响应 / 路径参数里的＝「查询键」；定义体 `data.approval_code` ＝我方传入的值）。 | 架构师（Bob） |
