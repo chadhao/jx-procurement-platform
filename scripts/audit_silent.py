@@ -314,9 +314,6 @@ BENIGN_DISCARDS = [
     ('dashboard/export.go', '_ = xml.EscapeText(', '写入内存 Buffer 不会失败'),
     ('internal/platform/feishu/external.go', '_ = json.Unmarshal(data, &out)',
      '判定 team-lead/2026-09-27：解析失败有入参兜底 firstNonEmpty(out.ApprovalCode, def.ApprovalCode)（同函数下两行），非静默、有意为之'),
-    ('internal/platform/feishu/push.go',
-     '_ = p.db.MarkPushResult(ctx, bizNo, inst.UpdateTime, store.PushFailed, err.Error())',
-     '判定 team-lead/2026-09-27：仅"登记 Failed"这一步被丢弃（推送错误本身已 return 调用方，知情）；已在其前补 warn 使可观测，属 P3 记账级、非数据完整性缺陷'),
 ]
 
 BENIGN_IGNORE = re.compile(r'_ = (?:[\w.]+\.)?(Close|Release|Rollback|Unlock|Sync|Flush|Seek)')
