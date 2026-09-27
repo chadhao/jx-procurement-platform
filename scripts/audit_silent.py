@@ -30,7 +30,12 @@ if '--root' in sys.argv:
 
 GO_FILES = []
 for dirpath, dirnames, filenames in os.walk(ROOT):
-    dirnames[:] = [d for d in dirnames if d not in ('.git', 'node_modules', 'dist')]
+    # ★ 跳过 `_` 前缀目录：**对齐 Go 工具链自身的规则**（`go build`/`go vet` 一律忽略
+    #   以 `_` 开头的目录）。否则探针/临时草稿目录（如 `scripts/_probe_c5`）里的 `.go`
+    #   会被本脚本当成真源码扫进统计与检查，令「扫描 N 个 .go」失真、并可能与真实结论混淆。
+    #   这是**规则**（与工具链同口径），不是逐目录的例外清单。
+    dirnames[:] = [d for d in dirnames
+                   if d not in ('.git', 'node_modules', 'dist') and not d.startswith('_')]
     for fn in filenames:
         if fn.endswith('.go'):
             GO_FILES.append(os.path.join(dirpath, fn))
@@ -243,6 +248,59 @@ def check_routes():
             hit('C5', '路由 `%s %s` 已注册，但 docs/05-API.md 未提及（归一后 `%s`）'
                 % (method, path, n))
 
+    # ------------------------------------------------------ C5 反向（#62）
+    # ★ 反向差集：「文档**显式声明**的 `METHOD /path` → router.go 必须已注册」。
+    #   单向（只报「注册未文档」）会漏掉「文档承诺了、代码没实现」的静默漂移（本仓库头号红线）。
+    #   降噪（否则正文/外部路径/示例会大量误报）：
+    #     · 只认「方法 + **以 / 开头**的完整路径」的显式写法（heading / 反引号 / 表格单元格），
+    #       故文档里的相对简写（`` 与 `/reject` ``）**不**单独声明一条；
+    #     · 路径**限于我方前缀**（api/ internal/ approval/ auth/ 及 healthz/readyz），
+    #       排除飞书外部路径（`/open-apis/…`）与正文示例。
+    reg = {(m, norm(p)) for m, p in routes}
+    # ★ 前缀判据须作用于**原始路径**（`norm` 会把 `/api/` 前缀剥掉，剥后必然匹配不到 `api/`）。
+    own_prefix = ('/api/', '/internal/', '/approval/', '/auth/')
+    own_exact = ('/healthz', '/readyz')
+
+    def _equiv(rm, rn, dm, dn):
+        """注册路径（源码里的**组相对**路径）与文档路径是否指同一条。"""
+        if rm != dm:
+            return False
+        a, b = rn.split('/'), dn.split('/')
+        if a == b:
+            return True
+        # 同段数：逐段相等或任一侧为 `*`（`:x`/`{x}` 已归一为 `*`）。
+        if len(a) == len(b) and all(x == y or x == '*' or y == '*' for x, y in zip(a, b)):
+            return True
+        # 组相对：一方是另一方的**整段后缀**（如注册 `/users` ↔ 文档 `admin/users`）。
+        if len(a) < len(b):
+            return b[-len(a):] == a
+        return a[-len(b):] == b
+
+    # ★★ 反向的降噪关键：**只把「方法 与 路径」的显式搭配当声明，不把正文里的
+    #   简写/链式概览当声明**。两种必须跳过的形态（都是「散文式提及」而非「契约声明」）：
+    #     ① 链式概览：`` `GET/POST/PATCH /api/admin/users` `` —— 这是把多个方法**缩写在
+    #        一个斜杠链**里（典型出现在变更记录/概述句）。其中与路径相邻的只有**末位**
+    #        方法（`PATCH`），且它**紧跟在 `/` 之后**。若照单全收，会把「一个方法链的概览」
+    #        误当成「对该路径逐方法的独立承诺」（本仓库实测：变更记录 V1.1 行的
+    #        `GET/POST/PATCH /api/admin/users` 会派生出一条**幻影** `PATCH admin/users`）。
+    #        ⇒ 判据：**方法 token 的前一个字符是 `/` ⇒ 属链式概览，跳过**。
+    #        （真正的契约声明处，方法前恒是 `` ` `` / `|` / 空白 / `>` / `·` / 行首，不会是 `/`。）
+    #     ② 形如模板：`` `POST /api/approval/{biz_no}/<action>` `` —— 会被正则截到
+    #        `/api/approval/{biz_no}/`（**以 `/` 收尾**），是「路径形如」的说明，非一条具体路由。
+    declared = set()
+    for m in re.finditer(r'(^|[^/\w])(GET|POST|PUT|PATCH|DELETE)\s+(/[A-Za-z0-9_\-/:{}]+)', doc):
+        method, raw = m.group(2), m.group(3)
+        if raw.endswith('/'):
+            continue
+        if not (raw in own_exact or raw.startswith(own_prefix)):
+            continue
+        declared.add((method, norm(raw)))
+    for method, dn in sorted(declared):
+        if not dn:
+            continue
+        if not any(_equiv(rm, rn, method, dn) for rm, rn in reg):
+            hit('C5', 'docs/05-API.md 声明 `%s %s`，但 router.go **未注册**（归一后 `%s`）'
+                % (method, dn, dn))
 
 # ---------------------------------------------------------------- C6
 # 已判定安全的丢弃点：(路径后缀, 代码片段, 理由)。命中即跳过。
