@@ -7,7 +7,7 @@
 >
 > **一句话红线**：**镜像 ≠ 权限**。同步来的通讯录是「人事目录」，**准入一律仍走 `t_user_role`（人工配置、deny by default）**。
 >
-> **版本**：V1.6 · **状态**：待评审（§5 的 **C-A~C-E** 已按**官方来源 + SDK v3.12.0 源码**查实；**C-A 经复核改定路线甲**；**V1.3 回填 D6「提交时实时回源」**，见 §2 注 / §4.12；**V1.4 迁移改号 `0007` → `0012`**，见 §4.2 注 / §12；★ **V1.5 行号引用符号化**（`README` 定案 **#74**）—— 全文「`文件:行`」改为「**`文件` ＋ 符号/模式**」，**行号只作快照**；**V1.6 按 team-lead 裁定**：`S12` 补「只管实例侧」、`§6 订正 1` 标「后被取代」） · **依仓库现状（2026-09-27 代码基线）撰写**
+> **版本**：V1.7 · **状态**：待评审（§5 的 **C-A~C-E** 已按**官方来源 + SDK v3.12.0 源码**查实；**C-A 经复核改定路线甲**；**V1.3 回填 D6「提交时实时回源」**，见 §2 注 / §4.12；**V1.4 迁移改号 `0007` → `0012`**，见 §4.2 注 / §12；★ **V1.5 行号引用符号化**（`README` 定案 **#74**）—— 全文「`文件:行`」改为「**`文件` ＋ 符号/模式**」，**行号只作快照**；**V1.6 按 team-lead 裁定**：`S12` 补「只管实例侧」、`§6 订正 1` 标「后被取代」；**V1.7 缺口闭合后翻面**（`engineer-glm` 交 **`cc753c4`**：`t_ledger_archive.department` 补 write-once，`S13` 落地）） · **依仓库现状（2026-09-27 代码基线）撰写**
 
 ---
 
@@ -37,7 +37,7 @@
 | 10 | 身份里的部门来自 `t_user_role`（`SELECT … WHERE open_id=? AND active=1`） | `internal/httpapi/helpers.go` 的 `identityFrom`（`permission.Identity{…}`）、`internal/store/repo_permission.go` 的 `GetUserRole` |
 | 11 | `t_instance.department` **来自表单控件值**；`applicant_open_id` 来自实例自带字段 | `internal/worker/extract.go` 的 `case config.BizFieldDepartment`、`internal/platform/feishu/instance.go` 的 `ApplicantOpenID` 赋值 |
 | 12 | 实例详情**已反序列化 `department_id`（发起人部门 ID）但全库从未使用** | `internal/platform/feishu/instance.go` 的 `DepartmentID` 字段（仅解析、无消费端） |
-| 13 | `t_instance.department` / `t_ledger_archive.department` **UPSERT 时会被非空的后续值覆盖**（非 write-once）★ **复核（#74 符号核验时发现）**：`t_instance` 侧**已于 `#46` 改为 write-once**（`COALESCE(NULLIF(t_instance.department,''), excluded.department)`）；**仅 `t_ledger_archive` 侧**仍为「非空新值覆盖」 | `internal/store/repo_instance.go` 的 `upsertInstance`、`internal/store/repo_ledger.go` 的 `upsertArchive` |
+| 13 | `t_instance.department` / `t_ledger_archive.department` **UPSERT 的覆盖语义** ★ **复核（#74/#73）**：**两侧均已 write-once** —— `t_instance` 侧 `#46` 落地、`t_ledger_archive` 侧 **`cc753c4`** 落地（两侧同形 `COALESCE(NULLIF(t_xxx.department,''), excluded.department)`）⇒ **均不再被非空后续值覆盖** | `internal/store/repo_instance.go` 的 `upsertInstance`、`internal/store/repo_ledger.go` 的 `upsertArchive` |
 | 14 | 准入解析只读 `t_user_role`；未映射/停用 → `ErrRoleNotMapped`（deny by default） | `internal/access/auth.go` 的 `ResolveRole`、`internal/store/repo_permission.go` 的 `GetUserRole` |
 | 15 | `/healthz` 暴露 `Checks()`；`/readyz` 的 `ready` = 四项自检 **AND** | `internal/httpapi/handlers_ops.go` 的 `handleHealthz` / `handleReadyz`、`internal/observ/health.go` 的 `Health.Checks` / `Health.Ready` |
 | 16 | 单实例部署（长连接集群不广播，禁止多副本），启动即抢 `singlelock`，失败拒绝启动 | `cmd/jxapproval/bootstrap.go` 的 `singlelock.New(...)` + `Acquire()` |
@@ -521,22 +521,22 @@ sequenceDiagram
 |---|---|---|---|
 | `t_instance` | `department_id TEXT` | 发起人部门 **`open_department_id`（`od-`，稳定）**：由**实例自带 `department_id`**（`internal/platform/feishu/instance.go` 的 `DepartmentID`）经**镜像 `department_id→open_department_id` 映射桥接**得到（§5-C-A/§5.4） | 不可变（write-once） |
 | `t_instance` | `department_id_raw TEXT` | 实例自带 `department_id` **原样留痕**（用于桥接与审计；值可能是 `od-` 也可能是自定义 ID，判定按「**值前缀**」见 §5-C-A 证据 5） | 不可变 |
-| `t_instance` | `department`（既有列） | 部门**名称快照**（按上面的 `od-` 经镜像解析） | **改为 write-once** |
+| `t_instance` | `department`（既有列） | 部门**名称快照**（按上面的 `od-` 经镜像解析） | **write-once ✅**（`#46` 已落地，见 §4.9-b） |
 | `t_ledger_archive` | `department_id TEXT` | 同上（`od-`，桥接所得） | 不可变 |
 | `t_ledger_archive` | `department_id_raw TEXT` | 同上（留痕） | 不可变 |
-| `t_ledger_archive` | `department`（既有列） | 名称快照 | **改为 write-once** |
+| `t_ledger_archive` | `department`（既有列） | 名称快照 | **write-once ✅**（`cc753c4` 已落地，见 §4.9-b） |
 | `t_submission` | `department_id TEXT` | 申请人部门 ID（`od-`） | write-once |
 | `t_user_role` | `department_id TEXT` | 主部门 ID（`od-`，**权限比对主键**） | 人工配置（**目录选择器写 `od-`**） |
 | `t_user_role` | `extra_dept_ids TEXT` | 分管部门 ID 数组（JSON，`od-`） | 人工配置 |
 
 > ★ **C-A 落点（路线甲）**：关联键**统一 `open_department_id`（`od-`）**。入库时**先用 `internal/platform/feishu/instance.go` 的 `DepartmentID` 去镜像桥接**得到 `od-`（**按值前缀判定、不迷信字段名**）；**部门控件 `od-` 仅作交叉校验**（不一致 `log.Warn`、以实例系统字段为准，§5.4）。
 
-**（b）★ 必须改「write-once」的两个 UPSERT（否则改名会改写历史）**
+**（b）★ 必须改「write-once」的两个 UPSERT（否则改名会改写历史）—— ★ 两处均已落地（`#46` / `cc753c4`）**
 
 | 位点 | 现状 | 需改为 |
 |---|---|---|
 | `internal/store/repo_instance.go` 的 `upsertInstance` | ★ **`#46` 起已是 write-once**：`department = COALESCE(NULLIF(t_instance.department,''), excluded.department)`（库中非空则保留，**不再被后续非空值覆盖**） | ✅ **已达成**（本行原列"待改"；`#46` 已落地） |
-| `internal/store/repo_ledger.go` 的 `upsertArchive` | `department = COALESCE(NULLIF(excluded.department,''), t_ledger_archive.department)` → **非空新值会覆盖旧值** | 快照列 **write-once**：仅当 `t_ledger_archive.department` 为空时才写入 |
+| `internal/store/repo_ledger.go` 的 `upsertArchive` | ★ **`cc753c4` 起已是 write-once**：`department = COALESCE(NULLIF(t_ledger_archive.department,''), excluded.department)`（库中非空则保留，**不再被后续非空值覆盖**） | ✅ **已达成**（与 instance 侧同形） |
 
 > ★ `department_id` / `department_id_raw` 为**新增列**，天然 write-once（后续事件无此字段时保持 NULL 不覆盖）。
 
@@ -555,8 +555,8 @@ sequenceDiagram
 | S9 | 实例自带部门 ID | `internal/platform/feishu/instance.go` 的 `DepartmentID` | `DepartmentID` **解析未用** | **消费为桥接键**：`department_id → open_department_id`（按值前缀）；同时落 `department_id_raw` 留痕 |
 | S10 | 实例落库 | `internal/worker/ingest.go` 的 `Department: det.Department`（实例落库分支） | `Department: det.Department` | 加 `department_id`(`od-`，桥接所得) ＋ `department_id_raw`；名称走镜像快照 |
 | S11 | 台账落库 | `internal/worker/ingest.go` 的 `Department: det.Department`（台账落库分支） | `Department: det.Department` | 同上 |
-| S12 | 实例 UPSERT | `internal/store/repo_instance.go` 的 `upsertInstance` | ★ **`#46` 起已是 write-once**（名称**不再**被覆盖） | ✅ **已达成**（原「改 write-once」已落地；见 §4.9-b）★ **本条只管实例侧**；**`t_ledger_archive` 侧（S13）仍为覆盖式、未落地** |
-| S13 | 台账 UPSERT | `internal/store/repo_ledger.go` 的 `upsertArchive` | 名称可被覆盖 | 改 write-once（§4.9-b） |
+| S12 | 实例 UPSERT | `internal/store/repo_instance.go` 的 `upsertInstance` | ★ **`#46` 起已是 write-once**（名称**不再**被覆盖） | ✅ **已达成**（原「改 write-once」已落地；见 §4.9-b）★ **ledger 侧（S13）亦已于 `cc753c4` 落地 ⇒ 两侧齐** |
+| S13 | 台账 UPSERT | `internal/store/repo_ledger.go` 的 `upsertArchive` | ★ **`cc753c4` 起已是 write-once**（名称**不再**被覆盖） | ✅ **已达成** —— 已按 `§4.9-b` 落地（`#46` 补 instance 侧，`cc753c4` 补齐 ledger 侧） |
 | S14 | 台账展示 | `internal/httpapi/helpers.go` 的 `row["department"]=a.Department`（台账行组装） | `row["department"]=a.Department` | 展示沿用快照名（可另附 `department_id`） |
 | S15 | 看板部门分组 | `internal/dashboard/dashboard.go` 的 `expense_by_department` 图（`r.Department` 分组） | 按 `r.Department` 分组 | 明确「按快照名分组」；如需跨改名归一，可改按 ID 分组 |
 | S16 | 看板取数 | `internal/dashboard/dashboard.go` 的看板取数 SQL（`SELECT … department`） | `SELECT department` | 增取 `department_id`（备用） |
@@ -914,6 +914,7 @@ graph TD
 
 | 版本 | 日期 | 变更 |
 |---|---|---|
+| V1.7 | 2026-09-27 | **缺口闭合后「翻面」（纯文档；team-lead 裁定；`engineer-glm` 已交 `cc753c4`）**：★ `t_ledger_archive.department` 的 write-once 守卫**已落地**（`internal/store/repo_ledger.go` 的 `upsertArchive` 现为 `COALESCE(NULLIF(t_ledger_archive.department,''), excluded.department)`，与 instance 侧 `R17` **同形**）→ 本文 6 处「仍为覆盖式 / 待改」注**全部翻面**：① **§1 行 13** → 两侧均已 write-once；② **§4.9-a** 两行「改为 write-once」→ **write-once ✅**（`#46` / `cc753c4`）；③ **§4.9-b 标题**标「两处均已落地」＋ **行 2** 现状改「`cc753c4` 起已是 write-once」、处置 ✅ 已达成；④ **`S12`** 删去「ledger 侧仍未落地」→ 改「ledger 侧亦已 `cc753c4` 落地 ⇒ **两侧齐**」；⑤ **`S13`** 状态 → **✅ 已达成**（证据 `cc753c4`）。★★ **本条即定案 #73 的实例**：**为「缺口」而写的「另一半（仍未落地）」注，会在缺口闭合后自己变成误导源**（读者以为还差一半、去重复修）⇒ **凡「某侧仍未落地 / 待补 / 尚未实现」类注，在对应工作落地后必须回扫并翻面**；本次 V1.6 行留作史实、正文全部翻面。★ **不改任何代码 / 编号**。 |
 | V1.6 | 2026-09-27 | **按 team-lead 裁定收口 V1.5 遗留 2 处（纯文档）**：① **`S12` 保留、标 ✅ 已达成**（`#46` 已把 `t_instance` 改 write-once）——★ 理由：`S1`–`S15` 是**防护清单**（"这些防护必须有"）、**非临时结构**，故**不适用"缺口闭合即撤结构"**；但 ★ **不以 ✅ 掩盖另一半** → 同行补「**本条只管实例侧；`t_ledger_archive` 侧（S13）仍为覆盖式、未落地**」。② **`§6 订正 1` 保留为史实 ＋ 标「后被取代」**：键表已改名 `retiredApprovalEventTypes`，改为「**仍然注册 ＋ 处理器 no-op**」（理由：完全不注册 → 飞书重试风暴；`sinkEventTypes` 现空）⇒ 原「移除 `approval_task` 键」**不再适用**（属**事实更正**、非设计变更，故可直接写）。★ 另：**`t_ledger_archive.department` 的守卫缺口**经全量枚举确认为**未登记的活动缺口**，已单独报 team-lead（**本文只记现状，等裁定后再定落点**）。★ **不改任何代码 / 编号**。 |
 | V1.5 | 2026-09-27 | **行号引用符号化（纯文档；`README` 定案 #74，team-lead 派单）**：★ 全文**代码引用**由「`文件:行`」改为「**`文件` ＋ 符号/模式**」—— 覆盖 §1（16 行「既有事实」出处列）· §4.5 · §4.6 · §4.9(a)(b)(c)（S1–S24）· §4.10 · §6。★ **两栏清点（#67 法）**：① **现值引用 55 处**（`.go`/`.py` 52 ＋ `.sql` 3）→ **已全部符号化**；② **史实留痕 0 处**（本文无「记当时行号」的变更记录行，故 ②＝0）。★ **落地前已漂移 12/55 条（≈22%）**，涉及 6 个符号：`internal/platform/feishu/longconn.go`（`LongConn.Run` 注册块 62→81、`retiredApprovalEventTypes` 键清单 22→29）· `cmd/jxapproval/bootstrap.go`（`singlelock.New().Acquire()` 48→79）· `internal/httpapi/handlers_ops.go`（`handleHealthz`/`handleReadyz` 18→25/35）· `internal/store/repo_instance.go`（`upsertInstance` 38→55、实例列表 `department = ?` 94→145）· `internal/store/repo_ledger.go`（台账列表 94→100）· `internal/store/repo_misc.go`（报销跟踪列表 335→344）。★ **「设计目标 vs 现存符号」处理 0 条** —— 本文所有 `文件:行` 均指向**现存代码**（`internal/orgsync/*` 等**设计目标**只按**包名**提及、未带行号，故无伪造风险）。★★ **符号核验（定案 #66）连带发现 2 处「引用已修掉的缺陷」**（比行号漂移更危险 —— 它曾经是对的）：① **§1-13 / §4.9-b / S12**：本文称 `t_instance.department`「UPSERT 会被非空后续值覆盖（非 write-once）」，**但 `#46` 起已改 write-once**（`repo_instance.go` 现为 `COALESCE(NULLIF(t_instance.department,''), excluded.department)`）→ 已就地**复核标注**（仅 `t_ledger_archive` 侧仍成立）；② **§6 订正 1**：本文称键表为 `approvalEventTypes` 且建议「移除 `approval_task` 键」，**但该变量已改名 `retiredApprovalEventTypes` 且改为「保留注册 + 处理器 no-op」（`sinkEventTypes` 现为空）** → 已**复核标注**「处置须按新事实重评」。★ **不改任何代码 / 编号**。 |
 | V1.4 | 2026-09-27 | **迁移编号变更（纯文档；team-lead 裁定，配合 `#66`；登记见 `15-Code-Collision-Register.md` §2 行 11）**：本文 `org_directory` 迁移**原设计号 `0007`** 与**已落地**的 `0007_approval_core.sql` **撞号** → 全文改号为 **`0012_org_directory.sql`**（`0008`–`0010` 亦已落地、`0011` 归 `t_flow_op_log` 轮次去重）。★ 改动位点：§1-17（迁移序号）· **§4.2 标题 ＋ 新增「编号变更」注** · §4.5（镜像表由 `0012` 建）· §8 T01 / T04 · §10 依赖图（mermaid）。★ 口径：**已落地编号不可回退，未落地设计让号**。 |
