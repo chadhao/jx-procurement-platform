@@ -7,7 +7,7 @@
 | 项 | 内容 |
 |---|---|
 | 文档名称 | 采购与费用审批平台（自建侧）· 接口设计 |
-| 版本 | V2.6（+ 2026-09-27 实测：§3.8 `external_instances/check` 入参校正为 `instances[]`（每项含 `update_time`＋`tasks`）＋ `approval_code` 命名歧义；含 V2.5 `#74` 批量 A） |
+| 版本 | **V2.7**（+ 2026-09-27 实测：**新增 §6.1「转向 ③ 新增的出方向接口」** —— `external_approvals` / `external_instances` / `check` 三条契约按实测校准，含「双 code 池」「`texts` 须数组」「审批人字段」三项关键更正；含 V2.6 §3.8 入参校正 ＋ `approval_code` 命名歧义；含 V2.5 `#74` 批量 A） |
 | 日期 | 2026-09-26 |
 | 上游文档 | `01-PRD.md`、`02-UseCase.md`、`03-TestCase.md`、`04-Architecture.md` |
 | 语言纪律 | 简体中文 |
@@ -847,6 +847,20 @@ sequenceDiagram
 - 调用量目标：**数百次/月量级**（FR-M0-08）。
 - `approval_code` 具体值：**待确认（Q1）**。
 
+### 6.1 ★ 转向 ③ 新增的出方向接口（**契约按 2026-09-27 实测校准**）
+
+> 应用实例：`cli_aa33a8b22f78dcb4`。★ 下表「关键契约」列均为**实测所得**，与官方文档不符处已标注。
+
+| 用途 | 接口 | 关键契约（实测） |
+|---|---|---|
+| 建/改三方审批定义 | `POST /open-apis/approval/v4/external_approvals` | ★ **`approval_code` 走「自定义 code」池**：命中即更新、**未命中静默新建**（返回新真实 code）。★ `i18n_resources[].texts` **必须是数组** `[{"key":…,"value":…}]`（传 map ⇒ `9499 Invalid parameter type`）。★ `locale` 须 `zh-CN`、`is_default` 须 `true`（**飞书不校验，须自查**）。★ `group_code` 与 `group_name` **必须成对** |
+| 查三方审批定义 | `GET /open-apis/approval/v4/external_approvals/{真实code}` | ★ **路径参数必须是「真实 code」**（＝创建响应返回值）；**读回字段 `approval_code` 返回的却是「自定义 code」** ⇒ 同一字段名两样东西 |
+| 推/更实例 | `POST /open-apis/approval/v4/external_instances` | ★ 审批人在 **`task_list[].open_id` / `user_id`**（**官方无 `assignees`**；传错**静默忽略** ⇒ 任务不进「待办」）。★ 「同意/拒绝」两键在 **`task_list[].action_configs`**（`action_type` = `APPROVE` / `REJECT`）。★ 单据编号走顶层 **`extra.business_key`**。★ 成功回显为 **`data.data` 双层嵌套** |
+| 实例对账 | `POST /open-apis/approval/v4/external_instances/check` | ★ 入参 **`instances[]`** 每项含 `update_time`＋`tasks`；成功返回 `data.diff_instances`（**空数组＝零差异**） |
+
+- ★★ **三类静默缺陷**（联调必须以**回读 / 对账**自证，**不得以 `code:0` 判通过**）：① **未知字段被静默忽略**（`assignees`）；② **不校验 `locale` 枚举**（`zh_cn` 被接受）；③ **列表类接口权限不足时报误导性 `99991663`**（而非 `99991672`）。
+- ★ **计费**：审批 API **计入**调用量（与上表一致）；建定义应**幂等缓存、不重复调用**。
+
 ---
 
 ## 7. 状态与枚举契约
@@ -932,6 +946,7 @@ sequenceDiagram
 
 | 版本 | 日期 | 变更 | 作者 |
 |---|---|---|---|
+| V2.7 | 2026-09-27 | **新增 §6.1「转向 ③ 新增的出方向接口」（契约按实测校准）**：① **`POST /external_approvals`** —— ★ **`approval_code` 走「自定义 code」池**（命中即更新、**未命中静默新建**）；★ **`i18n_resources[].texts` 必须是数组**（传 map ⇒ `9499`，**与官方文档示例不符**）；★ `locale`/`is_default` 飞书**不校验**，须自查。② **`GET /external_approvals/{真实code}`** —— ★ 路径参数须「真实 code」，而读回字段返回「自定义 code」。③ **`POST /external_instances`** —— ★ 审批人在 **`task_list[].open_id`/`user_id`**（**官方无 `assignees`**，传错**静默忽略** ⇒ 任务不进「待办」）；★ 两键在 **`task_list[].action_configs`**；★ 单据编号走 **`extra.business_key`**；★ 成功回显 `data.data` 双层。④ **`check`** 成功返回 `data.diff_instances`。⑤ ★ 归纳**三类静默缺陷**（未知字段忽略 / 不校验 `locale` / 列表接口缺权限报误导性 `99991663`）⇒ **不得以 `code:0` 判通过**。 | 交付总监 |
 | V2.6 | 2026-09-27 | 依 team-lead 飞书**实测裁定**（**纯文档**）：**§3.8 `POST /internal/approval/check`** 补两条上游契约 —— ① **`external_instances/check` 入参字段名校正为 `instances[]`，且每项必须含 `update_time` ＋ `tasks`**（只给 `instance_id` ⇒ `99992402 field validation failed`）；② **`external_approvals` 读回须用创建响应返回的 `approval_code` 作路径参数**（**`?approval_code=` 形态不通**）；并**写清 `approval_code` 字段名歧义**（创建响应 / 路径参数里的＝「查询键」；定义体 `data.approval_code` ＝我方传入的值）。 | 架构师（Bob） |
 | V2.5 | 2026-09-27 | 执行 `#74` **批量 A**：§3.8 退役端点 **body** 引用改为符号 **`handlers_ops.go` 的 `handleReconcile`**（退役 `410 Gone` body）。 | 架构师（Bob） |
 | V2.4 | 2026-09-27 | 执行 `#48`（回填他批交付）：① **§3.13** —— `addsign` 补 **`timing`** 入参（∈{`AFTER`(默认),`BEFORE`}；`BEFORE`＝插到**当前办理人**之前、同节点 `order ≥` 者整体 +1；★ **非法值"可见拒绝"** `400`/`40000`，**不静默降级**；依据用户口径「由操作人当场选、默认后置」，实现 `f5be198`）+ ★ **新增「全路径清单」表**（补 `scripts/audit_silent.py` **C5** 报出的 5 条「已注册未文档」路由 `addsign`/`cancel`/`reject`/`rollback`/`transfer`，及 `submit`/`{biz_no}`/`defs` 三条独立全路径行）；② **§3.14** —— 新增**回调错误 → 状态码枚举表**（`codeApprovalConflict` ＝ **40901**；★ 附**可达性**：`ErrTaskHeld`/`ErrNodeNotReached`/`ErrDefinitionMissing` **同步路径不可达**、系防御性对齐）+ **`#69` 契约**（`Accepted==true` ⇒ 一律 `200`、4xx 只用于未受理、**派生式修复循环** `30s` / `round` 对齐 / `HELD`·终态不动，实现 `5f8e35b`）。 | 架构师（Bob） |
