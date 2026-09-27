@@ -1,21 +1,32 @@
 # ── 行尾规范化：使「净检出」门禁在本机可复现 ──────────────────────────────────
-# 背景：本机 core.autocrlf=true 时，git 检出会把仓库内存的 LF 转成 CRLF 落到工作树；
+# 背景（独立验证者实测，定案 #54 家族：门禁结果不得依赖本地 git 配置）：
+#   本机 core.autocrlf=true 时，git 检出会把仓库内存的 LF 转成 CRLF 落到工作树；
 #   于是「全新 worktree / 净检出」下 `gofmt -l .` 会把**每一个** .go 文件都判为未格式化
 #   （实测 156 处全量误报）⇒ 必绿门禁在「净检出」语义下必红。
 #   ★ 部署目标是 Linux 云主机（本就是 LF），故**生产不受影响**；本文件修复的是**本机开发
 #     与门禁可信度**：让 check_head_buildable.sh / check_all.sh 的结论不依赖本地 git 配置。
 #
-# 规则：仓库内一律以 LF 存储、并以 LF 检出（text 声明为文本；eol=lf 强制检出为 LF）。
-#   实测：仓库现存全部 249 个受控文件在 index 侧均为 LF（`git ls-files --eol`），
-#   故新增下列属性**不触发 renormalize 级联**（安全闸实测：git status 仅此一个新文件）。
+# 依据：实测仓库现存 249 个受控文件在 index 侧**全部**为 LF（`git ls-files --eol`），
+#   故新增本文件**不触发 renormalize 级联**（安全闸实测：git status 仅此一个新文件）。
 
-# 必需（直接决定 gofmt / 构建类门禁）：Go 源码、迁移 SQL、Shell 脚本。
+# ── 通用规则 ────────────────────────────────────────────────────────────────
+# git 自动识别文本文件 → 一律以 LF 存储、以 LF 检出（二进制自动跳过）。
+#   用通用规则覆盖**全部文本类型**，以免「净检出」仍与参照树（本仓库共享工作树，
+#   248/249 受控文件为 LF）产生差异；也覆盖无扩展名的文本文件（如 logrotate 配置）。
+* text=auto eol=lf
+
+# ── 关键类型（显式写明，意图可读；与通用规则同向）────────────────────────────
+# 门禁 / 构建直接依赖：Go 源码、迁移 SQL、Shell 脚本、Python 脚本。
 *.go    text eol=lf
 *.sql   text eol=lf
 *.sh    text eol=lf
-
-# 判断后一并纳入（理由：这些文件同样在「净检出」语义下被门禁/脚本读取，CRLF 会引入
-# 不可复现的差异 —— md 被「md 表格列数 / md 结构与一致性」门禁逐行解析，json 被脚本读；
-# 且 index 侧已全为 LF，纳入无级联风险）。
+*.py    text eol=lf
+# 同样在「净检出」语义下被门禁 / 脚本 / 构建读取的文本类型。
 *.md    text eol=lf
 *.json  text eol=lf
+*.js    text eol=lf
+*.vue   text eol=lf
+*.css   text eol=lf
+*.html  text eol=lf
+*.mod   text eol=lf
+*.sum   text eol=lf
