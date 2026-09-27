@@ -280,23 +280,33 @@ def check_test_fixture_bypass():
       C8b  测试夹具里造的**台账类型**中，有没有「任何 doc_type 都产生不了」的
            —— 那意味着用例在验证一条生产上永远走不到的路径（B37/B47 的形态）。
     """
-    # C8a：非测试代码的写入点
-    #   allowed        精确路径白名单（已确认的"真实写入者"）
-    #   allowed_prefix 目录白名单：③ 下台账/状态史/附件的**新写入者是 internal/flow**
-    #                  （`flow.finalize`，FR-M9-12）。不加它，会把"接管者"误报成"越权写入者"
-    #                  （R22：门禁自身失效——漏检 + 误报）。
+    # C8a：非测试代码的写入点 —— ★ **只认"写入调用"**，排除函数定义行
     #
-    # ★ 正则必须**同时**覆盖事务版 `UpsertArchiveTx(` / `UpsertOpsTx(`：
-    #   ③ 新写入者 `flow.finalize` 用的是 **`UpsertArchiveTx`**（`internal/flow/finalize.go`）。
-    #   若只匹配 `UpsertArchive\(`，`flow/finalize.go` 那行**永远进不了 if** →
-    #   白名单再加也没用 → **仍是漏检**，且让 R22 **看起来已经修好**（比没修更危险）。
-    allowed = ('internal/worker/ingest.go', 'internal/store/repo_ledger.go',
-               'internal/httpapi/handlers_biz.go')
+    # ★ 为什么排除定义行：C8a 的语义是「写入点」，而定义行（`func (d *DB) UpsertArchiveTx(...)`）
+    #   **不是写入点** —— 写入点是**调用**它的地方。把定义行算命中属**误判**；修好正则后，
+    #   每个写函数的定义都会成为命中 → 门禁被自己的噪声淹没 → 而"命中多到无人细读"
+    #   **本身就是假绿的另一种形态**（与 `3f76985`「扫 0 文件仍 OK」同病）。
+    #   ★ 原则：**能用规则解决的就不要用例外**；白名单是"例外清单"，**越长越接近门禁失效**。
+    #
+    # ★ 正则覆盖普通版与事务版（`UpsertArchive(` / `UpsertArchiveTx(`）：
+    #   ③ 新写入者 `flow.finalize` 用的是 **`UpsertArchiveTx`**（`internal/flow/finalize.go`）；
+    #   若只匹配 `UpsertArchive\(`，该行**永远进不了 if** → 白名单形同虚设（漏检），
+    #   且让 R22 **看起来已经修好**（比没修更危险）。
+    #
+    # allowed 精确路径白名单（已确认的"真实写入者"）。★ 收紧为"只认调用"后仅剩**真正的调用点**：
+    #           · internal/worker/ingest.go     —— `g.db.UpsertArchiveTx(...)`（旧事件链写入者）
+    #           · internal/httpapi/handlers_biz.go —— `d.DB.UpsertOps(...)`（运营字段写接口）
+    #         （`internal/store/repo_ledger.go` 已移出：其中只有 **定义**、无调用，规则收紧后不再命中）
+    allowed = ('internal/worker/ingest.go', 'internal/httpapi/handlers_biz.go')
     allowed_prefix = ('internal/flow/',)
+    decl_re = re.compile(r'^\s*func\b')                                 # 函数定义行 ≠ 写入点
+    write_re = re.compile(r'UpsertArchive(?:Tx)?\(|UpsertOps(?:Tx)?\(')
     for p, s in sorted(SRC.items()):
         r = rel(p)
         for i, line in enumerate(s.split('\n'), 1):
-            if re.search(r'UpsertArchive(?:Tx)?\(|UpsertOps(?:Tx)?\(', line) \
+            if decl_re.match(line):
+                continue
+            if write_re.search(line) \
                     and not any(r == a for a in allowed) \
                     and not r.startswith(allowed_prefix):
                 hit('C8a', '%s:%d 非测试代码直接写台账（确认它是不是真实写入者）：%s'
