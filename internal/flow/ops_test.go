@@ -458,8 +458,8 @@ func TestRollbackResetsEarlierNode(t *testing.T) {
 	if err := svc.Approve(ctx, bizNo, m1.TaskID, "ou_m1", "同意"); err != nil {
 		t.Fatal(err)
 	}
-	// 当前活动节点 = n2；回退到 n1。
-	if err := svc.Rollback(ctx, bizNo, "ou_m1", "n1", "资料有误"); err != nil {
+	// 当前活动节点 = n2（当前办理人 = ou_m2）；★ 回退准入收紧后，须由**当前办理人**发起。
+	if err := svc.Rollback(ctx, bizNo, "ou_m2", "n1", "资料有误"); err != nil {
 		t.Fatalf("回退失败: %v", err)
 	}
 	r1 := taskFor(t, db, bizNo, "ou_m1")
@@ -482,9 +482,10 @@ func TestRollbackNegatives(t *testing.T) {
 	ctx := context.Background()
 	bizNo := submitTwoNodes(t, svc, "ou_m1", "ou_m2")
 	m1 := taskFor(t, db, bizNo, "ou_m1")
-	_ = svc.Approve(ctx, bizNo, m1.TaskID, "ou_m1", "同意") // 活动节点 = n2
+	_ = svc.Approve(ctx, bizNo, m1.TaskID, "ou_m1", "同意") // 活动节点 = n2（当前办理人 = ou_m2）
 
-	if err := svc.Rollback(ctx, bizNo, "ou_m1", "n2", ""); !errors.Is(err, flow.ErrIllegalTransition) {
+	// ★ 由**当前办理人**（ou_m2）回退到当前/更晚节点 → 非法（须回退到**更早**节点）。
+	if err := svc.Rollback(ctx, bizNo, "ou_m2", "n2", ""); !errors.Is(err, flow.ErrIllegalTransition) {
 		t.Errorf("回退到当前节点应 ErrIllegalTransition，实际: %v", err)
 	}
 	if err := svc.Rollback(ctx, bizNo, "ou_x", "n1", ""); !errors.Is(err, flow.ErrNotAssignee) {
@@ -493,6 +494,75 @@ func TestRollbackNegatives(t *testing.T) {
 	_ = svc.Cancel(ctx, bizNo, "ou_app", "撤回")
 	if err := svc.Rollback(ctx, bizNo, "ou_m1", "n1", ""); !errors.Is(err, flow.ErrIllegalTransition) {
 		t.Errorf("终态回退应 ErrIllegalTransition，实际: %v", err)
+	}
+}
+
+// TestRollbackRequiresCurrentAssignee ★ 负向（定案 #58）：**上游节点已通过者**发起回退 → **必须被拒**。
+//
+// ★ 为什么能戳中：旧判据 `actorHasTask`＝「实例内**任一**任务持有者」。已通过者（ou_m1）**仍持有任务**
+// （其 `status=APPROVED`、`release_state` 仍 `RELEASED`）→ 旧判据**放行**；收紧后须为
+// **当前活动节点（n2）的当前 `PENDING` 任务** assignee（ou_m2）才行。
+func TestRollbackRequiresCurrentAssignee(t *testing.T) {
+	db := newFlowDB(t)
+	svc := flow.New(db, "app")
+	ctx := context.Background()
+	bizNo := submitTwoNodes(t, svc, "ou_m1", "ou_m2")
+	m1 := taskFor(t, db, bizNo, "ou_m1")
+	if err := svc.Approve(ctx, bizNo, m1.TaskID, "ou_m1", "同意"); err != nil {
+		t.Fatal(err)
+	} // 活动节点 = n2，当前办理人 = ou_m2
+
+	// 上游已通过者（ou_m1）发起回退 → ErrNotAssignee。
+	if err := svc.Rollback(ctx, bizNo, "ou_m1", "n1", "越权回退"); !errors.Is(err, flow.ErrNotAssignee) {
+		t.Errorf("上游已通过者回退应 ErrNotAssignee，实际: %v", err)
+	}
+	// 可见失败：实例仍 PENDING、n1 任务**未被重置**（round 仍 1、状态仍 APPROVED）。
+	if got := instOf(t, db, bizNo).Status; got != flow.InstancePending {
+		t.Errorf("越权回退后实例 = %s，期望 PENDING（未被改动）", got)
+	}
+	r1 := taskFor(t, db, bizNo, "ou_m1")
+	if r1.Status != flow.TaskApproved || r1.Round != 1 {
+		t.Errorf("越权回退改动了 n1：status=%s round=%d，期望 APPROVED/round=1", r1.Status, r1.Round)
+	}
+	// 当前办理人（ou_m2）回退 → 合法，n1 被重置（round=2）。
+	if err := svc.Rollback(ctx, bizNo, "ou_m2", "n1", "资料有误"); err != nil {
+		t.Fatalf("当前办理人回退应成功，实际: %v", err)
+	}
+	if got := taskFor(t, db, bizNo, "ou_m1").Round; got != 2 {
+		t.Errorf("合法回退后 n1 round = %d，期望 2（被重置）", got)
+	}
+}
+
+// TestCancelRequiresApplicant ★ 负向（定案 #58）：**非申请人**撤回他人单据 → **必须被拒**；且
+// 鉴权**先于**幂等分支（非申请人对已撤回单亦应被拒 → 不泄漏"该单状态"）。
+func TestCancelRequiresApplicant(t *testing.T) {
+	db := newFlowDB(t)
+	svc := flow.New(db, "app")
+	ctx := context.Background()
+	bizNo := submitTwoNodes(t, svc, "ou_m1", "ou_m2")
+
+	// 非申请人（ou_m1，即使他是审批人）撤回 → ErrNotAssignee。
+	if err := svc.Cancel(ctx, bizNo, "ou_m1", "越权撤回"); !errors.Is(err, flow.ErrNotAssignee) {
+		t.Errorf("非申请人撤回应 ErrNotAssignee，实际: %v", err)
+	}
+	// 可见失败：实例未被撤回。
+	if got := instOf(t, db, bizNo).Status; got != flow.InstancePending {
+		t.Errorf("越权撤回后实例 = %s，期望 PENDING（未被改动）", got)
+	}
+	// 申请人本人撤回 → 成功。
+	if err := svc.Cancel(ctx, bizNo, "ou_app", "撤回"); err != nil {
+		t.Fatalf("申请人撤回应成功，实际: %v", err)
+	}
+	if got := instOf(t, db, bizNo).Status; got != flow.InstanceCanceled {
+		t.Fatalf("撤回后实例 = %s，期望 CANCELED", got)
+	}
+	// ★ 信息泄漏防护：非申请人对**已 CANCELED** 的单再撤回 → 仍 ErrNotAssignee（鉴权先于幂等 no-op）。
+	if err := svc.Cancel(ctx, bizNo, "ou_m1", "探测状态"); !errors.Is(err, flow.ErrNotAssignee) {
+		t.Errorf("非申请人对已撤回单撤回应 ErrNotAssignee（鉴权须先于幂等），实际: %v", err)
+	}
+	// 申请人重复撤回 → 幂等 no-op。
+	if err := svc.Cancel(ctx, bizNo, "ou_app", "再撤一次"); err != nil {
+		t.Errorf("申请人重复撤回应幂等无错，实际: %v", err)
 	}
 }
 

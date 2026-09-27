@@ -288,14 +288,28 @@ func (s *Service) Rollback(ctx context.Context, bizNo, actorOpenID, targetNodeID
 		if err != nil {
 			return err
 		}
-		if !actorHasTask(tasks, actorOpenID) {
-			return fmt.Errorf("%w: %s 非实例 %s 的审批人", ErrNotAssignee, actorOpenID, bizNo)
+		// ★ 准入收紧（`04a §5.1` / §5.2）：回退＝**「当前任务审批人本人」且任务 `PENDING`**。
+		//   ＝ actor 须为**当前活动节点**（`maxReachedSeq`）的**当前 `PENDING` 任务** assignee。
+		//   ★ 原判据 `actorHasTask`（「实例内**任一**任务持有者」）过宽：**上游节点已通过者**
+		//     （其任务仍 `RELEASED`、`actorHasTask` 为真）也会被放行 → 比正本宽（fail-closed 修正）。
+		activeSeq := maxReachedSeq(tasks)
+		activeNodeID := nodeIDOfSeq(tasks, activeSeq)
+		if activeNodeID == "" {
+			return fmt.Errorf("%w: 实例 %s 无当前活动节点，不可回退", ErrIllegalTransition, bizNo)
+		}
+		activeTasks, err := s.db.ListTasksByNodeTx(ctx, tx, bizNo, activeNodeID)
+		if err != nil {
+			return err
+		}
+		cur := firstPendingTask(activeTasks)
+		if cur == nil || cur.AssigneeOpenID != actorOpenID {
+			return fmt.Errorf("%w: %s 非当前节点 %s 的当前审批人，不可回退（04a §5.1）",
+				ErrNotAssignee, actorOpenID, activeNodeID)
 		}
 		targetSeq, ok := seqOfNode(tasks, targetNodeID)
 		if !ok {
 			return fmt.Errorf("%w: 节点 %s 不存在", ErrInvalidSubmit, targetNodeID)
 		}
-		activeSeq := maxReachedSeq(tasks)
 		if targetSeq >= activeSeq {
 			return fmt.Errorf("%w: 只能回退到更早节点（target=%d, 当前=%d）",
 				ErrIllegalTransition, targetSeq, activeSeq)
@@ -413,16 +427,6 @@ func maxTaskOrder(tasks []store.FlowTask) int {
 		}
 	}
 	return max
-}
-
-// actorHasTask 判断某 open_id 是否拥有实例内至少一个任务（回退操作者校验）。
-func actorHasTask(tasks []store.FlowTask, openID string) bool {
-	for _, t := range tasks {
-		if t.AssigneeOpenID == openID {
-			return true
-		}
-	}
-	return false
 }
 
 // seqOfNode 返回某 node_id 对应的 node_seq（找不到返回 false）。

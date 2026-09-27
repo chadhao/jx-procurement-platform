@@ -300,8 +300,16 @@ func (s *Service) Cancel(ctx context.Context, bizNo, actorOpenID, reason string)
 		if err != nil {
 			return err
 		}
+		// ★ 鉴权**先行**（域层硬校验，`04a §5.1`：撤回＝`applicant=me`）。
+		//   ★★ 必须置于**幂等分支之前**：否则非申请人可借「已 `CANCELED` → no-op」**探得**该单
+		//   是否已撤回（越权 + 信息泄漏）。被撤回的单据对非申请人**不得**暴露任何成功信号。
+		//   ★ 为什么在域层而非仅 HTTP 层：§5.1 明标「服务端硬校验」；且 `flow` 接线后（`R09`）
+		//   该路径变为可达 —— 见 README 定案 #58「装配/接线会改变可达性」。
+		if inst.ApplicantOpenID != actorOpenID {
+			return fmt.Errorf("%w: %s 非实例 %s 的申请人，不可撤回", ErrNotAssignee, actorOpenID, bizNo)
+		}
 		if inst.Status == InstanceCanceled {
-			return nil // 幂等：重复撤回 = no-op
+			return nil // 幂等：重复撤回 = no-op（★ 已过鉴权，仅申请人本人可达）
 		}
 		if isTerminal(inst.Status) {
 			return fmt.Errorf("%w: 实例 %s 已终态 %s，不可撤回", ErrIllegalTransition, bizNo, inst.Status)
