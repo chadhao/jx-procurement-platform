@@ -370,6 +370,21 @@ func (s *Service) act(ctx context.Context, bizNo, taskID, actor, opType, reason 
 			return fmt.Errorf("%w: 任务 %s 不属于实例 %s", ErrIllegalTransition, taskID, bizNo)
 		}
 
+		// ★ 鉴权（域层硬校验）：**同意 / 拒绝必须由该任务的 assignee 本人执行**（`operator == assignee`）。
+		//   ★★ 口径依据（用户第二轮口径 ⑥ **逐字**）：
+		//      「加签是会签；**代理人可以转交或者退回**，但是需要通知这个审批单内已经审批通过的所有人。」
+		//      → **代理人只能"转交 / 退回"，不能代替同意** → 故 `approve`/`reject` 一律要求**本人**；
+		//        代理人若想让流程通过，只能走**转交**（把任务交给他人）或**回退** —— **不是代签**。
+		//      （`04a §5.1` 原表只列"四操作"、未列"两键"准入 → 本条为准入裁定补入。）
+		//   ★ 置于**幂等 / 终态 / 状态**判断**之前**：鉴权＝准入控制，须先于状态解释 —— 否则非本人
+		//     可借"已 `APPROVED` → no-op""实例终态 → no-op"的**成功 / 无错差异**，探得任务 / 实例状态。
+		//   ★ 重复回调不受影响：去重发生在**回调入口**（`HandleCallback` → 幂等落 `t_flow_op_log`），
+		//     重复报文**根本到不了** `act`（见 callback.go）；故本校验**不会**把重复回调误判为越权。
+		if task.AssigneeOpenID != actor {
+			return fmt.Errorf("%w: %s 非任务 %s 的审批人，不可执行 %s（同意/拒绝须本人）",
+				ErrNotAssignee, actor, taskID, opType)
+		}
+
 		// ① 幂等：对已处于目标状态的任务重复操作 = no-op（04a §4.3 状态机层第二道防线）。
 		if opType == OpApprove && task.Status == TaskApproved {
 			return nil

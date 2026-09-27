@@ -670,3 +670,85 @@ func TestSubmitRequiresRegisteredDefinition(t *testing.T) {
 		t.Fatalf("定义已注册应可提交，实际: %v", err)
 	}
 }
+
+// ---------- 两键准入（operator == assignee，定案 #60） ----------
+
+// TestApproveRequiresAssignee ★ 负向（路径一：`act` 直调）：**非本人** `approve`/`reject` **必须被拒**。
+//
+// ★ 口径＝用户第二轮口径 ⑥：代理人只能"转交 / 退回"，**不能代替同意** → 同意/拒绝须本人。
+func TestApproveRequiresAssignee(t *testing.T) {
+	db := newFlowDB(t)
+	svc := flow.New(db, "app")
+	ctx := context.Background()
+	bizNo := submitTwoNodes(t, svc, "ou_m1", "ou_m2")
+	m1 := taskFor(t, db, bizNo, "ou_m1")
+
+	// 非本人（ou_evil）approve / reject → 均须 ErrNotAssignee。
+	if err := svc.Approve(ctx, bizNo, m1.TaskID, "ou_evil", "替签"); !errors.Is(err, flow.ErrNotAssignee) {
+		t.Errorf("非本人 approve 应 ErrNotAssignee，实际: %v", err)
+	}
+	if err := svc.Reject(ctx, bizNo, m1.TaskID, "ou_evil", "替拒"); !errors.Is(err, flow.ErrNotAssignee) {
+		t.Errorf("非本人 reject 应 ErrNotAssignee，实际: %v", err)
+	}
+	// 可见失败：任务/实例均未被改动（不得被"代签"推进）。
+	if got := taskFor(t, db, bizNo, "ou_m1").Status; got != flow.TaskPending {
+		t.Errorf("非本人操作改动了任务：status=%s，期望 PENDING", got)
+	}
+	if got := instOf(t, db, bizNo).Status; got != flow.InstancePending {
+		t.Errorf("非本人操作推进了实例：%s，期望 PENDING", got)
+	}
+	// 对照：本人 approve → 成功推进。
+	if err := svc.Approve(ctx, bizNo, m1.TaskID, "ou_m1", "同意"); err != nil {
+		t.Fatalf("本人 approve 应成功，实际: %v", err)
+	}
+	if got := taskFor(t, db, bizNo, "ou_m1").Status; got != flow.TaskApproved {
+		t.Errorf("本人 approve 后任务 = %s，期望 APPROVED", got)
+	}
+}
+
+// TestCallbackRejectsNonAssignee ★ 负向（路径二：经 `HandleCallback`）：回调里的
+// `operator` ≠ `assignee` → **必须被拒**，且**不得推进**实例。
+//
+// ★ 该用例同时证明「operator 传参链路」正确：回调用例的 advancer 与生产一致
+//
+//	（`bootstrap.go:175` 同步适配器），把 `req.OperatorOpenID` 透传给 `flow.Approve` → `act`。
+func TestCallbackRejectsNonAssignee(t *testing.T) {
+	db := newFlowDB(t)
+	svc := flow.New(db, "app")
+	ctx := context.Background()
+	bizNo := submitOneNode(t, svc, "ou_m1")
+	m1 := taskFor(t, db, bizNo, "ou_m1")
+	// advancer 与生产装配一致：把回调里的**真实 operator** 透传给 act（不自造、不传空）。
+	svc.SetCallbackAdvancer(func(ctx context.Context, req flow.CallbackRequest) error {
+		if req.OpType == flow.OpReject {
+			return svc.Reject(ctx, req.BizNo, req.TaskID, req.OperatorOpenID, req.Reason)
+		}
+		return svc.Approve(ctx, req.BizNo, req.TaskID, req.OperatorOpenID, req.Reason)
+	})
+
+	// operator = ou_evil ≠ assignee(ou_m1) → 必须被拒（推进不得发生）。
+	_, err := svc.HandleCallback(ctx, flow.CallbackRequest{
+		Token: "tok-pr", BizNo: bizNo, TaskID: m1.TaskID, OpType: flow.OpApprove, OperatorOpenID: "ou_evil",
+	})
+	if !errors.Is(err, flow.ErrNotAssignee) {
+		t.Errorf("非本人回调应 ErrNotAssignee，实际: %v", err)
+	}
+	if got := instOf(t, db, bizNo).Status; got != flow.InstancePending {
+		t.Errorf("非本人回调后实例 = %s，期望 PENDING（不得推进）", got)
+	}
+	if got := taskFor(t, db, bizNo, "ou_m1").Status; got != flow.TaskPending {
+		t.Errorf("非本人回调后任务 = %s，期望 PENDING", got)
+	}
+
+	// 对照（另一起实例，避免与上一回调的幂等键 (biz_no,task_id,op_type) 冲突）：本人回调 → 推进。
+	bizNo2 := submitOneNode(t, svc, "ou_m2")
+	m2 := taskFor(t, db, bizNo2, "ou_m2")
+	if _, err := svc.HandleCallback(ctx, flow.CallbackRequest{
+		Token: "tok-pr", BizNo: bizNo2, TaskID: m2.TaskID, OpType: flow.OpApprove, OperatorOpenID: "ou_m2",
+	}); err != nil {
+		t.Fatalf("本人回调应成功，实际: %v", err)
+	}
+	if got := instOf(t, db, bizNo2).Status; got != flow.InstanceApproved {
+		t.Errorf("本人回调后实例 = %s，期望 APPROVED", got)
+	}
+}
