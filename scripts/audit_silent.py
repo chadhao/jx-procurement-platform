@@ -30,10 +30,11 @@ if '--root' in sys.argv:
 
 GO_FILES = []
 for dirpath, dirnames, filenames in os.walk(ROOT):
-    # ★ 跳过 `_` 前缀目录：**对齐 Go 工具链自身的规则**（`go build`/`go vet` 一律忽略
-    #   以 `_` 开头的目录）。否则探针/临时草稿目录（如 `scripts/_probe_c5`）里的 `.go`
-    #   会被本脚本当成真源码扫进统计与检查，令「扫描 N 个 .go」失真、并可能与真实结论混淆。
-    #   这是**规则**（与工具链同口径），不是逐目录的例外清单。
+    # ★ 跳过 `_` 前缀目录 —— **对齐 Go 工具链自身的规则**（`go build`/`go vet` 一律忽略
+    #   以 `_` 开头的目录）。本仓库的审计探针 **fixture**（`scripts/_probe_c5/`，用于验证
+    #   C5 双向检查「能报」，见该目录内注释）即以 `_` 前缀命名 —— 正是借这条规则让它**不进真扫描**：
+    #   既保留为可复跑证据，又不污染「扫描 N 个 .go」的统计与结论。
+    #   ★ 这是**规则**（与工具链同口径），不是逐目录的例外清单。
     dirnames[:] = [d for d in dirnames
                    if d not in ('.git', 'node_modules', 'dist') and not d.startswith('_')]
     for fn in filenames:

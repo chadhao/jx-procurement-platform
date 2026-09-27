@@ -80,7 +80,15 @@ T_ALL=$(_ms)
 echo "===== 全门禁 run-all  (repo: ${ROOT}) ====="
 echo
 echo "[必绿基线]"
-green_empty "gofmt -l ."              gofmt -l .
+# ★ gofmt 项**排除 `_` 前缀目录**（与 `go build ./...` / `go vet ./...` 口径对齐）：
+#   Go 工具链约定「`_` 前缀目录 与 `_`/`.` 前缀文件不参与构建」，`go build`/`go vet` 据此忽略之；
+#   而 `gofmt -l .` 是**纯文件遍历**、会走进去 ⇒ 该必绿项会去检查「工具链根本不构建的文件」。
+#   这是**门禁自身的不一致**（本仓库已有先例：审计探针 fixture `scripts/_probe_c5/`，其 .go 不参与构建）。
+#   → 判据与工具链对齐：只对**真正参与构建**的 .go 做格式门禁。
+#   · 在 `find` 端排除（而非事后 `grep -v` 过滤输出）：后者在「无匹配」时 `grep` 退出码为 1 → `green_empty` **假红**。
+#   · `xargs -r`：无文件时不调用 gofmt（否则 gofmt 读空 stdin 会**挂起**）。
+green_empty "gofmt -l .（排除 _ 前缀，对齐 go build/vet）" \
+  bash -c 'find . -type f -name "*.go" -not -path "*/_*" -not -path "*/.git/*" -not -path "*/node_modules/*" -print0 | xargs -0 -r gofmt -l'
 green       "go build ./..."          go build ./...
 green       "go vet ./..."            go vet ./...
 green       "go test ./... -count=1"  go test ./... -count=1
