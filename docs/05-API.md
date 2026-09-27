@@ -7,7 +7,7 @@
 | 项 | 内容 |
 |---|---|
 | 文档名称 | 采购与费用审批平台（自建侧）· 接口设计 |
-| 版本 | V2.5（+ `#74` 批量 A：§3.8 退役 body 引用改符号 `handleReconcile`；含 V2.4 `timing`/全路径/回调枚举） |
+| 版本 | V2.6（+ 2026-09-27 实测：§3.8 `external_instances/check` 入参校正为 `instances[]`（每项含 `update_time`＋`tasks`）＋ `approval_code` 命名歧义；含 V2.5 `#74` 批量 A） |
 | 日期 | 2026-09-26 |
 | 上游文档 | `01-PRD.md`、`02-UseCase.md`、`03-TestCase.md`、`04-Architecture.md` |
 | 语言纪律 | 简体中文 |
@@ -385,7 +385,11 @@ sequenceDiagram
 | 用途 | 手动触发**审批对账**（对 `external_instances/check` 的 diff **判方向**后重推，`04a §9.2`）—— ★ **非**"缺则补"的旧 `reconcile`（旧路径退役见 `docs/11 T02b`） |
 | 鉴权 | `JX_INTERNAL_TOKEN`（`X-Internal-Token`，见 §3.8 前言） |
 | 响应 | `{ checked, missing, repushed }` |
+| ★ 上游入参（`external_instances/check`） | ★ **2026-09-27 实测校正**：请求体字段名为 **`instances[]`**，且每项**必须含 `update_time` ＋ `tasks`**（只给 `instance_id` ⇒ 飞书报 `99992402 field validation failed`） |
+| ★ 上游读回（`external_approvals`） | ★ **2026-09-27 实测**：读回**必须用创建响应返回的 `approval_code`** 作**路径参数**（`GET /open-apis/approval/v4/external_approvals/{该值}`）—— ★ **`?approval_code=` 形态不通** |
 | 关联 FR | FR-M0-07、FR-M0-08 |
+
+> ★★ **`approval_code` 字段名歧义（2026-09-27 实测，★ 必须写清）**：三方审批定义里**两个 `approval_code` 不是同一样东西** —— ① **创建响应返回的 / 路径参数里的那个 `approval_code` ＝「查询键」**（`GET /open-apis/approval/v4/external_approvals/{该值}` 才通；**用我方传入的 code 做路径参数查不到**，报 `1390002 approval code not found`；**`?approval_code=` 形态也不通**）；② **定义体 `data.approval_code` ＝ 我方传入的值**（实测**客户端指定并生效**）。⇒ **读回用①**、**配置 / 映射用②**。
 
 #### `POST /internal/sync/subscribe`
 
@@ -928,6 +932,7 @@ sequenceDiagram
 
 | 版本 | 日期 | 变更 | 作者 |
 |---|---|---|---|
+| V2.6 | 2026-09-27 | 依 team-lead 飞书**实测裁定**（**纯文档**）：**§3.8 `POST /internal/approval/check`** 补两条上游契约 —— ① **`external_instances/check` 入参字段名校正为 `instances[]`，且每项必须含 `update_time` ＋ `tasks`**（只给 `instance_id` ⇒ `99992402 field validation failed`）；② **`external_approvals` 读回须用创建响应返回的 `approval_code` 作路径参数**（**`?approval_code=` 形态不通**）；并**写清 `approval_code` 字段名歧义**（创建响应 / 路径参数里的＝「查询键」；定义体 `data.approval_code` ＝我方传入的值）。 | 架构师（Bob） |
 | V2.5 | 2026-09-27 | 执行 `#74` **批量 A**：§3.8 退役端点 **body** 引用改为符号 **`handlers_ops.go` 的 `handleReconcile`**（退役 `410 Gone` body）。 | 架构师（Bob） |
 | V2.4 | 2026-09-27 | 执行 `#48`（回填他批交付）：① **§3.13** —— `addsign` 补 **`timing`** 入参（∈{`AFTER`(默认),`BEFORE`}；`BEFORE`＝插到**当前办理人**之前、同节点 `order ≥` 者整体 +1；★ **非法值"可见拒绝"** `400`/`40000`，**不静默降级**；依据用户口径「由操作人当场选、默认后置」，实现 `f5be198`）+ ★ **新增「全路径清单」表**（补 `scripts/audit_silent.py` **C5** 报出的 5 条「已注册未文档」路由 `addsign`/`cancel`/`reject`/`rollback`/`transfer`，及 `submit`/`{biz_no}`/`defs` 三条独立全路径行）；② **§3.14** —— 新增**回调错误 → 状态码枚举表**（`codeApprovalConflict` ＝ **40901**；★ 附**可达性**：`ErrTaskHeld`/`ErrNodeNotReached`/`ErrDefinitionMissing` **同步路径不可达**、系防御性对齐）+ **`#69` 契约**（`Accepted==true` ⇒ 一律 `200`、4xx 只用于未受理、**派生式修复循环** `30s` / `round` 对齐 / `HELD`·终态不动，实现 `5f8e35b`）。 | 架构师（Bob） |
 | V2.2 | 2026-09-27 | 执行 `13` **Batch P**（命名裁定）：§3.13 `GET /api/approval/tasks` 的「命名待统一」→「★ **命名已定 ＝ `/tasks`**」（`/my-tasks` 语义冗余，与 `GET /api/approval/{biz_no}` 同级）。其余端点契约不变。 | 架构师（Bob） |
