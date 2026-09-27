@@ -145,17 +145,19 @@ function doOp() {
     return
   }
   if (!requireTask()) return
+  // ★ 字段名对齐已实现的后端 handler（internal/httpapi/handlers_approval.go
+  //   `approvalActionBody`）：目标 open_id ＝ `target`、回退目标节点 ＝ `target_node`。
   const base = { task_id: selectedTaskId.value, reason: op.reason }
   if (op.type === 'transfer') {
-    run(() => transferTask(bizNo, { ...base, target_open_id: op.target_open_id }), '已转交')
+    run(() => transferTask(bizNo, { ...base, target: op.target_open_id }), '已转交')
   } else if (op.type === 'addsign') {
-    // ★ timing 由操作人当场选（默认 AFTER）
+    // ★ `timing` 由操作人当场选（默认 AFTER）：与 handler 的 `timing` 字段一致。
     run(
-      () => addsignTask(bizNo, { ...base, target_open_id: op.target_open_id, timing: op.timing || 'AFTER' }),
+      () => addsignTask(bizNo, { ...base, target: op.target_open_id, timing: op.timing || 'AFTER' }),
       '已加签',
     )
   } else if (op.type === 'rollback') {
-    run(() => rollbackTask(bizNo, { ...base, target_node_id: op.target_node_id || undefined }), '已回退')
+    run(() => rollbackTask(bizNo, { ...base, target_node: op.target_node_id || undefined }), '已回退')
   }
 }
 
