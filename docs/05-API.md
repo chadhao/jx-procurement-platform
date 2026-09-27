@@ -7,7 +7,7 @@
 | 项 | 内容 |
 |---|---|
 | 文档名称 | 采购与费用审批平台（自建侧）· 接口设计 |
-| 版本 | V2.3（Batch Q2：`/internal/sync/reconcile` 退役 `410 Gone` + 错误码 `41000`） |
+| 版本 | V2.4（#48：§3.13 `addsign` **`timing`** 契约 + **全路径清单**（C5 锚）· §3.14 回调**错误→状态码枚举** + **`#69` 落盘即 200 / 派生式修复循环**） |
 | 日期 | 2026-09-26 |
 | 上游文档 | `01-PRD.md`、`02-UseCase.md`、`03-TestCase.md`、`04-Architecture.md` |
 | 语言纪律 | 简体中文 |
@@ -589,12 +589,32 @@ sequenceDiagram
 
 | 操作 | 谁能做 | 关键规则（与 `01a §4` / `04a §5.2` 一致） | 推送 |
 |---|---|---|---|
-| `POST …/transfer` 转交 | 当前任务审批人本人 | 原任务 `TRANSFERRED`；**新增**同 `node_id` 任务（`task_id` 换 `assignee`/`round`）；★ **`update_mode=UPDATE`（非 `REPLACE`）** | `UPDATE` |
-| `POST …/addsign` 加签 | 当前任务审批人本人 | **新增**同 `node_id` 任务、按 **`task_order` 插到队尾**；★ **顺序会签**（`01a §4.3`） | `UPDATE` |
-| `POST …/rollback` 回退 | 当前任务审批人本人 | 实例**保持 `PENDING`**；上一节点任务置回 `PENDING` + `round+1`；★ **通知已被审批通过者**（`01a §4.7`） | `UPDATE` |
-| `POST …/cancel` 撤回 | **仅发起人本人** | 实例 → `CANCELED`；全部未终结任务 → `DONE`；**关闭流程、非删除**；重发＝**新号、不复用旧号**（`04a §5.4`） | `UPDATE`（终态） |
+| `POST /api/approval/{biz_no}/transfer` 转交 | 当前任务审批人本人 | 原任务 `TRANSFERRED`；**新增**同 `node_id` 任务（`task_id` 换 `assignee`/`round`）；★ **`update_mode=UPDATE`（非 `REPLACE`）** | `UPDATE` |
+| `POST /api/approval/{biz_no}/addsign` 加签 | 当前任务审批人本人 | **新增**同 `node_id` 任务；★ **插位由操作人当场选**：`timing`∈{`AFTER`（默认）,`BEFORE`} —— `AFTER`＝追加本节点队尾；`BEFORE`＝插到**当前办理人**之前（同节点 `task_order ≥ 当前办理人 order` 者**整体 +1**）；★ **顺序会签**（`01a §4.3`）；**不得使已 `APPROVED` 者重审** | `UPDATE` |
+| `POST /api/approval/{biz_no}/rollback` 回退 | 当前任务审批人本人 | 实例**保持 `PENDING`**；上一节点任务置回 `PENDING` + `round+1`；★ **通知已被审批通过者**（`01a §4.7`） | `UPDATE` |
+| `POST /api/approval/{biz_no}/cancel` 撤回 | **仅发起人本人** | 实例 → `CANCELED`；全部未终结任务 → `DONE`；**关闭流程、非删除**；重发＝**新号、不复用旧号**（`04a §5.4`） | `UPDATE`（终态） |
 
 > **四操作公共**：鉴权＝免登会话 + 本人/角色校验；幂等＝`t_flow_op_log` 唯一约束；**上限（可配）** 转交 ≤3 / 加签 ≤3 / 回退 ≤2（触顶 → `40901`）；原因**建议必填**；错误码 40000 / 40100 / 40301 / 40400 / 40900 / 40901；关联 FR＝**FR-M9-13 ~ FR-M9-16** 与 `01a §4`。
+
+> ★ **`addsign` 的 `timing` 契约（`#51`，实现 `f5be198`）**：入参 `timing` ∈ {`AFTER`, `BEFORE`}，缺省 `AFTER`（**依据＝用户口径「加签前置后置都支持，由操作人当场选，默认后置」**）。`AFTER`＝追加本节点队尾；`BEFORE`＝插入到**当前办理人**之前，同节点 `task_order ≥ 当前办理人 order` 者**整体 +1**（**仅影响未办理者的次序**，已 `APPROVED` 者**不重审**）。★ **非法值必须"可见拒绝"** —— 返回 **`400` / `code=40000`**（`ErrInvalidSubmit`），**绝不静默按后置处理**（静默降级＝本仓库头号红线）。实现侧常量 `flow.AddSignAfter` / `flow.AddSignBefore`。
+
+#### ★ 全路径清单（C5 契约锚：`scripts/audit_silent.py` 双向核对 `router.go`）
+
+| 方法 | 全路径 | 请求字段 | 响应字段 |
+|---|---|---|---|
+| POST | `/api/approval/submit` | `doc_type`·表单·`department`/`contact` | `biz_no`·`instance_id`·`status` |
+| POST | `/api/approval/{biz_no}/approve` | `task_id`·`opinion?`·`attachments?` | `biz_no`·`node_id`·`status` |
+| POST | `/api/approval/{biz_no}/reject` | `task_id`·`opinion?`·`attachments?` | `biz_no`·`node_id`·`status` |
+| POST | `/api/approval/{biz_no}/transfer` | `task_id`·`assignee`·`reason?` | `biz_no`·`node_id`·`status` |
+| POST | `/api/approval/{biz_no}/addsign` | `task_id`·`assignee`·**`timing`**∈{`AFTER`,`BEFORE`}·`reason?` | `biz_no`·`node_id`·`status` |
+| POST | `/api/approval/{biz_no}/rollback` | `task_id`·`reason?` | `biz_no`·`node_id`·`status` |
+| POST | `/api/approval/{biz_no}/cancel` | `reason?` | `biz_no`·`status` |
+| GET | `/api/approval/tasks` | —（会话） | `items[]` |
+| GET | `/api/approval/{biz_no}` | —（会话 + 行级） | 主记录·`tasks[]`·`ops[]` |
+| GET | `/api/approval/defs` | —（管理员） | 定义清单 |
+| POST | `/approval/external/callback` | 见 §3.14 | 见 §3.14 |
+
+> ★ 本表为 **C5 双向核对的锚**：`router.go`（`:119-131` 已实现 + `:98` 回调）↔ 本表**全路径一一对应**。★ **`submit` / `{biz_no}` / `defs` 三条此前仅以「路径形如」模板（`:559`）出现，现补为独立全路径行**；`approve` / `reject` 同理（原仅以 heading 内「与 `/reject`」简写）。★ 另：回调 `POST /approval/external/callback` 属**独立入站面**（不在 `/api` 组，见 §3.14）。
 
 #### `GET /api/approval/tasks`（我的待办）
 
@@ -638,6 +658,33 @@ sequenceDiagram
 | ★ **响应＝落盘即 200** | 同步路径**只做**「校验 + 写 `op_log` + 入队」→ **毫秒级返回 HTTP 200**（官方口径 ≤10s，本设计**远低于**）；★ **不是**"按 10s 设计业务"；**业务（状态机推进 / 重推）全在异步侧**（`04a §4.4`） |
 | 错误码 | 40000（体非法）、40900（幂等冲突路径）、50000；★ **非法 token → 拒绝（40300）+ 告警**（**不返回 401**，避免暴露会话语义给飞书） |
 | 关联 FR | FR-M0-15、`04a §4` |
+
+#### 回调错误 → 状态码（枚举 · `#62` 实现）
+
+> 逐枚举项测试见 `internal/httpapi/approval_routes_test.go` 的 `TestCallbackErrorStatusEnumerated`。业务码数值见 §2.1；`codeApprovalConflict` ＝ **40901**。
+
+| 领域错误 / 情形 | 触发点 | HTTP | 业务码 |
+|---|---|---|---|
+| 报文 JSON 解不出 | handler 反序列化 | **400** | `codeBadRequest`（40000） |
+| `flow.ErrInvalidToken` | `verifyCallbackToken`（token 空 / 不匹配） | **403** | `codeForbidden`（40300）（并留审计 `deny`） |
+| `flow.ErrNotAssignee` | `admitCallback`（operator ≠ assignee） | **403** | `codeRowForbidden`（40301） |
+| `flow.ErrInvalidSubmit` | 缺 `biz_no`/`task_id`/`operator`、`biz_no` 无实例、`instance_code` 不一致、`task_id` 不存在 | **400** | `codeBadRequest`（40000） |
+| `flow.ErrIllegalTransition` | op ∉ {APPROVE,REJECT}、任务不属实例 | **409** | `codeApprovalConflict`（40901） |
+| `flow.ErrTaskHeld` | 顺序会签未轮到 | **409** | `codeApprovalConflict`（40901） |
+| `flow.ErrNodeNotReached` | 节点未到达 | **409** | `codeApprovalConflict`（40901） |
+| `flow.ErrDefinitionMissing` | 定义未注册 | **409** | `codeApprovalConflict`（40901） |
+| 未分类 / DB 故障（`%w` 包装） | verify/admit/record 的包装错 | **500** | `codeInternal`（50000） |
+
+> ★★ **可达性（比表本身更重要）**：**同步回调路径实际可命中** `ErrInvalidToken` / `ErrInvalidSubmit` / `ErrNotAssignee` / `ErrIllegalTransition` / 包装错；而 **`ErrTaskHeld` / `ErrNodeNotReached` / `ErrDefinitionMissing` 属 `act` 内状态机错误、在同步路径不可达** —— 把它们列入表**系"防御性对齐"**（若将来测试注入同步 advancer 使 `act` 错误同步透出，也**正确落 409 而非 500**）。★ **不得**把它们写成"已在回调可达"。
+
+#### ★ 落盘即 200 + 派生式修复循环（`#69` 实现 `5f8e35b`）
+
+| 规则 | 内容 |
+|---|---|
+| ★ **`Accepted == true` ⇒ 一律 `200`** | ＝已落盘 / 幂等命中，**即使状态机推进失败也回 200**（响应含 `advance_deferred:true`）；★ **失败详情只入日志、不参与状态码**。依据＝用户 D2 逐字「**先落盘，只要落盘成功就返回 200，然后慢慢跑业务**」 |
+| **4xx 只用于「未受理」** | 即**准入未通过**（token / 归属 / 字段校验）；一旦受理落盘，后续一律 `200` |
+| ★ **派生式修复循环** | 推进失败的可恢复路径：**启动 catch-up 一次** + **每 `30s`** 扫「`t_flow_op_log` 有 `APPROVE`/`REJECT` 留痕、但对应任务仍 `PENDING`」的行，经 `act` **重驱动** |
+| 修复循环不变量 | ★ **按 `round` 对齐**（`op_log.round == task.round`）；**`HELD` 不动**；**实例终态不动**；**幂等**（重驱动不产生二次副作用） |
 
 > ★ **门禁（`C5`）**：本节与 §3.13 的端点**必须与 `router.go` 已注册路由双向一致** —— 否则 `scripts/audit_silent.py` 的 **C5**（路由 ↔ 05-API 双向差集）报「已注册但未提及」（`docs/11 §4.2` 注）。
 
@@ -881,7 +928,7 @@ sequenceDiagram
 
 | 版本 | 日期 | 变更 | 作者 |
 |---|---|---|---|
-| V2.3 | 2026-09-27 | 执行 `13` **Batch Q2**：① §3.8 `POST /internal/sync/reconcile` 标 **★已退役（`410 Gone`）**（body 指明权威入口 `POST /internal/approval/check`）；② §10 索引同改；③ **§2.1 错误码表新增 `41000`（入口已退役）**（`codeGone` 原**就地定义**于 `handlers_ops.go`，工程师未越界，现**集中登记**防「同码异义」）。 | 架构师（Bob） |
+| V2.4 | 2026-09-27 | 执行 `#48`（回填他批交付）：① **§3.13** —— `addsign` 补 **`timing`** 入参（∈{`AFTER`(默认),`BEFORE`}；`BEFORE`＝插到**当前办理人**之前、同节点 `order ≥` 者整体 +1；★ **非法值"可见拒绝"** `400`/`40000`，**不静默降级**；依据用户口径「由操作人当场选、默认后置」，实现 `f5be198`）+ ★ **新增「全路径清单」表**（补 `scripts/audit_silent.py` **C5** 报出的 5 条「已注册未文档」路由 `addsign`/`cancel`/`reject`/`rollback`/`transfer`，及 `submit`/`{biz_no}`/`defs` 三条独立全路径行）；② **§3.14** —— 新增**回调错误 → 状态码枚举表**（`codeApprovalConflict` ＝ **40901**；★ 附**可达性**：`ErrTaskHeld`/`ErrNodeNotReached`/`ErrDefinitionMissing` **同步路径不可达**、系防御性对齐）+ **`#69` 契约**（`Accepted==true` ⇒ 一律 `200`、4xx 只用于未受理、**派生式修复循环** `30s` / `round` 对齐 / `HELD`·终态不动，实现 `5f8e35b`）。 | 架构师（Bob） |
 | V2.2 | 2026-09-27 | 执行 `13` **Batch P**（命名裁定）：§3.13 `GET /api/approval/tasks` 的「命名待统一」→「★ **命名已定 ＝ `/tasks`**」（`/my-tasks` 语义冗余，与 `GET /api/approval/{biz_no}` 同级）。其余端点契约不变。 | 架构师（Bob） |
 | V2.1 | 2026-09-27 | 执行 `13` **Batch O**（补 ③ 新增端点契约，对齐 `docs/11 §4.2` 与 `04a §4/§5`）：① **新增 §3.13 审批流转** —— `submit` / `approve`+`reject`（补 **`R11`**，与回调**同一状态机出口**）/ 四操作 `transfer`·`addsign`·`rollback`·`cancel`（转交＝`UPDATE` 非 `REPLACE`；加签＝**顺序会签**、按 `task_order` 插队尾）/ `GET /tasks`（待办，数据源 `t_flow_task`、不变量恰 1 个）/ `GET /{biz_no}`（时间线＝`t_flow_op_log`）/ `GET /defs`；② **新增 §3.14 回调** `POST /approval/external/callback`（★ **绕开会话/OIDC 中间件**、幂等键、**落盘即 200**）；③ §3.8 增 `POST /internal/approval/check`（**判方向**、非旧 reconcile）；④ §2 BasePath 补回调路径；⑤ **§9 反转标注**（创建实例 / 审批动作 / 轮询三条，③ 后已反转或部分反转）；⑥ §10 追溯补行。 | 架构师（Bob） |
 | V2.0 | 2026-09-27 | 执行 `13` **B / E 组**（接口侧正本回填）：① §3.4 `GET /api/instances/{code}/fields` 标 **【作废（F3）】**（原生控件链作废、端点恒空，不再有生产者）（B-1）；② §3.8 `/healthz` 自检项「**订阅**」→「**回调面连通**」（响应键 `subscribe` → `callback`）、`/readyz` 的"订阅状态"改"回调面连通 / 证书剩余天数"（B-2）；③ §3.8 内部端点鉴权**明确为 `JX_INTERNAL_TOKEN`**、**不得**再依赖回环（E-2）。 | 架构师（Bob） |
