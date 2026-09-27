@@ -7,7 +7,7 @@
 | 项 | 内容 |
 |---|---|
 | 文档名称 | 采购与费用审批平台（自建侧）· 接口设计 |
-| 版本 | V2.4（#48：§3.13 `addsign` **`timing`** 契约 + **全路径清单**（C5 锚）· §3.14 回调**错误→状态码枚举** + **`#69` 落盘即 200 / 派生式修复循环**） |
+| 版本 | V2.5（+ `#74` 批量 A：§3.8 退役 body 引用改符号 `handleReconcile`；含 V2.4 `timing`/全路径/回调枚举） |
 | 日期 | 2026-09-26 |
 | 上游文档 | `01-PRD.md`、`02-UseCase.md`、`03-TestCase.md`、`04-Architecture.md` |
 | 语言纪律 | 简体中文 |
@@ -375,7 +375,7 @@ sequenceDiagram
 |---|---|
 | 用途 | ★ **已退役** —— 原"手动触发对账补拉"不再提供；调用返回 `410 Gone` |
 | 鉴权 | 管理凭据（`X-Internal-Token`）；退役后仍校验 |
-| 响应 | ★ `410 Gone` · `code=41000` · body＝`该入口已退役：审批对账唯一入口为 POST /internal/approval/check（本路由收敛为通讯录侧，待 docs/08 实施）`（`handlers_ops.go:114`） |
+| 响应 | ★ `410 Gone` · `code=41000` · body＝`该入口已退役：审批对账唯一入口为 POST /internal/approval/check（本路由收敛为通讯录侧，待 docs/08 实施）`（`handlers_ops.go` 的 **`handleReconcile`** —— 退役 `410 Gone` body） |
 | 关联 FR | ~~FR-M0-07、FR-M0-08~~ → 转 **`POST /internal/approval/check`**（§3.8） |
 
 #### `POST /internal/approval/check`
@@ -928,6 +928,7 @@ sequenceDiagram
 
 | 版本 | 日期 | 变更 | 作者 |
 |---|---|---|---|
+| V2.5 | 2026-09-27 | 执行 `#74` **批量 A**：§3.8 退役端点 **body** 引用改为符号 **`handlers_ops.go` 的 `handleReconcile`**（退役 `410 Gone` body）。 | 架构师（Bob） |
 | V2.4 | 2026-09-27 | 执行 `#48`（回填他批交付）：① **§3.13** —— `addsign` 补 **`timing`** 入参（∈{`AFTER`(默认),`BEFORE`}；`BEFORE`＝插到**当前办理人**之前、同节点 `order ≥` 者整体 +1；★ **非法值"可见拒绝"** `400`/`40000`，**不静默降级**；依据用户口径「由操作人当场选、默认后置」，实现 `f5be198`）+ ★ **新增「全路径清单」表**（补 `scripts/audit_silent.py` **C5** 报出的 5 条「已注册未文档」路由 `addsign`/`cancel`/`reject`/`rollback`/`transfer`，及 `submit`/`{biz_no}`/`defs` 三条独立全路径行）；② **§3.14** —— 新增**回调错误 → 状态码枚举表**（`codeApprovalConflict` ＝ **40901**；★ 附**可达性**：`ErrTaskHeld`/`ErrNodeNotReached`/`ErrDefinitionMissing` **同步路径不可达**、系防御性对齐）+ **`#69` 契约**（`Accepted==true` ⇒ 一律 `200`、4xx 只用于未受理、**派生式修复循环** `30s` / `round` 对齐 / `HELD`·终态不动，实现 `5f8e35b`）。 | 架构师（Bob） |
 | V2.2 | 2026-09-27 | 执行 `13` **Batch P**（命名裁定）：§3.13 `GET /api/approval/tasks` 的「命名待统一」→「★ **命名已定 ＝ `/tasks`**」（`/my-tasks` 语义冗余，与 `GET /api/approval/{biz_no}` 同级）。其余端点契约不变。 | 架构师（Bob） |
 | V2.1 | 2026-09-27 | 执行 `13` **Batch O**（补 ③ 新增端点契约，对齐 `docs/11 §4.2` 与 `04a §4/§5`）：① **新增 §3.13 审批流转** —— `submit` / `approve`+`reject`（补 **`R11`**，与回调**同一状态机出口**）/ 四操作 `transfer`·`addsign`·`rollback`·`cancel`（转交＝`UPDATE` 非 `REPLACE`；加签＝**顺序会签**、按 `task_order` 插队尾）/ `GET /tasks`（待办，数据源 `t_flow_task`、不变量恰 1 个）/ `GET /{biz_no}`（时间线＝`t_flow_op_log`）/ `GET /defs`；② **新增 §3.14 回调** `POST /approval/external/callback`（★ **绕开会话/OIDC 中间件**、幂等键、**落盘即 200**）；③ §3.8 增 `POST /internal/approval/check`（**判方向**、非旧 reconcile）；④ §2 BasePath 补回调路径；⑤ **§9 反转标注**（创建实例 / 审批动作 / 轮询三条，③ 后已反转或部分反转）；⑥ §10 追溯补行。 | 架构师（Bob） |
