@@ -168,6 +168,15 @@ func (s *Service) AddSign(ctx context.Context, bizNo, taskID, actorOpenID, targe
 		if task.BizNo != bizNo {
 			return fmt.Errorf("%w: 任务 %s 不属于实例 %s", ErrIllegalTransition, taskID, bizNo)
 		}
+		// ★ 服务端硬校验（04a §5.1）：加签＝「操作者 ＝ assignee **且任务 `PENDING`**」。
+		//   `PENDING` 是**独立前置条件**：仅校验 `RELEASED≠HELD` 不够 —— 已 `APPROVED` 的任务
+		//   在顺序会签下**仍保持 `RELEASED`**（释放态单向、不随审批清理），故「已通过者」仍满足
+		//   `RELEASED≠HELD`，若只看释放态会**放行"对已通过任务再次加签"**（语义比正本更宽）。
+		//   ★ 「不变量成立」「不重审已通过者」**两个必要条件都不足以发现此缺口** —— 见 README 定案 #57。
+		if task.Status != TaskPending {
+			return fmt.Errorf("%w: 任务 %s 状态为 %s，不可加签（仅 PENDING 可加签，04a §5.1）",
+				ErrIllegalTransition, taskID, task.Status)
+		}
 		if task.AssigneeOpenID != actorOpenID {
 			return fmt.Errorf("%w: %s 非任务 %s 的审批人", ErrNotAssignee, actorOpenID, taskID)
 		}

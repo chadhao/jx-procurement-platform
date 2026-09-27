@@ -402,6 +402,49 @@ func TestAddSignInvalidTimingRejected(t *testing.T) {
 	}
 }
 
+// TestAddSignApprovedTaskRejected ★ 负向⑤（定案 #57）：已 `APPROVED` 但**仍 `RELEASED`** 的任务上
+// 加签**必须被拒**。
+//
+// ★ 为什么这条能戳中「静默缺口」：顺序会签下释放态**单向**、审批通过**不清释放态** →
+// 已通过者的任务 **`RELEASED≠HELD` 恒成立**；若 `AddSign` 只看释放态（不看 `status`），
+// **两个成立的不变量（① RELEASED∧PENDING=1；② 不重审已通过者）都看不出**它放行了
+// 「对已通过任务再次加签」。这正是 README 定案 #57：「不变量成立」≠「语义正确」。
+func TestAddSignApprovedTaskRejected(t *testing.T) {
+	db := newFlowDB(t)
+	svc := flow.New(db, "app")
+	ctx := context.Background()
+	bizNo := submitSeqNode(t, svc) // n1: ou_a(1) RELEASED；ou_b/c HELD；n2: ou_gm HELD
+
+	a := taskFor(t, db, bizNo, "ou_a")
+	if err := svc.Approve(ctx, bizNo, a.TaskID, "ou_a", "同意"); err != nil {
+		t.Fatalf("ou_a 同意失败: %v", err)
+	}
+	// 夹具自检：ou_a 已 APPROVED，但其任务**仍 RELEASED**（顺序会签不清理释放态）。
+	aAfter := taskFor(t, db, bizNo, "ou_a")
+	if aAfter.Status != flow.TaskApproved || aAfter.ReleaseState != flow.ReleaseReleased {
+		t.Fatalf("夹具不符：ou_a = {status:%s release:%s}，期望 {APPROVED RELEASED}",
+			aAfter.Status, aAfter.ReleaseState)
+	}
+
+	// 已 APPROVED 的任务，加签（前置/后置）一律可见拒绝。
+	for _, timing := range []flow.AddSignTiming{flow.AddSignAfter, flow.AddSignBefore} {
+		err := svc.AddSign(ctx, bizNo, aAfter.TaskID, "ou_a", "ou_z", "", "", timing)
+		if !errors.Is(err, flow.ErrIllegalTransition) {
+			t.Errorf("已 APPROVED 任务加签(%s)应 ErrIllegalTransition，实际: %v", timing, err)
+		}
+	}
+	// 可见失败：不落新任务、不改变链上任务数。
+	tasks, err := db.ListFlowTasks(ctx, bizNo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tk := range tasks {
+		if tk.AssigneeOpenID == "ou_z" {
+			t.Errorf("已 APPROVED 任务加签不应落任务，实际新增 assignee=ou_z")
+		}
+	}
+}
+
 // ---------- 回退 ----------
 
 // TestRollbackResetsEarlierNode 回退：被回退节点及其后节点整体 PENDING + 重置释放 + round+1。
