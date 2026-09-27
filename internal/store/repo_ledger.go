@@ -29,9 +29,20 @@ VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
 ON CONFLICT(ledger_type, biz_no) DO UPDATE SET
   instance_code = COALESCE(NULLIF(excluded.instance_code,''), t_ledger_archive.instance_code),
   source_doc_type = COALESCE(NULLIF(excluded.source_doc_type,''), t_ledger_archive.source_doc_type),
-  department = COALESCE(NULLIF(excluded.department,''), t_ledger_archive.department),
+  -- ★ R17 同形·write-once（08 §4.9-a/b）：department 是**部门名称快照**（留痕口径），
+  --   旧留痕不得被后续 upsert 的新名覆盖（某人变更部门 ≠ 历史留痕跟着改名）。
+  --   与 repo_instance.go 的 R17 保留式同形：「既有值非空即保留，空才取新值」。
+  --   ★ 此前为 excluded 优先（新值非空即覆盖）＝静默改写历史快照（无异常无日志）；
+  --     Batch A-5（#46）只改了 instance 侧，ledger 侧漏改 —— 现补齐。
+  department = COALESCE(NULLIF(t_ledger_archive.department,''), excluded.department),
   applicant_open_id = COALESCE(NULLIF(excluded.applicant_open_id,''), t_ledger_archive.applicant_open_id),
   submitter_open_id = COALESCE(NULLIF(excluded.submitter_open_id,''), t_ledger_archive.submitter_open_id),
+  -- ★ amount_cents 无需 >0 守卫（与 t_instance 的 D4 对齐核查后的裁定，#55 假守卫规避）：
+  --   DDL（0001_init.sql:189）为 amount_cents INTEGER，可空、无 DEFAULT；
+  --   生产写路径 finalize.go:92-97/112 依决策 #39 已把 ≤0 金额归 nil（Submit 侧
+  --   service.go:226-229 同样 sanitize）⇒ excluded 恒为 NULL 或 >0：
+  --   NULL 已被下方 COALESCE 兜住（取既有值），>0 时 COALESCE 本就取 excluded。
+  --   CASE WHEN excluded.amount_cents > 0 在此**永不可能触发** ＝ 假守卫，故不加。
   amount_cents = COALESCE(excluded.amount_cents, t_ledger_archive.amount_cents),
   supplier = COALESCE(NULLIF(excluded.supplier,''), t_ledger_archive.supplier),
   supplier_norm = COALESCE(NULLIF(excluded.supplier_norm,''), t_ledger_archive.supplier_norm),
