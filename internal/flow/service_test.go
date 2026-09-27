@@ -740,7 +740,9 @@ func TestCallbackRejectsNonAssignee(t *testing.T) {
 		t.Errorf("非本人回调后任务 = %s，期望 PENDING", got)
 	}
 
-	// 对照（另一起实例，避免与上一回调的幂等键 (biz_no,task_id,op_type) 冲突）：本人回调 → 推进。
+	// 对照：本人回调 → 推进。另起实例仅因本实例的 assignee 是 ou_m1（而非 ou_m2）。
+	// ★ 注：准入失败已不再占键（定案 #62）——「被拒后同键真实回调仍能推进」的**完整因果链**专测见
+	//   callback_test.go::TestCallbackAdmissionDoesNotConsumeIdempotencyKey。
 	bizNo2 := submitOneNode(t, svc, "ou_m2")
 	m2 := taskFor(t, db, bizNo2, "ou_m2")
 	if _, err := svc.HandleCallback(ctx, flow.CallbackRequest{
