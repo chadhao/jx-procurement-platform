@@ -8,7 +8,7 @@
 | 项 | 内容 |
 |---|---|
 | 文档名称 | 采购与费用审批平台（自建侧）· 架构设计 |
-| 版本 | V1.4（+ #48：§1.2 模块扩为 **M0–M9**，补 **M9 审批核心（我方流转）**） |
+| 版本 | V1.5（+ `#74` 批量 A：`t_subscribe_state` 读取点改符号 `handleReadyz`；§1.2 起为 M0–M9） |
 | 日期 | 2026-09-26 |
 | 上游文档 | `01-PRD.md`（需求正本）、`02-UseCase.md`、`03-TestCase.md`、`README.md`（五条硬约束）、`docs/reference/README.md` |
 | 依据 | 技术方案书 V1.0-r1（`deliverables/procurement-system/技术方案书V1.0.html`） |
@@ -218,7 +218,7 @@ jx-procurement-platform/
 | 5 | `t_worker_job` | 异步作业 / 重试队列 | M3 |
 | 6 | `t_deadletter` | 死信 | M3 |
 | 7 | `t_sync_cursor` | 同步游标 / 对账状态 | M0 |
-| 8 | `t_subscribe_state` | 订阅状态｜★ **已弃用（转向 ③ · F1）**；读取点 `handlers_ops.go:35` 须一并清理 | M0 |
+| 8 | `t_subscribe_state` | 订阅状态｜★ **已弃用（转向 ③ · F1）**；读取点 `handlers_ops.go` 的 **`handleReadyz` 自检（`subscribe_states`）** 须一并清理 | M0 |
 | 9 | `t_config_mapping` | approval_code 映射 + 字段 id 映射（配置化） | M0 / M2 |
 | 10 | `t_user_role` | 用户角色映射 | M5 |
 | 11 | `t_permission_rule` | 行·列权限规则（配置驱动） | M5 |
@@ -354,7 +354,7 @@ CREATE TABLE t_sync_cursor (
 );
 
 -- ============ M0 订阅状态（先订阅 + 健康检查） ============
--- ★ 转向 ③：本表【已弃用 · F1】——审批事件订阅作废；读取点 handlers_ops.go:35 须清理（见 04a / 11 §3 B-2）
+-- ★ 转向 ③：本表【已弃用 · F1】——审批事件订阅作废；读取点 `handlers_ops.go` 的 **`handleReadyz` 自检（`subscribe_states`）** 须清理（见 04a / 11 §3 B-2）
 CREATE TABLE t_subscribe_state (
   id             INTEGER PRIMARY KEY AUTOINCREMENT,
   approval_code  TEXT    NOT NULL UNIQUE,
@@ -1144,3 +1144,4 @@ flowchart LR
 | V1.2 | 2026-09-27 | 执行 `13` **N6（C-3）**：**新增 §3.6「转向 ③ 的数据迁移与兼容策略（`instance_code` 新旧共存 · C-3 / `A30`）」** —— 共存判定 / 新旧判定（以**写入来源**，不靠格式猜）/ 回填方案（存量 ≈0，**推荐不回填**）/ 约束 / 落地与回读断言。★ **位点更正**：`04 §12` 为**变更记录**、**无「迁移策略」节** → 落 **§3.6**。 | 架构师（Bob） |
 | V1.3 | 2026-09-27 | 执行 `13` **Batch Q2**：§4.6 运维端点表「触发对账」由 `POST /internal/sync/reconcile` **改指 `POST /internal/approval/check`**（前者**已退役 · `410 Gone`**，`c940603`）。 | 架构师（Bob） |
 | V1.4 | 2026-09-27 | 执行 `#48` **D 项**：★ **§1.2 标题与模块表由 `M0–M8` 扩为 `M0–M9`**，补第 10 项 **`M9 审批核心（我方流转）`**（`flow`/`approval`；编号·分档审批人·表单校验·转交/加签/回退/撤回·快照 `update_mode`·状态机·**台账终态直写**·实时回源·内部事件）。★ 对齐 `01-PRD §3.1`（模块 `M9`）与 `01a §8.2`（`FR-M9-01`~`18`）。★ **实测**：改前 `04` 内 `M9` 出现 **0 次**。 | 架构师（Bob） |
+| V1.5 | 2026-09-27 | 执行 `#74` **批量 A**：`t_subscribe_state` 的**读取点**改为符号 **`handlers_ops.go` 的 `handleReadyz` 自检（`subscribe_states`）**（§3 表 + §3 注两处）。 | 架构师（Bob） |
