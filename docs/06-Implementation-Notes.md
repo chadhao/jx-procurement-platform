@@ -2,7 +2,7 @@
 
 > 本文件为**工程侧补充记录**，不改动任何既有文档（PRD / UseCase / TestCase / 架构 / 接口 / README）。
 > 记录范围：落地 S0/S1 地基代码过程中发现的**文档间冲突 / 歧义**、采取的实现决策与遗留动作。
-> 编制：Alex（开发经理）· 版本：**V1.9**（§A–§B 为 S0/S1 原始记录，§G/§H 为 S2 与集成轮，§H.13 为第二轮对抗性复核，§I 为缺口补齐轮，§J 为模板建立配套轮，§K 为 Q14 定案实施轮，§L 为架构完整性审查轮，§M 为口径落地轮，§N 为对象存储收口轮，§O 为降级口径收口轮，§P 为控件口径修正轮，**§Q 为架构转向 ③ 地基层轮**）· 最新代码 tag：`0.3.2-s3`
+> 编制：Alex（开发经理）· 版本：**V1.10**（§A–§B 为 S0/S1 原始记录，§G/§H 为 S2 与集成轮，§H.13 为第二轮对抗性复核，§I 为缺口补齐轮，§J 为模板建立配套轮，§K 为 Q14 定案实施轮，§L 为架构完整性审查轮，§M 为口径落地轮，§N 为对象存储收口轮，§O 为降级口径收口轮，§P 为控件口径修正轮，**§Q 为架构转向 ③ 地基层轮**；★ **V1.10（`#74`）：代码引用符号化 —— §P.2「证据 4」的两处「`文件:行`」改为「`文件` ＋ 符号」**）· 最新代码 tag：`0.3.2-s3`
 
 ## A. 已落地范围（S0/S1）
 
@@ -1362,8 +1362,8 @@ Widget：Number / Amount / Calculation formula / Single option / Multiple option
 - 原文：「**Conditions can only apply to required fields**」→ **条件只能作用于「必填」的控件**。
 
 **证据 4｜代码事实（本轮核实，代码本就正确）**
-- `internal/worker/extract.go:81-83`：`department` 来自**表单控件的值**（`biz_field=department` 抽取）。
-- `internal/platform/feishu/instance.go:49`：`ApplicantOpenID` 来自**实例自带**的 `open_id`／`user_id`，**不是**表单控件值。
+- `internal/worker/extract.go` 的 `case config.BizFieldDepartment`：`department` 来自**表单控件的值**（`biz_field=department` 抽取）。
+- `internal/platform/feishu/instance.go` 的 `ApplicantOpenID` 赋值：来自**实例自带**的 `open_id`／`user_id`，**不是**表单控件值。
 
 ### P.3 结论与处置（正确口径）
 
