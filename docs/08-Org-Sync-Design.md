@@ -7,7 +7,7 @@
 >
 > **一句话红线**：**镜像 ≠ 权限**。同步来的通讯录是「人事目录」，**准入一律仍走 `t_user_role`（人工配置、deny by default）**。
 >
-> **版本**：V1.5 · **状态**：待评审（§5 的 **C-A~C-E** 已按**官方来源 + SDK v3.12.0 源码**查实；**C-A 经复核改定路线甲**；**V1.3 回填 D6「提交时实时回源」**，见 §2 注 / §4.12；**V1.4 迁移改号 `0007` → `0012`**，见 §4.2 注 / §12；★ **V1.5 行号引用符号化**（`README` 定案 **#74**）—— 全文「`文件:行`」改为「**`文件` ＋ 符号/模式**」，**行号只作快照**） · **依仓库现状（2026-09-27 代码基线）撰写**
+> **版本**：V1.6 · **状态**：待评审（§5 的 **C-A~C-E** 已按**官方来源 + SDK v3.12.0 源码**查实；**C-A 经复核改定路线甲**；**V1.3 回填 D6「提交时实时回源」**，见 §2 注 / §4.12；**V1.4 迁移改号 `0007` → `0012`**，见 §4.2 注 / §12；★ **V1.5 行号引用符号化**（`README` 定案 **#74**）—— 全文「`文件:行`」改为「**`文件` ＋ 符号/模式**」，**行号只作快照**；**V1.6 按 team-lead 裁定**：`S12` 补「只管实例侧」、`§6 订正 1` 标「后被取代」） · **依仓库现状（2026-09-27 代码基线）撰写**
 
 ---
 
@@ -555,7 +555,7 @@ sequenceDiagram
 | S9 | 实例自带部门 ID | `internal/platform/feishu/instance.go` 的 `DepartmentID` | `DepartmentID` **解析未用** | **消费为桥接键**：`department_id → open_department_id`（按值前缀）；同时落 `department_id_raw` 留痕 |
 | S10 | 实例落库 | `internal/worker/ingest.go` 的 `Department: det.Department`（实例落库分支） | `Department: det.Department` | 加 `department_id`(`od-`，桥接所得) ＋ `department_id_raw`；名称走镜像快照 |
 | S11 | 台账落库 | `internal/worker/ingest.go` 的 `Department: det.Department`（台账落库分支） | `Department: det.Department` | 同上 |
-| S12 | 实例 UPSERT | `internal/store/repo_instance.go` 的 `upsertInstance` | ★ **`#46` 起已是 write-once**（名称**不再**被覆盖） | ✅ **已达成**（原「改 write-once」已落地；见 §4.9-b） |
+| S12 | 实例 UPSERT | `internal/store/repo_instance.go` 的 `upsertInstance` | ★ **`#46` 起已是 write-once**（名称**不再**被覆盖） | ✅ **已达成**（原「改 write-once」已落地；见 §4.9-b）★ **本条只管实例侧**；**`t_ledger_archive` 侧（S13）仍为覆盖式、未落地** |
 | S13 | 台账 UPSERT | `internal/store/repo_ledger.go` 的 `upsertArchive` | 名称可被覆盖 | 改 write-once（§4.9-b） |
 | S14 | 台账展示 | `internal/httpapi/helpers.go` 的 `row["department"]=a.Department`（台账行组装） | `row["department"]=a.Department` | 展示沿用快照名（可另附 `department_id`） |
 | S15 | 看板部门分组 | `internal/dashboard/dashboard.go` 的 `expense_by_department` 图（`r.Department` 分组） | 按 `r.Department` 分组 | 明确「按快照名分组」；如需跨改名归一，可改按 ID 分组 |
@@ -769,7 +769,7 @@ sequenceDiagram
 
 | # | 冲突/订正 | 说明 | 处置建议 |
 |---|---|---|---|
-| **★ 订正 1** | **代码已注册 `approval_task` 事件键**（`internal/platform/feishu/longconn.go` 的 `retiredApprovalEventTypes` 含 `approval.task.status_changed_v4` 与 `approval_task`），**与 N10 / B38「本期不订阅 `approval_task`」直接矛盾** | 简报只提到「通讯录事件要不要双拼写」，但真正已存在的漂移是审批侧：代码注册了节点事件，而 PRD §3.2 **N10** 说本期不订。当前 inbox 一视同仁 → 节点事件会产生多余 inbox 行（由 B46 同状态去重兜底） | **需在 N10 相关文档与代码间对齐**：要么从键表移除 task 键（贴合 N10），要么改写 N10 承认订阅。**本设计默认对齐 N10**：新增通讯录键时一并**移除 `approval_task` 键**（或标注为已知偏差由 team-lead 定）。★ **复核（#74 符号核验时发现）**：③ 后该键表**已改名 `retiredApprovalEventTypes`**，且**保留注册、处理器 no-op**（该变量注释：「完全不注册 → 飞书重试风暴」）；`sinkEventTypes` 现为**空** ⇒ 「移除 task 键」这一处置**须按新事实重新评估**（是否仍需移除） |
+| **★ 订正 1** | **代码已注册 `approval_task` 事件键**（`internal/platform/feishu/longconn.go` 的 `retiredApprovalEventTypes` 含 `approval.task.status_changed_v4` 与 `approval_task`），**与 N10 / B38「本期不订阅 `approval_task`」直接矛盾** | 简报只提到「通讯录事件要不要双拼写」，但真正已存在的漂移是审批侧：代码注册了节点事件，而 PRD §3.2 **N10** 说本期不订。当前 inbox 一视同仁 → 节点事件会产生多余 inbox 行（由 B46 同状态去重兜底） | **需在 N10 相关文档与代码间对齐**：要么从键表移除 task 键（贴合 N10），要么改写 N10 承认订阅。**本设计默认对齐 N10**：新增通讯录键时一并**移除 `approval_task` 键**（或标注为已知偏差由 team-lead 定）。★ **后被取代（team-lead 裁定）**：③ 后该键表**已改名 `retiredApprovalEventTypes`**，并改为「**仍然注册 ＋ 处理器 no-op**」（该变量注释理由：**完全不注册 → 飞书重试风暴**；`sinkEventTypes` 现为空）；故原「**移除 task 键**」**不再适用** |
 | **冲突 1** | **N10 需改写**：N10 原文「本期只订阅 `approval_instance`」将因新增 6~8 个 `contact.*` 订阅而不成立 | 建议改写为「本期订阅＝`approval_instance` + 通讯录 6 事件（`*_v3`）+ `contact.scope.updated_v3` + v1.0 `user_status_change`；**不订阅** `approval_task`」 | 由 team-lead 在 PRD/API/07 指引同步（本设计不改这些文档） |
 | **关联 1** | **B49（指定人与指定时间无数据来源）** | 通讯录同步**不解决** B49：B49 的数据源是**实例详情 `task_list` / 表单控件**，与通讯录镜像无关。**唯一交集**：任务列表里的 `open_id` 可借镜像解析出**姓名**用于展示 | 明确「B49 与本文无关，本文只顺带提供 `open_id→name` 解析」 |
 | **关联 2** | **B50（联系人/部门控件值未被正确解析）** | 与本文 **C7 强相关**：`department` 列的**历史值**是否可靠取决于 B50 的控件解析结论 | **C-A 已查实**：控件值就是 `od-`（F20），**但控件可被申请人改**（§5.4）→ 控件**只作交叉校验**；权威 ID 由**实例 `department_id` 经镜像桥接**得出。T04 把「按 `od-` 解析名称」与 B50 控件解析**同批处理** |
@@ -914,6 +914,7 @@ graph TD
 
 | 版本 | 日期 | 变更 |
 |---|---|---|
+| V1.6 | 2026-09-27 | **按 team-lead 裁定收口 V1.5 遗留 2 处（纯文档）**：① **`S12` 保留、标 ✅ 已达成**（`#46` 已把 `t_instance` 改 write-once）——★ 理由：`S1`–`S15` 是**防护清单**（"这些防护必须有"）、**非临时结构**，故**不适用"缺口闭合即撤结构"**；但 ★ **不以 ✅ 掩盖另一半** → 同行补「**本条只管实例侧；`t_ledger_archive` 侧（S13）仍为覆盖式、未落地**」。② **`§6 订正 1` 保留为史实 ＋ 标「后被取代」**：键表已改名 `retiredApprovalEventTypes`，改为「**仍然注册 ＋ 处理器 no-op**」（理由：完全不注册 → 飞书重试风暴；`sinkEventTypes` 现空）⇒ 原「移除 `approval_task` 键」**不再适用**（属**事实更正**、非设计变更，故可直接写）。★ 另：**`t_ledger_archive.department` 的守卫缺口**经全量枚举确认为**未登记的活动缺口**，已单独报 team-lead（**本文只记现状，等裁定后再定落点**）。★ **不改任何代码 / 编号**。 |
 | V1.5 | 2026-09-27 | **行号引用符号化（纯文档；`README` 定案 #74，team-lead 派单）**：★ 全文**代码引用**由「`文件:行`」改为「**`文件` ＋ 符号/模式**」—— 覆盖 §1（16 行「既有事实」出处列）· §4.5 · §4.6 · §4.9(a)(b)(c)（S1–S24）· §4.10 · §6。★ **两栏清点（#67 法）**：① **现值引用 55 处**（`.go`/`.py` 52 ＋ `.sql` 3）→ **已全部符号化**；② **史实留痕 0 处**（本文无「记当时行号」的变更记录行，故 ②＝0）。★ **落地前已漂移 12/55 条（≈22%）**，涉及 6 个符号：`internal/platform/feishu/longconn.go`（`LongConn.Run` 注册块 62→81、`retiredApprovalEventTypes` 键清单 22→29）· `cmd/jxapproval/bootstrap.go`（`singlelock.New().Acquire()` 48→79）· `internal/httpapi/handlers_ops.go`（`handleHealthz`/`handleReadyz` 18→25/35）· `internal/store/repo_instance.go`（`upsertInstance` 38→55、实例列表 `department = ?` 94→145）· `internal/store/repo_ledger.go`（台账列表 94→100）· `internal/store/repo_misc.go`（报销跟踪列表 335→344）。★ **「设计目标 vs 现存符号」处理 0 条** —— 本文所有 `文件:行` 均指向**现存代码**（`internal/orgsync/*` 等**设计目标**只按**包名**提及、未带行号，故无伪造风险）。★★ **符号核验（定案 #66）连带发现 2 处「引用已修掉的缺陷」**（比行号漂移更危险 —— 它曾经是对的）：① **§1-13 / §4.9-b / S12**：本文称 `t_instance.department`「UPSERT 会被非空后续值覆盖（非 write-once）」，**但 `#46` 起已改 write-once**（`repo_instance.go` 现为 `COALESCE(NULLIF(t_instance.department,''), excluded.department)`）→ 已就地**复核标注**（仅 `t_ledger_archive` 侧仍成立）；② **§6 订正 1**：本文称键表为 `approvalEventTypes` 且建议「移除 `approval_task` 键」，**但该变量已改名 `retiredApprovalEventTypes` 且改为「保留注册 + 处理器 no-op」（`sinkEventTypes` 现为空）** → 已**复核标注**「处置须按新事实重评」。★ **不改任何代码 / 编号**。 |
 | V1.4 | 2026-09-27 | **迁移编号变更（纯文档；team-lead 裁定，配合 `#66`；登记见 `15-Code-Collision-Register.md` §2 行 11）**：本文 `org_directory` 迁移**原设计号 `0007`** 与**已落地**的 `0007_approval_core.sql` **撞号** → 全文改号为 **`0012_org_directory.sql`**（`0008`–`0010` 亦已落地、`0011` 归 `t_flow_op_log` 轮次去重）。★ 改动位点：§1-17（迁移序号）· **§4.2 标题 ＋ 新增「编号变更」注** · §4.5（镜像表由 `0012` 建）· §8 T01 / T04 · §10 依赖图（mermaid）。★ 口径：**已落地编号不可回退，未落地设计让号**。 |
 | V1.3 | 2026-09-27 | 执行 `13` **F 组**（`08` 正本**回填 D6**）：① §2 五条口径后**新增 D6 注**（提交时点强校验；修正"提交页不做实时比对、接受镜像滞后"旧口径）；② §4.10 **新增「提交页防错 / 实时回源只读」结构性约束行**；③ **新增 §4.12「设计点 9：提交页防错 + 提交时实时回源校验（★ D6）」**（默认带出镜像部门/主管 · 提交时实时回源一次 · 不一致以实时值为准+落标记 · 超时/失败＝告警放行且不阻断 · 离职/停用不可选 · 只读红线）。对应 `01a` FR-M9-11 / FR-M9-17。 |
