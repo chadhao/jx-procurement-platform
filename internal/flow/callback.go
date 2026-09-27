@@ -20,8 +20,10 @@ import (
 // 真正的状态机推进在**异步**（worker 消费 op_log 后调 `Advancer`）→ 同步路径**毫秒级可返回**。
 //   若把推进放进同步路径，超时（口径不一，QV2-02）下会**重复推进**与**阻塞飞书回调**两害并发。
 //
-// ★ 幂等（04a §4.3）：`t_flow_op_log` 对 APPROVE/REJECT 有 (biz_no,task_id,op_type) 唯一约束 →
-//   重复回调被 `INSERT OR IGNORE` 吸收，返回 Duplicate=true，**绝不二次推进**。
+// ★ 幂等（04a §4.3；0011）：`t_flow_op_log` 对 APPROVE/REJECT 有 (biz_no,task_id,op_type,round)
+//   唯一约束 → 重复回调被 `INSERT OR IGNORE` 吸收，返回 Duplicate=true，**绝不二次推进**。
+//   ★ round 入键（0011）：回退（Rollback）复用同一 task_id（t_flow_task.round +1，task_id 不变），
+//   若键不含 round，回退后的合法再次审批会命中上一轮的键 → Duplicate=true → **静默不推进**。
 //
 // ★★ 幂等键纪律（README 定案 **#62**）：**准入失败的请求不得消耗幂等键**——
 //   幂等键的占用必须发生在**准入通过之后**。否则一次被拒（非本人）的回调即占键 →
@@ -92,12 +94,15 @@ func (s *Service) HandleCallback(ctx context.Context, req CallbackRequest) (Call
 	//    去重键 → 其后**同键的真实回调**被 `INSERT OR IGNORE` 判为重复 → `200 no-op` **静默不推进**，
 	//    而飞书侧以为成功（本仓库头号红线＝静默）。
 	//    ⇒ 只有**通过准入**的回调，才允许进行第 ③ 步落盘 / 占键。
-	if err := s.admitCallback(ctx, req, op); err != nil {
+	//    ★ 顺带取出任务（含 round）：`recordCallback` 需要它把 round 写进幂等键（0011），
+	//      不重复查询。
+	task, err := s.admitCallback(ctx, req, op)
+	if err != nil {
 		return CallbackResult{}, err
 	}
 
 	// ③ 幂等落盘（同步路径唯一的写；执行到此处＝该请求**已通过准入**）。
-	inserted, err := s.recordCallback(ctx, req, op)
+	inserted, err := s.recordCallback(ctx, req, op, task)
 	if err != nil {
 		return CallbackResult{}, err
 	}
@@ -152,15 +157,19 @@ func (s *Service) verifyCallbackToken(ctx context.Context, bizNo, token string) 
 //     「加签是会签；代理人可以转交或者退回，但是需要通知这个审批单内已经审批通过的所有人。」
 //     → 代理人只能「转交 / 退回」，**不得代签**）。
 //
+// ★ 返回已定位的任务（含 `Round`）：调用方 `recordCallback` 需要把 round 写进幂等键（0011），
+//
+//	不在 `recordCallback` 内重复查询。
+//
 // ★ 为何在入口而非仅在 `act` 内：`act` 由 advancer 在 `recordCallback` **之后**调用 ——
 //
 //	若只在 `act` 校验，被拒回调**已占键**（定案 #62）。入口准入＝把「是否放行」与「是否占键」**解耦**。
 //	`act` 内**保留**同款鉴权作**纵深防御**（防 advancer 被绕过直调）。
-func (s *Service) admitCallback(ctx context.Context, req CallbackRequest, op string) error {
+func (s *Service) admitCallback(ctx context.Context, req CallbackRequest, op string) (*store.FlowTask, error) {
 	// (c) 防串单：仅当报文携带 `instance_code` 时校验（空＝沿用旧报文，不校验该维度）。
 	if want := strings.TrimSpace(req.InstanceCode); want != "" {
 		if got := s.instanceCode(req.BizNo); want != got {
-			return fmt.Errorf("%w: 回调 instance_code=%q 与 biz_no=%q 解析结果 %q 不一致（防串单）",
+			return nil, fmt.Errorf("%w: 回调 instance_code=%q 与 biz_no=%q 解析结果 %q 不一致（防串单）",
 				ErrInvalidSubmit, want, req.BizNo, got)
 		}
 	}
@@ -169,34 +178,38 @@ func (s *Service) admitCallback(ctx context.Context, req CallbackRequest, op str
 	if err != nil {
 		if errors.Is(err, store.ErrNotFound) {
 			// 任务不存在 → 同 (b)：可见的 4xx（非 500）。
-			return fmt.Errorf("%w: 回调 task_id=%s 无对应任务", ErrInvalidSubmit, req.TaskID)
+			return nil, fmt.Errorf("%w: 回调 task_id=%s 无对应任务", ErrInvalidSubmit, req.TaskID)
 		}
-		return fmt.Errorf("flow: 回调定位任务失败: %w", err)
+		return nil, fmt.Errorf("flow: 回调定位任务失败: %w", err)
 	}
 	if task.BizNo != req.BizNo {
-		return fmt.Errorf("%w: 任务 %s 不属于实例 %s（回调与任务不匹配）",
+		return nil, fmt.Errorf("%w: 任务 %s 不属于实例 %s（回调与任务不匹配）",
 			ErrIllegalTransition, req.TaskID, req.BizNo)
 	}
 
 	operator := strings.TrimSpace(req.OperatorOpenID)
 	if task.AssigneeOpenID != operator {
-		return fmt.Errorf("%w: %s 非任务 %s 的审批人，不可执行 %s（同意/拒绝须本人；准入失败不占幂等键）",
+		return nil, fmt.Errorf("%w: %s 非任务 %s 的审批人，不可执行 %s（同意/拒绝须本人；准入失败不占幂等键）",
 			ErrNotAssignee, operator, req.TaskID, op)
 	}
-	return nil
+	return task, nil
 }
 
 // recordCallback 幂等写 t_flow_op_log，返回本次是否真的写入（false＝幂等命中）。
 //
 // ★ 调用前提：请求**已通过 `admitCallback` 准入**（见 `HandleCallback` 顺序纪律，定案 #62）。
-func (s *Service) recordCallback(ctx context.Context, req CallbackRequest, op string) (bool, error) {
+// ★ round 入键（0011）：task 由 `admitCallback` 顺带取出（不重复查询）；漏传 round 会
+//
+//	使回退后同 task_id 的再次审批命中上一轮的键 → Duplicate=true → 静默不推进。
+func (s *Service) recordCallback(ctx context.Context, req CallbackRequest, op string, task *store.FlowTask) (bool, error) {
 	var inserted bool
 	err := s.db.WithTx(ctx, func(tx *sql.Tx) error {
 		var err error
 		inserted, err = s.db.InsertFlowOpLogTx(ctx, tx, &store.FlowOpLog{
 			BizNo: req.BizNo, TaskID: req.TaskID, OpType: op,
 			ActorOpenID: req.OperatorOpenID, Reason: req.Reason,
-			FromStatus: TaskPending, ToStatus: op, CreatedAt: time.Now(),
+			FromStatus: TaskPending, ToStatus: op,
+			Round: task.Round, CreatedAt: time.Now(),
 		})
 		return err
 	})

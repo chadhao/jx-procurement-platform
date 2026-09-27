@@ -270,20 +270,27 @@ func scanFlowTask(s interface {
 
 // InsertFlowOpLogTx 追加一条操作留痕。
 //
-// ★ 幂等（04a §4.3）：对 APPROVE/REJECT 存在 (biz_no,task_id,op_type) 部分唯一索引，
+// ★ 幂等（04a §4.3；0011）：对 APPROVE/REJECT 存在 (biz_no,task_id,op_type,round) 部分唯一索引，
 // 重复回调在此被 `INSERT OR IGNORE` 吸收（返回 inserted=false）→ **不产生第二次迁移**。
-// 其余 op_type 无该约束，正常插入。
+// ★ round 必须随键区分（0011）：回退复用同一 task_id 后再次审批的 round +1，
+//
+//	若漏传 round 会与上一轮命中同一键 → 重复回调被误判幂等 → 回调路径静默不推进。
+//	APPROVE/REJECT 写入点必须携带任务当前 round；其余 op_type 无该约束，填 0。
 //
 // 返回 inserted 表示本次是否真的写入（false＝幂等命中）。
 func (d *DB) InsertFlowOpLogTx(ctx context.Context, tx *sql.Tx, op *FlowOpLog) (bool, error) {
 	if op == nil || op.BizNo == "" || op.OpType == "" {
 		return false, fmt.Errorf("store: 写入操作留痕失败: biz_no/op_type 不能为空")
 	}
+	round := op.Round
+	if round < 0 {
+		round = 0
+	}
 	res, err := tx.ExecContext(ctx, `
 INSERT OR IGNORE INTO t_flow_op_log
-  (biz_no, node_id, task_id, op_type, actor_open_id, from_status, to_status, reason, extra_json, created_at)
-VALUES (?,?,?,?,?,?,?,?,?,?)`,
-		op.BizNo, nullStr(op.NodeID), nullStr(op.TaskID), op.OpType, nullStr(op.ActorOpenID),
+  (biz_no, node_id, task_id, op_type, round, actor_open_id, from_status, to_status, reason, extra_json, created_at)
+VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
+		op.BizNo, nullStr(op.NodeID), nullStr(op.TaskID), op.OpType, round, nullStr(op.ActorOpenID),
 		nullStr(op.FromStatus), nullStr(op.ToStatus), nullStr(op.Reason), nullStr(op.ExtraJSON),
 		fmtTime(op.CreatedAt))
 	if err != nil {
@@ -300,6 +307,7 @@ VALUES (?,?,?,?,?,?,?,?,?,?)`,
 func (d *DB) ListFlowOpLogs(ctx context.Context, bizNo string) ([]FlowOpLog, error) {
 	rows, err := d.QueryContext(ctx, `
 SELECT op_id, biz_no, COALESCE(node_id,''), COALESCE(task_id,''), op_type,
+       COALESCE(round,0),
        COALESCE(actor_open_id,''), COALESCE(from_status,''), COALESCE(to_status,''),
        COALESCE(reason,''), COALESCE(extra_json,''), created_at
 FROM t_flow_op_log WHERE biz_no = ? ORDER BY op_id`, bizNo)
@@ -312,12 +320,14 @@ FROM t_flow_op_log WHERE biz_no = ? ORDER BY op_id`, bizNo)
 	for rows.Next() {
 		var (
 			op      FlowOpLog
+			round   int64
 			created string
 		)
-		if err := rows.Scan(&op.OpID, &op.BizNo, &op.NodeID, &op.TaskID, &op.OpType, &op.ActorOpenID,
-			&op.FromStatus, &op.ToStatus, &op.Reason, &op.ExtraJSON, &created); err != nil {
+		if err := rows.Scan(&op.OpID, &op.BizNo, &op.NodeID, &op.TaskID, &op.OpType, &round,
+			&op.ActorOpenID, &op.FromStatus, &op.ToStatus, &op.Reason, &op.ExtraJSON, &created); err != nil {
 			return nil, err
 		}
+		op.Round = int(round)
 		op.CreatedAt = parseTime(created)
 		out = append(out, op)
 	}

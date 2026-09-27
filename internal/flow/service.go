@@ -427,10 +427,12 @@ func (s *Service) act(ctx context.Context, bizNo, taskID, actor, opType, reason 
 		if err := s.db.UpdateFlowTaskStatusTx(ctx, tx, taskID, newTaskStatus, &at); err != nil {
 			return err
 		}
+		// ★ 幂等键含 round（0011）：回退复用同一 task_id 后再次审批必须换键，
+		//   否则 INSERT OR IGNORE 命中上一轮的 APPROVE 留痕 → 静默不推进。
 		if _, err := s.db.InsertFlowOpLogTx(ctx, tx, &store.FlowOpLog{
 			BizNo: bizNo, NodeID: task.NodeID, TaskID: taskID, OpType: opType,
 			ActorOpenID: actor, FromStatus: TaskPending, ToStatus: newTaskStatus,
-			Reason: reason, CreatedAt: at,
+			Reason: reason, Round: task.Round, CreatedAt: at,
 		}); err != nil {
 			return err
 		}

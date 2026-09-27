@@ -328,7 +328,11 @@ type FlowOpLog struct {
 	ToStatus    string
 	Reason      string
 	ExtraJSON   string
-	CreatedAt   time.Time
+	// ★ 0011 增列：轮次（回退重激活 +1）。回调幂等键含 round（ux_flow_op_callback），
+	//   回退复用同一 task_id 后再次 APPROVE/REJECT 不得被误判为重复回调（静默不推进）。
+	//   仅 APPROVE/REJECT 两处写入点要求携带任务当前 round；其余 op_type 保持 0。
+	Round     int
+	CreatedAt time.Time
 }
 
 // ApprovalDef 三方审批定义注册表行（t_approval_def，04a §1.1 / §3）。
