@@ -9,7 +9,7 @@
 | 项 | 内容 |
 |---|---|
 | 文档名称 | 采购与费用审批平台（自建侧）· 增量架构设计（架构转向 ③） |
-| 版本 | **V2.7**（增量首版 + `01a` **V1.4** 同步；含 **`update_mode` 选型判据** · **从零建 HTTPS 面** · **会签本期不可配** · **三路适配性审计回填** · **单列前置任务 `T02b` 写入者交棒** · **收口：§6.4 锁号兜底索引措辞修订 + `instance_id` 口径对齐 §6.3** · **V2.2 新增 §17 部署与入网 + 静默防护 S15** · **V2.3 顺序会签 `task_order` + 不变量 + §3.5 定义装载** · **V2.4 加签 `timing` 前置/后置（§2.3 / §5.2 / 类图 `+AddSign(timing)`），逐字正本＝`05-API §3.13`** · **V2.6 新增 §17.0 前提澄清：平台未要求 HTTPS / 443** · **★ V2.7 回调链路修复收口：§3.2 `action_context` 写 `biz_no` ＋ `action_configs` 两键 / §4.2 字段映射层（官方名↔内部名 ＋ `biz_no` 三级读法 ＋ `user_id→open_id` 转换 ＋ 双 code 池）/ §5.5 通知必推（`message/send` 四 URL ＋ `message/update`）/ §6.3 `biz_no` 反解 / §10 S16–S17 ＋ §12.2 N-12–N-13 / 幂等键统一 4 列**） |
+| 版本 | **V2.8**（★ 2026-09-28 联调收口：§4.2 内 **`V-2`/`V-3`/`V-4` 三项由「待实测」改为「已定论」** —— `message/update` 请求体＝`{"message_id","status"}` · `user_id→open_id` 需 scope `contact:user.employee_id:readonly` · 推实例须用真实 code；增量首版 + `01a` **V1.4** 同步；含 **`update_mode` 选型判据** · **从零建 HTTPS 面** · **会签本期不可配** · **三路适配性审计回填** · **单列前置任务 `T02b` 写入者交棒** · **收口：§6.4 锁号兜底索引措辞修订 + `instance_id` 口径对齐 §6.3** · **V2.2 新增 §17 部署与入网 + 静默防护 S15** · **V2.3 顺序会签 `task_order` + 不变量 + §3.5 定义装载** · **V2.4 加签 `timing` 前置/后置（§2.3 / §5.2 / 类图 `+AddSign(timing)`），逐字正本＝`05-API §3.13`** · **V2.6 新增 §17.0 前提澄清：平台未要求 HTTPS / 443** · **★ V2.7 回调链路修复收口：§3.2 `action_context` 写 `biz_no` ＋ `action_configs` 两键 / §4.2 字段映射层（官方名↔内部名 ＋ `biz_no` 三级读法 ＋ `user_id→open_id` 转换 ＋ 双 code 池）/ §5.5 通知必推（`message/send` 四 URL ＋ `message/update`）/ §6.3 `biz_no` 反解 / §10 S16–S17 ＋ §12.2 N-12–N-13 / 幂等键统一 4 列**） |
 | 日期 | 2026-09-27 |
 | 上游文档 | `01a-PRD-Increment-V2.md`（增量需求正本 **V1.4**，已采纳本文 §15 的 C1–C11，并入 §4.7 通知 / §5.5 配额 / QV2-A24~A25，并纠正会签误判；V1.4 并入第三轮口径 D1/D2/D6）、`01-PRD.md`（V1.6）、`04-Architecture.md`（V1.0 基线）、`08-Org-Sync-Design.md`（V1.2）、`README.md`（关键定案 #1~#46） |
 | 被取代 | `04-Architecture.md` §0「本系统是审批引擎的旁路」、ADR-06（编号不在自建侧生成）、ADR-07（只 4 接口）、§4 事件流水线（仅限**流转归属**相关位点） |
@@ -414,7 +414,7 @@ sequenceDiagram
 |---|---|
 | 我方统存 | **全库统存 `open_id`**（`t_user_role.open_id` / `t_flow_task.assignee_open_id` / `Session.OpenID`）；**不改库内 ID 域**（改域＝全系统重写，违反定案 #47） |
 | 转换策略 | 回调 `user_id` → `internal/platform/feishu/contact.go` 的 **`GetOpenIDByUserID`**（`GET /open-apis/contact/v3/users/{user_id}?user_id_type=user_id`，**10min TTL 进程内缓存**）→ 得 `open_id` 后进 `admitCallback` |
-| 转换失败 | ★ **400 / 40000 可见拒绝 ＋ 告警日志**；**不落盘、不占幂等键**（定案 #62）；★ 端点形态与 scope **待联调实测 `V-3`** |
+| 转换失败 | ★ **400 / 40000 可见拒绝 ＋ 告警日志**；**不落盘、不占幂等键**（定案 #62）；★ 端点＝`GET /open-apis/contact/v3/users/{user_id}?user_id_type=user_id`，**已定论（2026-09-28 真机）**：需 scope **`contact:user.employee_id:readonly`**（开通后 `open_id ⇄ user_id` 双向转换皆通） |
 | 排障留痕 | `flow.CallbackRequest` 保留转换前原值 `OperatorUserID`（排障用） |
 
 #### 4.2.2 `approval_code` 双 code 池（G-8）
@@ -424,7 +424,7 @@ sequenceDiagram
 | 背景 | `POST external_approvals` 用「自定义 code」匹配（命中即更新），返回**真实 code**；`GET` 与推实例**必须用真实 code**；而读回字段 `approval_code` 返回自定义 code ⇒ **同一字段名两样东西** |
 | 落库归位 | 迁移 `0013` 给 `t_approval_def` 加 **`feishu_code`**（真实 code 候选列）；`Registry.Register` **双写**（`approval_code`＝我方自定义 code 作 PK、`feishu_code`＝平台响应回填值） |
 | 推送 | `Pusher.Push` **优先 `feishu_code`、空则回退 `approval_code`** |
-| 回调校验 | ★ **宽松档**：报文 `approval_code` 与 `inst.ApprovalCode` / `feishu_code` **任一命中即放行**；**不命中仅告警、不拒**（双池归属**待实测 `V-4`** 前不做硬拦截——**先宽后严**，避免用未实测假设做硬拦截）；★ V-4 实测后升格强校验 |
+| 回调校验 | ★ **宽松档**：报文 `approval_code` 与 `inst.ApprovalCode` / `feishu_code` **任一命中即放行**；**不命中仅告警、不拒**（★ **已定论（2026-09-28 真机）：推实例必须用「真实 code」（`feishu_code`）** ⇒ **可升格为强校验**，列为待办）；★ 实测已证伪"双池归属未知"这一顾虑 |
 
 ### 4.3 回调幂等（★ 设计补强）
 
@@ -487,7 +487,7 @@ sequenceDiagram
 | 项 | 规则 |
 |---|---|
 | 触发场景 | ① 代理转交后通知**被转交人**（及可选原节点相关人）；② **回退后通知已被审批通过者**（其结论被作废需知情）；③ 撤回后通知在途审批人 |
-| 渠道 | 飞书**审批 Bot 消息**（**主渠道，非可选** —— 见 `01a` §5.4/§8 **FR-M0-17**）＋ 我方**站内通知兜底**；★★ **发送＝`POST /open-apis/approval/v1/message/send`**（`template_id=**1008**`「收到审批待办」）—— ★ **推实例只让任务进「待办」，不会自动发消息**，通知**必须我方主动调用**；★ `actions[]` **四个 URL 缺一不可**（`url`＋`pc_url`＋`android_url`＋`ios_url`，缺 ⇒ `60001 actionUrls incomplete error`）、该接口 **`texts` 接受 map**（与 `external_approvals` 的数组形态**相反**）、★ **`code!=0` 一律判失败（HTTP 200 不代表成功）**；★★ **失败反馈＝`POST /open-apis/approval/v1/message/update`**（回调失败时更新卡片；`message_id` 空则不发、**请求体字段待实测 `V-2`**）。**通知失败不得阻塞状态机**（异步、可重试、进死信） |
+| 渠道 | 飞书**审批 Bot 消息**（**主渠道，非可选** —— 见 `01a` §5.4/§8 **FR-M0-17**）＋ 我方**站内通知兜底**；★★ **发送＝`POST /open-apis/approval/v1/message/send`**（`template_id=**1008**`「收到审批待办」）—— ★ **推实例只让任务进「待办」，不会自动发消息**，通知**必须我方主动调用**；★ `actions[]` **四个 URL 缺一不可**（`url`＋`pc_url`＋`android_url`＋`ios_url`，缺 ⇒ `60001 actionUrls incomplete error`）、该接口 **`texts` 接受 map**（与 `external_approvals` 的数组形态**相反**）、★ **`code!=0` 一律判失败（HTTP 200 不代表成功）**；★★ **失败反馈＝`POST /open-apis/approval/v1/message/update`**（回调失败时更新卡片；`message_id` 空则不发；★ **请求体已定论（2026-09-28 真机）＝ `{"message_id":…,"status":…}`**）。**通知失败不得阻塞状态机**（异步、可重试、进死信） |
 | 留痕 | 每发一条写 `t_notify_log`（对象 / 渠道 / 结果 / 时间 / 重试次数 / 错误） |
 | **漏发可检出** | ★ **「应有集合」的定义（V1.9 补齐）**：由 **`flow` 在每次操作后**按「**该单内已 `APPROVED` 的审批人**（+ 被转交人 / 在途审批人，按上方触发场景）」算出**应有通知对象**，**先落 `t_notify_log` 的"应发记录"（`status=EXPECTED`）**，再由**实际发送结果回填 `SENT`/`FAILED`**；巡检比对「`EXPECTED` vs 非 `SENT`」→ 缺者**补发 + 告警**（呼应 §10 静默防护主题） |
 | 与状态机关系 | 通知是**旁路副作用**：状态迁移**先提交事务**，再异步发通知；**绝不**因通知失败回滚审批 |

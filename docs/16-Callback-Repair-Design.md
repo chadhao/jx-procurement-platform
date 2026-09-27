@@ -3,16 +3,19 @@
 | 项 | 内容 |
 |---|---|
 | 文档编号 | `16`（★ **未用派单所给 `15`**：`docs/15-Code-Collision-Register.md` 已占用该号 —— 该文档本身就是「同号不同物」登记总表，再造一个 `15-…` 恰好制造它要登记的那类缺陷；依据＝关键定案 **#48**「新增文档必须先定编号」＋ **#56**「编号是定位符，重号＝定位失效」） |
-| 版本 | V1.1（2026-09-27，架构师 Bob 出稿；★ **V1.1 由产品经理补「落地状态」回填**） |
-| 状态 | ★ **首稿为「仅设计」；现 A–F 与批次均已实现（见 §2 / §3 的「落地状态」）**；★ **本文仍不改任何代码、不 commit**。本批仅**回填事实**（提交号），**不新增设计** |
-| 落地批次（4 批，提交号） | 第 1 批＝**C + D**（`5fe1671`）· 第 2 批＝**A + B + E + `0013`**（`d94580f`）· 第 3 批＝**F + 通知 Sender**（`36df709`）· 第 4 批＝**「新待办产生」通知接线**（`c6e26d7`，现行 HEAD） |
-| 仍待联调实测（**不得写成已验**） | `V-1`（`action_context` 原样回传）· `V-3`（`contact/v3` 按 `user_id` 查 `open_id` 端点 / scope）· `V-4`（`approval_code` 双 code 池归属）；★ **`V-2` 已实测定稿（2026-09-28）**：`message/update` 请求体＝`{"message_id","status"}`（见 §7 V-2 行）；★ 落点＝`docs/09` §2（阶段一） |
-| 输入 | `docs/05-API.md` §3.14（含「实测缺口清单 6 条」）· `docs/04a-Architecture-Increment-V2.md` §3/§4/§17 · `docs/reference/README.md` 实测台账（2026-09-27）· 实现：`internal/httpapi/handlers_approval.go` · `internal/flow/callback.go` · `internal/platform/feishu/push.go` · `internal/platform/feishu/external.go` · `internal/approval/defregistry.go` · `cmd/jxapproval/bootstrap.go` · `migrations/0007_approval_core.sql` |
+| 版本 | V1.2（2026-09-28，架构师 Bob 出稿；★ **V1.1 由产品经理补「落地状态」回填**；★ **V1.2 由产品经理补「联调实测记录」（§8）＋ 把 `V-1`~`V-4` 由「待实测」翻为「已定论」**） |
+| 状态 | ★ **首稿为「仅设计」；现 A–F 与批次均已实现（见 §2 / §3 的「落地状态」）＋ 端到端联调已闭环（见 §8）**；★ **本文仍不改任何代码、不 commit**。V1.1/V1.2 仅**回填事实**（提交号 / 实测结论），**不新增设计** |
+| 落地批次（4 批，提交号） | 第 1 批＝**C + D**（`5fe1671`）· 第 2 批＝**A + B + E + `0013`**（`d94580f`）· 第 3 批＝**F + 通知 Sender**（`36df709`）· 第 4 批＝**「新待办产生」通知接线**（`c6e26d7`） |
+| ★ 联调轮提交（重推剥 5 层，见 §8） | 字段名 `46919ac` · `check` 补 `instances[]` `956f3c8` · `message_id` 类型 `5761922` · 实例级必填 `5b3f2ac` · `node_name` 值语义 `fad0811` · 留痕增记 raw_body `7076069` · 定义装载全开关 `1410e9e` · 主动刷卡片 `956f3c8`（现行 HEAD `fad0811`） |
+| 平台实测（★ `V-1`~`V-4` **均已定论**；余 `V-5`/`V-6` 待实测） | ✅ **`V-1`**：飞书**原样回传** `action_context`（B 项前提成立）· ✅ **`V-2`**（2026-09-28）：`message/update` 请求体＝`{"message_id","status"}` · ✅ **`V-3`**：`user_id→open_id` 需 scope **`contact:user.employee_id:readonly`**（双向皆通）· ✅ **`V-4`**：推实例**必须用真实 code**（`feishu_code`）。★ 余 `V-5`（`enable_quick_operate` 与 `action_configs` 配合语义，落 `docs/09` `QV2-A32`）· **`V-6`**（实例级 `title` 是否可下发，见 §7） |
+| 输入 | `docs/05-API.md` §3.14（含「实测缺口清单 6 条」）· `docs/04a-Architecture-Increment-V2.md` §3/§4/§17 · `docs/reference/README.md` 实测台账（2026-09-27 / 2026-09-28）· 实现：`internal/httpapi/handlers_approval.go` · `internal/flow/callback.go` · `internal/platform/feishu/push.go` · `internal/platform/feishu/external.go` · `internal/approval/defregistry.go` · `cmd/jxapproval/bootstrap.go` · `migrations/0007_approval_core.sql` |
 | 读者 | 工程师（按 §3 修复）、PM（按 §4 同步文档）、QA（按 §6 测试） |
 
 ---
 
 ## 0. 结论先行（TL;DR）
+
+> ★★ **现值（2026-09-28，联调收口）**：本节 1–3 为**首稿时点**的结论（当时「回调全链路一条都走不通」）。★ **三层断点现已全部修复**、**端到端闭环已达成**（真机确认，对账**零差异**）—— 现值以 **§8 联调实测记录** 与 `docs/05-API §3.14` 末注为准。★ 原文保留作**史实留痕**（对齐定案 `#73`：史实不篡改、加前向指针）。
 
 1. **回调全链路当前一条都走不通**，且有三层独立断点：① 我方解析的字段名（`biz_no`/`open_id`/`instance_code`）与飞书官方报文（`approval_code`/`user_id`/`instance_id`）**不匹配**（实测铁证：官方格式打我方 ⇒ `回调缺少 biz_no/task_id`）；② `biz_no` 的回传载体 `task_list[].action_context` **从未被设置**（当前推的是纯 `task_id` 字符串）；③ 本地 `t_approval_def` / `t_instance` **0 行**（定义装载 P0-2 未实现，`defregistry.Register/Sync` 零生产调用者）。**三层须按 ③ → ②+① 顺序同批修复**。
 2. 修复不引入新框架，全部为**既有文件内的定向改造**（`extCallbackBody` 字段校准、`ExternalTask` 加 `action_context`、`defregistry` 接通、回调 body 留痕、`message/update` 失败反馈），数据库仅 **1 个新增迁移 `0013`**（`t_flow_op_log` 加 `message_id`、`t_approval_def` 加 `feishu_code`，均可空、无回填）。
@@ -47,7 +50,7 @@
 
 ### A. 回调报文字段校准（对应 G-1 / G-4）
 
-> ★ **落地状态**：✅ **已实现**（第 2 批 **`d94580f`**）—— `extCallbackBody` 按官方 12 字段重写、旧字段降为**兼容读**（窗口＝一个发布版本）；`flow.CallbackRequest` 新增 `ApprovalCode` / `MessageID` / `OperatorUserID`；`verifyCallbackToken` 增 `approval_code` **双池宽松档**（命中才放行、不命中仅告警）。★ `A-3` 转换落点＝`internal/platform/feishu/contact.go` 的 `GetOpenIDByUserID`（★★ 红线：**绝不把 `user_id` 塞进 `OperatorOpenID`**）。★ **`V-3`（端点 / scope）仍待联调实测**。
+> ★ **落地状态**：✅ **已实现**（第 2 批 **`d94580f`**）—— `extCallbackBody` 按官方 12 字段重写、旧字段降为**兼容读**（窗口＝一个发布版本）；`flow.CallbackRequest` 新增 `ApprovalCode` / `MessageID` / `OperatorUserID`；`verifyCallbackToken` 增 `approval_code` **双池宽松档**（命中才放行、不命中仅告警）。★ `A-3` 转换落点＝`internal/platform/feishu/contact.go` 的 `GetOpenIDByUserID`（★★ 红线：**绝不把 `user_id` 塞进 `OperatorOpenID`**）。★ **`V-3` 已实测定论（2026-09-28）**：端点 / scope 可用 —— 需 scope **`contact:user.employee_id:readonly`**（开通后**双向转换皆通**）；★★ **端到端已实证** `user_id→open_id` 转换跑通（`docs/16 §8`）。
 
 **A-1 · `extCallbackBody` 重写为官方字段**
 
@@ -91,7 +94,7 @@
 
 ### B. `action_context` 承载 `biz_no`（对应 G-2）
 
-> ★ **落地状态**：✅ **已实现**（第 2 批 **`d94580f`**，与 A **同批**）—— `push.go` 的 `ExternalTask` 新增 `action_context`，`BuildSnapshot` 为每个 `RELEASED` task 写 `{"biz_no":…,"task_id":…}`；解侧 `biz_no` **三级读法**（`action_context` → `instance_id` 反解 → 顶层兜底+warn）。★ **`V-1`（飞书是否原样回传 `action_context`）仍待联调实测** —— B 方案的唯一前提。
+> ★ **落地状态**：✅ **已实现**（第 2 批 **`d94580f`**，与 A **同批**）—— `push.go` 的 `ExternalTask` 新增 `action_context`，`BuildSnapshot` 为每个 `RELEASED` task 写 `{"biz_no":…,"task_id":…}`；解侧 `biz_no` **三级读法**（`action_context` → `instance_id` 反解 → 顶层兜底+warn）。★ **`V-1` 已实测定论（2026-09-28）**：飞书**原样回传** `action_context`（我方埋入 JSON 一位不差回来）⇒ **B 方案前提成立**。
 
 | 项 | 内容 |
 |---|---|
@@ -105,7 +108,7 @@
 
 ### C. 定义装载源（对应 G-3 / G-8）
 
-> ★ **落地状态**：✅ **已实现**（第 1 批 **`5fe1671`**）—— 管理端点 **`POST /api/admin/approval/defs/sync`**（仅系统管理员；读 `t_config_mapping(map_kind='approval_code')` → `ApprovalDefs.Sync`；响应计数 `synced`/`created`/`updated`/`skipped`/`failed` ＋ `items`；错误码 **400**＝清单空或含占位符、**503**＝`JX_ACTION_CALLBACK_TOKEN` 未配）＋ **启动自检**（`t_approval_def` 为空 ⇒ warn ＋ `/healthz` 状态位 `approval_defs`，★ **只进 `/healthz` 快照、不进 `Ready()`**）＋ 补齐配置键 `JX_CALLBACK_DOMAIN` / `JX_ACTION_CALLBACK_TOKEN`。★ **`G-8` 双 code 池**：`0013` 加 `feishu_code`；`Registry.Register` 主键仍为我方自定义 code、响应回填值落 `feishu_code`；`Pusher.Push` **优先 `feishu_code`、空则回退**。★ **`V-4`（双池归属）仍待联调实测** —— 实测前先**双写、不猜**。
+> ★ **落地状态**：✅ **已实现**（第 1 批 **`5fe1671`**）—— 管理端点 **`POST /api/admin/approval/defs/sync`**（仅系统管理员；读 `t_config_mapping(map_kind='approval_code')` → `ApprovalDefs.Sync`；响应计数 `synced`/`created`/`updated`/`skipped`/`failed` ＋ `items`；错误码 **400**＝清单空或含占位符、**503**＝`JX_ACTION_CALLBACK_TOKEN` 未配）＋ **启动自检**（`t_approval_def` 为空 ⇒ warn ＋ `/healthz` 状态位 `approval_defs`，★ **只进 `/healthz` 快照、不进 `Ready()`**）＋ 补齐配置键 `JX_CALLBACK_DOMAIN` / `JX_ACTION_CALLBACK_TOKEN`。★ **`G-8` 双 code 池**：`0013` 加 `feishu_code`；`Registry.Register` 主键仍为我方自定义 code、响应回填值落 `feishu_code`；`Pusher.Push` **优先 `feishu_code`、空则回退**。★ **`V-4` 已实测定论（2026-09-28）**：**推实例必须用真实 code**（`feishu_code`）—— 用「自定义 code」推实例报 `1390002`；实测前先**双写、不猜**的做法得证。★ **追加修复（联调暴露，`1410e9e`）**：`POST external_approvals` 的 **upsert 会「重置未传字段」** ⇒ 定义装载**必须显式传全开关**（`enable_quick_operate` 等，否则两键被打回）。
 
 | 项 | 内容 |
 |---|---|
@@ -118,7 +121,7 @@
 
 ### D. 实例/任务落库与重推语义（对应 G-3 的实例半边）
 
-> ★ **落地状态**：✅ **已实现**（第 1 批 **`5fe1671`** 的落库纪律 ＋ 后续各批的实例/任务写入者）—— 「本地先行、推送在后」纪律成立；`BuildSnapshot` 守卫（`PENDING` 但 `RELEASED` 任务数为 0 ⇒ warn）已落。★ 手工 curl 推实例的警示见 `docs/14`。
+> ★ **落地状态**：✅ **已实现**（第 1 批 **`5fe1671`** 的落库纪律 ＋ 后续各批的实例/任务写入者）—— 「本地先行、推送在后」纪律成立；`BuildSnapshot` 守卫（`PENDING` 但 `RELEASED` 任务数为 0 ⇒ warn）已落。★ 手工 curl 推实例的警示见 `docs/14`。★ **联调期另修「推实例字段」五层缺陷**（字段名 / task 级必填 / 实例级必填 / 字段类型 / 值语义，提交 `46919ac`/`5b3f2ac`/`5761922`/`fad0811`）—— 详见 **§8 联调实测记录**。
 
 | 项 | 内容 |
 |---|---|
@@ -131,7 +134,7 @@
 
 ### E. 回调报文留痕（对应 G-7）
 
-> ★ **落地状态**：✅ **已实现**（第 2 批 **`d94580f`**）—— 新增 **`internal/httpapi/middleware_callback.go`**，`callbackBodyLog` **只挂回调一条路由**；★ token **全打码**（记 `token=<len:N>`）、`reason` 截断至 200 字符、`attachments` 只记条数、超 **64KB** 截断（标 `[truncated]`）。★ 这正是 `V-1` 实测取证的手段（留痕看 `action_context` 是否原样回来）。
+> ★ **落地状态**：✅ **已实现**（第 2 批 **`d94580f`**）—— 新增 **`internal/httpapi/middleware_callback.go`**，`callbackBodyLog` **只挂回调一条路由**；★ token **全打码**（记 `token=<len:N>`）、`reason` 截断至 200 字符、`attachments` 只记条数、超 **64KB** 截断（标 `[truncated]`）。★ 这正是 `V-1` 实测取证的手段（留痕看 `action_context` 是否原样回来）。★ **追加（`7076069`）**：中间件**增记 `raw_body` 原始报文**（token 仍打码），破除「脱敏视图看不到平台特有字段」的排障盲区 —— 联调期五层缺陷的定位即靠它。
 
 | 项 | 内容 |
 |---|---|
@@ -173,7 +176,8 @@
 | 第 1 批 | **C（定义装载）＋ D（落库纪律）** | G-3 是 G-1/G-2 的前置：定义与实例不落库，字段修对了也过不了「实例存在性」关（实测校验顺序） | ✅ **已实现**（**`5fe1671`**）；★ 启动自检**只进 `/healthz`、不进 `Ready()`** |
 | 第 2 批 | **A ＋ B ＋ E ＋ 0013 迁移**（同批一个提交） | A/B 必须同批（回调取不到 `biz_no` 则永远 400）；E 与迁移 0013（message_id 列）随批；`feishu_code` 列随批（C 的双 code 池部分） | ✅ **已实现**（**`d94580f`**） |
 | 第 3 批 | **F（message/update ＋ 通知 sender）** | 依赖第 2 批落盘的 `message_id`；联调实测 V-2/V-3 后定稿字段 | ✅ **已实现**（**`36df709`**）；★ **`message/update` 请求体字段仍待实测 `V-2`**（先建端口 + Fake） |
-| （第 4 批 · 派单后续） | **「新待办产生」通知接线**（`flow/notify.go` 的 `activateOnType` / `ActivatedNotifyTargets` / `OnFlowEvent` 拆分） | 第 3 批只通了「通知发送端口」；**本条补上「新待办」这一触发事件**（此前 `notifyOnType` 无该事件 ⇒ 无触发点，通知发不出） | ✅ **已实现**（**`c6e26d7`**，现行 HEAD）；★ 见 `docs/06 §R`（B52–B56） |
+| （第 4 批 · 派单后续） | **「新待办产生」通知接线**（`flow/notify.go` 的 `activateOnType` / `ActivatedNotifyTargets` / `OnFlowEvent` 拆分） | 第 3 批只通了「通知发送端口」；**本条补上「新待办」这一触发事件**（此前 `notifyOnType` 无该事件 ⇒ 无触发点，通知发不出） | ✅ **已实现**（**`c6e26d7`**）；★ 见 `docs/06 §R`（B52–B56） |
+| ★ （联调轮 · 端到端收口） | **推实例「五层」字段修复 ＋ 主动刷卡片 ＋ 定义装载全开关 ＋ 留痕 raw_body**（提交 `46919ac` / `5b3f2ac` / `5761922` / `fad0811` / `956f3c8` / `1410e9e` / `7076069`） | ★ **每层都是真机报错驱动**（平台**逐层**只报一层错）；★ 卡片**须我方主动刷新**（平台不自动刷）；★ 定义 upsert 会**重置未传字段** | ✅ **已实现**（现行 HEAD **`fad0811`**）；★ 五层清单见 **§8**、`docs/06 §S`（B57–B62） |
 
 ★ 依据 `05-API §3.14` 末「修复顺序」注：#2 与 #1 同批、#6 是前置——与本表一致。
 
@@ -258,26 +262,79 @@ curl -s -X POST http://127.0.0.1:5001/approval/external/callback \
 
 ---
 
-## 7. 未定项与风险（★ 全部标「待验证」，不得当结论使用）
+## 7. 未定项与风险（★ `V-1`~`V-4` 已定论；余 `V-5`/`V-6` 与风险项标「待验证」，不得当结论使用）
 
-> ★★ **V1.1 状态确认**：`V-1`~`V-5` 与 `R-1`~`R-3` **均仍为「待验证 / 待实测」** —— ★ **代码已按"先宽后严 / 端口 + Fake"落地，但平台侧行为未经实测，一律不得写成结论**。★ **`V-2` / `V-3` / `V-4` 保持「仍待联调实测」**（**不得写成已验**）。★ 落点＝`docs/09` §2 阶段一（`V-1`~`V-4`）。
+> ★★ **V1.2 状态确认（2026-09-28）**：`V-1` / `V-2` / `V-3` / `V-4` **均已实测【定论】**（结论见下表，逐条附证据）—— ★ **不再是「待验证」**。★ **余 `V-5`（`enable_quick_operate` 与 `action_configs` 配合语义，落 `docs/09` `QV2-A32`）与 `V-6`（实例级 `title` 是否可下发，本条新增）仍待实测**（**不得写成已验**）。★ `R-1`（`message/send` 与 `message/update` 形态不一）**已实测**；`R-2`/`R-3` 仍为风险登记。★ 落点＝`docs/09` §7（`V-1`~`V-4` 已移入「已闭合 / 已定案」）与 §3（`V-6`）。
 
 | # | 未定项 | 影响 | 验证方法 |
 |---|---|---|---|
-| V-1 | ★★ **飞书是否原样回传 `action_context`**（官方文档如此表述，**未实测**） | B 方案的前提；若不回传/改写，`biz_no` 只剩 `instance_id` 反解一条兜底链 | 联调：推实例带 `action_context` → 在飞书点同意 → 看回调日志 body（E 项留痕正是为此） |
+| V-1 | ✅ **已定论（2026-09-28）**：**飞书【原样回传】`action_context`**（我方埋入的 JSON 一位不差回来）—— ★ 不再只是「官方文档如此表述、未实测」 | 结论：**B 方案前提成立** ⇒ `biz_no` 主读（`action_context`）可用；`instance_id` 反解退为**兜底** | 已验（真机）：推实例带 `action_context` → 飞书点「同意」→ **回调留痕 body 逐字核对**（`docs/reference/README.md` 实测条 · `docs/09 §7`） |
 | V-2 | ✅ **已实测定稿（2026-09-28）**：`POST /open-apis/approval/v1/message/update` 请求体＝**`{"message_id":"<id>","status":"<status>"}`** —— 只传 `message_id` ⇒ `60001 "no Status error"`（HTTP 仍 200）；加 `status` ⇒ `{"code":0,"data":{"message_id":…},"success"}`；`status` 取值与审批状态一致（实测 `"APPROVED"` 成功）。★ 「失败态」`status` 取值仍未实测（`RepairCardFeedback` 暂缓调用、Error 告警，不臆造） | 已消解主项；实现＝`HTTPClient.UpdateApprovalMessage` ＋ `CardRefresher`（推进成功路径） | 真机已验（成功形态）；「失败态」取值留待联调补验 |
-| V-3 | **按 `user_id` 查 open_id 的端点与 scope**（本方案写 `GET /open-apis/contact/v3/users/{user_id}?user_id_type=user_id`，按官方《通讯录》文档；该形态未实测） | A-3 转换策略 | `reference/README.md` 已证 `contact/v3` 可用且 scope 候选已知 ⇒ 联调直接试；失败则按 `99991672` 附带的官方申请链接补 scope |
-| V-4 | ★★ **`approval_code` 双池归属**：① `POST external_approvals` 响应回填值属自定义池还是真实池；② 回调报文里的 `approval_code` 属哪个池 | C 的落库归位与回调校验宽严档；若处理错 ⇒ 推实例 `1390002`（静默失败族） | 联调：按 `reference/README.md` 双池实测法（自定义 code 建定义 → 看响应 → 用两个值分别推实例）；回调侧看留痕 body 里的实际值 |
-| V-5 | `enable_quick_operate` 定义级开关与 `action_configs` 明细的配合语义（`reference/README.md` 已标「按待实测记录」；`docs/09` `QV2-A32`） | 定义装载时是否必须显式置 true（否则两键不存在，回调无从谈起） | `docs/09` 既定联调项；C 装载入参应**显式设 true**（实测可生效），不赌默认值 |
+| V-3 | ✅ **已定论（2026-09-28）**：端点 / scope 可用 —— `GET /open-apis/contact/v3/users/{user_id}?user_id_type=user_id`；★ 需 scope **`contact:user.employee_id:readonly`**（**开通后双向转换皆通**） | 结论：A-3 转换链可用；★ **端到端已实证** `user_id→open_id` 转换跑通（§8） | 已验（真机）；失败时的补 scope 路径（`99991672` 附申请链接）仍适用 |
+| V-4 | ✅ **已定论（2026-09-28）**：**推实例【必须用真实 code】（`feishu_code`）** —— 用「自定义 code」推实例报 `1390002` | 结论：`feishu_code` 归位正确；回调报文 `approval_code` 池归属随 §2-A 双池宽松档 + 本条定论收敛 | 已验（真机）：双池实测法；回调侧看留痕 body 里的实际值 |
+| V-5 | `enable_quick_operate` 定义级开关与 `action_configs` 明细的配合语义（`reference/README.md` 已标「按待实测记录」；`docs/09` `QV2-A32`） | 定义装载时是否必须显式置 true（否则两键不存在，回调无从谈起） | `docs/09` 既定联调项；C 装载入参应**显式设 true**（实测可生效），不赌默认值。★ 落点已由 `docs/09 §7` `QV2-A32`（用户侧已确认两键）承载 |
+| V-6 | ★ **实例级 `title` 是否可下发**（**本方口径，非平台事实**）：我方推实例**未下发 `title`**（遵「官方标否不新增」），**实例名依赖官方回退**（＝审批定义 `name`） | 若产品要求「**实例名可与定义名不同**」，则需可下发 `title` 覆盖；当前**不可**（我方未下发） | ★ **待实测**：推实例带 `title=@i18n@key`（配 `i18n_resources.texts`）→ 读回实例名是否被接受；★ **记为待确认项、不擅自改实现**（落 `docs/09 §3 V-6`） |
 | R-1 | （风险）回调通知 `message/send` 与本方案 F 的 `message/update` 同族但**接口形态不一**（`i18n_resources` 一个收 map、`external_approvals` 收数组——实测已证） | 实现时不能复用同一序列化惯例 | 已实测（`reference/README.md` ★★ 条目），按接口分别写 |
 | R-2 | （风险）`user_id` 转换依赖外部 API ⇒ 回调同步路径多一次网络调用 | 与「落盘即 200、毫秒级返回」目标冲突 | 缓解：进程内 TTL 缓存；转换失败仍走可见拒绝（毫秒级）；**不**把转换放异步（准入必须先于落盘，定案 #62） |
 | R-3 | （风险）本方案若第 1、2 批分次上线，中间态「定义已装载但回调字段未修」仍 400 | 中间态用户观感 | 在 05-API §3.14 与本文档均明示批次顺序（§3）；不宣称中间态可用 |
 
 ---
 
-## 8. 变更记录
+## 8. 联调实测记录（2026-09-28 · 端到端闭合）
+
+> ★ 本节由产品经理于**联调收口轮**补入（**纯文档，事实＝真机实测**）。★ **端到端闭环已达成**。★ 与 §7 的 `V-1`~`V-4` 互为印证（§7 记状态、本节记证据）。
+
+### 8.1 结论（端到端闭环）
+
+`飞书点击 → 回调 → user_id→open_id 转换 → token 校验 → 落盘 → 状态机推进 → 重推飞书 → Bot 卡片刷新` **全链路自动跑通**（真机确认）。
+
+| 观测点 | 实测结果 |
+|---|---|
+| 回调受理 | HTTP **200**（落盘即 200；`accepted:true`） |
+| 状态机推进 | 任务 `PENDING→APPROVED`（`t_flow_op_log` 有 round 对齐留痕） |
+| 重推飞书 | `push_record=SENT` |
+| 对账 | `{"alerts":0,"checked":0,"repushed":0}` ⇒ **零差异** |
+| 卡片 | Bot 卡片经我方**主动** `message/update` 刷新为终态（平台**不自动刷**） |
+
+### 8.2 「重推」共剥 5 层（每层都是真机报错驱动）
+
+> ★★ **平台特性（必须记住）**：校验**逐层**只报**一层**错 —— 改掉这层，下一层才浮现 ⇒ ★ **不可据"某层已过"推断整包正确**；必须**整包按官方字段表逐项核**（四要素：字段名 / 类型 / 必填 / 值语义）。
+
+| 层 | 类别 | 内容 | 提交 |
+|---|---|---|---|
+| 1 | 字段**名** | `assignees`/`assignee_open_id` → 官方 `open_id`（未知字段被**静默忽略**） | `46919ac` |
+| 2 | task 级**必填缺失** | `task_list[*].links`/`create_time`/`end_time`/`update_time` | `46919ac` |
+| 3 | 实例级**必填缺失** | `start_time`/`end_time`/`i18n_resources`（＋条件必填 `open_id`） | `5b3f2ac` |
+| 4 | 字段**类型** | `message_id` 官方 `int64` vs 我方 `string` ⇒ **整包解析失败**（另 `update_time` 官方 string） | `5761922` |
+| 5 | 值的**语义** | `task_list[].node_name` **必须传 `@i18n@` key** 而非实际文案 | `fad0811` |
+| （另） | `check` 入参 / 响应 | `external_instances/check` 缺 `instances[]` ⇒ 修（`956f3c8`）；其响应 `diff_instances[].update_time` 是**字符串**（`flexInt64` 宽容接收） | `956f3c8` |
+
+### 8.3 平台行为实测（一级，逐条给结论）
+
+1. **`V-1` ✅ 已定论**：飞书**原样回传** `action_context`（我埋的 JSON **一位不差**回来）⇒ **B 项方案前提成立**。
+2. **`V-2` ✅ 已定论**：`POST /open-apis/approval/v1/message/update` 请求体**恰为 `{"message_id":…,"status":…}`**；只传 `message_id` ⇒ **`60001 no Status error`**。
+3. **`V-3` ✅ 已定论**：`user_id→open_id` 需 scope **`contact:user.employee_id:readonly`**（开通后**双向转换皆通**）。
+4. **`V-4` ✅ 已定论**：推实例**必须用真实 code**（`feishu_code`）。
+5. ★★ **Bot 卡片与「审批应用内状态」是两处、分开更新**；实测**平台不会自动刷新卡片** ⇒ 已改为**我方主动调 `message/update`**（**已验证有效，日志有证**）。
+6. ★ 卡片操作的**回调报文不带 `message_id`**（但**带**的时候是**数字**形态）⇒ `message_id` **只能由我方发通知时自己记录**（`t_notify_log.message_id`，迁移 `0014`）。
+7. ★ `internal_instances/check` 入参**必须含 `instances[]`**（否则被拒）。
+8. ★ 内部端点鉴权 header 是 **`X-Internal-Token`**（**非** `Authorization: Bearer`）。
+9. ★ **`duration_ms: 0`** 是强线索：请求在"**未做 IO**"的解析 / 校验层即被拒（可区分「准入层拒绝」与「业务层失败」）。
+
+### 8.4 同轮其他修复（非五层）
+
+| 项 | 内容 | 提交 |
+|---|---|---|
+| 定义装载 | `external_approvals` **upsert 会「重置未传字段」** ⇒ 定义装载必须**显式传全开关**（`enable_quick_operate` 等，否则两键被打回） | `1410e9e` |
+| 留痕 | 回调中间件**增记 `raw_body` 原始报文**（token 仍打码）—— 五层缺陷的定位即靠它 | `7076069` |
+| 部署脚本 | `start.sh` / `stop.sh` 新增正本 | `1410e9e` |
+
+---
+
+## 9. 变更记录
 
 | 版本 | 日期 | 内容 |
 |---|---|---|
+| V1.2 | 2026-09-28 | **端到端联调收口（纯文档，事实＝真机实测；PM 补）**：① 文首「版本 / 状态 / 联调轮提交 / 平台实测」四行刷新（`V-1`~`V-4` **翻为已定论**，新增「联调轮提交」行）；② **§2 各小节落地状态**补后续提交号（`46919ac` / `5b3f2ac` / `5761922` / `fad0811` / `956f3c8` / `1410e9e` / `7076069`）；③ **§3 批次表**补「联调轮 · 端到端收口」行；④ **§7** 把 `V-1` / `V-3` / `V-4` 由「待实测」翻为「**已定论**」并给结论，`V-2` 保留已定稿、**新增 `V-6`**（实例级 `title` 是否可下发，待实测）；⑤ ★ **新增 §8「联调实测记录」** —— 端到端闭环结论 ＋ 「重推剥 5 层」清单 ＋ 平台行为一级实测 ＋ 同轮其他修复；**原 §8 变更记录顺延为 §9**。★ 本文**仍不含实现改动**。 |
 | V1.1 | 2026-09-27 | **落地状态回填（纯文档，事实＝已落地代码；PM 补）**：① 文首新增「落地批次」「仍待联调实测」两行（4 批：`5fe1671` / `d94580f` / `36df709` / `c6e26d7`）；② §2 各小节（**A / B / C / D / E / F**）各加「落地状态」行（附提交号），**原文一字不删（留痕）**；③ §3 批次表加「★ 落地状态（提交）」列 ＋ 补「第 4 批（`c6e26d7`）」行；④ §7 加状态确认 —— **`V-2` / `V-3` / `V-4` 保持「仍待联调实测」，不得写成已验**。★ 本文**仍不含实现改动**。 |
 | V1.0 | 2026-09-27 | 首版：A–F 逐项方案 ＋ G-1~G-8 缺口台账 ＋ 影响/迁移/测试/待验证；编号取 `16`（`15` 已占用）并说明理由 |
