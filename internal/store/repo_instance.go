@@ -24,7 +24,7 @@ INSERT INTO t_instance (
   status, status_raw, applicant_open_id, applicant_name, department, amount_cents,
   purpose_class_l1, purpose_class_l2, supplier, source, created_at, updated_at,
   update_time, prev_biz_no, cancel_reason, cancel_at, push_hash, push_at, ext_json
-) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,COALESCE(NULLIF(?,''),'{}'))
 ON CONFLICT(instance_code) DO UPDATE SET
   approval_code     = excluded.approval_code,
   doc_type          = COALESCE(NULLIF(excluded.doc_type,''), t_instance.doc_type),
@@ -36,7 +36,11 @@ ON CONFLICT(instance_code) DO UPDATE SET
   --   拒绝被改回任何非终态 —— 堵住「旧事件链 / 旧对账补拉把已终态覆盖回 PENDING」这一
   --   最危险的静默（界面看着正常、状态却退了，docs/11 R18/R23）。
   --   终态 → 终态（含撤回改判等未来场景）与 非终态 → 任意 均照常写入。
+  -- ★ D3 空值守卫：'' / 空白**不得覆盖**已有 status（与 status_raw 的 NULLIF 同式）。
+  --   ★ 分层（team-lead 裁决）：**合法取值**校验属 flow 侧（我方状态机出口），**不放在本 SQL 层** ——
+  --     本层须容错「退役旧链写入的飞书 8 态」（由 status_raw 承载）；在此一刀切会连旧链容错一起挡掉。
   status            = CASE
+                        WHEN COALESCE(TRIM(excluded.status),'') = '' THEN t_instance.status
                         WHEN t_instance.status IN ('APPROVED','REJECTED','CANCELED')
                          AND excluded.status NOT IN ('APPROVED','REJECTED','CANCELED')
                         THEN t_instance.status
@@ -49,7 +53,12 @@ ON CONFLICT(instance_code) DO UPDATE SET
   applicant_open_id = COALESCE(NULLIF(t_instance.applicant_open_id,''), excluded.applicant_open_id),
   applicant_name    = COALESCE(NULLIF(t_instance.applicant_name,''), excluded.applicant_name),
   department        = COALESCE(NULLIF(t_instance.department,''), excluded.department),
-  amount_cents      = COALESCE(excluded.amount_cents, t_instance.amount_cents),
+  -- ★ D4：非正金额（0/负）**不是有效金额**（决策 #39）→ **不得覆盖**已有有效金额。
+  --   原 COALESCE(excluded.amount_cents, t_instance.amount_cents) 会让陈旧快照带的默认 0 静默清金额。
+  amount_cents      = CASE
+                        WHEN excluded.amount_cents > 0 THEN excluded.amount_cents
+                        ELSE t_instance.amount_cents
+                      END,
   purpose_class_l1  = COALESCE(NULLIF(excluded.purpose_class_l1,''), t_instance.purpose_class_l1),
   purpose_class_l2  = COALESCE(NULLIF(excluded.purpose_class_l2,''), t_instance.purpose_class_l2),
   supplier          = COALESCE(NULLIF(excluded.supplier,''), t_instance.supplier),
@@ -63,8 +72,12 @@ ON CONFLICT(instance_code) DO UPDATE SET
   cancel_at         = COALESCE(NULLIF(excluded.cancel_at,''), t_instance.cancel_at),
   push_hash         = COALESCE(NULLIF(excluded.push_hash,''), t_instance.push_hash),
   push_at           = COALESCE(NULLIF(excluded.push_at,''), t_instance.push_at),
-  -- ★ ext_json：空串不覆盖已有（防「落后快照把已构造的关联键抹成空」，同 R19）。
-  ext_json          = COALESCE(NULLIF(excluded.ext_json,''), t_instance.ext_json)
+  -- ★ ext_json：空/空白不覆盖已有（防「落后快照把已构造的关联键抹成空」，同 R19）。
+  -- ★ D2 修复（双保险互相抵消）：INSERT 侧为满足 NOT NULL 必须把空值兜成 '{}'，于是
+  --   excluded.ext_json 恒为 '{}'（非空）→ 若沿用 NULLIF(excluded.ext_json,'') 则守卫**失效**，
+  --   会把 flow 已构造好的 ext_json（含契约键 contract_no / related_biz_no）静默抹成 '{}'。
+  --   故此处**不引用 excluded**，而引用**原始入参**（第 27 个占位符）：空值即保留库中已有值。
+  ext_json          = COALESCE(NULLIF(?, ''), t_instance.ext_json)
 `,
 		in.InstanceCode, in.ApprovalCode, nullStr(in.DocType), nullStr(in.BizNo),
 		nullStr(in.BizNoPrefix), nullStr(in.BizNoYYMM), nullStr(in.BizNoSeq),
@@ -72,7 +85,7 @@ ON CONFLICT(instance_code) DO UPDATE SET
 		nullStr(in.Department), in.AmountCents, nullStr(in.PurposeClassL1), nullStr(in.PurposeClassL2),
 		nullStr(in.Supplier), defaultStr(in.Source, "event"), fmtTime(in.CreatedAt), fmtTime(in.UpdatedAt),
 		in.UpdateTime, nullStr(in.PrevBizNo), nullStr(in.CancelReason), nullStr(fmtMaybeTime(in.CancelAt)),
-		nullStr(in.PushHash), nullStr(fmtMaybeTime(in.PushAt)), defaultStr(in.ExtJSON, "{}"),
+		nullStr(in.PushHash), nullStr(fmtMaybeTime(in.PushAt)), nullStr(in.ExtJSON), nullStr(in.ExtJSON),
 	)
 	if err != nil {
 		return fmt.Errorf("store: 写入实例 %s 失败: %w", in.InstanceCode, err)
