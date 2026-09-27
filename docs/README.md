@@ -122,7 +122,7 @@
 
 | 提交 | 复核者 | 结论 | 关键证据 | 收编测试 |
 |---|---|---|---|---|
-| `e9f69fb` 回退后回调静默不推进 | `qa-verify-68` ＋ `qa-verify-final`（**两次独立**） | ✅ 通过 | ★ **单独删掉两处 `round` 传参后各 6 项测试变红** ⇒ **无未受保护的写入点**（缺陷不会静默复活） | 部分待收编（`qa-verify-68`） |
+| `e9f69fb` 回退后回调静默不推进 | `qa-verify-68` ＋ `qa-verify-final`（**两次独立**） | ✅ 通过 | ★ **单独删掉两处 `round` 传参后各 6 项测试变红** ⇒ **无未受保护的写入点**（缺陷不会静默复活） | ★ `b9fe2dc`（5 用例：round 1→2→3 · 两路径 **`DeepEqual`** · **旧库升级含 `PRAGMA index_info` 断言索引全 4 列** · `Migrate` 幂等 · ⑤a **翻转守门「全弧」**） |
 | `5f8e35b` 回调「落盘即 200」＋ 派生式修复循环 | 同上 | ✅ 通过 | 契约 HTTP 级 **200** · 恢复 `Scanned:1 Repaired:1` · 幂等 `Scanned:0` · **round 对齐**（自建构景）· HELD/终态**不动** | `1b71ee5` |
 | `cc753c4` `t_ledger_archive.department` write-once | `qa-verify-final` | ✅ 通过 | ★ **绿→红双证**：把该行退回 `excluded` 优先后，**它的测试与作者探针同时变红** ⇒ 非同义反复 | `1b71ee5` |
 | `56d6138` HELD 准入 ＋ 定义缺失升格哨兵 | `qa-verify-final` | ✅ 通过 | 改前 `http=500` 且 `Accepted=true`＋占键 → 改后 **409** ＋ `!Accepted` ＋ **留痕 0 条**；释放后本人真实回调**立即推进、不依赖修复循环** | `1b71ee5` |
