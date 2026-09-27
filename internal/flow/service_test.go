@@ -14,6 +14,21 @@ import (
 
 var flowAt = time.Date(2026, 9, 27, 9, 0, 0, 0, time.UTC)
 
+// newFlowDB 建测试库并预置标准三方定义 `code-pr → PR`。
+//
+// ★ 为什么必须预置：Submit 现在会做 S7「提交前校验审批定义存在」（04a §10 / docs/11 R10）——
+// 未注册 def 的 approval_code 会被可见地拒绝。用例要走到真实提交路径，就得先把定义备好（贴近生产）。
+func newFlowDB(t *testing.T) *store.DB {
+	t.Helper()
+	db := storetest.NewDB(t)
+	if err := db.UpsertApprovalDef(context.Background(), &store.ApprovalDef{
+		ApprovalCode: "code-pr", DocType: "PR", Name: "采购申请",
+	}); err != nil {
+		t.Fatalf("预置审批定义失败: %v", err)
+	}
+	return db
+}
+
 // submitTwoNode 提交一张两节点（node1 会签 2 人、node2 单人）的单据。
 func submitTwoNode(t *testing.T, svc *flow.Service, db *store.DB) string {
 	t.Helper()
@@ -61,7 +76,7 @@ func instOf(t *testing.T, db *store.DB, bizNo string) store.Instance {
 
 // TestSubmitCreatesInstanceAndChain 提交：单号 + 实例（PENDING, update_time=1）+ 全链任务。
 func TestSubmitCreatesInstanceAndChain(t *testing.T) {
-	db := storetest.NewDB(t)
+	db := newFlowDB(t)
 	svc := flow.New(db, "app")
 	bizNo := submitTwoNode(t, svc, db)
 
@@ -89,7 +104,7 @@ func TestSubmitCreatesInstanceAndChain(t *testing.T) {
 
 // TestCoSignNodeRequiresAllApproved ★ 会签：节点未全员同意，不得推进。
 func TestCoSignNodeRequiresAllApproved(t *testing.T) {
-	db := storetest.NewDB(t)
+	db := newFlowDB(t)
 	svc := flow.New(db, "app")
 	ctx := context.Background()
 	bizNo := submitTwoNode(t, svc, db)
@@ -127,7 +142,7 @@ func TestCoSignNodeRequiresAllApproved(t *testing.T) {
 
 // TestFutureNodeCannotApproveEarly ★ 不可能状态防御：未到达的节点不得提前审批。
 func TestFutureNodeCannotApproveEarly(t *testing.T) {
-	db := storetest.NewDB(t)
+	db := newFlowDB(t)
 	svc := flow.New(db, "app")
 	ctx := context.Background()
 	bizNo := submitTwoNode(t, svc, db)
@@ -148,7 +163,7 @@ func TestFutureNodeCannotApproveEarly(t *testing.T) {
 
 // TestRejectTerminalizesInstance 任一节点驳回 → 实例 REJECTED，其余在途任务 DONE。
 func TestRejectTerminalizesInstance(t *testing.T) {
-	db := storetest.NewDB(t)
+	db := newFlowDB(t)
 	svc := flow.New(db, "app")
 	ctx := context.Background()
 	bizNo := submitTwoNode(t, svc, db)
@@ -169,7 +184,7 @@ func TestRejectTerminalizesInstance(t *testing.T) {
 
 // TestTerminalInstanceNoRegression ★ 终态不得回退：APPROVED 后同意/拒绝均为幂等 no-op。
 func TestTerminalInstanceNoRegression(t *testing.T) {
-	db := storetest.NewDB(t)
+	db := newFlowDB(t)
 	svc := flow.New(db, "app")
 	ctx := context.Background()
 
@@ -209,7 +224,7 @@ func TestTerminalInstanceNoRegression(t *testing.T) {
 
 // TestCanceledCannotAdvance ★ CANCELED 后不得推进。
 func TestCanceledCannotAdvance(t *testing.T) {
-	db := storetest.NewDB(t)
+	db := newFlowDB(t)
 	svc := flow.New(db, "app")
 	ctx := context.Background()
 	bizNo := submitTwoNode(t, svc, db)
@@ -249,7 +264,7 @@ func TestCanceledCannotAdvance(t *testing.T) {
 
 // TestUpdateTimeStrictlyIncreases update_time 在每次状态变更后严格递增（04a §3.1）。
 func TestUpdateTimeStrictlyIncreases(t *testing.T) {
-	db := storetest.NewDB(t)
+	db := newFlowDB(t)
 	svc := flow.New(db, "app")
 	ctx := context.Background()
 	bizNo := submitTwoNode(t, svc, db)
@@ -285,7 +300,7 @@ func TestUpdateTimeStrictlyIncreases(t *testing.T) {
 
 // TestSubmitValidation 提交入参非法必须被拒（不静默建半成品）。
 func TestSubmitValidation(t *testing.T) {
-	db := storetest.NewDB(t)
+	db := newFlowDB(t)
 	svc := flow.New(db, "app")
 	ctx := context.Background()
 
@@ -335,7 +350,7 @@ func releaseOf(t *testing.T, db *store.DB, bizNo, assignee string) string {
 //
 //	且后续 node 的任务在提交时全部 HELD（不得提前释放 → 飞书侧不生成待办）。
 func TestSeqSignInitialOnlyFirstReleased(t *testing.T) {
-	db := storetest.NewDB(t)
+	db := newFlowDB(t)
 	svc := flow.New(db, "app")
 	bizNo := submitSeqNode(t, svc)
 
@@ -354,7 +369,7 @@ func TestSeqSignInitialOnlyFirstReleased(t *testing.T) {
 
 // TestSeqSignReleasesNextOnApprove ② 第 1 人 APPROVED 后 → 第 2 人变 RELEASED、第 3 人仍 HELD。
 func TestSeqSignReleasesNextOnApprove(t *testing.T) {
-	db := storetest.NewDB(t)
+	db := newFlowDB(t)
 	svc := flow.New(db, "app")
 	ctx := context.Background()
 	bizNo := submitSeqNode(t, svc)
@@ -373,7 +388,7 @@ func TestSeqSignReleasesNextOnApprove(t *testing.T) {
 
 // TestSeqSignHeldTaskCannotApprove ③ 负向：未释放（HELD）任务上同意/拒绝**必须被拒**（非静默）。
 func TestSeqSignHeldTaskCannotApprove(t *testing.T) {
-	db := storetest.NewDB(t)
+	db := newFlowDB(t)
 	svc := flow.New(db, "app")
 	ctx := context.Background()
 	bizNo := submitSeqNode(t, svc)
@@ -397,7 +412,7 @@ func TestSeqSignHeldTaskCannotApprove(t *testing.T) {
 
 // TestSeqSignNextNodeOnlyAfterFullNode ④ 全 node APPROVED 才推进下一 node。
 func TestSeqSignNextNodeOnlyAfterFullNode(t *testing.T) {
-	db := storetest.NewDB(t)
+	db := newFlowDB(t)
 	svc := flow.New(db, "app")
 	ctx := context.Background()
 	bizNo := submitSeqNode(t, svc)
@@ -430,7 +445,7 @@ func TestSeqSignNextNodeOnlyAfterFullNode(t *testing.T) {
 
 // TestSeqSignRejectStopsRelease ⑤ 任一 REJECTED → 同 node 剩余任务不再释放。
 func TestSeqSignRejectStopsRelease(t *testing.T) {
-	db := storetest.NewDB(t)
+	db := newFlowDB(t)
 	svc := flow.New(db, "app")
 	ctx := context.Background()
 	bizNo := submitSeqNode(t, svc)
@@ -457,7 +472,7 @@ func TestSeqSignRejectStopsRelease(t *testing.T) {
 
 // TestSeqSignRepushDoesNotResetRelease ⑥ 快照重推（同 task_id 重写）不得把已 RELEASED/APPROVED 置回 HELD。
 func TestSeqSignRepushDoesNotResetRelease(t *testing.T) {
-	db := storetest.NewDB(t)
+	db := newFlowDB(t)
 	svc := flow.New(db, "app")
 	ctx := context.Background()
 	bizNo := submitSeqNode(t, svc)
@@ -496,7 +511,7 @@ func TestSeqSignRepushDoesNotResetRelease(t *testing.T) {
 //
 //	按 `rowid` / 插入序排序的实现会返回错误次序 → 本用例必红。
 func TestListTasksByNodeOrdersByTaskOrder(t *testing.T) {
-	db := storetest.NewDB(t)
+	db := newFlowDB(t)
 	ctx := context.Background()
 	biz := "PR-2609-9999"
 	for _, spec := range []struct {
@@ -543,7 +558,7 @@ func TestListTasksByNodeOrdersByTaskOrder(t *testing.T) {
 // 否则第二个实例的同名任务（同 node_id/assignee/idx）会撞 `ON CONFLICT(task_id) DO NOTHING`
 // 而**静默不建** —— 该实例审批链为空、永不推进（静默 P0）。
 func TestTwoInstancesDistinctTaskIDs(t *testing.T) {
-	db := storetest.NewDB(t)
+	db := newFlowDB(t)
 	svc := flow.New(db, "app")
 	ctx := context.Background()
 	sub := func() string {
@@ -574,7 +589,7 @@ func TestTwoInstancesDistinctTaskIDs(t *testing.T) {
 // 构造：审批人的 open_id **字典序与声明序完全相反**（声明 [zz, mm, aa]；字典序 aa<mm<zz）。
 // 若实现用 `task_id`（含 open_id）或 `rowid` 排序，则首个被释放者会是 `ou_aa` → 本用例必红。
 func TestSeqSignOrderFollowsDeclarationNotLexicographic(t *testing.T) {
-	db := storetest.NewDB(t)
+	db := newFlowDB(t)
 	svc := flow.New(db, "app")
 	ctx := context.Background()
 
@@ -621,5 +636,37 @@ func TestSeqSignOrderFollowsDeclarationNotLexicographic(t *testing.T) {
 	approve("ou_aa")
 	if got := instOf(t, db, bizNo).Status; got != flow.InstanceApproved {
 		t.Errorf("全员同意后实例 = %s，期望 APPROVED", got)
+	}
+}
+
+// TestSubmitRequiresRegisteredDefinition ① S7/R10：定义未注册 → 提交**可见地**被拒；已注册 → 通过。
+func TestSubmitRequiresRegisteredDefinition(t *testing.T) {
+	ctx := context.Background()
+
+	// 未注册（裸库，不预置 def）→ 必须返回 ErrDefinitionMissing。
+	rawDB := storetest.NewDB(t)
+	rawSvc := flow.New(rawDB, "app")
+	_, err := rawSvc.Submit(ctx, flow.SubmitInput{
+		DocType: "PR", ApprovalCode: "code-not-registered", ApplicantOpenID: "ou_app",
+		Nodes: []flow.NodeSpec{{NodeID: "n1", Seq: 1, Approvers: []flow.Approver{{OpenID: "ou_x"}}}},
+		At:    flowAt,
+	})
+	if !errors.Is(err, flow.ErrDefinitionMissing) {
+		t.Fatalf("定义未注册应返回 ErrDefinitionMissing，实际: %v", err)
+	}
+	// 可见失败：不产生任何半成品实例（校验在事务之前）。
+	if n := storetest.Count(t, rawDB, `SELECT COUNT(*) FROM t_instance`); n != 0 {
+		t.Errorf("定义缺失时不应落实例，实际 %d 条", n)
+	}
+
+	// 已注册 → 通过。
+	okDB := newFlowDB(t)
+	okSvc := flow.New(okDB, "app")
+	if _, err := okSvc.Submit(ctx, flow.SubmitInput{
+		DocType: "PR", ApprovalCode: "code-pr", ApplicantOpenID: "ou_app",
+		Nodes: []flow.NodeSpec{{NodeID: "n1", Seq: 1, Approvers: []flow.Approver{{OpenID: "ou_x"}}}},
+		At:    flowAt,
+	}); err != nil {
+		t.Fatalf("定义已注册应可提交，实际: %v", err)
 	}
 }

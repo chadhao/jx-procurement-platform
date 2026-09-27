@@ -75,6 +75,10 @@ var (
 	// ErrTaskHeld 操作了尚未释放（HELD）的任务 —— 顺序会签下「还没轮到」。
 	// 非静默：明确拒绝，绝不把「未轮到的办理」算作成功。
 	ErrTaskHeld = errors.New("flow: 任务尚未释放（顺序会签未轮到）")
+	// ErrDefinitionMissing 提交前校验：该 approval_code 在 t_approval_def 中**未注册**（04a §10 S7）。
+	// ★ 必须**可见地失败**：定义缺失时若放行提交，结果是「提交看起来成功，但审批中心看不到数据」
+	//   ——与 S1/S7 同类不可见故障、无任何异常（docs/11 R10）。
+	ErrDefinitionMissing = errors.New("flow: 三方审批定义未注册")
 )
 
 // Approver 审批人。
@@ -163,6 +167,17 @@ func (s *Service) instanceCode(bizNo string) string {
 func (s *Service) Submit(ctx context.Context, in SubmitInput) (string, error) {
 	if err := validateSubmit(in); err != nil {
 		return "", err
+	}
+	// ★ S7（04a §10）/ R10：**提交前校验审批定义存在**。
+	//   定义缺失必须「可见地失败」（明确错误码），**绝不静默**：否则提交看似成功、
+	//   而飞书审批中心因无对应定义**看不到任何数据**（S1/S7 同类不可见故障）。
+	//   校验在事务之前 → 定义缺失时不产生任何半成品（无实例、无任务）。
+	if _, err := s.db.GetApprovalDef(ctx, in.ApprovalCode); err != nil {
+		if errors.Is(err, store.ErrNotFound) {
+			return "", fmt.Errorf("%w: approval_code=%q（请先在 t_approval_def 注册定义，04a S7）",
+				ErrDefinitionMissing, in.ApprovalCode)
+		}
+		return "", fmt.Errorf("flow: 提交前校验审批定义失败: %w", err)
 	}
 	at := in.At
 	if at.IsZero() {
@@ -676,6 +691,9 @@ func isTerminal(status string) bool {
 func validateSubmit(in SubmitInput) error {
 	if strings.TrimSpace(in.DocType) == "" {
 		return fmt.Errorf("%w: doc_type 为空", ErrInvalidSubmit)
+	}
+	if strings.TrimSpace(in.ApprovalCode) == "" {
+		return fmt.Errorf("%w: approval_code 为空（无法校验三方定义）", ErrInvalidSubmit)
 	}
 	if len(in.Nodes) == 0 {
 		return fmt.Errorf("%w: 审批链为空", ErrInvalidSubmit)

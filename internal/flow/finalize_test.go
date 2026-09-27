@@ -14,7 +14,7 @@ import (
 
 // TestFinalizeProducesEveryInstanceLedger ★ 每类实例级台账（L01–L07 + L09）都应有生产者（落行）。
 func TestFinalizeProducesEveryInstanceLedger(t *testing.T) {
-	db := storetest.NewDB(t)
+	db := newFlowDB(t)
 	instanceTypes := []string{"L01", "L02", "L03", "L04", "L05", "L06", "L07", "L09"}
 	maps := &config.Maps{Ledger: map[string][]string{"PR": instanceTypes}}
 	svc := flow.NewWithConfig(db, "app", maps, nil)
@@ -67,7 +67,7 @@ func TestResolveLedgerTypesHardBlocks(t *testing.T) {
 
 // TestFinalizeSkipsNonInstanceLedgers 配置里混入非实例级台账时：合法者落行、非法者**不落行**（跳过）。
 func TestFinalizeSkipsNonInstanceLedgers(t *testing.T) {
-	db := storetest.NewDB(t)
+	db := newFlowDB(t)
 	maps := &config.Maps{Ledger: map[string][]string{"PR": {"L02", "L08", "L11"}}}
 	svc := flow.NewWithConfig(db, "app", maps, nil)
 	ctx := context.Background()
@@ -100,7 +100,7 @@ func TestFinalizeSkipsNonInstanceLedgers(t *testing.T) {
 
 // TestFinalizeBizDateAndAmountGuards ★ #33 biz_date 必须 YYYY-MM-DD；#39 amount_cents ≤ 0 不落有效金额。
 func TestFinalizeBizDateAndAmountGuards(t *testing.T) {
-	db := storetest.NewDB(t)
+	db := newFlowDB(t)
 	maps := &config.Maps{Ledger: map[string][]string{"PR": {"L02"}}}
 	svc := flow.NewWithConfig(db, "app", maps, nil)
 	ctx := context.Background()
@@ -160,7 +160,7 @@ func TestFinalizeBizDateAndAmountGuards(t *testing.T) {
 
 // TestStatusHistoryDedupNoSeqBump 同 (status, operator, opinion) 三者全同 → 去重且**不消耗 event_seq**（#37）。
 func TestStatusHistoryDedupNoSeqBump(t *testing.T) {
-	db := storetest.NewDB(t)
+	db := newFlowDB(t)
 	ctx := context.Background()
 	h := &store.StatusHistory{InstanceCode: "c1", Status: "PENDING", OperatorOpenID: "ou_a", Opinion: "同意", OccurredAt: flowAt}
 	var (
@@ -196,7 +196,7 @@ func TestStatusHistoryDedupNoSeqBump(t *testing.T) {
 
 // TestSubmitRegistersAttachments 附件元数据在 **Submit** 登记（零网络 IO）；供凭证包清单读取（docs/11 R04）。
 func TestSubmitRegistersAttachments(t *testing.T) {
-	db := storetest.NewDB(t)
+	db := newFlowDB(t)
 	svc := flow.New(db, "app")
 	ctx := context.Background()
 
@@ -220,5 +220,46 @@ func TestSubmitRegistersAttachments(t *testing.T) {
 	}
 	if atts[0].FileID != "file_1" || atts[0].BizNo != bizNo {
 		t.Errorf("附件登记内容错误: %+v", atts[0])
+	}
+}
+
+// TestContractKeyRetrievalKeyScopedAndNoLike ② B22 / 决策 #28：
+// 变更链检索**只认契约键** `contract_no`，且**绝不 `LIKE`**。
+//
+//   - C2 把合同号填在**无关键** `original_biz_no` 上（巧合等值）→ 旧「任意键扫描」会误捞 → 必须**不**捞出；
+//   - C3 的 `contract_no = CT-1X` 是 `CT-1` 的**前缀**→ 旧 `LIKE '%CT-1%'` 会命中（P0-A「前缀越权」原型）→ 必须**不**捞出。
+func TestContractKeyRetrievalKeyScopedAndNoLike(t *testing.T) {
+	db := newFlowDB(t)
+	ctx := context.Background()
+	seed := func(bizNo, extJSON string) {
+		t.Helper()
+		if err := db.WithTx(ctx, func(tx *sql.Tx) error {
+			return db.UpsertArchiveTx(ctx, tx, &store.LedgerArchive{
+				LedgerType: "L09", BizNo: bizNo, ExtJSON: extJSON, CreatedAt: flowAt, UpdatedAt: flowAt,
+			})
+		}); err != nil {
+			t.Fatalf("seed %s 失败: %v", bizNo, err)
+		}
+	}
+	seed("C1", `{"contract_no":"CT-1"}`)     // 命中：合同键等值
+	seed("C2", `{"original_biz_no":"CT-1"}`) // ★ 无关键巧合等值 → 不得被捞出
+	seed("C3", `{"contract_no":"CT-1X"}`)    // ★ 前缀 → 不得被捞出
+
+	got, err := db.ListChangesByContract(ctx, "CT-1", "", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	gotBiz := map[string]bool{}
+	for _, a := range got {
+		gotBiz[a.BizNo] = true
+	}
+	if !gotBiz["C1"] {
+		t.Errorf("应命中 C1（contract_no=CT-1），实际 %v", gotBiz)
+	}
+	if gotBiz["C2"] {
+		t.Errorf("★ 无关键 original_biz_no 的巧合等值被捞出（#28 被破坏，任意键扫描）：%v", gotBiz)
+	}
+	if gotBiz["C3"] {
+		t.Errorf("★ 前缀 CT-1X 被捞出（LIKE 越权，P0-A 原型）：%v", gotBiz)
 	}
 }
