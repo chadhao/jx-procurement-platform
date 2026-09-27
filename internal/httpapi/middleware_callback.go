@@ -101,6 +101,11 @@ func (d Deps) callbackBodyLog(next echo.HandlerFunc) echo.HandlerFunc {
 		} else {
 			logArgs = append(logArgs, "body", "<marshal-failed>")
 		}
+		// ★★ 原始报文留痕（2026-09-28 加）：**脱敏视图看不到"我方未解析的字段"**，
+		//   曾在联调中因此无法定位「平台实发报文与我方复现报文 body_bytes 不同（187 vs 154）
+		//   却看不出差在哪、导致真实点击恒 400」的问题。此处额外落**原始 body**
+		//   （token 值仍打码、超限截断），以便直接复现平台请求。
+		logArgs = append(logArgs, "raw_body", maskRawToken(raw, body.Token))
 		if err != nil {
 			// handler 返回错误（echo  errorHandler 已写响应）：留痕不得吞掉原错误。
 			logArgs = append(logArgs, "handler_error", err.Error())
@@ -132,4 +137,19 @@ func truncateRunes(s string, n int) string {
 		return s
 	}
 	return string(rs[:n]) + "…"
+}
+
+// rawBodyLogMaxBytes 原始报文留痕上限（够看结构即可，避免日志爆量）。
+const rawBodyLogMaxBytes = 4096
+
+// maskRawToken 生成**可安全落日志的原始报文**：把 token 的**值**替换为长度指纹，
+// 其余字节原样保留（含平台特有的、我方结构体未覆盖的字段——这正是本函数存在的理由）。
+// ★ 绝不落 token 明文（action_callback_token 是回调真实性凭据）。
+func maskRawToken(raw []byte, token string) string {
+	out := string(raw)
+	if t := strings.TrimSpace(token); t != "" {
+		// token 值在 JSON 里作为字符串出现，整体替换（含可能的转义形态）。
+		out = strings.ReplaceAll(out, t, fmt.Sprintf("<len:%d>", len(t)))
+	}
+	return truncateRunes(out, rawBodyLogMaxBytes)
 }
