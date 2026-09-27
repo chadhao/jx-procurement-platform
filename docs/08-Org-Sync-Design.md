@@ -7,7 +7,7 @@
 >
 > **一句话红线**：**镜像 ≠ 权限**。同步来的通讯录是「人事目录」，**准入一律仍走 `t_user_role`（人工配置、deny by default）**。
 >
-> **版本**：V1.4 · **状态**：待评审（§5 的 **C-A~C-E** 已按**官方来源 + SDK v3.12.0 源码**查实；**C-A 经复核改定路线甲**；**V1.3 回填 D6「提交时实时回源」**，见 §2 注 / §4.12；**V1.4 迁移改号 `0007` → `0012`**，见 §4.2 注 / §12） · **依仓库现状（2026-09-27 代码基线）撰写**
+> **版本**：V1.5 · **状态**：待评审（§5 的 **C-A~C-E** 已按**官方来源 + SDK v3.12.0 源码**查实；**C-A 经复核改定路线甲**；**V1.3 回填 D6「提交时实时回源」**，见 §2 注 / §4.12；**V1.4 迁移改号 `0007` → `0012`**，见 §4.2 注 / §12；★ **V1.5 行号引用符号化**（`README` 定案 **#74**）—— 全文「`文件:行`」改为「**`文件` ＋ 符号/模式**」，**行号只作快照**） · **依仓库现状（2026-09-27 代码基线）撰写**
 
 ---
 
@@ -23,24 +23,24 @@
 
 ## 1. 背景与既有约束（基于真实代码，不是描述）
 
-| # | 既有事实 | 出处（文件:行） |
+| # | 既有事实 | 出处（文件 · 符号；★ 行号只作快照，以符号为准 —— `README` 定案 #74） |
 |---|---|---|
-| 1 | 长连接用 **`dispatcher.NewEventDispatcher` + `OnCustomizedEvent(键, handler)` 注册原始报文**，handler 内只调 `sink.HandleEvent(ctx, req.Body)` | `internal/platform/feishu/longconn.go:62-69` |
-| 2 | 审批事件同时注册了 **v2.0 与 legacy 两种键名**（`approval.instance.status_changed_v4` … 与 `approval_instance`/`approval_task`） | `internal/platform/feishu/longconn.go:22-28` |
-| 3 | inbox 同步极短路径：解析幂等键 → `INSERT OR IGNORE` 写 `t_event_inbox` + 落一条 `fetch_detail` 作业 → 立即返回 | `internal/inbox/inbox.go:57-125` |
-| 4 | 幂等键：2.0 版 `header.event_id`；1.0 版顶层 `uuid`；取不到则 **拒绝入库并告警** | `internal/inbox/idempotent.go:33-79` |
-| 5 | worker 轮询 `t_worker_job`，`processJob` **写死「拉实例详情」**，缺 `instance_code` 即失败 | `internal/worker/pool.go:168-212` |
-| 6 | worker 已具备**指数退避 + 死信 + 人工重放**（`maxAttempts=5`） | `internal/worker/pool.go:214-275` |
-| 7 | 已有**定时对账**：`sync.Scheduler` 用 `time.Ticker`（默认 24h，`JX_RECONCILE_INTERVAL_HOURS`），启动即跑一次；游标持久化在 `t_sync_cursor` | `internal/sync/scheduler.go:29-51`、`internal/sync/cursor.go`、`internal/config/env.go:57-60` |
-| 8 | `t_sync_cursor` 主键 `UNIQUE(approval_code, cursor_kind)` | `migrations/0001_init.sql:113-122` |
-| 9 | 行级 `DEPT`/`CHARGE_DEPT` **按 `department` 列(=名称/文本) 与 `t_user_role.department`/`extra_depts` 做 `IN` 比对** | `internal/permission/dataset.go:89-101`、`:224-236` |
-| 10 | 身份里的部门来自 `t_user_role`（`SELECT … WHERE open_id=? AND active=1`） | `internal/httpapi/helpers.go:33-38`、`internal/store/repo_permission.go:14-35` |
-| 11 | `t_instance.department` **来自表单控件值**；`applicant_open_id` 来自实例自带字段 | `internal/worker/extract.go:81-84`、`internal/platform/feishu/instance.go:49` |
-| 12 | 实例详情**已反序列化 `department_id`（发起人部门 ID）但全库从未使用** | `internal/platform/feishu/instance.go:36`（仅解析、无消费端） |
-| 13 | `t_instance.department` / `t_ledger_archive.department` **UPSERT 时会被非空的后续值覆盖**（非 write-once） | `internal/store/repo_instance.go:38`、`internal/store/repo_ledger.go:32` |
-| 14 | 准入解析只读 `t_user_role`；未映射/停用 → `ErrRoleNotMapped`（deny by default） | `internal/access/auth.go:47-56`、`internal/store/repo_permission.go:18` |
-| 15 | `/healthz` 暴露 `Checks()`；`/readyz` 的 `ready` = 四项自检 **AND** | `internal/httpapi/handlers_ops.go:18-53`、`internal/observ/health.go:82-85` |
-| 16 | 单实例部署（长连接集群不广播，禁止多副本），启动即抢 `singlelock`，失败拒绝启动 | `cmd/jxapproval/bootstrap.go:48-57` |
+| 1 | 长连接用 **`dispatcher.NewEventDispatcher` + `OnCustomizedEvent(键, handler)` 注册原始报文**，handler 内只调 `sink.HandleEvent(ctx, req.Body)` | `internal/platform/feishu/longconn.go` 的 `LongConn.Run`（`dispatcher.NewEventDispatcher` → `OnCustomizedEvent` → `sink.HandleEvent`） |
+| 2 | 审批事件同时注册了 **v2.0 与 legacy 两种键名**（`approval.instance.status_changed_v4` … 与 `approval_instance`/`approval_task`） | `internal/platform/feishu/longconn.go` 的 `retiredApprovalEventTypes`（★ ③ 下这些键**仍注册、但处理器 no-op**，**不进** `sinkEventTypes`） |
+| 3 | inbox 同步极短路径：解析幂等键 → `INSERT OR IGNORE` 写 `t_event_inbox` + 落一条 `fetch_detail` 作业 → 立即返回 | `internal/inbox/inbox.go` 的 `Service.Handle` |
+| 4 | 幂等键：2.0 版 `header.event_id`；1.0 版顶层 `uuid`；取不到则 **拒绝入库并告警** | `internal/inbox/idempotent.go` 的 `Extract` |
+| 5 | worker 轮询 `t_worker_job`，`processJob` **写死「拉实例详情」**，缺 `instance_code` 即失败 | `internal/worker/pool.go` 的 `Worker.processJob` |
+| 6 | worker 已具备**指数退避 + 死信 + 人工重放**（`maxAttempts=5`） | `internal/worker/pool.go` 的 `Worker.handleFailure`（`maxAttempts`） |
+| 7 | 已有**定时对账**：`sync.Scheduler` 用 `time.Ticker`（默认 24h，`JX_RECONCILE_INTERVAL_HOURS`），启动即跑一次；游标持久化在 `t_sync_cursor` | `internal/sync/scheduler.go` 的 `NewScheduler`（`time.Ticker`）、`internal/sync/cursor.go`、`internal/config/env.go` 的 `JX_RECONCILE_INTERVAL_HOURS` |
+| 8 | `t_sync_cursor` 主键 `UNIQUE(approval_code, cursor_kind)` | `migrations/0001_init.sql` 的 `t_sync_cursor` 表定义 |
+| 9 | 行级 `DEPT`/`CHARGE_DEPT` **按 `department` 列(=名称/文本) 与 `t_user_role.department`/`extra_depts` 做 `IN` 比对** | `internal/permission/dataset.go` 的 `ScopeDept` / `ScopeChargeDept` 分支（台账与报送各一对） |
+| 10 | 身份里的部门来自 `t_user_role`（`SELECT … WHERE open_id=? AND active=1`） | `internal/httpapi/helpers.go` 的 `identityFrom`（`permission.Identity{…}`）、`internal/store/repo_permission.go` 的 `GetUserRole` |
+| 11 | `t_instance.department` **来自表单控件值**；`applicant_open_id` 来自实例自带字段 | `internal/worker/extract.go` 的 `case config.BizFieldDepartment`、`internal/platform/feishu/instance.go` 的 `ApplicantOpenID` 赋值 |
+| 12 | 实例详情**已反序列化 `department_id`（发起人部门 ID）但全库从未使用** | `internal/platform/feishu/instance.go` 的 `DepartmentID` 字段（仅解析、无消费端） |
+| 13 | `t_instance.department` / `t_ledger_archive.department` **UPSERT 时会被非空的后续值覆盖**（非 write-once）★ **复核（#74 符号核验时发现）**：`t_instance` 侧**已于 `#46` 改为 write-once**（`COALESCE(NULLIF(t_instance.department,''), excluded.department)`）；**仅 `t_ledger_archive` 侧**仍为「非空新值覆盖」 | `internal/store/repo_instance.go` 的 `upsertInstance`、`internal/store/repo_ledger.go` 的 `upsertArchive` |
+| 14 | 准入解析只读 `t_user_role`；未映射/停用 → `ErrRoleNotMapped`（deny by default） | `internal/access/auth.go` 的 `ResolveRole`、`internal/store/repo_permission.go` 的 `GetUserRole` |
+| 15 | `/healthz` 暴露 `Checks()`；`/readyz` 的 `ready` = 四项自检 **AND** | `internal/httpapi/handlers_ops.go` 的 `handleHealthz` / `handleReadyz`、`internal/observ/health.go` 的 `Health.Checks` / `Health.Ready` |
+| 16 | 单实例部署（长连接集群不广播，禁止多副本），启动即抢 `singlelock`，失败拒绝启动 | `cmd/jxapproval/bootstrap.go` 的 `singlelock.New(...)` + `Acquire()` |
 | 17 | 迁移按文件名升序执行；**`0001`–`0010` 已落地**；本文 `org_directory` 迁移占用的序号＝ **`0012`**（★ `0011` 已由 `0011_flow_op_log_round.sql` 占用；原设计号 `0007` 与已落地的 `0007_approval_core.sql` 撞号，见 §12「编号变更」） | `internal/store/migrate.go`、`migrations/` |
 
 ---
@@ -421,7 +421,7 @@ sequenceDiagram
 | 触发条件 | **距 `last_full_success_at` 超过阈值（默认 24h，可配 `JX_ORG_SYNC_STALE_HOURS`）才拉**；无记录则拉 | 避免「每次重启打一波全量」；与 `sync.Scheduler` 启动即跑一次的行为不同（那是审批对账，量小） | 首次部署必然拉一次（预期） |
 | 执行方式 | `bootstrap.go` 里 **`go orgBootstrapper.RunIfStale(ctx)`**，**绝不阻塞 `run()`** | `/readyz` 的四项自检不包含通讯录；通信录拉取**不得**进入就绪判据 | 全量失败时应用仍就绪（这是**要的**，见下） |
 | 失败可见 | 失败 → `log.Error`（含 `trigger`/`error`）+ `metrics.IncOrgSyncFailure()` + `t_org_sync_run(result=failed)` + `t_org_sync_state.last_full_error` + `/healthz` 暴露 `org_sync.last_error` | 本项目反复栽在「静默无数据」；**不得静默** | 需要新增一个健康暴露字段（非就绪判据） |
-| 与单实例锁 | 全量前**不额外加锁**：进程内已有全局 `singlelock`（`bootstrap.go:48-57`）+ 长连接单连接 | 多副本已被结构性禁止（ADR-01），重复拉取不可能发生 | 无 |
+| 与单实例锁 | 全量前**不额外加锁**：进程内已有全局 `singlelock`（`cmd/jxapproval/bootstrap.go` 的 `singlelock.New(...).Acquire()`）+ 长连接单连接 | 多副本已被结构性禁止（ADR-01），重复拉取不可能发生 | 无 |
 | 就绪判据 | **不加入 `Health.Ready()`** | 若加入：飞书瞬时故障 → `ready=false` → systemd/探针可能重启应用，**把一个外部依赖故障放大成本地宕机** | 需在 `/readyz` body 里单列 `org_sync` 字段（非门禁）供观测 |
 
 > ★ **不要**把通讯录全量放进 `store.Migrate` 之前/之内：镜像表由 `0012` 建，全量必须在迁移完成后、且**异步**执行。
@@ -456,7 +456,7 @@ sequenceDiagram
 | 未知 `event_type` | 现无分支 | **计入 `unknown_event_total` + `log.Warn` + 仍落 `t_event_inbox`（不丢报文）** | 静默防护（§4.11-A） |
 | 同步路径耗时 | `syncPathWarnThreshold` 1s 告警 | **不变** | 通讯录事件同样必须极短返回 |
 
-> ★ `t_event_inbox.instance_code` 是 `NOT NULL`（`0001_init.sql:73`）；通讯录事件填 **空串**（`NOT NULL` 允许空串），worker 分派**先判 `job_type` 再要求 `instance_code`**，避免误报「缺少 instance_code」。
+> ★ `t_event_inbox.instance_code` 是 `NOT NULL`（`migrations/0001_init.sql` 的 `t_event_inbox.instance_code` 列定义）；通讯录事件填 **空串**（`NOT NULL` 允许空串），worker 分派**先判 `job_type` 再要求 `instance_code`**，避免误报「缺少 instance_code」。
 
 **（c）worker 消费**
 
@@ -519,7 +519,7 @@ sequenceDiagram
 
 | 表 | 新增列 | 含义 | 快照语义 |
 |---|---|---|---|
-| `t_instance` | `department_id TEXT` | 发起人部门 **`open_department_id`（`od-`，稳定）**：由**实例自带 `department_id`**（`instance.go:36`）经**镜像 `department_id→open_department_id` 映射桥接**得到（§5-C-A/§5.4） | 不可变（write-once） |
+| `t_instance` | `department_id TEXT` | 发起人部门 **`open_department_id`（`od-`，稳定）**：由**实例自带 `department_id`**（`internal/platform/feishu/instance.go` 的 `DepartmentID`）经**镜像 `department_id→open_department_id` 映射桥接**得到（§5-C-A/§5.4） | 不可变（write-once） |
 | `t_instance` | `department_id_raw TEXT` | 实例自带 `department_id` **原样留痕**（用于桥接与审计；值可能是 `od-` 也可能是自定义 ID，判定按「**值前缀**」见 §5-C-A 证据 5） | 不可变 |
 | `t_instance` | `department`（既有列） | 部门**名称快照**（按上面的 `od-` 经镜像解析） | **改为 write-once** |
 | `t_ledger_archive` | `department_id TEXT` | 同上（`od-`，桥接所得） | 不可变 |
@@ -529,45 +529,45 @@ sequenceDiagram
 | `t_user_role` | `department_id TEXT` | 主部门 ID（`od-`，**权限比对主键**） | 人工配置（**目录选择器写 `od-`**） |
 | `t_user_role` | `extra_dept_ids TEXT` | 分管部门 ID 数组（JSON，`od-`） | 人工配置 |
 
-> ★ **C-A 落点（路线甲）**：关联键**统一 `open_department_id`（`od-`）**。入库时**先用 `instance.go:36` 的 `department_id` 去镜像桥接**得到 `od-`（**按值前缀判定、不迷信字段名**）；**部门控件 `od-` 仅作交叉校验**（不一致 `log.Warn`、以实例系统字段为准，§5.4）。
+> ★ **C-A 落点（路线甲）**：关联键**统一 `open_department_id`（`od-`）**。入库时**先用 `internal/platform/feishu/instance.go` 的 `DepartmentID` 去镜像桥接**得到 `od-`（**按值前缀判定、不迷信字段名**）；**部门控件 `od-` 仅作交叉校验**（不一致 `log.Warn`、以实例系统字段为准，§5.4）。
 
 **（b）★ 必须改「write-once」的两个 UPSERT（否则改名会改写历史）**
 
 | 位点 | 现状 | 需改为 |
 |---|---|---|
-| `internal/store/repo_instance.go:38` | `department = COALESCE(NULLIF(excluded.department,''), t_instance.department)` → **非空新值会覆盖旧值** | 快照列 **write-once**：仅当 `t_instance.department` 为空时才写入（`COALESCE(NULLIF(t_instance.department,''), NULLIF(excluded.department,''))`） |
-| `internal/store/repo_ledger.go:32` | 同上 | 同上 |
+| `internal/store/repo_instance.go` 的 `upsertInstance` | ★ **`#46` 起已是 write-once**：`department = COALESCE(NULLIF(t_instance.department,''), excluded.department)`（库中非空则保留，**不再被后续非空值覆盖**） | ✅ **已达成**（本行原列"待改"；`#46` 已落地） |
+| `internal/store/repo_ledger.go` 的 `upsertArchive` | `department = COALESCE(NULLIF(excluded.department,''), t_ledger_archive.department)` → **非空新值会覆盖旧值** | 快照列 **write-once**：仅当 `t_ledger_archive.department` 为空时才写入 |
 
 > ★ `department_id` / `department_id_raw` 为**新增列**，天然 write-once（后续事件无此字段时保持 NULL 不覆盖）。
 
 **（c）★ 受影响位点清单（文件:行 级别）**
 
-| # | 位点 | 文件:行 | 现状 | 处置 |
+| # | 位点 | 文件 · 符号（★ 行号只作快照，以符号为准 —— #74） | 现状 | 处置 |
 |---|---|---|---|---|
-| S1 | 行级 `DEPT` 过滤（台账） | `internal/permission/dataset.go:89-94` | `col("department") IN (id.Department + extra)`，**按名称** | 改**按 ID 比对**（`department_id IN (id.department_id + extra_ids)`），**缺失时回退名称**（fail-closed 不变） |
-| S2 | 行级 `CHARGE_DEPT` 过滤（台账） | `internal/permission/dataset.go:96-101` | 同上（取 `ExtraDepts`） | 同上（取 `extra_dept_ids`） |
-| S3 | 行级 `DEPT` 过滤（报送） | `internal/permission/dataset.go:224-229` | 按名称 | 同上 |
-| S4 | 行级 `CHARGE_DEPT` 过滤（报送） | `internal/permission/dataset.go:231-236` | 按名称 | 同上 |
-| S5 | 身份装配 | `internal/httpapi/helpers.go:33-38` | `Department/ExtraDepts` 来自 `UserRole` | 增 `DepartmentID/ExtraDeptIDs` |
-| S6 | `t_user_role` 读取 | `internal/store/repo_permission.go:14-35` | 只读 `department/extra_depts` | 增读 `department_id/extra_dept_ids` |
-| S7 | `t_user_role` 写入 | `internal/store/repo_permission.go:38-84` | 同上 | 增写两列 |
-| S8 | 实例部门名称来源 | `internal/worker/extract.go:81-84` | `department` 仅来自**控件值** | 名称改为**镜像按解析出的 `od-` 取**；控件值**降为交叉校验**（§5-C-A/§5.4） |
-| S9 | 实例自带部门 ID | `internal/platform/feishu/instance.go:36` | `DepartmentID` **解析未用** | **消费为桥接键**：`department_id → open_department_id`（按值前缀）；同时落 `department_id_raw` 留痕 |
-| S10 | 实例落库 | `internal/worker/ingest.go:130` | `Department: det.Department` | 加 `department_id`(`od-`，桥接所得) ＋ `department_id_raw`；名称走镜像快照 |
-| S11 | 台账落库 | `internal/worker/ingest.go:194` | `Department: det.Department` | 同上 |
-| S12 | 实例 UPSERT | `internal/store/repo_instance.go:38` | 名称可被覆盖 | 改 write-once（§4.9-b） |
-| S13 | 台账 UPSERT | `internal/store/repo_ledger.go:32` | 名称可被覆盖 | 改 write-once（§4.9-b） |
-| S14 | 台账展示 | `internal/httpapi/helpers.go:116` | `row["department"]=a.Department` | 展示沿用快照名（可另附 `department_id`） |
-| S15 | 看板部门分组 | `internal/dashboard/dashboard.go:319` | 按 `r.Department` 分组 | 明确「按快照名分组」；如需跨改名归一，可改按 ID 分组 |
-| S16 | 看板取数 | `internal/dashboard/dashboard.go:512` | `SELECT department` | 增取 `department_id`（备用） |
-| S17 | 实例详情出参 | `internal/httpapi/handlers_biz.go:569` | 返回 `department` | 可附 `department_id` |
-| S18 | `/api/me` 部门列表 | `internal/httpapi/handlers_biz.go:91` | `ur.Department + ExtraDepts` | 增 ID 列表 |
-| S19 | 实例列表部门过滤 | `internal/store/repo_instance.go:94-96` | `department = ?`（**按名称**） | 视需要改按 ID；至少统一口径 |
-| S20 | 台账列表部门过滤 | `internal/store/repo_ledger.go:94-95` | 按名称 | 同上 |
-| S21 | 报销跟踪部门过滤 | `internal/store/repo_misc.go:335-338` | 按名称 | 同上（人工登记表，优先级低） |
-| S22 | 部门索引 | `migrations/0001_init.sql:34`（`idx_instance_dept`）、`:199`（`idx_arch_type_dept`） | 按名称索引 | 若改按 ID 过滤，需补 `*_department_id` 索引 |
-| S23 | 权限矩阵后台 | `internal/httpapi/handlers_admin.go:184-288` | 人员表单填 `department/extra_depts`（名称） | 增 ID 列 + **目录选择器**（从 `t_org_department` 选，同时写 id 与 name） |
-| S24 | 准入解析 | `internal/access/auth.go:47-56` | 只读 `t_user_role` | **不改**（保持 deny by default；见 §4.10） |
+| S1 | 行级 `DEPT` 过滤（台账） | `internal/permission/dataset.go` 的 `case ScopeDept` | `col("department") IN (id.Department + extra)`，**按名称** | 改**按 ID 比对**（`department_id IN (id.department_id + extra_ids)`），**缺失时回退名称**（fail-closed 不变） |
+| S2 | 行级 `CHARGE_DEPT` 过滤（台账） | `internal/permission/dataset.go` 的 `case ScopeChargeDept` | 同上（取 `ExtraDepts`） | 同上（取 `extra_dept_ids`） |
+| S3 | 行级 `DEPT` 过滤（报送） | `internal/permission/dataset.go` 的 `case ScopeDept`（`dataset.go` 报送分支） | 按名称 | 同上 |
+| S4 | 行级 `CHARGE_DEPT` 过滤（报送） | `internal/permission/dataset.go` 的 `case ScopeChargeDept`（报送分支） | 按名称 | 同上 |
+| S5 | 身份装配 | `internal/httpapi/helpers.go` 的 `identityFrom` | `Department/ExtraDepts` 来自 `UserRole` | 增 `DepartmentID/ExtraDeptIDs` |
+| S6 | `t_user_role` 读取 | `internal/store/repo_permission.go` 的 `GetUserRole` | 只读 `department/extra_depts` | 增读 `department_id/extra_dept_ids` |
+| S7 | `t_user_role` 写入 | `internal/store/repo_permission.go` 的 `UpsertUserRole` | 同上 | 增写两列 |
+| S8 | 实例部门名称来源 | `internal/worker/extract.go` 的 `case config.BizFieldDepartment` | `department` 仅来自**控件值** | 名称改为**镜像按解析出的 `od-` 取**；控件值**降为交叉校验**（§5-C-A/§5.4） |
+| S9 | 实例自带部门 ID | `internal/platform/feishu/instance.go` 的 `DepartmentID` | `DepartmentID` **解析未用** | **消费为桥接键**：`department_id → open_department_id`（按值前缀）；同时落 `department_id_raw` 留痕 |
+| S10 | 实例落库 | `internal/worker/ingest.go` 的 `Department: det.Department`（实例落库分支） | `Department: det.Department` | 加 `department_id`(`od-`，桥接所得) ＋ `department_id_raw`；名称走镜像快照 |
+| S11 | 台账落库 | `internal/worker/ingest.go` 的 `Department: det.Department`（台账落库分支） | `Department: det.Department` | 同上 |
+| S12 | 实例 UPSERT | `internal/store/repo_instance.go` 的 `upsertInstance` | ★ **`#46` 起已是 write-once**（名称**不再**被覆盖） | ✅ **已达成**（原「改 write-once」已落地；见 §4.9-b） |
+| S13 | 台账 UPSERT | `internal/store/repo_ledger.go` 的 `upsertArchive` | 名称可被覆盖 | 改 write-once（§4.9-b） |
+| S14 | 台账展示 | `internal/httpapi/helpers.go` 的 `row["department"]=a.Department`（台账行组装） | `row["department"]=a.Department` | 展示沿用快照名（可另附 `department_id`） |
+| S15 | 看板部门分组 | `internal/dashboard/dashboard.go` 的 `expense_by_department` 图（`r.Department` 分组） | 按 `r.Department` 分组 | 明确「按快照名分组」；如需跨改名归一，可改按 ID 分组 |
+| S16 | 看板取数 | `internal/dashboard/dashboard.go` 的看板取数 SQL（`SELECT … department`） | `SELECT department` | 增取 `department_id`（备用） |
+| S17 | 实例详情出参 | `internal/httpapi/handlers_biz.go` 的实例详情出参（`"department": it.Department`） | 返回 `department` | 可附 `department_id` |
+| S18 | `/api/me` 部门列表 | `internal/httpapi/handlers_biz.go` 的 `/api/me`（`ur.Department + ExtraDepts`） | `ur.Department + ExtraDepts` | 增 ID 列表 |
+| S19 | 实例列表部门过滤 | `internal/store/repo_instance.go` 的实例列表 `department = ?` 条件 | `department = ?`（**按名称**） | 视需要改按 ID；至少统一口径 |
+| S20 | 台账列表部门过滤 | `internal/store/repo_ledger.go` 的台账列表 `department = ?` 条件 | 按名称 | 同上 |
+| S21 | 报销跟踪部门过滤 | `internal/store/repo_misc.go` 的报销跟踪列表 `department = ?` 条件 | 按名称 | 同上（人工登记表，优先级低） |
+| S22 | 部门索引 | `migrations/0001_init.sql` 的索引 `idx_instance_dept`（`t_instance(department)`）/ `idx_arch_type_dept`（`t_ledger_archive(ledger_type, department)`） | 按名称索引 | 若改按 ID 过滤，需补 `*_department_id` 索引 |
+| S23 | 权限矩阵后台 | `internal/httpapi/handlers_admin.go` 的 `handleAdminUsersPost` | 人员表单填 `department/extra_depts`（名称） | 增 ID 列 + **目录选择器**（从 `t_org_department` 选，同时写 id 与 name） |
+| S24 | 准入解析 | `internal/access/auth.go` 的 `ResolveRole` | 只读 `t_user_role` | **不改**（保持 deny by default；见 §4.10） |
 
 **（d）迁移策略（历史数据怎么办）**
 
@@ -589,7 +589,7 @@ sequenceDiagram
 | **表层** | 镜像表与权限表**物理分离**，无外键关联 | 两张表独立；不建 `t_org_user → t_user_role` 的约束 |
 | **代码层** | `orgsync` 包**不得 import** `permission` / `access` | 包依赖约束（用 `go list`/grep 门禁固化） |
 | **代码层** | `orgsync` **不持有** `t_user_role` 的写通道 | 只注入镜像 Store 方法，不注入 `UpsertUserRole` |
-| **代码层** | 准入链路（`requireSession → identityFrom → ResolveRole → GetUserRole`）**不接触**镜像表 | 现状即如此（`auth.go:47-56` / `repo_permission.go:18`）；本设计**不改**该链路 |
+| **代码层** | 准入链路（`requireSession → identityFrom → ResolveRole → GetUserRole`）**不接触**镜像表 | 现状即如此（`internal/access/auth.go` 的 `ResolveRole` / `internal/store/repo_permission.go` 的 `GetUserRole`）；本设计**不改**该链路 |
 | **数据流** | 同步**单向**：飞书 → 镜像表。**不反向写** `t_user_role` | 明确禁止「自动开通」等任何镜像→权限的写 |
 | **数据流** | **提交页防错 / 提交时实时回源（D6）只读** —— 可读镜像与飞书、**不可写**镜像 / 权限 | 见 **§4.12**；防错**不得**成为"镜像 → 权限"的旁路 |
 
@@ -769,7 +769,7 @@ sequenceDiagram
 
 | # | 冲突/订正 | 说明 | 处置建议 |
 |---|---|---|---|
-| **★ 订正 1** | **代码已注册 `approval_task` 事件键**（`longconn.go:22-28` 含 `approval.task.status_changed_v4` 与 `approval_task`），**与 N10 / B38「本期不订阅 `approval_task`」直接矛盾** | 简报只提到「通讯录事件要不要双拼写」，但真正已存在的漂移是审批侧：代码注册了节点事件，而 PRD §3.2 **N10** 说本期不订。当前 inbox 一视同仁 → 节点事件会产生多余 inbox 行（由 B46 同状态去重兜底） | **需在 N10 相关文档与代码间对齐**：要么从 `approvalEventTypes` 移除 task 键（贴合 N10），要么改写 N10 承认订阅。**本设计默认对齐 N10**：新增通讯录键时一并**移除 `approval_task` 键**（或标注为已知偏差由 team-lead 定） |
+| **★ 订正 1** | **代码已注册 `approval_task` 事件键**（`internal/platform/feishu/longconn.go` 的 `retiredApprovalEventTypes` 含 `approval.task.status_changed_v4` 与 `approval_task`），**与 N10 / B38「本期不订阅 `approval_task`」直接矛盾** | 简报只提到「通讯录事件要不要双拼写」，但真正已存在的漂移是审批侧：代码注册了节点事件，而 PRD §3.2 **N10** 说本期不订。当前 inbox 一视同仁 → 节点事件会产生多余 inbox 行（由 B46 同状态去重兜底） | **需在 N10 相关文档与代码间对齐**：要么从键表移除 task 键（贴合 N10），要么改写 N10 承认订阅。**本设计默认对齐 N10**：新增通讯录键时一并**移除 `approval_task` 键**（或标注为已知偏差由 team-lead 定）。★ **复核（#74 符号核验时发现）**：③ 后该键表**已改名 `retiredApprovalEventTypes`**，且**保留注册、处理器 no-op**（该变量注释：「完全不注册 → 飞书重试风暴」）；`sinkEventTypes` 现为**空** ⇒ 「移除 task 键」这一处置**须按新事实重新评估**（是否仍需移除） |
 | **冲突 1** | **N10 需改写**：N10 原文「本期只订阅 `approval_instance`」将因新增 6~8 个 `contact.*` 订阅而不成立 | 建议改写为「本期订阅＝`approval_instance` + 通讯录 6 事件（`*_v3`）+ `contact.scope.updated_v3` + v1.0 `user_status_change`；**不订阅** `approval_task`」 | 由 team-lead 在 PRD/API/07 指引同步（本设计不改这些文档） |
 | **关联 1** | **B49（指定人与指定时间无数据来源）** | 通讯录同步**不解决** B49：B49 的数据源是**实例详情 `task_list` / 表单控件**，与通讯录镜像无关。**唯一交集**：任务列表里的 `open_id` 可借镜像解析出**姓名**用于展示 | 明确「B49 与本文无关，本文只顺带提供 `open_id→name` 解析」 |
 | **关联 2** | **B50（联系人/部门控件值未被正确解析）** | 与本文 **C7 强相关**：`department` 列的**历史值**是否可靠取决于 B50 的控件解析结论 | **C-A 已查实**：控件值就是 `od-`（F20），**但控件可被申请人改**（§5.4）→ 控件**只作交叉校验**；权威 ID 由**实例 `department_id` 经镜像桥接**得出。T04 把「按 `od-` 解析名称」与 B50 控件解析**同批处理** |
@@ -914,6 +914,7 @@ graph TD
 
 | 版本 | 日期 | 变更 |
 |---|---|---|
+| V1.5 | 2026-09-27 | **行号引用符号化（纯文档；`README` 定案 #74，team-lead 派单）**：★ 全文**代码引用**由「`文件:行`」改为「**`文件` ＋ 符号/模式**」—— 覆盖 §1（16 行「既有事实」出处列）· §4.5 · §4.6 · §4.9(a)(b)(c)（S1–S24）· §4.10 · §6。★ **两栏清点（#67 法）**：① **现值引用 55 处**（`.go`/`.py` 52 ＋ `.sql` 3）→ **已全部符号化**；② **史实留痕 0 处**（本文无「记当时行号」的变更记录行，故 ②＝0）。★ **落地前已漂移 12/55 条（≈22%）**，涉及 6 个符号：`internal/platform/feishu/longconn.go`（`LongConn.Run` 注册块 62→81、`retiredApprovalEventTypes` 键清单 22→29）· `cmd/jxapproval/bootstrap.go`（`singlelock.New().Acquire()` 48→79）· `internal/httpapi/handlers_ops.go`（`handleHealthz`/`handleReadyz` 18→25/35）· `internal/store/repo_instance.go`（`upsertInstance` 38→55、实例列表 `department = ?` 94→145）· `internal/store/repo_ledger.go`（台账列表 94→100）· `internal/store/repo_misc.go`（报销跟踪列表 335→344）。★ **「设计目标 vs 现存符号」处理 0 条** —— 本文所有 `文件:行` 均指向**现存代码**（`internal/orgsync/*` 等**设计目标**只按**包名**提及、未带行号，故无伪造风险）。★★ **符号核验（定案 #66）连带发现 2 处「引用已修掉的缺陷」**（比行号漂移更危险 —— 它曾经是对的）：① **§1-13 / §4.9-b / S12**：本文称 `t_instance.department`「UPSERT 会被非空后续值覆盖（非 write-once）」，**但 `#46` 起已改 write-once**（`repo_instance.go` 现为 `COALESCE(NULLIF(t_instance.department,''), excluded.department)`）→ 已就地**复核标注**（仅 `t_ledger_archive` 侧仍成立）；② **§6 订正 1**：本文称键表为 `approvalEventTypes` 且建议「移除 `approval_task` 键」，**但该变量已改名 `retiredApprovalEventTypes` 且改为「保留注册 + 处理器 no-op」（`sinkEventTypes` 现为空）** → 已**复核标注**「处置须按新事实重评」。★ **不改任何代码 / 编号**。 |
 | V1.4 | 2026-09-27 | **迁移编号变更（纯文档；team-lead 裁定，配合 `#66`；登记见 `15-Code-Collision-Register.md` §2 行 11）**：本文 `org_directory` 迁移**原设计号 `0007`** 与**已落地**的 `0007_approval_core.sql` **撞号** → 全文改号为 **`0012_org_directory.sql`**（`0008`–`0010` 亦已落地、`0011` 归 `t_flow_op_log` 轮次去重）。★ 改动位点：§1-17（迁移序号）· **§4.2 标题 ＋ 新增「编号变更」注** · §4.5（镜像表由 `0012` 建）· §8 T01 / T04 · §10 依赖图（mermaid）。★ 口径：**已落地编号不可回退，未落地设计让号**。 |
 | V1.3 | 2026-09-27 | 执行 `13` **F 组**（`08` 正本**回填 D6**）：① §2 五条口径后**新增 D6 注**（提交时点强校验；修正"提交页不做实时比对、接受镜像滞后"旧口径）；② §4.10 **新增「提交页防错 / 实时回源只读」结构性约束行**；③ **新增 §4.12「设计点 9：提交页防错 + 提交时实时回源校验（★ D6）」**（默认带出镜像部门/主管 · 提交时实时回源一次 · 不一致以实时值为准+落标记 · 超时/失败＝告警放行且不阻断 · 离职/停用不可选 · 只读红线）。对应 `01a` FR-M9-11 / FR-M9-17。 |
 | V1.2 | 2026-09-27 | 依 team-lead 复核意见**重定 C-A**：查实 `department_id` 与 `open_department_id` 为**同一实体的两套编号**、**一次查询（`contact/v3/departments/batch`）两套都返回**（§5-C-A 证据 1–8）；采用**路线甲·镜像双 ID 列**：权威＝ `open_department_id`，由**实例自带 `department_id` 经镜像桥接**得出，**不再依赖可被申请人修改的部门控件**（控件降为**交叉校验**，§5.4）。同步改 §2-⑤ / §3(F21·F22) / §4.1 / §4.2 / §4.3 / §4.4 / §4.9 / §6 / §7(N13·N14) / §8 / §9 / §11。 |
