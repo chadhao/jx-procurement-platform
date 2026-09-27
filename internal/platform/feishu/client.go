@@ -7,6 +7,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 
@@ -100,7 +101,38 @@ func (c *HTTPClient) doJSON(ctx context.Context, method, path string, query map[
 		return nil, "", fmt.Errorf("feishu: 解析 %s 响应失败: %w", path, err)
 	}
 	if env.Code != 0 {
-		return nil, env.LogID, fmt.Errorf("feishu: %s 返回错误 code=%d msg=%s", path, env.Code, env.Msg)
+		return nil, env.LogID, fmt.Errorf("feishu: %s 返回错误 code=%d msg=%s%s",
+			path, env.Code, env.Msg, fieldViolationsSnippet(raw))
 	}
 	return env.Data, env.LogID, nil
+}
+
+// fieldViolationsSnippet 从错误响应中提取 `error.field_violations`（字段校验失败明细）
+// 拼进错误信息。
+//
+// ★★ 教训（2026-09-28 实测，勿删）：external_instances 字段校验失败时，只记顶层
+// `msg`（"field validation failed"）会**丢掉「哪个字段缺了/错了」**——排障因此多花一轮。
+// 本函数把 `field_violations` 明细（field + description）追加进错误串，形如：
+//
+//	feishu: … 返回错误 code=99992402 msg=field validation failed
+//	  field_violations=[task_list[*].links: task_list[*].links is required; …]
+//
+// 无违规明细（或响应非该形态）时返回空串（不影响既有错误格式）。
+func fieldViolationsSnippet(raw []byte) string {
+	var ev struct {
+		Error struct {
+			FieldViolations []struct {
+				Field       string `json:"field"`
+				Description string `json:"description"`
+			} `json:"field_violations"`
+		} `json:"error"`
+	}
+	if err := json.Unmarshal(raw, &ev); err != nil || len(ev.Error.FieldViolations) == 0 {
+		return ""
+	}
+	parts := make([]string, 0, len(ev.Error.FieldViolations))
+	for _, v := range ev.Error.FieldViolations {
+		parts = append(parts, v.Field+": "+v.Description)
+	}
+	return " field_violations=[" + strings.Join(parts, "; ") + "]"
 }

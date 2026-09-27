@@ -21,7 +21,7 @@ func TestBuildSnapshotWritesActionContext(t *testing.T) {
 		{TaskID: "t1", NodeID: "n1", AssigneeOpenID: "ou_a", Status: "PENDING", ReleaseState: "RELEASED"},
 		{TaskID: "t2", NodeID: "n2", AssigneeOpenID: "ou_b", Status: "PENDING", ReleaseState: "HELD"},
 	}
-	snap, err := BuildSnapshot(inst, tasks, nil)
+	snap, err := BuildSnapshot(inst, tasks, nil, "https://jx.example.com", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -57,7 +57,7 @@ func TestPushPrefersFeishuCode(t *testing.T) {
 	}
 
 	client := NewFakePushClient()
-	p := NewPusher(db, client, nil)
+	p := NewPusher(db, client, "https://jx.example.com", nil)
 	if _, err := p.Push(ctx, "PR-1"); err != nil {
 		t.Fatalf("推送失败: %v", err)
 	}

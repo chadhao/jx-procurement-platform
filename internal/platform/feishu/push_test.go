@@ -25,26 +25,31 @@ func TestChooseUpdateMode(t *testing.T) {
 	}
 }
 
-// TestBuildSnapshotOnlyReleasedLimits 快照只含 RELEASED；超限报错不截断。
+// TestBuildSnapshotOnlyReleasedLimits 快照只含 RELEASED；超限报错不截断；
+// detailBase 为空 ⇒ 可见失败（links 必填，2026-09-28 实测 99992402）。
 func TestBuildSnapshotOnlyReleasedLimits(t *testing.T) {
 	inst := &store.Instance{ApprovalCode: "code-pr", InstanceCode: "app:PR-1", UpdateTime: 3, Status: "PENDING"}
 	tasks := []store.FlowTask{
 		{TaskID: "t1", NodeID: "n1", AssigneeOpenID: "ou_a", Status: "PENDING", ReleaseState: "RELEASED"},
 		{TaskID: "t2", NodeID: "n1", AssigneeOpenID: "ou_b", Status: "PENDING", ReleaseState: "HELD"},
 	}
-	snap, err := BuildSnapshot(inst, tasks, nil)
+	snap, err := BuildSnapshot(inst, tasks, nil, "https://jx.example.com", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(snap.TaskList) != 1 || snap.TaskList[0].TaskID != "t1" {
 		t.Errorf("快照 task_list = %+v, 期望仅 t1（只含 RELEASED）", snap.TaskList)
 	}
+	// detailBase 为空 ⇒ 可见失败（links 必填；不编造 URL）。
+	if _, err := BuildSnapshot(inst, tasks, nil, "  ", nil); err == nil {
+		t.Errorf("detailBase 为空应报错（links 必填，不编造 URL）")
+	}
 	// 超限：301 个 RELEASED。
 	var many []store.FlowTask
 	for i := 0; i < MaxTaskList+1; i++ {
 		many = append(many, store.FlowTask{TaskID: "x", ReleaseState: "RELEASED"})
 	}
-	if _, err := BuildSnapshot(inst, many, nil); err == nil {
+	if _, err := BuildSnapshot(inst, many, nil, "https://jx.example.com", nil); err == nil {
 		t.Errorf("task_list 超限应报错（绝不静默截断）")
 	}
 }
@@ -87,7 +92,7 @@ func TestPusherFlow(t *testing.T) {
 	seedInstance(t, db, bizNo, 1)
 
 	fc := NewFakePushClient()
-	p := NewPusher(db, fc, nil)
+	p := NewPusher(db, fc, "https://jx.example.com", nil)
 
 	// ① 首推 → REPLACE，快照 1 个 RELEASED。
 	res, err := p.Push(ctx, bizNo)
@@ -147,7 +152,7 @@ func TestPusherPushFailureRecorded(t *testing.T) {
 	fc.PushFn = func(context.Context, string, InstanceSnapshot) error {
 		return context.DeadlineExceeded
 	}
-	p := NewPusher(db, fc, nil)
+	p := NewPusher(db, fc, "https://jx.example.com", nil)
 	if _, err := p.Push(ctx, bizNo); err == nil {
 		t.Fatal("推送失败应返回错误")
 	}

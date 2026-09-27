@@ -202,8 +202,10 @@ func run(version string) error {
 	// 定义注册表：装配即用；生产装载入口＝POST /api/admin/approval/defs/sync（docs/16 §2-C），
 	// 清单源＝t_config_mapping(map_kind='approval_code')，启动自检见 ④′。
 	approvalDefs := approval.NewRegistry(db, extClient, logger)
-	// 出方向推送服务（external_instances）。
-	pusher := feishu.NewPusher(db, pushClient, logger)
+	// 出方向推送服务（external_instances）。★ detailBase（JX_CALLBACK_DOMAIN）＝
+	// links 的唯一来源（实例级与 task_list[*].links 均必填，2026-09-28 实测 99992402；
+	// 未配置 ⇒ 推送可见失败，不编造 URL）。
+	pusher := feishu.NewPusher(db, pushClient, env.CallbackDomain, logger)
 	// 审批领域服务（唯一状态源）：注入台账映射（finalize 落账）与日志。
 	flowSvc := flow.NewWithConfig(db, env.AppID, maps, logger)
 

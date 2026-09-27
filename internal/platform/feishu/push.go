@@ -10,8 +10,10 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/chadhao/jx-procurement-platform/internal/observ"
 	"github.com/chadhao/jx-procurement-platform/internal/store"
@@ -39,13 +41,44 @@ const (
 	UpdateModeReplace = "REPLACE"
 )
 
+// ExternalInstanceLink external_instances 的 links 对象——**实例级**与
+// **task_list[*] 级**同构（2026-09-28 实测成功 body 形态：`{"pc_link":…,"mobile_link":…}`）。
+// ★★ 两处必须由同一函数（externalLinks）生成，避免两处漂移。
+type ExternalInstanceLink struct {
+	PCLink     string `json:"pc_link"`
+	MobileLink string `json:"mobile_link"`
+}
+
 // ExternalTask 快照中的单个任务（仅含已 RELEASED 的）。
+//
+// ★★ 教训（2026-09-28 联调实测 99992402，勿删）：`task_list[*]` 的 `links` /
+// `create_time` / `end_time` / `update_time` 是**必填**——缺任一即整单被拒：
+//
+//	{"code":99992402,"msg":"field validation failed",
+//	 "error":{"field_violations":[
+//	   {"field":"task_list[*].links","description":"task_list[*].links is required"}, …]}}
+//
+// 且审批人字段名是 **`open_id`**（官方字段表；与 `user_id` 二选一），**不是**
+// `assignee_open_id`——字段名/必填项错会静默失败（未知字段被忽略 ⇒ 任务不被指派）
+// 或 99992402（与 docs/reference/README.md 记载的 `assignees` 教训同类）。
+// ★ 时间字段格式：**Unix 毫秒时间戳字符串**（如 "1790528336224"）；未完成任务
+// `end_time` 传 **"0"**（换算纪律见 feishuMilli / taskEndMillis 注释）。
 type ExternalTask struct {
-	TaskID         string `json:"task_id"`
-	NodeID         string `json:"node_id"`
-	NodeName       string `json:"node_name"`
-	AssigneeOpenID string `json:"assignee_open_id"`
-	Status         string `json:"status"`
+	TaskID   string `json:"task_id"`
+	NodeID   string `json:"node_id"`
+	NodeName string `json:"node_name"`
+	// OpenID 审批人（task_list[*].open_id）。★★ 历史缺陷：曾用 `assignee_open_id`
+	//（未知字段被平台静默忽略 ⇒ 任务不被指派）；2026-09-28 实测后改正，语义不变。
+	OpenID string `json:"open_id"`
+	Status string `json:"status"`
+	// CreateTime / EndTime / UpdateTime 任务三时间戳：Unix 毫秒**字符串**（必填，
+	// 2026-09-28 实测 99992402；BuildSnapshot 内经 feishuMilli / taskEndMillis 换算，
+	// 严禁把 store 侧 ISO8601 文本直接塞入）。
+	CreateTime string `json:"create_time"`
+	EndTime    string `json:"end_time"`
+	UpdateTime string `json:"update_time"`
+	// Links 任务详情链接（必填；与实例级 links 同构、同一函数 externalLinks 生成）。
+	Links ExternalInstanceLink `json:"links"`
 	// ActionContext 操作上下文（docs/16 §2-B）：**我方自定义**的压缩 JSON 字符串
 	// `{"biz_no":"…","task_id":"…"}`，随待办下发、期望飞书在回调时**原样回传**——
 	// 这是回调侧 `biz_no` 的**主读**来源（官方**不发**顶层 biz_no，docs/16 G-1）。
@@ -58,13 +91,17 @@ type ExternalTask struct {
 }
 
 // InstanceSnapshot external_instances 上报快照。
+//
+// ★ 2026-09-28 补实例级 `links`（官方字段表标**必填**；本次实测飞书未报，
+// 但缺了会被后续校验拦下——补齐以免步 task_list[*].links 的后尘）。
 type InstanceSnapshot struct {
-	ApprovalCode string         `json:"approval_code"`
-	InstanceID   string         `json:"instance_id"`
-	UpdateTime   int64          `json:"update_time"`
-	Status       string         `json:"status"`
-	TaskList     []ExternalTask `json:"task_list"`
-	CCList       []string       `json:"cc_list,omitempty"`
+	ApprovalCode string               `json:"approval_code"`
+	InstanceID   string               `json:"instance_id"`
+	UpdateTime   int64                `json:"update_time"`
+	Status       string               `json:"status"`
+	Links        ExternalInstanceLink `json:"links"`
+	TaskList     []ExternalTask       `json:"task_list"`
+	CCList       []string             `json:"cc_list,omitempty"`
 }
 
 // PushClient external_instances 推送端口（HTTP 实现 + 测试替身）。
@@ -89,16 +126,67 @@ func ChooseUpdateMode(isFirstPush bool, needDelete bool) string {
 	return UpdateModeUpdate
 }
 
+// externalLinks 统一生成**实例级**与 **task_list[*] 级** links（2026-09-28 实测两级均必填）。
+// ★★ 唯一生成函数：两处调用同一实现，杜绝「实例级与任务级链接来源漂移」。
+// 指向详情页 `<detailBase>/approval/<biz_no>`（与 NotifySender 的「查看详情」同一路由，
+// web/src/router.js 的 approval-console）。
+func externalLinks(detailBase, bizNo string) ExternalInstanceLink {
+	detail := strings.TrimRight(strings.TrimSpace(detailBase), "/") + "/approval/" + bizNo
+	return ExternalInstanceLink{PCLink: detail, MobileLink: detail}
+}
+
+// feishuMilli 把时刻转成飞书要求的 **Unix 毫秒时间戳字符串**（如 "1790528336224"）。
+//
+// ★ 换算纪律（2026-09-28 实测）：store 侧 `created_at`/`updated_at`/`closed_at` 以
+// RFC3339 文本落库（Go 侧 time.Time），而 `t_instance.update_time` 是 int64 毫秒——
+// **严禁把 ISO8601 文本直接塞进飞书时间字段**，必须经本函数换算。
+// 零值时刻按 "0" 处理（与「未完成」同形态，不编造时间）。
+func feishuMilli(t time.Time) string {
+	if t.IsZero() {
+		return "0"
+	}
+	return strconv.FormatInt(t.UnixMilli(), 10)
+}
+
+// taskEndMillis 任务级 end_time（2026-09-28 实测口径）：
+//   - 终态（APPROVED / REJECTED）＝ `closed_at` 毫秒字符串；`closed_at` 为空 ⇒
+//     **退化取 `updated_at` 并记 warn**（终态任务应有关闭时刻，缺失属数据异常；
+//     不能推 "0"，否则飞书侧终态时间显示为 0）；
+//   - 非终态 ＝ **"0"**（官方要求未完成任务传 "0"）。
+func taskEndMillis(t store.FlowTask, log *slog.Logger) string {
+	if t.Status != "APPROVED" && t.Status != "REJECTED" {
+		return "0"
+	}
+	if t.ClosedAt != nil && !t.ClosedAt.IsZero() {
+		return feishuMilli(*t.ClosedAt)
+	}
+	if log != nil {
+		log.Warn("★ 终态任务缺 closed_at：end_time 退化取 updated_at（数据异常，应回查任务关闭链路）",
+			"biz_no", t.BizNo, "task_id", t.TaskID, "status", t.Status)
+	}
+	return feishuMilli(t.UpdatedAt)
+}
+
 // BuildSnapshot 组装快照：**只含已 RELEASED 的 task**；未释放整体省略。超限返回错误（不截断）。
-func BuildSnapshot(inst *store.Instance, tasks []store.FlowTask, ccList []string) (InstanceSnapshot, error) {
+//
+// ★ detailBase（JX_CALLBACK_DOMAIN）：实例级与 task_list[*] 级 links 的**唯一来源**
+// （externalLinks 统一生成）。为空 ⇒ **可见失败**（links 两级均为必填，2026-09-28
+// 实测 99992402；绝不静默编造 URL——与 NotifySender 同纪律）。
+// ★ log 仅用于终态任务缺 closed_at 的退化 warn；nil 时跳过 warn。
+func BuildSnapshot(inst *store.Instance, tasks []store.FlowTask, ccList []string, detailBase string, log *slog.Logger) (InstanceSnapshot, error) {
 	if inst == nil {
 		return InstanceSnapshot{}, fmt.Errorf("feishu: 组装快照失败: 实例为空")
+	}
+	if strings.TrimSpace(detailBase) == "" {
+		return InstanceSnapshot{}, fmt.Errorf("feishu: 组装快照失败: detailBase 为空，无法构造 links" +
+			"（实例级与 task_list[*].links 均为必填，2026-09-28 实测 99992402；JX_CALLBACK_DOMAIN 未配置？）")
 	}
 	snap := InstanceSnapshot{
 		ApprovalCode: inst.ApprovalCode,
 		InstanceID:   inst.InstanceCode,
 		UpdateTime:   inst.UpdateTime,
 		Status:       inst.Status,
+		Links:        externalLinks(detailBase, inst.BizNo),
 		CCList:       ccList,
 	}
 	for _, t := range tasks {
@@ -114,7 +202,12 @@ func BuildSnapshot(inst *store.Instance, tasks []store.FlowTask, ccList []string
 		}
 		snap.TaskList = append(snap.TaskList, ExternalTask{
 			TaskID: t.TaskID, NodeID: t.NodeID, NodeName: t.NodeName,
-			AssigneeOpenID: t.AssigneeOpenID, Status: t.Status,
+			OpenID:        t.AssigneeOpenID, // ★ json tag 是 open_id（2026-09-28 实测，见 ExternalTask 注释）
+			Status:        t.Status,
+			CreateTime:    feishuMilli(t.CreatedAt),
+			EndTime:       taskEndMillis(t, log),
+			UpdateTime:    feishuMilli(t.UpdatedAt),
+			Links:         externalLinks(detailBase, inst.BizNo), // ★ 与实例级同源（inst.BizNo 权威）
 			ActionContext: string(ac),
 		})
 	}
@@ -143,15 +236,24 @@ func snapshotHash(snap InstanceSnapshot) string {
 type Pusher struct {
 	db     *store.DB
 	client PushClient
-	log    *slog.Logger
+	// detailBase 详情页基址（JX_CALLBACK_DOMAIN）：links ＝ `<detailBase>/approval/<biz_no>`
+	//（externalLinks 统一生成，实例级与 task_list[*] 级同源）。为空 ⇒ BuildSnapshot
+	// **可见失败**（links 必填；不编造 URL——与 NotifySender 同纪律）。
+	detailBase string
+	log        *slog.Logger
 }
 
 // NewPusher 构造推送服务。
-func NewPusher(db *store.DB, client PushClient, log *slog.Logger) *Pusher {
+func NewPusher(db *store.DB, client PushClient, detailBase string, log *slog.Logger) *Pusher {
 	if log == nil {
 		log = observ.NewLogger("info", nil)
 	}
-	return &Pusher{db: db, client: client, log: log}
+	return &Pusher{
+		db:         db,
+		client:     client,
+		detailBase: strings.TrimRight(strings.TrimSpace(detailBase), "/"),
+		log:        log,
+	}
 }
 
 // Push 推送某实例当前快照。
@@ -199,7 +301,7 @@ func (p *Pusher) Push(ctx context.Context, bizNo string) (PushResult, error) {
 	if err != nil {
 		return PushResult{}, err
 	}
-	snap, err := BuildSnapshot(inst, tasks, nil)
+	snap, err := BuildSnapshot(inst, tasks, nil, p.detailBase, p.log)
 	if err != nil {
 		// 超限等：告警且**不写流水**（这是"请求有误"，非"平台不支持"；S12）。
 		p.log.Error("推送组装失败（不静默截断）", "biz_no", bizNo, "error", err.Error())
@@ -257,6 +359,9 @@ func (p *Pusher) Push(ctx context.Context, bizNo string) (PushResult, error) {
 // ---------- HTTP 实现 ----------
 
 // UpsertExternalInstance 推送实例快照（POST /external_instances）。
+//
+// ★ 2026-09-28 补实例级 `links`（官方字段表标必填；与 task_list[*].links 同源同构，
+// 均由 BuildSnapshot 经 externalLinks 生成）。
 func (c *HTTPClient) UpsertExternalInstance(ctx context.Context, updateMode string, snap InstanceSnapshot) error {
 	body := map[string]any{
 		"approval_code": snap.ApprovalCode,
@@ -264,6 +369,7 @@ func (c *HTTPClient) UpsertExternalInstance(ctx context.Context, updateMode stri
 		"update_time":   snap.UpdateTime,
 		"update_mode":   updateMode,
 		"status":        snap.Status,
+		"links":         snap.Links,
 		"task_list":     snap.TaskList,
 	}
 	if len(snap.CCList) > 0 {
