@@ -2,6 +2,9 @@ package httpapi
 
 import (
 	"net/http"
+	"os"
+	"regexp"
+	"strings"
 	"testing"
 )
 
@@ -73,5 +76,32 @@ func TestApprovalApiRoutesRequireSession(t *testing.T) {
 			t.Errorf("%s %s: http=%d code=%d，期望 401/40100（已注册且受会话保护）",
 				tc.method, tc.path, rec.Code, env.Code)
 		}
+	}
+}
+
+// TestCallbackWiring_InstanceCodeAndAssignee 装配级守卫（防"接线被删"这类静默回归）。
+//
+//	(a) 回调处理器**必须**把报文 `instance_code` 下传进 `flow.CallbackRequest.InstanceCode`
+//	    —— 否则 flow 的「报文 instance_code 与 biz_no 不一致 → 拒绝」在生产**不可达**
+//	    （flow 单测是**直接构造该字段**验证的，故接线正确性只能在此守护）。
+//	(b) 回调错误块**必须**把 `flow.ErrNotAssignee` 映射（403），否则"非本人回调"落 500。
+//
+// ★ 这是**装配守卫**（读源码断言），非行为测试：行为语义由 `internal/flow` 的
+//
+//	`callback_test.go`（如 `TestCallbackInstanceCodeMismatchRejected`）端到端覆盖；
+//	此处只防"接线被删/改名"。读源码的断言方式与 `cmd/jxapproval` 的装配守卫一致。
+func TestCallbackWiring_InstanceCodeAndAssignee(t *testing.T) {
+	src, err := os.ReadFile("handlers_approval.go")
+	if err != nil {
+		t.Fatalf("读取 handlers_approval.go 失败: %v", err)
+	}
+	s := string(src)
+	// (a) 容忍 gofmt 对齐：InstanceCode:<空格>strings.TrimSpace(body.InstanceCode)
+	if re := regexp.MustCompile(`InstanceCode:\s+strings\.TrimSpace\(body\.InstanceCode\)`); !re.MatchString(s) {
+		t.Errorf("回调接线缺失：应把 body.InstanceCode 下传进 flow.CallbackRequest（否则防串单校验在生产不可达）")
+	}
+	// (b) 非本人回调 → 显式映射
+	if !strings.Contains(s, "errors.Is(err, flow.ErrNotAssignee)") {
+		t.Errorf("回调接线缺失：错误块应映射 flow.ErrNotAssignee（否则非本人回调落 500）")
 	}
 }

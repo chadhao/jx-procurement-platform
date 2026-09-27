@@ -73,6 +73,7 @@ func (d Deps) handleExternalApprovalCallback(c echo.Context) error {
 	req := flow.CallbackRequest{
 		Token:          body.Token,
 		BizNo:          strings.TrimSpace(body.BizNo),
+		InstanceCode:   strings.TrimSpace(body.InstanceCode), // ★ 下传报文 instance_id（口径 {app_id}:{biz_no}）→ flow 侧「报文与 biz_no 不一致即拒」
 		TaskID:         strings.TrimSpace(body.TaskID),
 		OpType:         strings.ToUpper(firstNonEmptyStr(body.ActionName, body.ActionType)),
 		OperatorOpenID: firstNonEmptyStr(body.OpenID, body.Operator.OpenID),
@@ -90,6 +91,10 @@ func (d Deps) handleExternalApprovalCallback(c echo.Context) error {
 		}
 		if errors.Is(err, flow.ErrInvalidSubmit) || errors.Is(err, flow.ErrIllegalTransition) {
 			return fail(c, http.StatusBadRequest, codeBadRequest, err.Error())
+		}
+		if errors.Is(err, flow.ErrNotAssignee) {
+			// ★ 非本人回调：入口准入直接拒绝（flow.HandleCallback）。映射与页面路径 approvalError / 非法 token 分支一致 → 403（不返回 401）。
+			return fail(c, http.StatusForbidden, codeRowForbidden, err.Error())
 		}
 		return fail(c, http.StatusInternalServerError, codeInternal, err.Error())
 	}
