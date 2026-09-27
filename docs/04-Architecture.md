@@ -3,11 +3,12 @@
 > 结论先行：本系统是**审批引擎的旁路**，不是审批引擎。架构的全部难点不在业务功能，而在四条工程纪律——**单实例、幂等 inbox、先订阅、极短事件路径**，外加一条兜底（**对账补拉**）与一条底线（**自建系统故障不得影响飞书侧审批**）。
 > 全案**只用 4 个飞书接口 + 1 条长连接**，**不存在「创建审批实例」调用路径**。
 > 技术栈已锁定，不得更改：Go 1.21+ / Echo v4 / SQLite（WAL）/ Vue3（`//go:embed` 内嵌）/ ECharts / 云侧 S3 兼容对象存储（主）+ RustFS（异地每日增量备份）/ 境外云主机单实例 systemd / 飞书免登。
+> ⚠️ **架构转向 ③ 已发生**：审批流转归属由「飞书原生引擎旁路」改为「**审批核心迁至我方 · 飞书官方三方审批**」；转向相关的增量设计（数据模型 / 状态机 / 推送与版本控制 / 回调端点 / 四操作 / 编号 / 对账 / 长连接收敛 / 静默防护 / 任务分解 / 测试）见 **[`04a-Architecture-Increment-V2.md`](./04a-Architecture-Increment-V2.md)**。本文为 V1.0 基线；凡与其冲突的**转向相关位点以 04a 为准**。★ **`04 §0` 三条否定式硬约束的定案**：**「无入站端口」**→**单点解除**（仅开一条回调入站路径）· **「无轮询」**→**解除**（仅加 5 分钟对账轮询）· **「故障完全隔离」**→**改写**（本方成为审批必需节点，降级口径见 `01a` §7.2）；详见 `04a-Architecture-Increment-V2.md` **§0 定案表**。
 
 | 项 | 内容 |
 |---|---|
 | 文档名称 | 采购与费用审批平台（自建侧）· 架构设计 |
-| 版本 | V1.0 |
+| 版本 | V1.3（+ Batch Q2：§4.6 对账端点改指 `POST /internal/approval/check`） |
 | 日期 | 2026-09-26 |
 | 上游文档 | `01-PRD.md`（需求正本）、`02-UseCase.md`、`03-TestCase.md`、`README.md`（五条硬约束）、`docs/reference/README.md` |
 | 依据 | 技术方案书 V1.0-r1（`deliverables/procurement-system/技术方案书V1.0.html`） |
@@ -210,17 +211,17 @@ jx-procurement-platform/
 | # | 表名 | 职责 | 对应模块 |
 |---|---|---|---|
 | 1 | `t_instance` | 实例主表 | M2 |
-| 2 | `t_instance_field` | 实例表单字段（键值对） | M2 |
-| 3 | `t_instance_status_history` | 状态变更史 | M2 / M7 |
+| 2 | `t_instance_field` | 实例表单字段（键值对）｜★ **已弃用（转向 ③ · F3）**（原生控件链作废 → 端点恒空） | M2 |
+| 3 | `t_instance_status_history` | 状态变更史｜★ **③ 写入者＝`flow.finalize`**（原 `worker/ingest`） | M2 / M7 |
 | 4 | `t_event_inbox` | 事件收件箱（幂等） | M3 |
 | 5 | `t_worker_job` | 异步作业 / 重试队列 | M3 |
 | 6 | `t_deadletter` | 死信 | M3 |
 | 7 | `t_sync_cursor` | 同步游标 / 对账状态 | M0 |
-| 8 | `t_subscribe_state` | 订阅状态 | M0 |
+| 8 | `t_subscribe_state` | 订阅状态｜★ **已弃用（转向 ③ · F1）**；读取点 `handlers_ops.go:35` 须一并清理 | M0 |
 | 9 | `t_config_mapping` | approval_code 映射 + 字段 id 映射（配置化） | M0 / M2 |
 | 10 | `t_user_role` | 用户角色映射 | M5 |
 | 11 | `t_permission_rule` | 行·列权限规则（配置驱动） | M5 |
-| 12 | `t_ledger_archive` | 台账·同步存档（只读） | M4 |
+| 12 | `t_ledger_archive` | 台账·同步存档（只读）｜★ **③ 写入者＝`flow.finalize`**（原 `worker/ingest`） | M4 |
 | 13 | `t_ledger_ops` | 台账·运营表（可写） | M4 |
 | 14 | `t_ledger_field_def` | 台账字段定义（可见/可写/公式） | M4 |
 | 15 | `t_petty_cash_receipt` | 备付金签领登记 | M1 |
@@ -229,6 +230,8 @@ jx-procurement-platform/
 | 18 | `t_submission` | 报送登记 | M6 |
 | 19 | `t_submission_item` | 报送关联单据 | M6 |
 | 20 | `t_audit_log` | 审计日志 | M7 |
+
+> ★ **转向 ③ 后本表的新写入者 / 弃用**（详见 `04a-Architecture-Increment-V2.md` 与 `11`）：**弃用**＝`t_instance_field`（**F3**，原生控件链作废 → `GET /api/instances/{code}/fields` 恒空）、`t_subscribe_state`（**F1**，审批事件订阅作废）；**写入者迁移为 `flow.finalize`**（取代旧事件链 `worker/ingest`）＝`t_ledger_archive` / `t_instance_status_history` / **`t_attachment`**（迁移 `0005` 引入，见 `05-API §3.12`；元数据入库零网络 IO）。
 
 ### 3.2 DDL 草案
 
@@ -263,6 +266,7 @@ CREATE INDEX idx_instance_supplier      ON t_instance(supplier, biz_no_yymm);
 CREATE INDEX idx_instance_biz_no        ON t_instance(biz_no);
 
 -- ============ M2 实例表单字段（键值对，不硬编码字段顺序） ============
+-- ★ 转向 ③：本表【已弃用 · F3】——原生控件链作废，`GET /api/instances/{code}/fields` 恒空（见 04a / 11 §3 B-1）
 CREATE TABLE t_instance_field (
   id             INTEGER PRIMARY KEY AUTOINCREMENT,
   instance_code  TEXT    NOT NULL,
@@ -278,6 +282,7 @@ CREATE TABLE t_instance_field (
 CREATE INDEX idx_field_biz ON t_instance_field(instance_code, biz_field);
 
 -- ============ M2/M7 状态变更史（驳回重提的链式留痕） ============
+-- ★ 转向 ③：写入者＝`flow.finalize`（取代旧 worker/ingest；见 04a / 11 §3 B-5）
 CREATE TABLE t_instance_status_history (
   id             INTEGER PRIMARY KEY AUTOINCREMENT,
   instance_code  TEXT    NOT NULL,
@@ -348,6 +353,7 @@ CREATE TABLE t_sync_cursor (
 );
 
 -- ============ M0 订阅状态（先订阅 + 健康检查） ============
+-- ★ 转向 ③：本表【已弃用 · F1】——审批事件订阅作废；读取点 handlers_ops.go:35 须清理（见 04a / 11 §3 B-2）
 CREATE TABLE t_subscribe_state (
   id             INTEGER PRIMARY KEY AUTOINCREMENT,
   approval_code  TEXT    NOT NULL UNIQUE,
@@ -402,6 +408,7 @@ CREATE TABLE t_permission_rule (
 
 -- ============ M4 台账·同步存档（只读，审批自动写入） ============
 -- 建模策略：单表 + 类型字段（取舍见 §3.3）。核心列为稳定字段，变动字段入 ext_json。
+-- ★ 转向 ③：写入者＝`flow.finalize`（取代旧 worker/ingest；见 04a / 11 §3 B-5）
 CREATE TABLE t_ledger_archive (
   id             INTEGER PRIMARY KEY AUTOINCREMENT,
   ledger_type    TEXT    NOT NULL,                    -- 台账类型（1..12 语义键，见 §3.4）
@@ -583,9 +590,25 @@ CREATE INDEX idx_audit_actor ON t_audit_log(actor_open_id, action);
 | `t_user_role.open_id` | **UNIQUE** | 一人一角色（Q8 代理人另见 §10 问题） |
 | 各类 `created_at/occurred_at` | 索引 | 时间窗对账、审计查询 |
 
+### 3.6 转向 ③ 的数据迁移与兼容策略（`instance_code` 新旧共存 · C-3 · `A30`）
+
+> **问题（`A30` / C11）**：旧库 `t_instance.instance_code` ＝ **飞书原生实例 code**（`0001`）；转向 ③ 后我方自建实例，`instance_code` 应等于**我方 `instance_id`**（`04a §3.3` 建议 `{app_id}:{biz_no}`）。**两套语义并存**须给共存与回填口径。★ **位点更正**：`04 §12` 是**变更记录**、**无「迁移策略」节** → 本节即**迁移策略正本**（原指派"§12 迁移策略"位点不存在，落此并报回）。
+
+| 项 | 结论 |
+|---|---|
+| 共存判定 | 未上线、**存量极少**（`docs/12`：28 表无生产数据、迁移量 ≈0）→ **不做批量数据迁移**，仅**统一文档与实现口径** |
+| 判定新旧 | 旧 code ＝ 飞书下发（不含 `:`）、新 code ＝ `{app_id}:{biz_no}`（**含 `:`**）→ 可用"是否含 `:`"**粗判**；★ 实现侧以**写入来源**（`flow` vs `ingest`）为准，**不靠格式猜** |
+| 回填方案（如需） | **旧行**：`instance_code` 保持原值（**只读历史**）；**新行**一律 `{app_id}:{biz_no}`。★ 若确需统一：一次性把旧行 `instance_code` 改写为 `{app_id}:` 前缀拼接 `biz_no`（**仅在旧链退役后、且无外部引用时**）；★ **`instance_code UNIQUE`** 要求回填**不得撞号** |
+| 约束 | `instance_code UNIQUE` 不变；`biz_no` 唯一兜底见 `04a §6.4` P3（`0007` 补建 `ux_instance_biz_no`） |
+| 落地 | 并入 ③ 上线前迁移清单；`A30` 关闭时补一条**回填脚本 + 回读断言** |
+
+> ★ 若用户选择"**不做回填**"（**推荐**，存量 ≈0）→ 则**共存即终态**：旧行只读、新行新语义，**在文档层写死**即可。
+
 ---
 
 ## 4. 事件处理流水线
+
+> ★ **转向 ③ 作废 / 改写声明（F1–F5）**：本节描述的**事件抽取链**（长连接订阅审批事件 → inbox → worker 取实例详情 → 解析落库）在 ③ 下**整体作废** —— 审批流转迁至我方，飞书只保留「展示 / 待办 / 通知 + 同意·拒绝」，台账 / 状态史 / 字段 / 附件的写入者改为 **`flow.finalize`（终态直写）**。★ 本节**仍保留**的通用框架：**幂等 inbox（`t_event_inbox`）+ 重试 + 死信**（改由**回调**与**内部流程事件**复用）。转向相关位点一律以 `04a-Architecture-Increment-V2.md` 为准（见其 §0 定案表 / §4 / §8 / §10）。
 
 ### 4.1 同步路径 vs 异步路径（时序）
 
@@ -691,7 +714,7 @@ flowchart LR
 
 | 动作 | 端点（§7 详述） | 凭据 |
 |---|---|---|
-| 触发对账 | `POST /internal/sync/reconcile` | 管理凭据 |
+| 触发对账 | ★ `POST /internal/approval/check`（`/internal/sync/reconcile` **已退役 · `410 Gone`**） | 管理凭据 |
 | 重新订阅 | `POST /internal/sync/subscribe` | 管理凭据 |
 | 重放死信 | `POST /internal/events/{id}/replay` | 管理凭据 |
 
@@ -700,6 +723,10 @@ flowchart LR
 ## 5. 权限架构（行级过滤 + 列级投影）
 
 > ★ **Q3 已于 2026-09-26 定案**（§4.2 采纳为默认口径）。本设计全程**配置驱动**：策略层 + 声明式规则表（`t_permission_rule`）；**口径变更只改数据行、不改代码**，并新增**「系统管理」后台页**（§5.6）供管理员自助配置。**行级权限只用 6 令牌 + `DENY`，不引入条件表达式**（定案）。不得把任何具体角色-列的可见性硬编码进代码。
+>
+> ★ **转向 ③ 入站安全注（E-1 / E-2，引入反向代理后生效；详见 `04a §17.6`）**：
+> **(E-1) `RealIP` 限流塌缩** —— 反代后若应用**不信任受信反代的 `X-Forwarded-For` / `X-Real-IP`**、而限流仍按源 IP 分桶，则**所有回调请求的源 IP 都变成反代本机** → **全部回调共用一个限流桶**，一个桶被打满即**飞书全部回调被限流**；表现为「**回调偶发失败**」而非报错（**静默族**）。须让 `RealIP` 中间件只信任受信代理，或回调路径**改按来源身份限流**（二者择一）。
+> **(E-2) `internalAuth` 依赖回环** —— 内部端点**不得再依赖"仅回环可访问"鉴权**（反代若在另一台机器即失效 / 裸奔），须改 **`JX_INTERNAL_TOKEN`**（Header `X-Internal-Token`，见 `05-API §3.8`）。
 
 ### 5.1 三层权限模型
 
@@ -841,6 +868,8 @@ flowchart TB
 | `JX_RUSTFS_REGION` | RustFS 区域（缺省取 `JX_S3_REGION`） | 否 |
 | `JX_RUSTFS_PATH_STYLE` | RustFS 寻址（缺省取 `JX_S3_PATH_STYLE`） | 否 |
 | `JX_ENV` | 运行环境（prod/test）；test 开启可控时间窗 | 否 |
+| `JX_CALLBACK_DOMAIN` | **回调对外域名**（反代对外地址；用于入站自检与生成 `action_callback_url`，§17.4） | 否 |
+| `JX_ACTION_CALLBACK_TOKEN` | 三方审批定义下发的**回调校验 token**（敏感，§17.4） | **是** |
 
 > 全部走 `internal/config/env.go` 读取；**仓库内不出现任何凭据明文字面量**（FR-M8-06 / TC-25）。
 
@@ -965,6 +994,7 @@ flowchart LR
 | `feishu_api_calls_total`（按接口/月） | 飞书调用量 | 配额管理（FR-M0-08 / TC-25） |
 | `subscribe_state{approval_code}` | 各模板订阅状态 | 启动自检与运行期告警 |
 | `longconn_connected` | 长连接状态 | 健康检查 |
+| `tls_cert_expiry_days` | 回调反代 **TLS 证书剩余有效期（天）** | 防「证书到期 → **回调静默不可达**」（`04a §17.2` / 静默点 **S15**） |
 
 ### 8.3 告警
 
@@ -974,6 +1004,8 @@ flowchart LR
 | 同步路径耗时接近 3 秒 | 高 |
 | 死信增长 / 对账缺失持续 >0 | 中 |
 | 飞书调用量接近配额 | 中 |
+| 回调 TLS **证书剩余 ≤ 14 天**（或 ACME **续期失败**） | 中 |
+| 回调 TLS **证书剩余 ≤ 3 天** | 高 |
 
 ---
 
@@ -1033,6 +1065,8 @@ flowchart LR
 
 ### ADR-06　编号**不在自建侧生成**（流水号由飞书控件生成，自建侧只读）
 
+> ★ **转向 ③ 后作废**：编号现**由我方生成** —— `t_doc_seq` 事务读改写 + **终态锁号**（撤回后重发不复用旧号），见 `04a-Architecture-Increment-V2.md` **§6**。本 ADR 的「自建侧只读、不设编号器」**不再成立**（保留原条目以留痕）。
+
 | 项 | 内容 |
 |---|---|
 | 决策 | 业务单号「前缀-YYMM-####」由飞书「流水号控件」生成，自建侧只解析归档，**不设编号器** |
@@ -1042,6 +1076,8 @@ flowchart LR
 | 代价 | 单号语义受控件能力约束（如 Q7「#### 是否按月重置」不可控）；归档解析需容忍格式细节 |
 
 ### ADR-07　飞书通道**只收口 4 个接口 + 长连接，绝不轮询**
+
+> ★ **转向 ③ 后改写**：通道扩为「**出方向**：定义 / 实例推送（`external_approvals` / `external_instances`）+ **入方向**：回调（`action_callback_url`）+ **对账**（`external_instances/check`，5 分钟轮询）+ 通讯录同步」。原「只 4 接口 + 长连接、**绝不轮询**」**改判** —— 在 `04 §0`「无轮询」硬约束**单点解除**（仅审批侧对账 5 分钟轮询）；详见 `04a` **§0 定案表 / §4 / §9**。
 
 | 项 | 内容 |
 |---|---|
@@ -1103,3 +1139,6 @@ flowchart LR
 | 版本 | 日期 | 变更 | 作者 |
 |---|---|---|---|
 | V1.0 | 2026-09-26 | 首版。分层架构（接入/领域/存储/呈现）、Go 标准目录、SQLite DDL 草案（20 表）、事件流水线（同步/异步/死信/对账）、权限配置驱动、配置项清单、部署运维、可观测性、8 条 ADR、模块-FR 追溯、8 条架构视角问题。 | Bob（架构师） |
+| V1.1 | 2026-09-27 | 执行 `13` **B / E 组**（正本可见性 + 反代隐患，**不重排章节号**）：① §3.1 表清单 + §3.2 DDL 标注 —— `t_instance_field`【**已弃用 · F3**】、`t_subscribe_state`【**已弃用 · F1**】、`t_ledger_archive` / `t_instance_status_history` / `t_attachment`【**③ 写入者＝`flow.finalize`**】（B-1/B-2/B-5）；② §4 事件流水线加**作废 / 改写声明**，ADR-06【**作废**】、ADR-07【**改写**】（B-3）；③ §5 加**入站安全注**（E-1 `RealIP` 限流塌缩 / E-2 `internalAuth` 依赖回环）；④ §6.4 增 `JX_CALLBACK_DOMAIN` / `JX_ACTION_CALLBACK_TOKEN`；⑤ §8.2 增 `tls_cert_expiry_days` 指标、§8.3 增证书到期告警（A-2）。 | 架构师（Bob） |
+| V1.2 | 2026-09-27 | 执行 `13` **N6（C-3）**：**新增 §3.6「转向 ③ 的数据迁移与兼容策略（`instance_code` 新旧共存 · C-3 / `A30`）」** —— 共存判定 / 新旧判定（以**写入来源**，不靠格式猜）/ 回填方案（存量 ≈0，**推荐不回填**）/ 约束 / 落地与回读断言。★ **位点更正**：`04 §12` 为**变更记录**、**无「迁移策略」节** → 落 **§3.6**。 | 架构师（Bob） |
+| V1.3 | 2026-09-27 | 执行 `13` **Batch Q2**：§4.6 运维端点表「触发对账」由 `POST /internal/sync/reconcile` **改指 `POST /internal/approval/check`**（前者**已退役 · `410 Gone`**，`c940603`）。 | 架构师（Bob） |

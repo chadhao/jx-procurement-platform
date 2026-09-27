@@ -1,0 +1,129 @@
+# 14 · 回调入站部署 Runbook（公网 HTTPS · 飞书三方审批回调）
+
+> **目的**：把 `04a-Architecture-Increment-V2.md §17「部署与入网（公网入站）」` 的设计**落成可照做的部署步骤**（对应 `docs/13` **A-7**、`docs/11 §7.2` 部署物缺口 7 项）。
+> **适用**：转向 ③ 上线前，为**唯一入站面** `POST /approval/external/callback` 建立公网可达 HTTPS。
+> ★ **本文只给步骤与判据，不含实现代码**；凡未定项标 **`TODO`**（不空置、不臆造）。
+
+| 项 | 内容 |
+|---|---|
+| 文档名称 | 回调入站部署 Runbook |
+| 版本 | V1.1 |
+| 日期 | 2026-09-27 |
+| 关联 | `04a §17`（设计）· `11 §7.2 / §7.3`（缺口与隐患）· `13` A-1~A-7 · `05-API §3.8` |
+| 语言纪律 | 简体中文 |
+
+---
+
+## 0. 前置条件（缺一不可）
+
+| # | 前置 | 判据 |
+|---|---|---|
+| 0.1 | 公网域名已解析到云主机 | `dig +short $JX_CALLBACK_DOMAIN` 命中主机 IP |
+| 0.2 | 云主机 `80` / `443` 对外可达 | ACME 验证需要 |
+| 0.3 | 应用绑回环、systemd 单实例 | `JX_LISTEN_ADDR=127.0.0.1:8080` |
+| 0.4 | 配置键已就绪 | `JX_CALLBACK_DOMAIN` / `JX_ACTION_CALLBACK_TOKEN` 非空，`preflight.sh` 通过 |
+
+---
+
+## 1. 域名
+
+- `TODO`：**具体域名待用户提供**（`QV2-A19`）；确定后写入 `JX_CALLBACK_DOMAIN`，避免硬编码。
+- 建议：独立子域（如 `approval-callback.<企业域>`），**只承载回调**，与业务站点隔离。
+
+## 2. 证书（Let's Encrypt / ACME）
+
+- 用 Caddy / certbot / acme.sh **自动签发 + 自动续期**。
+- ★ **续期失败必须告警**；打点**证书剩余有效期（天）**（落 `04 §8.2 关键指标` + `04 §8.3 告警`）。
+- 判据：`echo | openssl s_client -connect $JX_CALLBACK_DOMAIN:443 2>/dev/null | openssl x509 -noout -dates` 到期日 ≥ 14 天。
+
+## 3. 反向代理
+
+| 项 | 要求 |
+|---|---|
+| 上游 | `127.0.0.1:8080`（Echo 回环） |
+| ★ 仅放行 | `POST /approval/external/callback`；**其余路径 `404`/`deny`**（含 `/internal/*`、`/api/*`、`/healthz`） |
+| 方法 | 同路径非 `POST` → `405` |
+| body | `client_max_body_size 64k` |
+| 限速 | 该路径 `limit_req`；★ 需透传 `X-Forwarded-For` 且应用**信任受信反代**（`04a §17.6` **E-1**），勿按 IP 单桶 |
+| TLS | 对外 `443`；`80` 仅 ACME / `301` 跳转 |
+
+## 4. IP 白名单 / WAF
+
+- `TODO`：**飞书回调出口 IP 段以官方公布为准**（待核对）；反代侧仅放行该网段，其余 → `403` + 拒绝计数。
+- 开启**基础 WAF 规则集**；回调体只按约定解密，**绝不动态求值**。
+- ★ 白名单是**纵深防御**，**不替代** `token` 校验。
+
+## 5. 应用侧自检（`preflight.sh`）
+
+见 `04a §17.5`，部署后逐条核：
+1. 反代已配 + 回调路径**可达**（非 `404`/`502`）；
+2. `GET $JX_CALLBACK_DOMAIN/internal/...`、`/api/...` → **`404`**（入站面未被放大）；
+3. 证书剩余 ≥ 14 天；
+4. `JX_LISTEN_ADDR` 为**回环**（非 `0.0.0.0`）。
+
+## 6. 联调（回调连通性）
+
+- 飞书端对一张联调单触发「同意 / 拒绝」→ 观察回调落 `t_flow_op_log`（`action_type` / `action_context` / `token` 校验通过）。
+- 反向验证：**故意错 token** → 应**拒绝并告警**（`04a §4.1` / `§10 S5`）。
+- 覆盖项与判定见 `09-Integration-Verification-Checklist.md`。
+
+## 7. 回滚
+
+| 场景 | 动作 |
+|---|---|
+| 证书 / 反代故障 | 摘除反代入站 → 回调不可达；审批降级为"**服务不可用期间点击未生效、需重点**"（`04a §0` 定案表） |
+| 误放大入站面 | 立即收敛反代规则为**仅回调一条路径**，并留痕 + 告警 |
+
+---
+
+## 8. 反向代理样例（Nginx 示意）
+
+```nginx
+server {
+  listen 443 ssl;
+  server_name $JX_CALLBACK_DOMAIN;
+  ssl_certificate     /etc/letsencrypt/live/$JX_CALLBACK_DOMAIN/fullchain.pem;
+  ssl_certificate_key /etc/letsencrypt/live/$JX_CALLBACK_DOMAIN/privkey.pem;
+
+  client_max_body_size 64k;                                  # A-4
+  limit_req_zone $binary_remote_addr zone=cb:10m rate=20r/s; # A-3（E-1 见下注）
+
+  location = /approval/external/callback {
+    # allow <飞书出口段>; deny all;                          # A-3（网段 TODO）
+    limit_req zone=cb burst=40 nodelay;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;  # E-1：应用须信任受信代理
+    proxy_set_header X-Real-IP       $remote_addr;
+    proxy_pass http://127.0.0.1:8080;
+  }
+  location / { return 404; }                                 # A-1：仅放行回调一条路径
+}
+```
+
+> ★ **E-1 注**：`limit_req_zone` 用 `$binary_remote_addr` 时，**反代须透传、且应用须信任 `X-Forwarded-For`**；若应用仍按"直连源 IP"（＝反代本机）分桶 → **单桶塌缩**（`04a §17.6`）。★ IP 白名单网段见 A-3（`TODO`）。
+
+## 9. 部署后一键验证（照做）
+
+```bash
+# 1) 仅放行回调一条路径（A-1）
+curl -s -o /dev/null -w '%{http_code}\n' -X POST https://$JX_CALLBACK_DOMAIN/approval/external/callback   # 期望：非 404/502（落到应用）
+curl -s -o /dev/null -w '%{http_code}\n'      https://$JX_CALLBACK_DOMAIN/internal/healthz                  # 期望：404
+# 2) body 上限（A-4）
+head -c 131072 /dev/zero | curl -s -o /dev/null -w '%{http_code}\n' -X POST --data-binary @- https://$JX_CALLBACK_DOMAIN/approval/external/callback  # 期望：413
+# 3) 证书有效期（A-2）
+echo | openssl s_client -connect $JX_CALLBACK_DOMAIN:443 2>/dev/null | openssl x509 -noout -dates
+# 4) 应用仍绑回环（A-5）
+ss -ltnp | grep ':8080'     # 期望：127.0.0.1:8080（非 0.0.0.0）
+```
+
+> ★ 未定项仍标 `TODO`（域名 / 飞书出口网段，`QV2-A19`）。
+
+---
+
+> ★ **纪律**：所有未定项**显式标 `TODO`**（含来源编号），**不得留空节、不得臆造具体值**。
+
+## 变更记录
+
+| 版本 | 日期 | 变更 | 作者 |
+|---|---|---|---|
+| V1.0 | 2026-09-27 | 首版骨架：前置条件 / 域名 / 证书 / 反代 / 白名单 / 应用自检 / 联调 / 回滚（`13` A-7、`11 §7.2`）。具体域名与飞书出口网段待定，标 `TODO`（`QV2-A19`）。 | 架构师（Bob） |
+| V1.1 | 2026-09-27 | 执行 `13` **N7**（补全）：新增 **§8 反向代理样例（Nginx）** + **§9 部署后一键验证命令**（`curl`/`openssl`/`ss`），把 `TODO` 收敛到**域名 / 飞书出口网段**两项（`QV2-A19`）。 | 架构师（Bob） |

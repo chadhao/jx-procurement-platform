@@ -7,7 +7,7 @@
 | 项 | 内容 |
 |---|---|
 | 文档名称 | 采购与费用审批平台（自建侧）· 接口设计 |
-| 版本 | V1.9 |
+| 版本 | V2.3（Batch Q2：`/internal/sync/reconcile` 退役 `410 Gone` + 错误码 `41000`） |
 | 日期 | 2026-09-26 |
 | 上游文档 | `01-PRD.md`、`02-UseCase.md`、`03-TestCase.md`、`04-Architecture.md` |
 | 语言纪律 | 简体中文 |
@@ -64,7 +64,7 @@ sequenceDiagram
 
 | 项 | 约定 |
 |---|---|
-| BasePath | 业务接口 `/api`；免登 `/auth`；内部运维 `/internal` 与 `/healthz` `/readyz` |
+| BasePath | 业务接口 `/api`；免登 `/auth`；内部运维 `/internal` 与 `/healthz` `/readyz`；★ **回调 `/approval/external/callback`**（**独立入站面**、不在 `/api` 组、**绕开会话中间件**，见 §3.14） |
 | 版本 | 首发 `v1` 语义（路径不带版本号，响应头 `X-API-Version: 1`）；重大不兼容变更时再引入 `/api/v2` |
 | 响应包裹 | 统一 `{ "code": 0, "data": ..., "message": "ok", "trace_id": "..." }`；`code=0` 表示成功 |
 | 分页 | 台账/审计等列表支持**页码分页**（`page`/`page_size`，默认 1/50，上限 200）与**游标分页**（`cursor`，用于大表/导出）；不混用 |
@@ -84,6 +84,7 @@ sequenceDiagram
 | 403 | 40300 | 无权限（资源级） | 该角色无该看板/接口权限（TC-06/07） |
 | 403 | 40301 | 行级越权 | 按 ID 访问他人/他部门记录（TC-06） |
 | 404 | 40400 | 资源不存在 | 实例/台账记录不存在 |
+| 410 | 41000 | **入口已退役** | 调用**已退役端点**（如 `POST /internal/sync/reconcile`；**body 指明权威入口**）。Batch B-2 新增 |
 | 409 | 40900 | 冲突 | **幂等键冲突（同一键用于不同请求载荷）**、唯一约束（重复事件写入 / 业务单号重复） |
 | 409 | 40901 | 状态不允许该操作 | 向只读同步存档表写入（TC-31）、已提交再改状态 |
 | 429 | 42900 | 限流 | 触发速率限制（对应飞书 429 语义的可观测化） |
@@ -227,6 +228,8 @@ sequenceDiagram
 
 #### `GET /api/instances/{instance_code}/fields`
 
+> ★ **作废（转向 ③ · F3）** —— 原生控件链作废，本端点**恒空、再无生产者**（`t_instance_field` 已弃用，见 `04 §3.1` / `11 §3 R03`）。保留签名仅为兼容旧前端，**前端不应再依赖**；表单字段改由**我方提交页 / 三方审批定义**持有（`04a §3`）。
+
 | 项 | 内容 |
 |---|---|
 | 用途 | 实例表单字段（**键值对**，按映射表转业务字段名；未映射字段一并返回但不进业务列） |
@@ -341,16 +344,18 @@ sequenceDiagram
 
 ### 3.8 内部运维端点（★ 需管理凭据，非飞书免登）
 
-> 与业务接口**不同鉴权域**：走 `JX_INTERNAL_TOKEN`（Header `X-Internal-Token`）或仅绑定内网/本机；**不参与飞书免登**。
+> 与业务接口**不同鉴权域**：**必须**走 `JX_INTERNAL_TOKEN`（Header `X-Internal-Token`）。★ **转向 ③（E-2）**：**不得**再依赖「仅绑定回环 / 内网」做鉴权 —— 引入反向代理后回环前提失效，内部端点会**不可达或对全网开放**；回环绑定只作**纵深防御**、**不替代 token**（见 `04a §17.6`）。**不参与飞书免登**。
 
 #### `GET /healthz`
 
 | 项 | 内容 |
 |---|---|
-| 用途 | 存活探针：进程存活 + 启动自检四项快照（订阅 / 长连接 / DB 可写 / 单实例） |
+| 用途 | 存活探针：进程存活 + 启动自检四项快照（**回调面连通 / 长连接 / DB 可写 / 单实例**） |
 | 权限要求 | 管理凭据或内网 |
-| 响应字段 | `{alive:true, checks:{subscribe, longconn, db_writable, single_instance}, version}` |
+| 响应字段 | `{alive:true, checks:{callback, longconn, db_writable, single_instance}, version}` |
 | 关联 FR | FR-M8-02、FR-M0-05 |
+
+> ★ **转向 ③（B-2）**：原「**订阅**」自检项**作废**（审批事件订阅 F1 取消），改为「**回调面连通**」（`04a §17.5`）；`t_subscribe_state` 已弃用（`04 §3.1` / `11 §3 R11`）。
 
 #### `GET /readyz`
 
@@ -358,20 +363,29 @@ sequenceDiagram
 |---|---|
 | 用途 | 就绪探针：是否可以接收并处理事件 |
 | 权限要求 | 管理凭据或内网 |
-| 响应字段 | 自检四项 + `worker_queue_depth`、`deadletter_total`、`last_reconcile{missing,filled}`、各 `approval_code` 订阅状态 |
+| 响应字段 | 自检四项 + `worker_queue_depth`、`deadletter_total`、`last_reconcile{missing,filled}`、**回调面连通 / 证书剩余天数** |
 | 错误码 | 50300（未就绪） |
 | 关联 FR | FR-M8-02、FR-M1-05（自检四项可查） |
 
-#### `POST /internal/sync/reconcile`
+#### `POST /internal/sync/reconcile` ★ **已退役（`410 Gone`）**
+
+> ★ **已退役此入口**（Batch B-2，`c940603`）：**返回 HTTP `410 Gone` + `code=41000`**，body **指明权威入口** `POST /internal/approval/check`。原"手动触发对账补拉"语义**已作废**（③ 下审批对账＝对 `check` 的**方向判断**，见 §3.8；本路由**收敛为通讯录侧**）。
 
 | 项 | 内容 |
 |---|---|
-| 用途 | 手动触发对账补拉（批量取实例 ID → 求差 → 取实例详情补录） |
-| 权限要求 | 管理凭据 |
-| 请求体 | `{ "approval_code": "…(可选，默认全部，待确认（Q1）)", "from": "…", "to": "…" }`（可空 → 使用默认时间窗） |
-| 响应字段 | `{ "missing": N, "filled": M }` |
+| 用途 | ★ **已退役** —— 原"手动触发对账补拉"不再提供；调用返回 `410 Gone` |
+| 鉴权 | 管理凭据（`X-Internal-Token`）；退役后仍校验 |
+| 响应 | ★ `410 Gone` · `code=41000` · body＝`该入口已退役：审批对账唯一入口为 POST /internal/approval/check（本路由收敛为通讯录侧，待 docs/08 实施）`（`handlers_ops.go:114`） |
+| 关联 FR | ~~FR-M0-07、FR-M0-08~~ → 转 **`POST /internal/approval/check`**（§3.8） |
+
+#### `POST /internal/approval/check`
+
+| 项 | 内容 |
+|---|---|
+| 用途 | 手动触发**审批对账**（对 `external_instances/check` 的 diff **判方向**后重推，`04a §9.2`）—— ★ **非**"缺则补"的旧 `reconcile`（旧路径退役见 `docs/11 T02b`） |
+| 鉴权 | `JX_INTERNAL_TOKEN`（`X-Internal-Token`，见 §3.8 前言） |
+| 响应 | `{ checked, missing, repushed }` |
 | 关联 FR | FR-M0-07、FR-M0-08 |
-| 备注 | 幂等；不属轮询（TC-05、TC-25） |
 
 #### `POST /internal/sync/subscribe`
 
@@ -393,6 +407,20 @@ sequenceDiagram
 | 响应字段 | 重放结果 + `replay_count` |
 | 关联 FR | FR-M3-07 |
 | 备注 | 重放仍走幂等键（TC-30） |
+
+#### `POST /internal/dev/inject-event`（★ 仅 `DEV_MODE=true` 时注册）
+
+| 项 | 内容 |
+|---|---|
+| 用途 | 开发/冒烟用：手工注入一条 `approval_instance` 事件，端到端验证「事件 → 落库 → 台账／看板」（B13） |
+| 权限要求 | 管理凭据（与其余内部端点同） |
+| 注册条件 | **仅当 `DEV_MODE=true`**；生产环境该路由**不存在**（404） |
+| 关联 FR | FR-M3-01、FR-M3-03（可测性） |
+| 备注 | ★ 与「我方不创建审批实例」的约束**不冲突**：本端点注入的是**事件**而非审批实例，且不进生产路径（B13、N2） |
+
+> ★ **为什么补登这一条**（2026-09-27 静默审计 C5）：该路由在 `DEV_MODE` 下真实存在，
+> 但文档未列。文档与实现不一致的后果是**反向**的 —— 联调时看到"多出来一个端点"，
+> 会怀疑是不是漏了鉴权或多了攻击面；写清楚"仅 DEV_MODE 注册"才是准确的口径。
 
 ---
 
@@ -520,6 +548,98 @@ sequenceDiagram
 | ★ 档位口径 | 变更审批档位 = **max（变更差额, 原合同金额）**（批复 A8，化整为零通道已关闭）。显式存了 `tier` 就用存的；否则按 max 现算并标注「max 取档 → …」 |
 | ★ 匹配方式 | 变更单指向原合同的 **JSON 键名尚未定稿（Q14）**，故匹配做成**键名无关的精确值比较**：`json_each(ext_json)` 展开对象后对**任意键的值**做等值比较（**绝不使用 `LIKE`**，防止 `ou_ab` 命中 `ou_abc` 式前缀越权，见 docs/06 §H.10 P0-A）；脏 JSON 由 `json_valid` 守卫，不使整条查询失败（同 §H.10 P0-B） |
 | 备注 | `ext_json` 键名候选：变更差额 `change_cents`/`change_amount_cents`/`delta_cents`；原合同金额 `original_cents`/`contract_cents`；档位 `tier`/`approval_tier`/`档位`。定稿后收敛为单键 |
+
+### 3.13 审批流转（我方页面 · **转向 ③ 新增**）
+
+> ★ **本节是 `docs/11 §4.2`「须新增路由」的契约正本**，补 `docs/11 **R11**`「我方页面两键端点缺失」缺口。★ **与 `04a §4 / §5` 一致**：四操作**仅在我方页面**发起（飞书侧无这些按钮），回调只有 APPROVE/REJECT。
+
+| 项 | 约定 |
+|---|---|
+| 鉴权 | **飞书免登会话**（`requireSession`）；逐端点叠加本人 / 角色 / 行级校验 |
+| 路径形如 | `POST /api/approval/{biz_no}/<action>` —— `{biz_no}` ＝**业务单号**（非 `instance_id`） |
+| 幂等 | 写操作支持 `Idempotency-Key`（§8）；★ **四操作 / 两键另以 `t_flow_op_log` 唯一约束兜底**（`04a §4.3`） |
+| ★ 推送 | 每次操作后**必须主动重推实例**（★ **默认 `update_mode=UPDATE`**；**仅"需删"与"首次"用 `REPLACE`**，`04a §3.1` 判据）；否则飞书待办**静默不更新** |
+| 响应 | 统一包裹（§2）；**状态机推进在异步侧** → 同步路径**只写 `op_log` + 入队**、返回成功（`code=0`） |
+
+#### `POST /api/approval/submit`
+
+| 项 | 内容 |
+|---|---|
+| 用途 | 我方提交：**生成编号** + 建实例 + **首推飞书**（`04a §3`） |
+| 鉴权 | 免登会话（申请人本人） |
+| 请求体 | `doc_type` · 表单字段 · `department` / `contact`（默认带出镜像，★ 提交时**实时回源校验一次**，D6） |
+| 响应 | `{ biz_no, instance_id, status }` |
+| 幂等 | `Idempotency-Key`；★ **业务单号唯一**（`UNIQUE(biz_no)`，重复 → `40900`） |
+| 错误码 | 40000、40100、40900、**40901**（定义缺失，`S7`：提交前校验 `t_approval_def` 存在） |
+| 关联 FR | FR-M2-01、FR-M9-11、FR-M9-17 |
+
+#### `POST /api/approval/{biz_no}/approve` 与 `/reject`
+
+| 项 | 内容 |
+|---|---|
+| 用途 | ★ **我方页面两键**（补 `docs/11 R11`）；★ **与回调走同一状态机出口**（`flow`），**不得两套语义** |
+| 鉴权 | 免登会话；**须 `assignee=me` 且任务 `PENDING`**（`04a §5.1`） |
+| 请求体 | `task_id` · `opinion`（可选）· `attachments`（可选） |
+| 响应 | `{ biz_no, node_id, status }` |
+| 幂等 | `t_flow_op_log`（`biz_no`,`task_id`,`op_type`）唯一；重复 → `INSERT OR IGNORE` + 200 no-op（`04a §4.3`） |
+| 错误码 | 40100、40301、40400、**40901**（非本人任务 / 非 `PENDING`） |
+| 关联 FR | FR-M0-15、★ **FR-M9-18**（我方页面 `approve` / `reject`） |
+
+#### 四操作：`transfer` / `addsign` / `rollback` / `cancel`
+
+| 操作 | 谁能做 | 关键规则（与 `01a §4` / `04a §5.2` 一致） | 推送 |
+|---|---|---|---|
+| `POST …/transfer` 转交 | 当前任务审批人本人 | 原任务 `TRANSFERRED`；**新增**同 `node_id` 任务（`task_id` 换 `assignee`/`round`）；★ **`update_mode=UPDATE`（非 `REPLACE`）** | `UPDATE` |
+| `POST …/addsign` 加签 | 当前任务审批人本人 | **新增**同 `node_id` 任务、按 **`task_order` 插到队尾**；★ **顺序会签**（`01a §4.3`） | `UPDATE` |
+| `POST …/rollback` 回退 | 当前任务审批人本人 | 实例**保持 `PENDING`**；上一节点任务置回 `PENDING` + `round+1`；★ **通知已被审批通过者**（`01a §4.7`） | `UPDATE` |
+| `POST …/cancel` 撤回 | **仅发起人本人** | 实例 → `CANCELED`；全部未终结任务 → `DONE`；**关闭流程、非删除**；重发＝**新号、不复用旧号**（`04a §5.4`） | `UPDATE`（终态） |
+
+> **四操作公共**：鉴权＝免登会话 + 本人/角色校验；幂等＝`t_flow_op_log` 唯一约束；**上限（可配）** 转交 ≤3 / 加签 ≤3 / 回退 ≤2（触顶 → `40901`）；原因**建议必填**；错误码 40000 / 40100 / 40301 / 40400 / 40900 / 40901；关联 FR＝**FR-M9-13 ~ FR-M9-16** 与 `01a §4`。
+
+#### `GET /api/approval/tasks`（我的待办）
+
+| 项 | 内容 |
+|---|---|
+| 用途 | 我方「我的待办」列表（★ **命名已定 ＝ `/tasks`**；`/my-tasks` 语义冗余，见 `docs/11 §4.2`） |
+| 数据源 | `t_flow_task`（`release_state='RELEASED'` ∧ `status='PENDING'` ∧ `assignee_open_id=me`） |
+| ★ 不变量 | 任一**非终态实例**的此类任务**恰 1 个**（`04a §2.3` 顺序会签不变量） |
+| 响应 | `items[]`：`biz_no` · `doc_type` · `node_name` · `task_id` · `task_order` · `applicant` · `amount`（有权） |
+| 关联 FR | FR-M9-14 |
+
+#### `GET /api/approval/{biz_no}`（详情 + 时间线）
+
+| 项 | 内容 |
+|---|---|
+| 用途 | 单实例审批详情；★ **时间线 ＝ `t_flow_op_log`**（细粒度操作留痕，含四操作 + 回调） |
+| 鉴权 | 免登会话 + **行级过滤**（越权 40301） |
+| 响应 | 主记录 + `tasks[]`（含 `release_state` / `task_order`）+ `ops[]` |
+| 错误码 | 40301、40400 |
+| 关联 FR | FR-M2-01、FR-M2-04、FR-M9-14 |
+
+#### `GET /api/approval/defs`（可选管理页）
+
+| 项 | 内容 |
+|---|---|
+| 用途 | 三方审批定义清单（`t_approval_def`）；管理页**可选** |
+| 鉴权 | 系统管理员（`/api/admin` 域语义） |
+| 关联 | `04a §3.5`（定义装载源）、FR-M0-13 |
+
+### 3.14 回调（入站面 · **转向 ③ 新增**）
+
+#### `POST /approval/external/callback`
+
+| 项 | 内容 |
+|---|---|
+| 用途 | 飞书 → 我方：`action_callback_url`；**仅 `APPROVE` / `REJECT`**（四操作**不在回调内**） |
+| ★ **鉴权＝绕开会话 / OIDC 中间件** | **不在 `/api` 组**、**绝不挂 `requireSession`** —— `docs/11 R14`：飞书回调请求**无 cookie**，挂上会话中间件＝ **401 全失败且静默**；本路由在会话路由组**之外**单独注册 |
+| 鉴权（业务层） | 校验 `token`（定义下发；非法 → **拒绝 + 告警**，`S5`）；`encrypt` 体按约定解密 |
+| 请求体 | `action_type` · `action_context`（定位 `biz_no`/`task_id`/节点）· `user_id` · `task_id` · `reason`/`attachments` · `token`/`encrypt` |
+| ★ **幂等键** | `t_flow_op_log`（`biz_no`,`task_id`,`op_type`）**唯一约束**；重复 → `INSERT OR IGNORE`、**直接回 200**（`04a §4.3`） |
+| ★ **响应＝落盘即 200** | 同步路径**只做**「校验 + 写 `op_log` + 入队」→ **毫秒级返回 HTTP 200**（官方口径 ≤10s，本设计**远低于**）；★ **不是**"按 10s 设计业务"；**业务（状态机推进 / 重推）全在异步侧**（`04a §4.4`） |
+| 错误码 | 40000（体非法）、40900（幂等冲突路径）、50000；★ **非法 token → 拒绝（40300）+ 告警**（**不返回 401**，避免暴露会话语义给飞书） |
+| 关联 FR | FR-M0-15、`04a §4` |
+
+> ★ **门禁（`C5`）**：本节与 §3.13 的端点**必须与 `router.go` 已注册路由双向一致** —— 否则 `scripts/audit_silent.py` 的 **C5**（路由 ↔ 05-API 双向差集）报「已注册但未提及」（`docs/11 §4.2` 注）。
 
 ---
 
@@ -705,15 +825,17 @@ sequenceDiagram
 
 ## 9. 明确不存在的接口（★ 设计约束，非遗漏）
 
+> ★ **转向 ③ 更新（V2.1）**：本表原为**模式 A（旁路）**下的"刻意不做"；③ 下**部分已反转**（审批流转迁至我方）—— 受影响行已就地标注（★ 行）。
+
 | 不存在 | 原因 | 依据 |
 |---|---|---|
-| **创建审批实例的接口 / 调用路径** | 发起入口为**飞书原生发起**（模式 A）；自建系统不参与审批流转，**不调「创建审批实例」** | README 硬约束 7；PRD N2 / FR-M0-11；技术方案书 §0 / §3.1；TC-25 |
-| 审批同意 / 驳回 / 转交 / 撤销接口 | 审批动作全部在飞书原生审批引擎内完成 | PRD N1 / §3.1 |
+| ~~**创建审批实例的接口 / 调用路径**~~ ★ **③ 后已反转** | ~~模式 A 下自建系统不参与审批流转~~ → ③ 下 `POST /api/approval/submit` **会调 `external_instances` 建实例**（§3.13） | ~~README 硬约束 7~~ → `04a §3` |
+| ~~审批同意 / 驳回 / 转交 / 撤销接口~~ ★ **③ 后已存在** | ~~审批动作全部在飞书原生引擎内完成~~ → ③ 下**我方页面** `approve`/`reject`/四操作（§3.13）；飞书侧仅**展示 + 两键** | ~~PRD N1~~ → `04a §4 / §5` |
 | 审批流实时预警 / 事前硬校验拦截接口 | 甲案下无法在发起时拦截，只做台账红标 + 只读提示 | PRD §8.1 / N5；UC-02 |
 | 集团侧数据回传 / 对齐接口 | 集团侧全人工、**不回传**；湖南侧止于「提交集团」 | PRD N3 / FR-M6-07；UC-12 |
 | 发票验真接口 | 本期不做 | PRD N8 |
 | **`approval_task` 节点级事件订阅** | **本期不做**：`inbox` 只订阅 `approval_instance`；节点轨迹的权威来源在**飞书审批详情页**，本系统再存一份是冗余副本。★ 这条**不是遗漏**——`t_status_history.task_node` 列保留但恒为 `null` | PRD **N10** / FR-M2-07（降级）；实现说明 §M.2 |
-| 定时轮询审批状态的接口 / 任务 | 设计纪律：**用事件订阅，绝不轮询** | README 硬约束 7；FR-M0-12 |
+| ~~定时轮询审批状态的接口 / 任务~~ ★ **③ 后部分反转** | ~~用事件订阅，绝不轮询~~ → ③ 下加**审批侧对账 5 分钟轮询**（`04a §9`；`04 §0`「无轮询」**单点解除**）；通讯录侧周期对账属既有设计、另计 | ~~README 硬约束 7~~ → `04a §0 / §9` |
 
 > **不存在上述接口是刻意的架构选择**：本系统是审批引擎的**旁路**，任何会让它"参与/影响审批流转"的能力都不提供。这条同时是 G1（自建系统故障不影响审批）的实现前提。
 
@@ -733,9 +855,12 @@ sequenceDiagram
 | `GET /api/contract/{biz_no}/changes` | FR-M4-07 |
 | `GET /api/audit/logs` | FR-M7-01~04 |
 | `GET /healthz`、`/readyz` | FR-M8-02、FR-M0-04/05 |
-| `POST /internal/sync/reconcile` | FR-M0-07、FR-M0-08 |
+| `POST /internal/sync/reconcile` ★ **已退役（`410 Gone`）** | ~~FR-M0-07、FR-M0-08~~ → 转 `POST /internal/approval/check` |
 | `POST /internal/sync/subscribe` | FR-M0-03、FR-M0-04 |
 | `POST /internal/events/{id}/replay` | FR-M3-07 |
+| `POST /approval/external/callback` | FR-M0-15（`04a §4`） |
+| `POST /api/approval/submit` · `…/approve` · `/reject` · `/transfer` · `/addsign` · `/rollback` · `/cancel` · `GET /api/approval/tasks` · `GET /api/approval/{biz_no}` · `GET /api/approval/defs` | FR-M2-01、★ **FR-M9-11 / FR-M9-13~18**、FR-M0-13（§3.13） |
+| `POST /internal/approval/check` | FR-M0-07、FR-M0-08 |
 
 ---
 
@@ -756,6 +881,10 @@ sequenceDiagram
 
 | 版本 | 日期 | 变更 | 作者 |
 |---|---|---|---|
+| V2.3 | 2026-09-27 | 执行 `13` **Batch Q2**：① §3.8 `POST /internal/sync/reconcile` 标 **★已退役（`410 Gone`）**（body 指明权威入口 `POST /internal/approval/check`）；② §10 索引同改；③ **§2.1 错误码表新增 `41000`（入口已退役）**（`codeGone` 原**就地定义**于 `handlers_ops.go`，工程师未越界，现**集中登记**防「同码异义」）。 | 架构师（Bob） |
+| V2.2 | 2026-09-27 | 执行 `13` **Batch P**（命名裁定）：§3.13 `GET /api/approval/tasks` 的「命名待统一」→「★ **命名已定 ＝ `/tasks`**」（`/my-tasks` 语义冗余，与 `GET /api/approval/{biz_no}` 同级）。其余端点契约不变。 | 架构师（Bob） |
+| V2.1 | 2026-09-27 | 执行 `13` **Batch O**（补 ③ 新增端点契约，对齐 `docs/11 §4.2` 与 `04a §4/§5`）：① **新增 §3.13 审批流转** —— `submit` / `approve`+`reject`（补 **`R11`**，与回调**同一状态机出口**）/ 四操作 `transfer`·`addsign`·`rollback`·`cancel`（转交＝`UPDATE` 非 `REPLACE`；加签＝**顺序会签**、按 `task_order` 插队尾）/ `GET /tasks`（待办，数据源 `t_flow_task`、不变量恰 1 个）/ `GET /{biz_no}`（时间线＝`t_flow_op_log`）/ `GET /defs`；② **新增 §3.14 回调** `POST /approval/external/callback`（★ **绕开会话/OIDC 中间件**、幂等键、**落盘即 200**）；③ §3.8 增 `POST /internal/approval/check`（**判方向**、非旧 reconcile）；④ §2 BasePath 补回调路径；⑤ **§9 反转标注**（创建实例 / 审批动作 / 轮询三条，③ 后已反转或部分反转）；⑥ §10 追溯补行。 | 架构师（Bob） |
+| V2.0 | 2026-09-27 | 执行 `13` **B / E 组**（接口侧正本回填）：① §3.4 `GET /api/instances/{code}/fields` 标 **【作废（F3）】**（原生控件链作废、端点恒空，不再有生产者）（B-1）；② §3.8 `/healthz` 自检项「**订阅**」→「**回调面连通**」（响应键 `subscribe` → `callback`）、`/readyz` 的"订阅状态"改"回调面连通 / 证书剩余天数"（B-2）；③ §3.8 内部端点鉴权**明确为 `JX_INTERNAL_TOKEN`**、**不得**再依赖回环（E-2）。 | 架构师（Bob） |
 | V1.9 | 2026-09-27 | **B38/B39 降级标注落地（纯文档，零代码）**：① §3.4 `/{code}/timeline` 响应字段 **`task_node` 标注「预留未用，本期恒为 `null`」**；② §6 事件接收行标注**只订阅 `approval_instance`**（`approval_task` 本期不接收）；③ ★ **§6 飞书接口清单修正** —— 原「附件**上传** / 下载」并称「仅 4 个」→ 拆为「**附件下载**（实用）」与「~~附件上传~~（**本期不调用**，模式 A 零调用点）」，标题改「**实际调用 4 个**」；④ §7 节点级事件行标注**本期不落库**；⑤ §9「明确不存在的接口」新增 **`approval_task` 节点级事件订阅**一行；⑥ §10 FR 追溯表 FR-M2-07 标注**降级**。对应 PRD §3.2 **N10** 与实现说明 §M.2 / §M.3。 | 交付总监 |
 | V1.8 | 2026-09-27 | **对象存储接入 + 凭证包含附件**：① §3.12 补「对象存储装配」（S3 主存手写 SigV4 / RustFS 主备双写 / 本地兜底 / 全空降级）；② §3.5 凭证包补「包内容」含 **`附件清单.csv`**（B39 缺口②：否则集团收到的是只有清单没有文件的空包）。 | 交付总监 |
 | V1.7 | 2026-09-27 | **附件（B39）**：新增 **§3.12 附件** —— `GET /api/instances/{code}/attachments`（元数据列表）与 `GET /api/attachment/{file_id}`（**按需拉取 + 主存缓存**；行级以**所属实例**为准；未登记 file_id → 404）。★ 明确**不提供上传**：模式 A 下附件由申请人在飞书侧上传，本系统只做接收。 | 交付总监 |
