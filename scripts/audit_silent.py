@@ -78,7 +78,16 @@ def hit(check, msg):
 
 # ---------------------------------------------------------------- C1 / C2
 def parse_columns():
-    """从迁移脚本解析 {table: [col, ...]}。"""
+    """从迁移脚本解析 {table: [col, ...]}。
+
+    ★ 覆盖两种建列方式（缺一不可）：
+      1) `CREATE TABLE IF NOT EXISTS` —— 表**创建**时的列；
+      2) `ALTER TABLE <t> ADD COLUMN <c>` —— 表**演进**时的列。
+    ★ 为什么必须补 ALTER：转向 ③ 引入的新列**几乎全是 ALTER 加的**（0001–0007 已应用、
+      **不得回改**，新列只能 ALTER）。若只解析 CREATE TABLE，ALTER 列**永远不在 C1 视野**
+      → 「建了列但没有任何写入者」（B42 老病）在 ALTER 路径上完全不可见 ——
+      即 C1 的检查范围只覆盖了"表创建"、没覆盖"表演进"。（QA 独立复核实测确认。）
+    """
     tables = {}
     for p, s in MIG.items():
         for m in re.finditer(r'CREATE TABLE IF NOT EXISTS\s+(\w+)\s*\((.*?)\n\);', s, re.S):
@@ -93,6 +102,15 @@ def parse_columns():
                     cols.append(cm.group(1))
                 # 表级约束（UNIQUE/PRIMARY KEY）跳过
             tables[table] = cols
+        # ★ ALTER TABLE ... ADD COLUMN（表演进）：与 CREATE TABLE 的列进**同一套** C1 检查。
+        #   实际语法形态（见 0003/0004/0007/0008/0009/0010），列名与类型恒在同一行：
+        #     ALTER TABLE t_flow_task ADD COLUMN release_state TEXT NOT NULL DEFAULT 'HELD';
+        #     ALTER TABLE t_instance  ADD COLUMN ext_json      TEXT NOT NULL DEFAULT '{}';
+        for m in re.finditer(r'ALTER\s+TABLE\s+(\w+)\s+ADD\s+COLUMN\s+(\w+)', s, re.I):
+            table, col = m.group(1), m.group(2)
+            cols = tables.setdefault(table, [])
+            if col not in cols:
+                cols.append(col)
     return tables
 
 
@@ -280,7 +298,7 @@ def check_test_fixture_bypass():
       C8b  测试夹具里造的**台账类型**中，有没有「任何 doc_type 都产生不了」的
            —— 那意味着用例在验证一条生产上永远走不到的路径（B37/B47 的形态）。
     """
-    # C8a：非测试代码的写入点 —— ★ **只认"写入调用"**，排除函数定义行
+    # C8a：非测试代码的写入点 —— ★ 只认"写入调用"，排除函数定义行
     #
     # ★ 为什么排除定义行：C8a 的语义是「写入点」，而定义行（`func (d *DB) UpsertArchiveTx(...)`）
     #   **不是写入点** —— 写入点是**调用**它的地方。把定义行算命中属**误判**；修好正则后，
@@ -288,31 +306,53 @@ def check_test_fixture_bypass():
     #   **本身就是假绿的另一种形态**（与 `3f76985`「扫 0 文件仍 OK」同病）。
     #   ★ 原则：**能用规则解决的就不要用例外**；白名单是"例外清单"，**越长越接近门禁失效**。
     #
-    # ★ 正则覆盖普通版与事务版（`UpsertArchive(` / `UpsertArchiveTx(`）：
-    #   ③ 新写入者 `flow.finalize` 用的是 **`UpsertArchiveTx`**（`internal/flow/finalize.go`）；
-    #   若只匹配 `UpsertArchive\(`，该行**永远进不了 if** → 白名单形同虚设（漏检），
-    #   且让 R22 **看起来已经修好**（比没修更危险）。
+    # ★★ 判据 = 「按目标类型」为主 + 「按函数名」为辅，两者取**并集**（宁多勿漏）：
+    #   · 主判据（类型）：调用参数里出现指向台账行的（指针）复合字面量
+    #     `&store.LedgerArchive{` / `&store.LedgerOps{`。
+    #     **"写台账"的本质是"往 t_ledger_archive / t_ledger_ops 写"，而不是"调用了某个
+    #     叫 UpsertXxx 的函数" —— 函数名只是实现细节，类型才是契约。**
+    #     ★ 为什么必须带 `&`（而非宽泛匹配 `store.LedgerXxx{`）：写 API 收的是**指针**
+    #       （`UpsertArchive(ctx, q, a *LedgerArchive)`），故写入恒为 `&store.LedgerXxx{`；
+    #       读路径用的是**值**复合字面量（`map[string]store.LedgerArchive{}` /
+    #       `[]store.LedgerArchive{...}`），**不带 `&`** —— 不加 `&` 会把这些读侧构造误报为写入。
+    #   · 辅判据（名字）：`UpsertArchive(` / `UpsertArchiveTx(` / `UpsertOps(` / `UpsertOpsTx(`。
+    #     ★ 只作**补充**：单靠名字会**改名即绕过**（`InsertArchive` / `AppendArchive` /
+    #       `UpsertLedger` 这类调用一律漏检）—— 而 R23 的教训正是「换个名字做的事，
+    #       最容易被当作无害」。故名字模式**不得**成为唯一判据。
     #
-    # allowed 精确路径白名单（已确认的"真实写入者"）。★ 收紧为"只认调用"后仅剩**真正的调用点**：
-    #           · internal/worker/ingest.go     —— `g.db.UpsertArchiveTx(...)`（旧事件链写入者）
-    #           · internal/httpapi/handlers_biz.go —— `d.DB.UpsertOps(...)`（运营字段写接口）
+    # allowed 精确路径白名单（已确认的"真实写入者"）：
+    #           · internal/worker/ingest.go     —— `g.db.UpsertArchiveTx(ctx, tx, &store.LedgerArchive{...})`
+    #           · internal/httpapi/handlers_biz.go —— `d.DB.UpsertOps(ctx, &store.LedgerOps{...})`
     #         （`internal/store/repo_ledger.go` 已移出：其中只有 **定义**、无调用，规则收紧后不再命中）
     allowed = ('internal/worker/ingest.go', 'internal/httpapi/handlers_biz.go')
     allowed_prefix = ('internal/flow/',)
-    decl_re = re.compile(r'^\s*func\b')                                 # 函数定义行 ≠ 写入点
-    write_re = re.compile(r'UpsertArchive(?:Tx)?\(|UpsertOps(?:Tx)?\(')
+    decl_re = re.compile(r'^\s*func\b')                                # 函数定义行 ≠ 写入点
+    type_re = re.compile(r'&\s*store\.Ledger(?:Archive|Ops)\s*\{')     # 主判据：目标类型（写入恒为指针复合字面量）
+    name_re = re.compile(r'UpsertArchive(?:Tx)?\(|UpsertOps(?:Tx)?\(')  # 辅判据：函数名（并集·宁多勿漏）
     for p, s in sorted(SRC.items()):
         r = rel(p)
         for i, line in enumerate(s.split('\n'), 1):
             if decl_re.match(line):
                 continue
-            if write_re.search(line) \
+            if (type_re.search(line) or name_re.search(line)) \
                     and not any(r == a for a in allowed) \
                     and not r.startswith(allowed_prefix):
                 hit('C8a', '%s:%d 非测试代码直接写台账（确认它是不是真实写入者）：%s'
                     % (r, i, line.strip()[:110]))
 
     # C8b：可生产台账集合 = 样例配置里所有 doc_type 的台账
+    #
+    # ★★ 已知盲区（**如实登记**，不通过"扩大名字清单"去掩盖）：
+    #   本检查**依赖夹具命名约定** —— 只认 `seedArchive*` / `seedOps*` 两个函数名前缀
+    #   （正则 `seedArchive(?:DocExt)?\(` / `seedOps\(`）。**换个夹具名即失效**：
+    #     · 改叫 `mkLedger(...)` / `putRow(...)` → 本检查**看不见**；
+    #     · 现存夹具名已**超出**正则覆盖面：`seedArchiveDoc(` / `seedArchiveExt(` 都**不**匹配
+    #       `seedArchive(?:DocExt)?\(`（`Doc`/`Ext` 后缀不在模式里）—— 即覆盖面本就偏窄。
+    #   ★ 为什么不"顺手"补全名字清单：补名字只是把"按名字"的毛病**又犯一遍**（换名照样绕过，
+    #     且清单越长越像"已覆盖"的错觉）。真正的解法应是**按目标表**判据（夹具里出现对
+    #     `t_ledger_archive` / `t_ledger_ops` 的写入即算），但本项目测试夹具**一律经 `seed*`
+    #     助手写库、无裸 `INSERT INTO t_ledger_*`**（已实测），故该判据当前**恒为空、无增益**，
+    #     暂不采用。此处**如实标注盲区**，供人工复核时对"改名夹具"保持警觉。
     import json
     sample = os.path.join(ROOT, 'docs/reference/config-mapping.sample.json')
     producible = set()
