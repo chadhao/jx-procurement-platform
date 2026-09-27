@@ -14,16 +14,21 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
 	"github.com/chadhao/jx-procurement-platform/internal/access"
+	"github.com/chadhao/jx-procurement-platform/internal/approval"
 	"github.com/chadhao/jx-procurement-platform/internal/config"
+	"github.com/chadhao/jx-procurement-platform/internal/flow"
 	"github.com/chadhao/jx-procurement-platform/internal/httpapi"
 	"github.com/chadhao/jx-procurement-platform/internal/inbox"
+	"github.com/chadhao/jx-procurement-platform/internal/number"
 	"github.com/chadhao/jx-procurement-platform/internal/objectstore"
 	"github.com/chadhao/jx-procurement-platform/internal/observ"
 	"github.com/chadhao/jx-procurement-platform/internal/permission"
@@ -133,6 +138,70 @@ func run(version string) error {
 	ingestor := worker.NewIngestor(db, maps, logger)
 	wk := worker.NewWorker(db, client, ingestor, metrics, logger)
 
+	// ---- ⑥′ 审批核心上电（架构转向 ③ · T03b/T04b）----
+	//
+	// ★ R09 上电：`flow` / `approval` / `number` 三包**首次进入生产装配**（此前零生产装配、
+	//   仅测试可达 → 所有正确性都跑在死代码路径上）。
+	//
+	// 三方审批定义客户端（ExternalApprovalClient）、出方向推送客户端（PushClient）、
+	// 对账 check 客户端（ExtCheckClient）：生产＝同一个 `*HTTPClient`；开发（无凭据）＝内存替身，
+	// 使 `DEV_MODE` 端到端可用（不依赖飞书凭据）。
+	var (
+		extClient   feishu.ExternalApprovalClient
+		pushClient  feishu.PushClient
+		checkClient feishu.ExtCheckClient
+	)
+	if hc, ok := client.(*feishu.HTTPClient); ok {
+		extClient, pushClient, checkClient = hc, hc, hc
+	} else {
+		extClient, pushClient, checkClient = feishu.NewFakeExternalApprovalClient(),
+			feishu.NewFakePushClient(), feishu.NewFakeExtCheckClient()
+	}
+
+	// 定义注册表：装配即用（定义注册/更新的管理端点另行排期，故此处不新增路由）。
+	approvalDefs := approval.NewRegistry(db, extClient, logger)
+	// 出方向推送服务（external_instances）。
+	pusher := feishu.NewPusher(db, pushClient, logger)
+	// 审批领域服务（唯一状态源）：注入台账映射（finalize 落账）与日志。
+	flowSvc := flow.NewWithConfig(db, env.AppID, maps, logger)
+
+	// 事件订阅者：① 通知（sender=nil → 仅落 EXPECTED，可被漏发检出）② 出方向推送。
+	// ★ 二者均在**事务提交后**由 flow.emit 分发（04a §2.5），失败不影响主流程。
+	flowSvc.Subscribe(flow.NewNotifier(db, nil, logger))
+	flowSvc.Subscribe(&flowPushSubscriber{pusher: pusher, log: logger})
+
+	// 回调异步推进端口：`flow.HandleCallback` 同步路径只落 op_log + 调此端口。
+	// ★ 本批以**同步适配器**落地（真正"worker 消费 op_log"的异步队列另排期；见本批报告）。
+	flowSvc.SetCallbackAdvancer(func(ctx context.Context, req flow.CallbackRequest) error {
+		switch strings.ToUpper(strings.TrimSpace(req.OpType)) {
+		case flow.OpApprove:
+			return flowSvc.Approve(ctx, req.BizNo, req.TaskID, req.OperatorOpenID, req.Reason)
+		case flow.OpReject:
+			return flowSvc.Reject(ctx, req.BizNo, req.TaskID, req.OperatorOpenID, req.Reason)
+		default:
+			return nil
+		}
+	})
+
+	// 新审批对账器（T03）：独立于 ingest、不复用旧 Reconciler；对 check 的 diff 判方向后重推。
+	approvalRec := sync.NewApprovalReconciler(db, sync.ExtSyncCheckerFunc(
+		func(ctx context.Context, code string) ([]sync.RemoteInstanceState, error) {
+			sts, err := checkClient.CheckExternalInstances(ctx, code)
+			if err != nil {
+				return nil, err
+			}
+			out := make([]sync.RemoteInstanceState, 0, len(sts))
+			for _, s := range sts {
+				out = append(out, sync.RemoteInstanceState{
+					InstanceID: s.InstanceID, UpdateTime: s.UpdateTime, Status: s.Status,
+				})
+			}
+			return out, nil
+		}), pusher, maps, metrics, logger)
+
+	// number 装配自检（R09）：单号周期错会**静默撞号**（04a §3.3）→ 启动即把当期 YYMM 打进日志。
+	logger.Info("单号格式自检（number 装配）", "yymm", number.YYMM(time.Now()), "sample_key", number.NumberKey("PR"))
+
 	// ---- ⑦ 订阅（③ 口径：不订阅审批事件，见 subscribeTargetCodes）----
 	// ★ R23 退役：旧「定时对账器 + 调度器」的装配已在此**摘除** —— 只要它还挂着，
 	//   每跑一次就经 reconcile.go 的补拉路径覆盖我方已推进状态（"对账"名义下的隐蔽覆盖）。
@@ -187,13 +256,17 @@ func run(version string) error {
 		Subscriber: subscriber,
 		// ★ Reconciler 不再装配（R23 退役）：Deps.Reconciler 保持零值 nil。
 		//   /internal/sync/reconcile 路由属旧路径，其退役/改造随 httpapi 一并排期。
-		Perm:    permLoader,
-		Auth:    auth,
-		Maps:    maps,
-		WebUI:   webui.Handler(),
-		Version: version,
-		Feishu:  client,
-		Objects: attachStore,
+		// ★ 审批核心（转向 ③）：页面两键 / 四操作 / 待办 / 入站回调 / 对账。
+		Flow:               flowSvc,
+		ApprovalDefs:       approvalDefs,
+		ApprovalReconciler: approvalRec,
+		Perm:               permLoader,
+		Auth:               auth,
+		Maps:               maps,
+		WebUI:              webui.Handler(),
+		Version:            version,
+		Feishu:             client,
+		Objects:            attachStore,
 	})
 	if env.IsDev() {
 		logger.Warn("开发模式已开启：已注册 POST /internal/dev/inject-event（仅本地验证用）")
@@ -206,6 +279,9 @@ func run(version string) error {
 		}
 	}()
 	wk.Start(ctx, workerPoolSize)
+
+	// ★ 审批对账循环（T03）：独立 goroutine；未配置外部 check 端口时该方法自行告警并空跑退出。
+	go approvalRec.Run(ctx)
 
 	// 长连接状态回填健康检查。
 	go func() {
@@ -256,5 +332,28 @@ func s3ConfigOrNil(endpoint, bucket, region, ak, sk string, pathStyle bool) *obj
 	return &objectstore.S3Config{
 		Endpoint: endpoint, Bucket: bucket, Region: region,
 		AccessKey: ak, SecretKey: sk, PathStyle: pathStyle,
+	}
+}
+
+// flowPushSubscriber 流程事件订阅者：每次状态变更后主动**重推**飞书 `external_instances`。
+//
+// ★ 为什么订阅推送（而非在各写路径各自内联调用）：状态迁移的唯一出口是 `flow`（04a §2.5），
+//
+//	由事件统一分发可保证"每次操作后都重推"，避免某条路径漏推导致飞书待办**静默不更新**（S2）。
+//
+// ★ 失败只记日志（审批已落库；推送可重试）——订阅者失败不得影响主流程（flow.emit 约束）。
+type flowPushSubscriber struct {
+	pusher *feishu.Pusher
+	log    *slog.Logger
+}
+
+// OnFlowEvent 实现 flow.Subscriber（推送当前实例快照；Pusher 内部按 update_time 幂等）。
+func (p *flowPushSubscriber) OnFlowEvent(ctx context.Context, ev flow.FlowEvent) {
+	if strings.TrimSpace(ev.BizNo) == "" || p.pusher == nil {
+		return
+	}
+	if _, err := p.pusher.Push(ctx, ev.BizNo); err != nil {
+		p.log.Error("流程事件推送失败（审批已落库，推送可重试）",
+			"biz_no", ev.BizNo, "event", string(ev.Type), "error", err.Error())
 	}
 }

@@ -14,7 +14,9 @@ import (
 	"github.com/labstack/echo/v4/middleware"
 
 	"github.com/chadhao/jx-procurement-platform/internal/access"
+	"github.com/chadhao/jx-procurement-platform/internal/approval"
 	"github.com/chadhao/jx-procurement-platform/internal/config"
+	"github.com/chadhao/jx-procurement-platform/internal/flow"
 	"github.com/chadhao/jx-procurement-platform/internal/inbox"
 	"github.com/chadhao/jx-procurement-platform/internal/objectstore"
 	"github.com/chadhao/jx-procurement-platform/internal/observ"
@@ -36,11 +38,19 @@ type Deps struct {
 	Worker     *worker.Worker
 	Subscriber *jsync.Subscriber
 	Reconciler *jsync.Reconciler
-	Perm       *permission.Loader
-	Auth       *access.Authenticator
-	Maps       *config.Maps
-	WebUI      http.Handler
-	Version    string
+	// Flow 审批领域服务（架构转向 ③ 上电，T03b/T04b）：页面两键 / 四操作 / 待办 / 入站回调。
+	// ★ 回调与页面两键**走同一状态机出口**（docs/11 R11），故共用此一个服务实例。
+	Flow *flow.Service
+	// ApprovalDefs 三方审批定义注册表（approval.Registry + feishu.ExternalApprovalClient）。
+	// 装配即用：定义注册/更新经此实例；对应的管理端点另行排期（本批不新增路由，避免与 docs 漂移）。
+	ApprovalDefs *approval.Registry
+	// ApprovalReconciler 审批对账器（T03）：`POST /internal/approval/check` 唯一入口（R24）。
+	ApprovalReconciler *jsync.ApprovalReconciler
+	Perm               *permission.Loader
+	Auth               *access.Authenticator
+	Maps               *config.Maps
+	WebUI              http.Handler
+	Version            string
 	// Feishu 飞书客户端：附件**按需拉取**需要（B39）。为 nil 时下载端点返回 502。
 	Feishu feishu.Client
 	// Objects 附件对象存储（主存）。为 nil 时**不缓存、直接转发**（降级，不是静默丢功能）。
@@ -68,6 +78,9 @@ func NewRouter(d Deps) *echo.Echo {
 	internal.GET("/readyz", d.handleReadyz)
 	internal.POST("/internal/sync/subscribe", d.handleSubscribe)
 	internal.POST("/internal/sync/reconcile", d.handleReconcile)
+	// ★ 审批对账唯一入口（R24）：对 external_instances/check 的 diff 判方向后重推。
+	//   与旧 `/internal/sync/reconcile`（410 Gone）是**两个不同职能**，不重复。
+	internal.POST("/internal/approval/check", d.handleApprovalCheck)
 	internal.POST("/internal/events/:id/replay", d.handleReplay)
 	// ★ 开发模式注入端点：仅当 DEV_MODE=true 时注册（无凭据时的端到端验证路径）。
 	if d.Env != nil && d.Env.IsDev() {
@@ -77,6 +90,12 @@ func NewRouter(d Deps) *echo.Echo {
 	// ---- 免登（公开）----
 	e.GET("/auth/feishu/callback", d.handleFeishuCallback)
 	e.POST("/auth/logout", d.handleLogout)
+
+	// ---- ★ 入站回调（飞书 → 我方；独立入站面）----
+	// ★★ 必须挂 **root `e`**、与 `/auth/*` 同组，**绝不进 `api` 组** —— 飞书回调请求
+	//    **无会话 cookie**，若挂 `requireSession` 会 401 全失败且静默（docs/11 R14 / docs/05 §3.14）。
+	//    该路径**不走** api 组、不施会话中间件；业务层凭 action_callback_token 校验（flow.HandleCallback）。
+	e.POST("/approval/external/callback", d.handleExternalApprovalCallback)
 
 	// ---- 业务接口（会话域，自动施加行·列过滤）----
 	api := e.Group("/api", d.requireSession)
@@ -92,6 +111,19 @@ func NewRouter(d Deps) *echo.Echo {
 	api.GET("/ledger/:table/:id", d.handleLedgerGet)
 	api.PATCH("/ledger/:table/:id", d.handleLedgerPatch)
 	api.GET("/audit/logs", d.handleAuditLogs)
+
+	// ---- 审批流转（架构转向 ③；T04b；docs/05-API §3.13）----
+	//	★ 页面两键与入站回调**走同一状态机出口**（flow），不得两套语义（docs/11 R11）。
+	//	★ 路径参数 `:biz_no` ＝**业务单号**（非 instance_id）。
+	api.POST("/approval/:biz_no/approve", d.handleApprovalApprove)
+	api.POST("/approval/:biz_no/reject", d.handleApprovalReject)
+	// 四操作（转交 / 加签 / 回退 / 撤回）；★ 加签另带 timing ∈ {AFTER, BEFORE}（缺省 AFTER）。
+	api.POST("/approval/:biz_no/transfer", d.handleApprovalTransfer)
+	api.POST("/approval/:biz_no/addsign", d.handleApprovalAddSign)
+	api.POST("/approval/:biz_no/rollback", d.handleApprovalRollback)
+	api.POST("/approval/:biz_no/cancel", d.handleApprovalCancel)
+	// 我的待办（★ 命名已定 ＝ `/tasks`，非 `/todo`）。
+	api.GET("/approval/tasks", d.handleApprovalTasks)
 
 	// ---- 看板（M5，只读；行级过滤在 SQL 层、列级投影在序列化层）----
 	//	★ dashboard:{1..4} 权限资源按看板 id 分派，见 handlers_dashboard.go / docs/05-API.md §3.3。

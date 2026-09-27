@@ -93,6 +93,30 @@ func TestReconcileRouteRetiredGone(t *testing.T) {
 	}
 }
 
+// TestApprovalCoreWiredInBootstrap 断言转向 ③ 的审批核心已**上电**（R09）。
+//
+// ★ 为什么必须守：此前 `flow` / `approval` / `number` 三包**零生产装配、仅测试可达** ——
+// 所有正确性都跑在死代码路径上（R09）。本测试锁定"三包进入 bootstrap 生产装配"这一事实。
+func TestApprovalCoreWiredInBootstrap(t *testing.T) {
+	src := readPackageSource(t, "bootstrap.go")
+	required := []string{
+		"internal/flow",              // flow 领域服务
+		"internal/approval",          // 三方审批定义注册表
+		"internal/number",            // 单号装配自检
+		"flow.NewWithConfig",         // 构造 flow.Service
+		"approval.NewRegistry",       // 构造定义注册表
+		"feishu.NewPusher",           // 出方向推送服务
+		"sync.NewApprovalReconciler", // 新审批对账器（T03）
+		"go approvalRec.Run(ctx)",    // 对账循环独立 goroutine
+		"SetCallbackAdvancer",        // 回调异步推进端口
+	}
+	for _, sym := range required {
+		if !strings.Contains(src, sym) {
+			t.Errorf("bootstrap.go 缺少审批核心装配符号 %q（R09：三包须进入生产装配）", sym)
+		}
+	}
+}
+
 // readPackageSource 读取本包目录下的源文件内容。
 //
 // 说明：`go test` 运行时工作目录＝被测包目录（cmd/jxapproval），故可直接读包内文件名。
