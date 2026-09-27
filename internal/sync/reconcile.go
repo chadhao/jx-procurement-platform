@@ -11,7 +11,6 @@ import (
 	"github.com/chadhao/jx-procurement-platform/internal/observ"
 	"github.com/chadhao/jx-procurement-platform/internal/platform/feishu"
 	"github.com/chadhao/jx-procurement-platform/internal/store"
-	"github.com/chadhao/jx-procurement-platform/internal/worker"
 )
 
 // defaultLookback 首次对账默认回看时长（尚无游标时）。
@@ -36,11 +35,10 @@ type Reconciler struct {
 
 // NewReconciler 构造对账器。
 //
-// ★ 形参 `_ *worker.Ingestor` **已作废**（R23 退役旧写入者）：为兼容既有调用方
+// ★ 原 `ingestor *worker.Ingestor` 形参**已删除**（R23 退役旧写入者）：本器不再持有、
 //
-//	（`internal/httpapi` 的测试夹具）暂保留该形参位，但本器**不再持有、也不再触发 ingest**。
-//	待旧路径整体退役后，此形参将一并删除。
-func NewReconciler(db *store.DB, client feishu.Client, _ *worker.Ingestor, maps *config.Maps, m *observ.Metrics, log *slog.Logger) *Reconciler {
+//	也不再触发 ingest（补录路径已退役）。
+func NewReconciler(db *store.DB, client feishu.Client, maps *config.Maps, m *observ.Metrics, log *slog.Logger) *Reconciler {
 	if m == nil {
 		m = observ.NewMetrics()
 	}

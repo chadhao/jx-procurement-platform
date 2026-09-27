@@ -285,13 +285,18 @@ def check_test_fixture_bypass():
     #   allowed_prefix 目录白名单：③ 下台账/状态史/附件的**新写入者是 internal/flow**
     #                  （`flow.finalize`，FR-M9-12）。不加它，会把"接管者"误报成"越权写入者"
     #                  （R22：门禁自身失效——漏检 + 误报）。
+    #
+    # ★ 正则必须**同时**覆盖事务版 `UpsertArchiveTx(` / `UpsertOpsTx(`：
+    #   ③ 新写入者 `flow.finalize` 用的是 **`UpsertArchiveTx`**（`internal/flow/finalize.go`）。
+    #   若只匹配 `UpsertArchive\(`，`flow/finalize.go` 那行**永远进不了 if** →
+    #   白名单再加也没用 → **仍是漏检**，且让 R22 **看起来已经修好**（比没修更危险）。
     allowed = ('internal/worker/ingest.go', 'internal/store/repo_ledger.go',
                'internal/httpapi/handlers_biz.go')
     allowed_prefix = ('internal/flow/',)
     for p, s in sorted(SRC.items()):
         r = rel(p)
         for i, line in enumerate(s.split('\n'), 1):
-            if re.search(r'UpsertArchive\(|UpsertOps\(', line) \
+            if re.search(r'UpsertArchive(?:Tx)?\(|UpsertOps(?:Tx)?\(', line) \
                     and not any(r == a for a in allowed) \
                     and not r.startswith(allowed_prefix):
                 hit('C8a', '%s:%d 非测试代码直接写台账（确认它是不是真实写入者）：%s'

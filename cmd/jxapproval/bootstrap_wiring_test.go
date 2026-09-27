@@ -71,6 +71,28 @@ func TestLongConnDoesNotRouteApprovalEventsToSink(t *testing.T) {
 	}
 }
 
+// TestReconcileRouteRetiredGone 断言：旧审批对账入口 `/internal/sync/reconcile` 的处理器
+// 已**显式退役**（HTTP 410 Gone + 指明权威入口），且不再触发旧对账器。
+//
+// ★ 为什么必须守（B17：假入口 / R18·P23：看起来能跑但语义已错）：
+//
+//	· 若处理器退回 `d.Reconciler.Run(...)`：`Deps.Reconciler` 现为零值 nil → **空指针 500**，
+//	  而真实语义是"入口已退役"（不可诊断）；
+//	· 若有人只加 nil 守卫返回 501/200：会留下一个"看起来还能用"的**假入口**。
+//	故以源码扫描断言：`handlers_ops.go` 的处理器必含 410 与权威入口、且不含旧调用。
+func TestReconcileRouteRetiredGone(t *testing.T) {
+	src := readPackageSource(t, "../../internal/httpapi/handlers_ops.go")
+	if !strings.Contains(src, "http.StatusGone") {
+		t.Fatalf("handleReconcile 必须显式返回 http.StatusGone（410）—— 见 docs/11 §4.1 / R24")
+	}
+	if !strings.Contains(src, "POST /internal/approval/check") {
+		t.Fatalf("handleReconcile 的 410 body 必须指明权威入口 POST /internal/approval/check")
+	}
+	if strings.Contains(src, "d.Reconciler.Run") {
+		t.Fatalf("handleReconcile 不得再调用 d.Reconciler.Run —— 旧对账器已随 R23 退役")
+	}
+}
+
 // readPackageSource 读取本包目录下的源文件内容。
 //
 // 说明：`go test` 运行时工作目录＝被测包目录（cmd/jxapproval），故可直接读包内文件名。

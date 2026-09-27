@@ -38,7 +38,7 @@ func newAdminTestApp(t *testing.T) (*echo.Echo, *store.DB, *access.Authenticator
 	ingestor := worker.NewIngestor(db, maps, nil)
 	wk := worker.NewWorker(db, client, ingestor, metrics, nil)
 	sub := jsync.NewSubscriber(db, client, maps, metrics, nil)
-	rec := jsync.NewReconciler(db, client, ingestor, maps, metrics, nil)
+	rec := jsync.NewReconciler(db, client, maps, metrics, nil)
 	perm := permission.NewLoader(db)
 	sessions := access.NewStore("test-session-key", time.Hour)
 	auth := access.NewAuthenticator(db, sessions, nil, true, nil)

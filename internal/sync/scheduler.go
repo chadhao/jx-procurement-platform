@@ -8,6 +8,17 @@ import (
 	"github.com/chadhao/jx-procurement-platform/internal/observ"
 )
 
+// ★ 退役状态（R23）：本文件的「定时对账器」**已无任何调用方** —— 唯一装配点
+// `cmd/jxapproval/bootstrap.go` 已在 Batch B 摘除（旧对账"补拉"会覆盖我方已推进状态）。
+//
+// ★ 为什么保留而非删除：退役的**证据**是「不再装配 + `bootstrap_wiring_test.go` 守卫」，
+// 删除文件反而看不出它曾被退役。
+//
+// ★ 与新对账器的关系：新对账器**不复用**本 `Scheduler`/`Reconciler` —— 它是独立的
+// `sync/approval_reconcile.go`（对 `external_instances/check` 的 diff 做**方向判断**与重推，
+// 依 `docs/11 §4.1` / `R24`，另行排期），由新的调度装配（T03）驱动。本 `Scheduler` 仅为
+// 已作废的「旧实例补拉器」的定时外壳，届时连同旧 `Reconciler` 一并处置。
+//
 // Scheduler 每日定时对账（可配置间隔；test 环境支持可控时间窗，架构 §4.5）。
 type Scheduler struct {
 	rec      *Reconciler

@@ -7,6 +7,15 @@ import (
 	"github.com/chadhao/jx-procurement-platform/internal/store"
 )
 
+// ★ 退役状态（R23）：本文件的游标读写（`windowFor` / `recordCursor`）仅被旧 `Reconciler.Run`
+// 使用，而旧 `Reconciler` 已不再装配；`LastReconcile` **已无任何调用方**（勿据此以为 /readyz
+// 会暴露它）。
+//
+// ★ 与新对账器的关系：`t_sync_cursor` 表在 ③ 下**要改语义复用** —— 对账对象由「实例」改为
+// `external_instances/check`（依 `docs/11 §4.1` / `R24`）。故裁定为：**表保留、语义必改、
+// 旧 `Reconciler` 代码不复用**；待新对账器（`sync/approval_reconcile.go`，另行排期）落地，
+// 本文件的游标逻辑再按新语义处置（现保留，不删）。
+//
 // cursorKindReconcile 对账游标类型。
 const cursorKindReconcile = "reconcile"
 
