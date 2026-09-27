@@ -62,6 +62,25 @@ VALUES (?,?,?,?,?,?,?)`,
 	return nil
 }
 
+// HasNotifyLog 判定某条通知（key＝biz_no+target+event+channel）是否**已存在**（任意状态）。
+//
+// ★ 用途＝「新待办产生」通知的幂等去重（FR-M0-17）：同键已登记 ⇒ 不重复发送。
+// 只读判定，不改动既有两阶段（EXPECTED → SENT/FAILED）机制。
+func (d *DB) HasNotifyLog(ctx context.Context, bizNo, target, event, channel string) (bool, error) {
+	var id int64
+	err := d.QueryRowContext(ctx,
+		`SELECT id FROM t_notify_log WHERE biz_no = ? AND target_open_id = ? AND event = ? AND channel = ? LIMIT 1`,
+		bizNo, target, event, channel).Scan(&id)
+	switch {
+	case err == nil:
+		return true, nil
+	case errors.Is(err, sql.ErrNoRows):
+		return false, nil
+	default:
+		return false, fmt.Errorf("store: 查询通知是否存在失败: %w", err)
+	}
+}
+
 // UpdateNotifyStatus 回填通知发送结果（按 biz_no+target+event+channel）。
 func (d *DB) UpdateNotifyStatus(ctx context.Context, bizNo, target, event, channel, status, lastErr string) error {
 	var sent any

@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"hash/fnv"
 	"log/slog"
 	"net/http"
 	"strings"
@@ -72,9 +73,11 @@ func NewNotifySender(db *store.DB, client *HTTPClient, detailBase string, log *s
 
 // Send 给 targetOpenID 发一条审批 Bot 消息（通知）。
 //
-// ★ 事件域：`flow.Notifier` 目前仅对「转交 / 回退 / 撤回」（notifyOnType）产生通知，
-// target＝该单**已审批通过者**（01a §4.7）——本实现按通用「审批状态更新」文案组装，
-// 「新待办产生」类通知事件为既有 notifier 口径的后续扩展，不在本批范围。
+// ★ 事件域（FR-M0-17 接线后两类齐备，均走本方法）：
+//   - 「通知已通过者」类（`flow.Notifier` 既有口径：TRANSFERRED / ROLLED_BACK / CANCELED，
+//     target＝该单已审批通过者，01a §4.7）—— 按通用「审批状态更新」文案组装；
+//   - 「新待办产生」类（`TASK_ACTIVATED:<task_id>`，FR-M0-17；02-UseCase UC-23 通知时机：
+//     只有被激活（RELEASED）的任务才发通知）—— target＝新激活任务的 assignee。
 //
 // ★★ 成败判定铁律：**`code != 0` 一律视为失败**（HTTP 200 不代表成功 —— 实测 60001
 // actionUrls incomplete 即 HTTP 200）。本方法经 `HTTPClient.doJSON` 发出，其统一按
@@ -179,15 +182,34 @@ func (s *NotifySender) Send(ctx context.Context, bizNo, targetOpenID, event stri
 	return nil
 }
 
+// feishuUUIDMaxLen 飞书 message/send 的 uuid 官方上限（64 字符）。
+const feishuUUIDMaxLen = 64
+
 // uuid 幂等 ID（确定性）：同 (单号, 事件, 收件人) 一小时内飞书侧只发一次 ⇒
 // 发送重试天然去重；跨小时重发（如修复循环重试）为新消息，符合预期。
+//
+// ★ 事件键含 task_id 时（`TASK_ACTIVATED:<task_id>`，FR-M0-17）拼接结果可能超 64 字符
+// ⇒ 超限时退化为「前缀 + 64 位 FNV-1a 摘要」（确定性不变，幂等语义不变）。
+// ★ 不超限（既有三类事件 TRANSFERRED/ROLLED_BACK/CANCELED）⇒ 与接线前**逐字节相同**，
+// 既有行为不受影响（实测成功的 uuid 必然 ≤64，不会落入摘要分支）。
 func (s *NotifySender) uuid(bizNo, target, event string) string {
-	return fmt.Sprintf("jx-notify-%s-%s-%s", bizNo, event, target)
+	id := fmt.Sprintf("jx-notify-%s-%s-%s", bizNo, event, target)
+	if len(id) <= feishuUUIDMaxLen {
+		return id
+	}
+	h := fnv.New64a()
+	_, _ = h.Write([]byte(id)) // hash.Write 永不返回错误
+	return fmt.Sprintf("jx-notify-%016x", h.Sum64())
 }
 
 // notifyEventText 事件 → 通知文案（feishu 包不反向依赖 flow，字面量与 flow 事件常量对齐）。
 func notifyEventText(event string) string {
-	switch strings.ToUpper(strings.TrimSpace(event)) {
+	e := strings.ToUpper(strings.TrimSpace(event))
+	// 「新待办产生」事件键携带 task_id（`TASK_ACTIVATED:<task_id>`，FR-M0-17）→ 按前缀匹配。
+	if strings.HasPrefix(e, "TASK_ACTIVATED") {
+		return "您有新的审批待办，请及时处理"
+	}
+	switch e {
 	case "TRANSFERRED": // flow.EventTransferred
 		return "您审批的单据已被转交，特此知悉"
 	case "ROLLED_BACK": // flow.EventRolledBack
