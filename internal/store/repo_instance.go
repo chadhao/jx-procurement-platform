@@ -23,8 +23,8 @@ INSERT INTO t_instance (
   instance_code, approval_code, doc_type, biz_no, biz_no_prefix, biz_no_yymm, biz_no_seq,
   status, status_raw, applicant_open_id, applicant_name, department, amount_cents,
   purpose_class_l1, purpose_class_l2, supplier, source, created_at, updated_at,
-  update_time, prev_biz_no, cancel_reason, cancel_at, push_hash, push_at
-) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+  update_time, prev_biz_no, cancel_reason, cancel_at, push_hash, push_at, ext_json
+) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
 ON CONFLICT(instance_code) DO UPDATE SET
   approval_code     = excluded.approval_code,
   doc_type          = COALESCE(NULLIF(excluded.doc_type,''), t_instance.doc_type),
@@ -32,11 +32,23 @@ ON CONFLICT(instance_code) DO UPDATE SET
   biz_no_prefix     = COALESCE(NULLIF(excluded.biz_no_prefix,''), t_instance.biz_no_prefix),
   biz_no_yymm       = COALESCE(NULLIF(excluded.biz_no_yymm,''), t_instance.biz_no_yymm),
   biz_no_seq        = COALESCE(NULLIF(excluded.biz_no_seq,''), t_instance.biz_no_seq),
-  status            = excluded.status,
+  -- ★ R18 守卫：**终态不得倒退**。库中已是终态（APPROVED/REJECTED/CANCELED）时，
+  --   拒绝被改回任何非终态 —— 堵住「旧事件链 / 旧对账补拉把已终态覆盖回 PENDING」这一
+  --   最危险的静默（界面看着正常、状态却退了，docs/11 R18/R23）。
+  --   终态 → 终态（含撤回改判等未来场景）与 非终态 → 任意 均照常写入。
+  status            = CASE
+                        WHEN t_instance.status IN ('APPROVED','REJECTED','CANCELED')
+                         AND excluded.status NOT IN ('APPROVED','REJECTED','CANCELED')
+                        THEN t_instance.status
+                        ELSE excluded.status
+                      END,
   status_raw        = COALESCE(NULLIF(excluded.status_raw,''), t_instance.status_raw),
-  applicant_open_id = COALESCE(NULLIF(excluded.applicant_open_id,''), t_instance.applicant_open_id),
-  applicant_name    = COALESCE(NULLIF(excluded.applicant_name,''), t_instance.applicant_name),
-  department        = COALESCE(NULLIF(excluded.department,''), t_instance.department),
+  -- ★ R17 write-once（docs/11 R17）：申请人身份与所属部门**一旦写入不得被覆盖**
+  --   （旧语义「非空即覆盖」会让后到的报文中缺省/异构身份把已采集身份抹掉）。
+  --   语义＝「库中已有非空值则保留，仅当其为空时才用新值填充」。
+  applicant_open_id = COALESCE(NULLIF(t_instance.applicant_open_id,''), excluded.applicant_open_id),
+  applicant_name    = COALESCE(NULLIF(t_instance.applicant_name,''), excluded.applicant_name),
+  department        = COALESCE(NULLIF(t_instance.department,''), excluded.department),
   amount_cents      = COALESCE(excluded.amount_cents, t_instance.amount_cents),
   purpose_class_l1  = COALESCE(NULLIF(excluded.purpose_class_l1,''), t_instance.purpose_class_l1),
   purpose_class_l2  = COALESCE(NULLIF(excluded.purpose_class_l2,''), t_instance.purpose_class_l2),
@@ -50,7 +62,9 @@ ON CONFLICT(instance_code) DO UPDATE SET
   cancel_reason     = COALESCE(NULLIF(excluded.cancel_reason,''), t_instance.cancel_reason),
   cancel_at         = COALESCE(NULLIF(excluded.cancel_at,''), t_instance.cancel_at),
   push_hash         = COALESCE(NULLIF(excluded.push_hash,''), t_instance.push_hash),
-  push_at           = COALESCE(NULLIF(excluded.push_at,''), t_instance.push_at)
+  push_at           = COALESCE(NULLIF(excluded.push_at,''), t_instance.push_at),
+  -- ★ ext_json：空串不覆盖已有（防「落后快照把已构造的关联键抹成空」，同 R19）。
+  ext_json          = COALESCE(NULLIF(excluded.ext_json,''), t_instance.ext_json)
 `,
 		in.InstanceCode, in.ApprovalCode, nullStr(in.DocType), nullStr(in.BizNo),
 		nullStr(in.BizNoPrefix), nullStr(in.BizNoYYMM), nullStr(in.BizNoSeq),
@@ -58,7 +72,7 @@ ON CONFLICT(instance_code) DO UPDATE SET
 		nullStr(in.Department), in.AmountCents, nullStr(in.PurposeClassL1), nullStr(in.PurposeClassL2),
 		nullStr(in.Supplier), defaultStr(in.Source, "event"), fmtTime(in.CreatedAt), fmtTime(in.UpdatedAt),
 		in.UpdateTime, nullStr(in.PrevBizNo), nullStr(in.CancelReason), nullStr(fmtMaybeTime(in.CancelAt)),
-		nullStr(in.PushHash), nullStr(fmtMaybeTime(in.PushAt)),
+		nullStr(in.PushHash), nullStr(fmtMaybeTime(in.PushAt)), defaultStr(in.ExtJSON, "{}"),
 	)
 	if err != nil {
 		return fmt.Errorf("store: 写入实例 %s 失败: %w", in.InstanceCode, err)
@@ -309,7 +323,8 @@ SELECT id, instance_code, approval_code, COALESCE(doc_type,''), COALESCE(biz_no,
        COALESCE(department,''), amount_cents, COALESCE(purpose_class_l1,''), COALESCE(purpose_class_l2,''),
        COALESCE(supplier,''), source, created_at, updated_at,
        COALESCE(update_time,0), COALESCE(prev_biz_no,''), COALESCE(cancel_reason,''),
-       COALESCE(cancel_at,''), COALESCE(push_hash,''), COALESCE(push_at,'')
+       COALESCE(cancel_at,''), COALESCE(push_hash,''), COALESCE(push_at,''),
+       COALESCE(ext_json,'{}')
 FROM t_instance a`
 
 func scanInstance(s interface {
@@ -329,7 +344,7 @@ func scanInstance(s interface {
 		&in.BizNoPrefix, &in.BizNoYYMM, &in.BizNoSeq, &in.Status, &in.StatusRaw,
 		&in.ApplicantOpenID, &in.ApplicantName, &in.Department, &amount,
 		&in.PurposeClassL1, &in.PurposeClassL2, &in.Supplier, &in.Source, &created, &updated,
-		&in.UpdateTime, &in.PrevBizNo, &in.CancelReason, &cancelAt, &in.PushHash, &pushAt); err != nil {
+		&in.UpdateTime, &in.PrevBizNo, &in.CancelReason, &cancelAt, &in.PushHash, &pushAt, &in.ExtJSON); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, ErrNotFound
 		}

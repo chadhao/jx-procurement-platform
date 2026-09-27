@@ -489,3 +489,137 @@ func TestSeqSignRepushDoesNotResetRelease(t *testing.T) {
 		t.Errorf("重推把已释放任务置回 %s（期望 RELEASED）", got)
 	}
 }
+
+// TestListTasksByNodeOrdersByTaskOrder ★ 次序键必须是 `task_order`（显式契约），**不是** rowid/插入序。
+//
+// 故意让「插入顺序」与「task_order」不一致（插入序 = task_order 3,1,2）：
+//
+//	按 `rowid` / 插入序排序的实现会返回错误次序 → 本用例必红。
+func TestListTasksByNodeOrdersByTaskOrder(t *testing.T) {
+	db := storetest.NewDB(t)
+	ctx := context.Background()
+	biz := "PR-2609-9999"
+	for _, spec := range []struct {
+		suffix string
+		order  int
+	}{{"a", 3}, {"b", 1}, {"c", 2}} { // 插入顺序 ≠ task_order 顺序
+		sp := spec
+		if err := db.WithTx(ctx, func(tx *sql.Tx) error {
+			return db.UpsertFlowTaskTx(ctx, tx, &store.FlowTask{
+				TaskID: biz + "-n1-" + sp.suffix, BizNo: biz, NodeID: "n1", NodeSeq: 1, Round: 1,
+				AssigneeOpenID: "ou_" + sp.suffix, Status: flow.TaskPending, TaskOrder: sp.order,
+				CreatedAt: flowAt, UpdatedAt: flowAt,
+			})
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	var got []string
+	if err := db.WithTx(ctx, func(tx *sql.Tx) error {
+		ts, err := db.ListTasksByNodeTx(ctx, tx, biz, "n1")
+		if err != nil {
+			return err
+		}
+		for _, tk := range ts {
+			got = append(got, tk.AssigneeOpenID)
+		}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"ou_b", "ou_c", "ou_a"} // task_order 1,2,3
+	if len(got) != len(want) {
+		t.Fatalf("任务数 = %d, 期望 %d", len(got), len(want))
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("次序 = %v, 期望 %v（应按 task_order，非插入序/rowid）", got, want)
+		}
+	}
+}
+
+// TestTwoInstancesDistinctTaskIDs ★ 回归：task_id 必须含 biz_no。
+//
+// 否则第二个实例的同名任务（同 node_id/assignee/idx）会撞 `ON CONFLICT(task_id) DO NOTHING`
+// 而**静默不建** —— 该实例审批链为空、永不推进（静默 P0）。
+func TestTwoInstancesDistinctTaskIDs(t *testing.T) {
+	db := storetest.NewDB(t)
+	svc := flow.New(db, "app")
+	ctx := context.Background()
+	sub := func() string {
+		b, err := svc.Submit(ctx, flow.SubmitInput{
+			DocType: "PR", ApprovalCode: "code-pr", ApplicantOpenID: "ou_app",
+			Nodes: []flow.NodeSpec{{NodeID: "n1", Seq: 1, Approvers: []flow.Approver{{OpenID: "ou_x"}}}},
+			At:    flowAt,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return b
+	}
+	b1, b2 := sub(), sub()
+	if b1 == b2 {
+		t.Fatalf("两次提交单号相同: %s", b1)
+	}
+	for _, b := range []string{b1, b2} {
+		if n := storetest.Count(t, db, `SELECT COUNT(*) FROM t_flow_task WHERE biz_no = ?`, b); n != 1 {
+			t.Errorf("实例 %s 任务数 = %d, 期望 1（task_id 撞车导致静默不建）", b, n)
+		}
+	}
+}
+
+// TestSeqSignOrderFollowsDeclarationNotLexicographic ★ 释放顺序必须跟随**声明序**（task_order），
+// 而非 open_id 字典序 / task_id 次序。
+//
+// 构造：审批人的 open_id **字典序与声明序完全相反**（声明 [zz, mm, aa]；字典序 aa<mm<zz）。
+// 若实现用 `task_id`（含 open_id）或 `rowid` 排序，则首个被释放者会是 `ou_aa` → 本用例必红。
+func TestSeqSignOrderFollowsDeclarationNotLexicographic(t *testing.T) {
+	db := storetest.NewDB(t)
+	svc := flow.New(db, "app")
+	ctx := context.Background()
+
+	bizNo, err := svc.Submit(ctx, flow.SubmitInput{
+		DocType: "PR", ApprovalCode: "code-pr", ApplicantOpenID: "ou_app",
+		Nodes: []flow.NodeSpec{{NodeID: "n1", Seq: 1, Approvers: []flow.Approver{
+			{OpenID: "ou_zz"}, {OpenID: "ou_mm"}, {OpenID: "ou_aa"},
+		}}},
+		At: flowAt,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// 声明序首个 = ou_zz 必须被释放；字典序最小的 ou_aa 必须 HELD。
+	if got := releaseOf(t, db, bizNo, "ou_zz"); got != flow.ReleaseReleased {
+		t.Fatalf("声明序首位 ou_zz = %s，期望 RELEASED（跟声明序，不跟字典序）", got)
+	}
+	for _, ap := range []string{"ou_mm", "ou_aa"} {
+		if got := releaseOf(t, db, bizNo, ap); got != flow.ReleaseHeld {
+			t.Errorf("%s = %s，期望 HELD", ap, got)
+		}
+	}
+
+	// 逐个同意 → 释放顺序必须是 zz → mm → aa。
+	approve := func(ap string) {
+		t.Helper()
+		tk := taskFor(t, db, bizNo, ap)
+		if err := svc.Approve(ctx, bizNo, tk.TaskID, ap, "同意"); err != nil {
+			t.Fatalf("同意 %s 失败: %v", ap, err)
+		}
+	}
+	approve("ou_zz")
+	if got := releaseOf(t, db, bizNo, "ou_mm"); got != flow.ReleaseReleased {
+		t.Fatalf("ou_zz 同意后应释放 ou_mm，实际 %s", got)
+	}
+	if got := releaseOf(t, db, bizNo, "ou_aa"); got != flow.ReleaseHeld {
+		t.Fatalf("ou_aa 此时应仍 HELD，实际 %s", got)
+	}
+	approve("ou_mm")
+	if got := releaseOf(t, db, bizNo, "ou_aa"); got != flow.ReleaseReleased {
+		t.Fatalf("ou_mm 同意后应释放 ou_aa，实际 %s", got)
+	}
+	approve("ou_aa")
+	if got := instOf(t, db, bizNo).Status; got != flow.InstanceApproved {
+		t.Errorf("全员同意后实例 = %s，期望 APPROVED", got)
+	}
+}

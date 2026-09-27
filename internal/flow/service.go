@@ -15,13 +15,19 @@ package flow
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
+	"math"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
+	"github.com/chadhao/jx-procurement-platform/internal/config"
 	"github.com/chadhao/jx-procurement-platform/internal/number"
+	"github.com/chadhao/jx-procurement-platform/internal/observ"
 	"github.com/chadhao/jx-procurement-platform/internal/store"
 )
 
@@ -85,6 +91,14 @@ type NodeSpec struct {
 	Approvers []Approver
 }
 
+// AttachmentRef 附件引用（我方页面提交时携带；**只登记元数据，零网络 IO**，B39）。
+type AttachmentRef struct {
+	FileID   string
+	FieldID  string
+	FileName string
+	Size     *int64
+}
+
 // SubmitInput 提交入参（我方页面校验通过后调用）。
 type SubmitInput struct {
 	DocType      string
@@ -98,8 +112,15 @@ type SubmitInput struct {
 	PurposeClassL1  string
 	PurposeClassL2  string
 	Supplier        string
-	Nodes           []NodeSpec
-	At              time.Time // 业务时刻（零值取 now），YYMM 由它决定
+	// BizFields 已映射的表单字段（键＝规范 `biz_field` 名，如 `contract_no`/`related_biz_no`/
+	//   `amount_cents`/`supplier`/`purpose_class_l1`/`purpose_class_l2`/`department`/`biz_date`）。
+	//   Submit 分流（决策 #18/#19）：**规范字段 → t_instance 规范列**；**非规范字段 → t_instance.ext_json**。
+	//   ★ 不再写 `t_instance_field`（③ 下该表已弃用，见 docs/11 R03）。
+	BizFields map[string]any
+	// Attachments 附件引用（元数据在此登记；文件本体按需拉取，绝不在此触发网络 IO）。
+	Attachments []AttachmentRef
+	Nodes       []NodeSpec
+	At          time.Time // 业务时刻（零值取 now），YYMM 由它决定
 }
 
 // Service 审批领域服务。
@@ -107,11 +128,22 @@ type Service struct {
 	db    *store.DB
 	gen   *number.Generator
 	appID string
+	maps  *config.Maps // 台账映射（finalize 落账用；可为 nil＝不落台账）
+	log   *slog.Logger
 }
 
 // New 构造审批服务。appID 用于生成 `instance_id = {app_id}:{biz_no}`（04a §3.3 / §6.3）。
+// 未注入配置映射 → finalize 不落台账（不虚构口径）。
 func New(db *store.DB, appID string) *Service {
-	return &Service{db: db, gen: number.New(db), appID: appID}
+	return NewWithConfig(db, appID, nil, nil)
+}
+
+// NewWithConfig 构造审批服务并注入台账映射与日志（finalize 落账需要 maps）。
+func NewWithConfig(db *store.DB, appID string, maps *config.Maps, log *slog.Logger) *Service {
+	if log == nil {
+		log = observ.NewLogger("info", nil)
+	}
+	return &Service{db: db, gen: number.New(db), appID: appID, maps: maps, log: log}
 }
 
 // instanceCode 由单号派生我方实例标识（= 推给飞书的 instance_id）。
@@ -163,11 +195,50 @@ func (s *Service) Submit(ctx context.Context, in SubmitInput) (string, error) {
 			CreatedAt:       at,
 			UpdatedAt:       at,
 		}
+		// ★ 表单字段分流（决策 #18/#19）：规范字段 → 规范列；非规范字段 → ext_json。
+		extJSON, err := applyBizFields(inst, in.BizFields)
+		if err != nil {
+			return err
+		}
+		inst.ExtJSON = extJSON
+		// ★ 单笔金额必须 > 0（决策 #39）：0/负金额不作有效金额落库（保持 NULL）并告警，
+		//   否则「0 元采购单」既被接受、又以 0 参与看板统计与档位判定。
+		if inst.AmountCents != nil && *inst.AmountCents <= 0 {
+			s.log.Warn("提交金额非正，已忽略该金额（#39：单笔金额必须 > 0）",
+				"biz_no", bizNo, "amount_cents", *inst.AmountCents)
+			inst.AmountCents = nil
+		}
 		// ★ P3 兜底：biz_no 唯一索引拦截「试图复用终态号」——命中即失败，绝不静默分配同号。
 		if err := s.db.UpsertInstanceTx(ctx, tx, inst); err != nil {
 			return fmt.Errorf("flow: 提交写实例失败（单号唯一兜底）: %w", err)
 		}
 		if err := s.createTasksTx(ctx, tx, bizNo, in.Nodes, at); err != nil {
+			return err
+		}
+		// ★ 附件元数据登记（B39）：只登记、零网络 IO（文件本体按需拉取）。
+		for _, ref := range in.Attachments {
+			if strings.TrimSpace(ref.FileID) == "" {
+				continue // 无 file_id 的引用无意义，跳过（不静默吞错：空引用本就不该提交）
+			}
+			if err := s.db.UpsertAttachmentTx(ctx, tx, &store.Attachment{
+				FileID:       ref.FileID,
+				InstanceCode: inst.InstanceCode,
+				BizNo:        bizNo,
+				FieldID:      ref.FieldID,
+				FileName:     ref.FileName,
+				SizeBytes:    ref.Size,
+			}); err != nil {
+				return err
+			}
+		}
+		// ★ 状态史（提交）：状态迁移点都要留痕（docs/11 R02），非仅终态。
+		if _, _, err := s.db.AppendStatusHistory(ctx, tx, &store.StatusHistory{
+			InstanceCode:   inst.InstanceCode,
+			Status:         InstancePending,
+			OperatorOpenID: in.ApplicantOpenID,
+			Opinion:        "提交",
+			OccurredAt:     at,
+		}); err != nil {
 			return err
 		}
 		_, err = s.db.InsertFlowOpLogTx(ctx, tx, &store.FlowOpLog{
@@ -207,6 +278,16 @@ func (s *Service) Cancel(ctx context.Context, bizNo, actorOpenID, reason string)
 			return fmt.Errorf("%w: 实例 %s 已终态 %s，不可撤回", ErrIllegalTransition, bizNo, inst.Status)
 		}
 		if err := s.terminalizeTx(ctx, tx, inst, InstanceCanceled, at, reason); err != nil {
+			return err
+		}
+		// ★ 状态史（撤回也是一次状态迁移，必须留痕）。
+		if _, _, err := s.db.AppendStatusHistory(ctx, tx, &store.StatusHistory{
+			InstanceCode:   inst.InstanceCode,
+			Status:         InstanceCanceled,
+			OperatorOpenID: actorOpenID,
+			Opinion:        reason,
+			OccurredAt:     at,
+		}); err != nil {
 			return err
 		}
 		_, err = s.db.InsertFlowOpLogTx(ctx, tx, &store.FlowOpLog{
@@ -283,8 +364,20 @@ func (s *Service) act(ctx context.Context, bizNo, taskID, actor, opType, reason 
 		}); err != nil {
 			return err
 		}
-
-		return s.advanceTx(ctx, tx, inst, at)
+		if err := s.advanceTx(ctx, tx, inst, at); err != nil {
+			return err
+		}
+		// ★ 状态史（每次迁移都留痕，非仅终态；docs/11 R02）：状态取推进后的实例状态，
+		//   节点名用于时间线定位；同 (状态, 人, 意见) 全同则去重、不消耗 event_seq（#37）。
+		_, _, err = s.db.AppendStatusHistory(ctx, tx, &store.StatusHistory{
+			InstanceCode:   inst.InstanceCode,
+			Status:         inst.Status,
+			TaskNode:       task.NodeName,
+			OperatorOpenID: actor,
+			Opinion:        reason,
+			OccurredAt:     at,
+		})
+		return err
 	})
 }
 
@@ -301,6 +394,15 @@ func (s *Service) act(ctx context.Context, bizNo, taskID, actor, opType, reason 
 //     直接违背顺序会签的核心制度直觉。
 //   - 「同 node 内逐级、跨 node 顺序」由 advanceTx 的 releaseNextTx 在每次同意后推进。
 //
+// ★★ 不变量（可测）：**任一时刻，整个实例「可办理」（RELEASED）的任务至多 1 个**
+//
+//	（除终态；因审批链 node 间串行、node 内顺序会签 → 任一时刻恰有 1 个可办理）。
+//	此不变量即「上一位通过后才释放下一位」的形式化表述（team-lead 裁决 A5.1）。
+//
+// ★ 同节点内次序＝`task_order`（审批人声明序，1-based）——★ 唯一顺序契约，
+//
+//	禁止任何实现改用 `rowid`/`task_id` 排序（前者随 REPLACE/VACUUM 漂移，后者字典序≠声明序）。
+//
 // ★ 幂等（快照重推）：`UpsertFlowTaskTx` 冲突即 `DO NOTHING` —— 同 `task_id` 重推
 //
 //	**绝不**把已 `RELEASED`/`APPROVED`/`REJECTED` 的任务置回 `HELD`（那是"被撞回起点"的静默缺陷）。
@@ -312,10 +414,15 @@ func (s *Service) createTasksTx(ctx context.Context, tx *sql.Tx, bizNo string, n
 	idx := 0
 	firstReleased := false
 	for _, n := range ordered {
+		order := 0 // 同节点内审批人声明序（1-based），★ 唯一释放次序契约（禁止 rowid/task_id）
 		for _, ap := range n.Approvers {
+			order++
 			idx++
 			// task_id 确定性生成（04a §3.3）：同快照重推得同一 ID，避免"审批中心看不到数据"。
-			taskID := fmt.Sprintf("%s-%s-%d-%d", n.NodeID, ap.OpenID, 1, idx)
+			// ★ 必须含 biz_no：task_id 是全库 PK，而 node_id/assignee/idx **跨实例会重复**
+			//   （每个实例都从 node_id=n1、idx=1 起）→ 若不含 biz_no，第二个实例的同名任务会撞
+			//   `ON CONFLICT(task_id) DO NOTHING` 而**静默不建**（该实例审批链为空、永不推进）。
+			taskID := fmt.Sprintf("%s-%s-%s-%d-%d", bizNo, n.NodeID, ap.OpenID, 1, idx)
 			release := ReleaseHeld
 			if !firstReleased {
 				release = ReleaseReleased // 全链仅第一个任务在提交时释放
@@ -324,7 +431,8 @@ func (s *Service) createTasksTx(ctx context.Context, tx *sql.Tx, bizNo string, n
 			t := &store.FlowTask{
 				TaskID: taskID, BizNo: bizNo, NodeID: n.NodeID, NodeName: n.NodeName,
 				NodeSeq: n.Seq, Round: 1, AssigneeOpenID: ap.OpenID, AssigneeName: ap.Name,
-				Status: TaskPending, ReleaseState: release, CreatedAt: at, UpdatedAt: at,
+				Status: TaskPending, ReleaseState: release, TaskOrder: order,
+				CreatedAt: at, UpdatedAt: at,
 			}
 			if err := s.db.UpsertFlowTaskTx(ctx, tx, t); err != nil {
 				return err
@@ -439,7 +547,12 @@ func (s *Service) terminalizeTx(ctx context.Context, tx *sql.Tx, inst *store.Ins
 	if err := s.closeOpenTasksTx(ctx, tx, inst.BizNo, at); err != nil {
 		return err
 	}
-	return s.saveInstanceTx(ctx, tx, inst, at)
+	if err := s.saveInstanceTx(ctx, tx, inst, at); err != nil {
+		return err
+	}
+	// ★ 终态落账（取代 worker/ingest.go:189 UpsertArchiveTx，04a §T02b）：台账在终态一次性显式写入。
+	//   状态史不在此写（已在 Submit/act/Cancel 各迁移点写入）。
+	return s.finalizeLedgersTx(ctx, tx, inst, at)
 }
 
 // closeOpenTasksTx 将该实例所有 PENDING 任务置 DONE。
@@ -587,3 +700,119 @@ func validateSubmit(in SubmitInput) error {
 	}
 	return nil
 }
+
+// ---------- 表单字段分流（决策 #18/#19） ----------
+
+// applyBizFields 把已映射表单字段分流（就地写入 inst）：
+//   - 规范字段（amount_cents/amount、supplier/supplier_name、department、purpose_class_l1/l2）
+//     → 对应 t_instance 规范列；
+//   - 其余（含契约键 `contract_no`/`related_biz_no`、`biz_date` 等）→ ext_json。
+//
+// 返回 ext_json（JSON 字符串；无字段时 "{}"）。
+// ★ 不写 `t_instance_field`（③ 下已弃用）；映射结果**必须被真正消费**，杜绝"映射无人读"的静默 P0。
+func applyBizFields(inst *store.Instance, fields map[string]any) (string, error) {
+	if inst == nil || len(fields) == 0 {
+		return "{}", nil
+	}
+	ext := make(map[string]any, len(fields))
+	for k, v := range fields {
+		key := strings.ToLower(strings.TrimSpace(k))
+		switch key {
+		case config.BizFieldAmount, config.BizFieldAmountCents:
+			if cents, ok := parseCentsAny(v, key == config.BizFieldAmountCents); ok && inst.AmountCents == nil {
+				c := cents
+				inst.AmountCents = &c
+			} else {
+				ext[key] = v // 无法解析 → 留痕于 ext_json（不静默丢）
+			}
+		case config.BizFieldSupplier, config.BizFieldSupplierName:
+			if s := scalarString(v); s != "" && inst.Supplier == "" {
+				inst.Supplier = s
+			}
+		case config.BizFieldDepartment:
+			if s := scalarString(v); s != "" && inst.Department == "" {
+				inst.Department = s
+			}
+		case config.BizFieldPurposeL1:
+			if s := scalarString(v); s != "" && inst.PurposeClassL1 == "" {
+				inst.PurposeClassL1 = s
+			}
+		case config.BizFieldPurposeL2:
+			if s := scalarString(v); s != "" && inst.PurposeClassL2 == "" {
+				inst.PurposeClassL2 = s
+			}
+		default:
+			if key != "" {
+				ext[key] = v
+			}
+		}
+	}
+	if len(ext) == 0 {
+		return "{}", nil
+	}
+	b, err := json.Marshal(ext)
+	if err != nil {
+		return "", fmt.Errorf("%w: ext_json 序列化失败: %v", ErrInvalidSubmit, err)
+	}
+	return string(b), nil
+}
+
+// scalarString 取标量的字符串形态（非标量返回空串）。
+func scalarString(v any) string {
+	switch t := v.(type) {
+	case nil:
+		return ""
+	case string:
+		return strings.TrimSpace(t)
+	case json.Number:
+		return strings.TrimSpace(t.String())
+	case float64, int64, int, bool:
+		return strings.TrimSpace(fmt.Sprint(t))
+	default:
+		return ""
+	}
+}
+
+// parseCentsAny 把任意标量金额解析为「分」。
+// centsKey 为真时数值形态视为已是分；否则视为「元」→ ×100 四舍五入。
+func parseCentsAny(v any, centsKey bool) (int64, bool) {
+	switch t := v.(type) {
+	case int64:
+		return t, true
+	case int:
+		return int64(t), true
+	case float64:
+		if math.IsNaN(t) || math.IsInf(t, 0) {
+			return 0, false
+		}
+		if centsKey {
+			return int64(math.Round(t)), true
+		}
+		return int64(math.Round(t * 100)), true
+	case json.Number:
+		f, err := t.Float64()
+		if err != nil {
+			return 0, false
+		}
+		return parseCentsAny(f, centsKey)
+	case string:
+		s := strings.TrimSpace(amountNoise.Replace(t))
+		if s == "" {
+			return 0, false
+		}
+		f, err := strconv.ParseFloat(s, 64)
+		if err != nil {
+			return 0, false
+		}
+		return parseCentsAny(f, centsKey)
+	default:
+		return 0, false
+	}
+}
+
+// amountNoise 金额文本中的噪声字符（货币符号 / 千分位 / 单位）。
+var amountNoise = strings.NewReplacer(
+	",", "", "，", "", " ", "", "\u00a0", "",
+	"￥", "", "¥", "", "$", "", "元", "", "人民币", "",
+	"RMB", "", "rmb", "", "CNY", "", "cny", "",
+)

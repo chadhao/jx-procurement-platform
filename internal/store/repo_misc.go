@@ -15,6 +15,14 @@ func (d *DB) InsertAudit(ctx context.Context, a *AuditLogRow) error {
 	return insertAudit(ctx, d, a)
 }
 
+// InsertAuditTx 在事务内写入一条审计日志。
+//
+// ★ 为什么需要 tx 版：单实例 + `SetMaxOpenConns(1)` → 事务持有唯一连接期间，
+// 若用 `InsertAudit`（走 *sql.DB）会**等待连接 → 自锁**。事务内审计必须走本方法。
+func (d *DB) InsertAuditTx(ctx context.Context, tx *sql.Tx, a *AuditLogRow) error {
+	return insertAudit(ctx, tx, a)
+}
+
 func insertAudit(ctx context.Context, q execer, a *AuditLogRow) error {
 	created := a.CreatedAt
 	if created.IsZero() {

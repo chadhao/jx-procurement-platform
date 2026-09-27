@@ -42,6 +42,9 @@ type Instance struct {
 	CancelAt     *time.Time // 撤回时刻
 	PushHash     string     // 上次推送快照 hash（相同则跳过推送，不消耗 update_time）
 	PushAt       *time.Time // 上次推送成功时刻
+	// ★ 0010 增列：非规范表单字段（键值 JSON）。Submit 时按「规范字段→列 / 非规范字段→此列」分流构造；
+	//   finalize 落台账时据此带入 `t_ledger_archive.ext_json`（契约键 `contract_no`/`related_biz_no`，决策 #28）。
+	ExtJSON string
 }
 
 // InstanceField 实例表单字段（键值对，M2）。
@@ -290,7 +293,7 @@ type DocSeq struct {
 // FlowTask 我方任务/节点行（t_flow_task，04a §1.1）。
 // 状态：PENDING/APPROVED/REJECTED/TRANSFERRED/DONE；会签聚合按 NodeID 分组。
 type FlowTask struct {
-	TaskID         string // 确定性 task_id（{node_id}-{assignee}-{round}-{seq}）
+	TaskID         string // 确定性 task_id（{biz_no}-{node_id}-{assignee}-{round}-{seq}；含 biz_no 以保全库唯一）
 	BizNo          string // 关联业务单号
 	NodeID         string // 节点标识（会签聚合键）
 	NodeName       string // 节点名（展示）
@@ -304,7 +307,10 @@ type FlowTask struct {
 	//   HELD＝未释放（飞书侧不推、不生成待办）；RELEASED＝已释放（当前可办理）。
 	ReleaseState string // HELD / RELEASED
 	// ★ 0008 增列：票签 / 并行会签扩展位；一期「不可配为并签」→ 恒 nil。
-	Weight    *int
+	Weight *int
+	// ★ 0009 增列：同节点内审批人**声明序**（1-based）。顺序会签释放次序键。
+	//   ★ 唯一顺序契约：禁止回退到按 `rowid` 排序（rowid 会随 REPLACE/VACUUM 漂移）。
+	TaskOrder int
 	CreatedAt time.Time
 	UpdatedAt time.Time
 	ClosedAt  *time.Time // 终结时刻

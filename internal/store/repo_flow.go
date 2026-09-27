@@ -39,15 +39,19 @@ func (d *DB) UpsertFlowTaskTx(ctx context.Context, tx *sql.Tx, t *FlowTask) erro
 	if release != releaseHeld && release != releaseReleased {
 		release = releaseReleased
 	}
+	order := t.TaskOrder
+	if order < 0 {
+		order = 0
+	}
 	_, err := tx.ExecContext(ctx, `
 INSERT INTO t_flow_task
   (task_id, biz_no, node_id, node_name, node_seq, round, assignee_open_id, assignee_name,
-   status, action_context, release_state, weight, created_at, updated_at, closed_at)
-VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+   status, action_context, release_state, weight, task_order, created_at, updated_at, closed_at)
+VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
 ON CONFLICT(task_id) DO NOTHING`,
 		t.TaskID, t.BizNo, t.NodeID, nullStr(t.NodeName), t.NodeSeq, round,
 		t.AssigneeOpenID, nullStr(t.AssigneeName), t.Status, nullStr(t.ActionContext),
-		release, t.Weight,
+		release, t.Weight, order,
 		fmtTime(t.CreatedAt), fmtTime(t.UpdatedAt), nullStr(closed))
 	if err != nil {
 		return fmt.Errorf("store: 写入任务 %s 失败: %w", t.TaskID, err)
@@ -89,14 +93,14 @@ WHERE task_id = ?`, releaseHeld, now, taskID); err != nil {
 
 // ListTasksByNodeTx 在事务内列出某实例某节点下的全部任务，按**释放顺序**升序。
 //
-// ★ 排序键＝`node_seq, rowid`：04a §2.3 要求「同 node_id 按 node_seq 逐级释放」，
+// ★ 排序键＝`node_seq, task_order`（显式契约列）：04a §2.3 要求「同 node_id 按次序逐级释放」，
 //
-//	但本仓库 `node_seq` 语义＝**节点顺序**（同一节点内各任务 node_seq 相同）。
-//	故同节点内以 `rowid`（＝createTasksTx 的插入顺序＝审批人声明顺序）作稳定次序键，
-//	「逐级释放」据此取「该节点内下一个 HELD」。
+//	但本仓库 `node_seq` 语义＝**节点顺序**（同一节点内各任务 node_seq 相同），故同节点内
+//	以 `task_order`（＝审批人声明序，1-based，createTasksTx 显式写入）作次序键。
+//	★ 禁止改用 `rowid`（随 REPLACE/VACUUM 漂移）或 `task_id`（含 open_id，字典序≠声明序）。
 func (d *DB) ListTasksByNodeTx(ctx context.Context, tx *sql.Tx, bizNo, nodeID string) ([]FlowTask, error) {
 	rows, err := tx.QueryContext(ctx,
-		flowTaskSelectSQL+` WHERE biz_no = ? AND node_id = ? ORDER BY node_seq, rowid`, bizNo, nodeID)
+		flowTaskSelectSQL+` WHERE biz_no = ? AND node_id = ? ORDER BY node_seq, task_order`, bizNo, nodeID)
 	if err != nil {
 		return nil, err
 	}
@@ -134,13 +138,13 @@ func (d *DB) GetFlowTask(ctx context.Context, taskID string) (*FlowTask, error) 
 	return scanFlowTask(row)
 }
 
-// ListFlowTasks 列出某业务单号的全部任务（按 node_seq、插入顺序升序）。
+// ListFlowTasks 列出某业务单号的全部任务（按 node_seq、task_order 升序）。
 //
-// ★ 次序键用 `node_seq, rowid`：同 node_seq（同节点）内以插入顺序稳定排序
+// ★ 次序键＝`node_seq, task_order`（都是显式契约列）：节点间以 node_seq，同节点内以
 //
-//	（task_id 含 open_id，字典序≠声明序，不能作次序键）。释放顺序依赖此序。
+//	task_order（审批人声明序）排序。★ 禁止改用 `rowid` 或 `task_id` 排序。
 func (d *DB) ListFlowTasks(ctx context.Context, bizNo string) ([]FlowTask, error) {
-	rows, err := d.QueryContext(ctx, flowTaskSelectSQL+` WHERE biz_no = ? ORDER BY node_seq, rowid`, bizNo)
+	rows, err := d.QueryContext(ctx, flowTaskSelectSQL+` WHERE biz_no = ? ORDER BY node_seq, task_order`, bizNo)
 	if err != nil {
 		return nil, err
 	}
@@ -150,7 +154,7 @@ func (d *DB) ListFlowTasks(ctx context.Context, bizNo string) ([]FlowTask, error
 
 // ListFlowTasksTx 在事务内列出某业务单号的全部任务（序列同 ListFlowTasks）。
 func (d *DB) ListFlowTasksTx(ctx context.Context, tx *sql.Tx, bizNo string) ([]FlowTask, error) {
-	rows, err := tx.QueryContext(ctx, flowTaskSelectSQL+` WHERE biz_no = ? ORDER BY node_seq, rowid`, bizNo)
+	rows, err := tx.QueryContext(ctx, flowTaskSelectSQL+` WHERE biz_no = ? ORDER BY node_seq, task_order`, bizNo)
 	if err != nil {
 		return nil, err
 	}
@@ -161,7 +165,7 @@ func (d *DB) ListFlowTasksTx(ctx context.Context, tx *sql.Tx, bizNo string) ([]F
 const flowTaskSelectSQL = `
 SELECT task_id, biz_no, node_id, COALESCE(node_name,''), node_seq, COALESCE(round,1),
        assignee_open_id, COALESCE(assignee_name,''), status, COALESCE(action_context,''),
-       COALESCE(release_state,'HELD'), weight,
+       COALESCE(release_state,'HELD'), weight, COALESCE(task_order,0),
        created_at, updated_at, COALESCE(closed_at,'')
 FROM t_flow_task`
 
@@ -188,7 +192,7 @@ func scanFlowTask(s interface {
 	)
 	if err := s.Scan(&t.TaskID, &t.BizNo, &t.NodeID, &t.NodeName, &t.NodeSeq, &t.Round,
 		&t.AssigneeOpenID, &t.AssigneeName, &t.Status, &t.ActionContext,
-		&t.ReleaseState, &weight,
+		&t.ReleaseState, &weight, &t.TaskOrder,
 		&created, &updated, &closed); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, ErrNotFound

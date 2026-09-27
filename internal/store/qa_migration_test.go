@@ -83,12 +83,16 @@ func TestQAMigrationFreshAndIdempotent(t *testing.T) {
 			t.Errorf("t_instance 缺列 %s（migrations/0007 未生效）", c)
 		}
 	}
-	// 架构转向 ③ 顺序会签（migration 0008）：t_flow_task 补 release_state / weight。
+	// 架构转向 ③ 顺序会签（migration 0008/0009）：t_flow_task 补 release_state / weight / task_order。
 	ftCols := qaColumns(t, db, "t_flow_task")
-	for _, c := range []string{"release_state", "weight"} {
+	for _, c := range []string{"release_state", "weight", "task_order"} {
 		if !ftCols[c] {
-			t.Errorf("t_flow_task 缺列 %s（migrations/0008 未生效）", c)
+			t.Errorf("t_flow_task 缺列 %s（migrations/0008、0009 未生效）", c)
 		}
+	}
+	// 架构转向 ③（migration 0010）：t_instance 补 ext_json（非规范字段）。
+	if !instCols["ext_json"] {
+		t.Errorf("t_instance 缺列 ext_json（migrations/0010 未生效）")
 	}
 	// release_state 必须有默认值（NOT NULL DEFAULT 'HELD'）—— 新行漏写时不得为 NULL。
 	var dflt sql.NullString
@@ -109,10 +113,11 @@ func TestQAMigrationFreshAndIdempotent(t *testing.T) {
 		t.Errorf("唯一索引 ux_instance_biz_no 不存在（锁号前提 P3 被破坏）")
 	}
 
-	// 迁移版本清单随新增迁移同步（0004 供应商归一、0005 附件、0006 台账一对多、0007 审批核心、0008 顺序会签释放）。
+	// 迁移版本清单随新增迁移同步（0004 供应商归一、0005 附件、0006 台账一对多、0007 审批核心、
+	// 0008 顺序会签释放、0009 task_order 次序契约、0010 t_instance.ext_json）。
 	for _, v := range []string{"0001_init.sql", "0002_idem_unique.sql", "0003_submission_scope.sql",
 		"0004_supplier_norm.sql", "0005_attachment.sql", "0006_ledger_multi.sql", "0007_approval_core.sql",
-		"0008_flow_task_release.sql"} {
+		"0008_flow_task_release.sql", "0009_flow_task_order.sql", "0010_instance_ext_json.sql"} {
 		var n int
 		if err := db.QueryRowContext(ctx,
 			`SELECT COUNT(*) FROM t_schema_migrations WHERE version = ?`, v).Scan(&n); err != nil {
@@ -134,8 +139,9 @@ func TestQAMigrationFreshAndIdempotent(t *testing.T) {
 	}
 	// ★ 期望值＝仓库内迁移文件数（新增迁移时同步此处；
 	//   0004 Q20 supplier_norm、0005 附件元数据、0006 台账映射一对多 B47、0007 审批核心转向③、
-	//   0008 t_flow_task 顺序会签 release_state/weight）。
-	const wantMigrations = 8
+	//   0008 t_flow_task 顺序会签 release_state/weight、0009 task_order 次序契约、
+	//   0010 t_instance.ext_json 非规范字段）。
+	const wantMigrations = 10
 	if total != wantMigrations {
 		t.Errorf("迁移版本总数 = %d, 期望 %d（重复执行不得重复登记）", total, wantMigrations)
 	}
