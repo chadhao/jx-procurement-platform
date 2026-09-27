@@ -115,6 +115,8 @@ func NewRouter(d Deps) *echo.Echo {
 	// ---- 审批流转（架构转向 ③；T04b；docs/05-API §3.13）----
 	//	★ 页面两键与入站回调**走同一状态机出口**（flow），不得两套语义（docs/11 R11）。
 	//	★ 路径参数 `:biz_no` ＝**业务单号**（非 instance_id）。
+	// 提交：生成编号 + 建实例 + 首推飞书（薄壳，语义在 flow.Submit；docs/05-API §3.13）。
+	api.POST("/approval/submit", d.handleApprovalSubmit)
 	api.POST("/approval/:biz_no/approve", d.handleApprovalApprove)
 	api.POST("/approval/:biz_no/reject", d.handleApprovalReject)
 	// 四操作（转交 / 加签 / 回退 / 撤回）；★ 加签另带 timing ∈ {AFTER, BEFORE}（缺省 AFTER）。
@@ -122,8 +124,11 @@ func NewRouter(d Deps) *echo.Echo {
 	api.POST("/approval/:biz_no/addsign", d.handleApprovalAddSign)
 	api.POST("/approval/:biz_no/rollback", d.handleApprovalRollback)
 	api.POST("/approval/:biz_no/cancel", d.handleApprovalCancel)
-	// 我的待办（★ 命名已定 ＝ `/tasks`，非 `/todo`）。
+	// 我的待办（★ 命名已定 ＝ `/tasks`，非 `/todo`）+ 定义清单（管理员）+ 单实例详情。
+	//	★ 静态段（`tasks`/`defs`）先注册、参数段（`:biz_no`）后注册（Echo 静态优先，避免遮蔽）。
 	api.GET("/approval/tasks", d.handleApprovalTasks)
+	api.GET("/approval/defs", d.handleApprovalDefs)
+	api.GET("/approval/:biz_no", d.handleApprovalInstance)
 
 	// ---- 看板（M5，只读；行级过滤在 SQL 层、列级投影在序列化层）----
 	//	★ dashboard:{1..4} 权限资源按看板 id 分派，见 handlers_dashboard.go / docs/05-API.md §3.3。

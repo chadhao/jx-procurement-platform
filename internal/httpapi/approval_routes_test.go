@@ -1,11 +1,15 @@
 package httpapi
 
 import (
+	"errors"
+	"fmt"
 	"net/http"
 	"os"
 	"regexp"
 	"strings"
 	"testing"
+
+	"github.com/chadhao/jx-procurement-platform/internal/flow"
 )
 
 // approval_routes_test.go —— 转向 ③ 审批路由的**装配级**断言（真实 router.go）。
@@ -42,6 +46,7 @@ func TestApprovalRoutesRegistered(t *testing.T) {
 	}
 	want := []string{
 		"POST /approval/external/callback", // ★ 独立入站面（root 组）
+		"POST /api/approval/submit",        // ★ 我方提交
 		"POST /api/approval/:biz_no/approve",
 		"POST /api/approval/:biz_no/reject",
 		"POST /api/approval/:biz_no/transfer",
@@ -49,6 +54,8 @@ func TestApprovalRoutesRegistered(t *testing.T) {
 		"POST /api/approval/:biz_no/rollback",
 		"POST /api/approval/:biz_no/cancel",
 		"GET /api/approval/tasks",
+		"GET /api/approval/defs",        // ★ 定义清单（管理员）
+		"GET /api/approval/:biz_no",     // ★ 单实例详情 + 时间线
 		"POST /internal/approval/check", // ★ 审批对账唯一入口（R24）
 	}
 	for _, w := range want {
@@ -103,5 +110,38 @@ func TestCallbackWiring_InstanceCodeAndAssignee(t *testing.T) {
 	// (b) 非本人回调 → 显式映射
 	if !strings.Contains(s, "errors.Is(err, flow.ErrNotAssignee)") {
 		t.Errorf("回调接线缺失：错误块应映射 flow.ErrNotAssignee（否则非本人回调落 500）")
+	}
+}
+
+// TestCallbackErrorStatusEnumerated 回调错误→状态码**枚举式**覆盖（定案 #60：枚举优于逐例）。
+//
+// ★ 每行即一个枚举项——**任一项映射被改/删，对应行必红**。
+// ★ 「已受理但推进失败」(#69 半, `res.Accepted==true` + err≠nil)**不在**本表（另由 #69 处理）。
+func TestCallbackErrorStatusEnumerated(t *testing.T) {
+	cases := []struct {
+		name       string
+		err        error
+		wantStatus int
+		wantCode   int
+	}{
+		{"ErrInvalidToken→403", flow.ErrInvalidToken, http.StatusForbidden, codeForbidden},
+		{"ErrNotAssignee→403", flow.ErrNotAssignee, http.StatusForbidden, codeRowForbidden},
+		{"ErrInvalidSubmit→400", flow.ErrInvalidSubmit, http.StatusBadRequest, codeBadRequest},
+		{"ErrIllegalTransition→409", flow.ErrIllegalTransition, http.StatusConflict, codeApprovalConflict},
+		{"ErrTaskHeld→409", flow.ErrTaskHeld, http.StatusConflict, codeApprovalConflict},
+		{"ErrNodeNotReached→409", flow.ErrNodeNotReached, http.StatusConflict, codeApprovalConflict},
+		{"ErrDefinitionMissing→409", flow.ErrDefinitionMissing, http.StatusConflict, codeApprovalConflict},
+		// 包装后的哨兵仍须命中（flow 侧以 fmt.Errorf("%w: …") 包装后返回）。
+		{"wrapped ErrInvalidSubmit→400", fmt.Errorf("%w: 现场包装", flow.ErrInvalidSubmit), http.StatusBadRequest, codeBadRequest},
+		{"wrapped ErrNotAssignee→403", fmt.Errorf("%w: 现场包装", flow.ErrNotAssignee), http.StatusForbidden, codeRowForbidden},
+		// 未分类 → 5xx（服务端故障），绝不静默落 200。
+		{"未分类→500", errors.New("some server fault"), http.StatusInternalServerError, codeInternal},
+	}
+	for _, tc := range cases {
+		gotStatus, gotCode := callbackErrorStatus(tc.err)
+		if gotStatus != tc.wantStatus || gotCode != tc.wantCode {
+			t.Errorf("%s: 得 (status=%d, code=%d)，期望 (status=%d, code=%d)",
+				tc.name, gotStatus, gotCode, tc.wantStatus, tc.wantCode)
+		}
 	}
 }
