@@ -7,6 +7,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"sync"
 	"time"
 
 	"github.com/chadhao/jx-procurement-platform/internal/observ"
@@ -27,6 +28,9 @@ type HTTPClient struct {
 	tokens    *tokenManager
 	log       *slog.Logger
 	metrics   *observ.Metrics
+	// user_id → open_id 进程内 TTL 缓存（contact.go；docs/16 §2-A-3，回调低频故进程内即够）。
+	contactMu    sync.Mutex
+	contactCache map[string]contactCacheEntry
 }
 
 // NewHTTPClient 构造真实飞书客户端。appID/appSecret 为空时接口调用会失败（缺少凭据）。

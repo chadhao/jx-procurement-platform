@@ -117,14 +117,19 @@ func (r *Registry) Register(ctx context.Context, in DefInput) (SyncItem, error) 
 		item.Err = err.Error()
 		return item, fmt.Errorf("approval: 注册定义 %s 失败: %w", in.DocType, err)
 	}
-	code := res.ApprovalCode
-	if strings.TrimSpace(code) == "" {
-		code = in.ApprovalCode
-	}
 
 	// ③ 落本地注册表（upsert，重复注册=更新）。
+	//
+	// ★★ 双 code 池消歧（docs/16 G-8 / §2-C，R26 纪律：0013 新列必须有真实写入者）：
+	//   - 主键 approval_code ＝ **我方自定义 code**（in.ApprovalCode）——**不变**；
+	//   - `POST external_approvals` **响应回填值**落 `feishu_code`（「真实 code」候选列），
+	//     供推送侧 Pusher.Push 推实例时优先取用。
+	//   ★ 响应回填值属自定义池还是真实池**未实测**（docs/16 §7 V-4）⇒ **双写、不猜**；
+	//   （历史行为核对：UpsertExternalApproval 的回填值恒 firstNonEmpty(响应, 入参)，
+	//   实际等于入参——故主键口径变化对既有数据**无行为差异**，仅消歧命名。）
 	def := &store.ApprovalDef{
-		ApprovalCode:     code,
+		ApprovalCode:     in.ApprovalCode,
+		FeishuCode:       res.ApprovalCode,
 		DocType:          in.DocType,
 		Name:             in.Name,
 		GroupName:        in.GroupName,
@@ -140,15 +145,16 @@ func (r *Registry) Register(ctx context.Context, in DefInput) (SyncItem, error) 
 	if err := r.db.UpsertApprovalDef(ctx, def); err != nil {
 		// 仅当**本地写失败**时才可能出现「飞书已建、本地无」——必须告警，不得静默。
 		r.log.Error("三方定义已建但本地注册表写入失败（对账不平风险）",
-			"doc_type", in.DocType, "approval_code", code, "error", err.Error())
+			"doc_type", in.DocType, "approval_code", in.ApprovalCode, "error", err.Error())
 		item.Err = err.Error()
 		return item, fmt.Errorf("approval: 定义 %s 本地登记失败: %w", in.DocType, err)
 	}
 
-	item.ApprovalCode = code
+	item.ApprovalCode = in.ApprovalCode
 	item.Created = created
 	r.log.Info("三方审批定义已注册",
-		"doc_type", in.DocType, "approval_code", code, "created", created,
+		"doc_type", in.DocType, "approval_code", in.ApprovalCode,
+		"feishu_code", res.ApprovalCode, "created", created,
 		"def_version", nextVer, "feishu_log_id", res.FeishuLogID)
 	return item, nil
 }

@@ -7,7 +7,7 @@
 | 项 | 内容 |
 |---|---|
 | 文档名称 | 采购与费用审批平台（自建侧）· 接口设计 |
-| 版本 | **V2.9**（+ 2026-09-27 实测：**§3.14 回调报文按官方实测校准** ＋ **新增「实测缺口清单（6 条，属 P0）」** —— 顶层字段名不一致 / `biz_no` 传递链路未闭合 / `open_id` 应为 `user_id`；含 V2.8 §6 计数 4→5 与 §6.1 通知契约 ＋ V2.7 §6.1 出方向契约 ＋ V2.6 §3.8 入参校正） |
+| 版本 | **V2.10**（+ 2026-09-27：**§3.9 补 `POST /api/admin/approval/defs/sync` 契约条目**（三方定义装载主通道；静默审计 C5 归零）；含 V2.9 §3.14 回调报文按官方实测校准 ＋「实测缺口清单（6 条，属 P0）」＋ V2.8 §6 计数 4→5 与 §6.1 通知契约 ＋ V2.7 §6.1 出方向契约 ＋ V2.6 §3.8 入参校正） |
 | 日期 | 2026-09-26 |
 | 上游文档 | `01-PRD.md`、`02-UseCase.md`、`03-TestCase.md`、`04-Architecture.md` |
 | 语言纪律 | 简体中文 |
@@ -465,6 +465,20 @@ sequenceDiagram
 | 错误码 | 40000、40300、40400（`open_id` 不存在） |
 | 关联 FR | FR-M5-10、FR-M5-11 |
 | 备注 | 停用 / 改角色后**下一次请求即时生效**（每请求实时解析角色，不缓存决策，TC-11） |
+
+#### `POST /api/admin/approval/defs/sync`
+
+> ★ **为什么补登这一条**（2026-09-27 静默审计 C5）：该端点为回调链路修复第 1 批（docs/16 §2-C
+> 通道①）新增的定义装载**主通道**，已注册于 `router.go`（admin 组）但本文件未列 ⇒ 门禁 C5 报红；本条补齐契约。
+
+| 项 | 内容 |
+|---|---|
+| 用途 | 三方审批定义装载（主通道，docs/16 §2-C 通道①）：读 `t_config_mapping(map_kind='approval_code')` 清单（正本＝`docs/reference/config-mapping.sample.json` 的 approval_code 节，11 类）→ 逐条注册/更新到飞书 `external_approvals` 并落 `t_approval_def`（**幂等**：approval_code 命中即更新，不产生第二条定义） |
+| 权限要求 | 系统管理员（与 §3.9 其余端点同口径） |
+| 请求体 | 无 |
+| 响应字段 | `{synced, created, updated, skipped, failed, items[]}`（items 逐条：`doc_type` / `approval_code` / `created` / `error`）；`synced = created + updated` |
+| 错误码 | **400**（清单为空 / code 仍为 `REPLACE_ME_` 占位符 / doc_type 不在 11 类内——**可见拒绝，绝不 200 静默**）；**503**（`JX_ACTION_CALLBACK_TOKEN` 或 `JX_CALLBACK_DOMAIN` 未配置——定义无 token 则回调校验恒失败，拒绝装载）；**500**（部分定义同步失败，`approval.ErrSyncFailed`；计数与 `items` 明细照返，供运维核对失败条目） |
+| 关联 | `04a §3.5`（定义装载源）、`docs/16` §2-C、FR-M0-13；★ 飞书侧伴生调用＝`POST external_approvals`（§6.1），响应回填值落 `t_approval_def.feishu_code`（双 code 池消歧，docs/16 G-8） |
 
 ### 3.10 集团报销跟踪（M1）
 
@@ -966,6 +980,7 @@ sequenceDiagram
 
 | 版本 | 日期 | 变更 | 作者 |
 |---|---|---|---|
+| V2.10 | 2026-09-27 | **§3.9 补 `POST /api/admin/approval/defs/sync` 契约条目**（回调链路修复第 1 批新增的定义装载主通道，docs/16 §2-C 通道①；随第 2 批补登）：路径 / 鉴权（系统管理员）/ 请求（无体）/ 响应计数（`synced`·`created`·`updated`·`skipped`·`failed` ＋ `items` 明细）/ 错误码（**400**＝清单为空或含 `REPLACE_ME_` 占位符或 doc_type 越界；**503**＝`JX_ACTION_CALLBACK_TOKEN`/`JX_CALLBACK_DOMAIN` 未配置；**500**＝部分同步失败且明细照返）。★ 静默审计 **C5（「已注册但未文档」）归零**。 | 交付总监 |
 | V2.9 | 2026-09-27 | ★★ **§3.14 回调报文按官方实测校准 ＋ 新增「实测缺口清单」**：① **「请求体」行重写** —— 官方真实报文字段为 `action_type` / **`user_id`**（操作人 **user_id**）/ **`approval_code`** / `token` / `action_context` / `instance_id` / `task_id` / `message_id` / `id` / `reason` / `attachments` / `encrypt`；★★ **官方【不发】顶层 `biz_no`** ⇒ `biz_no` **只能靠 `action_context` 携带 JSON 回传**（★ 推实例时须把 `task_list[].action_context` 设为含 `biz_no` 的 JSON）。② **新增「实测缺口清单（6 条，属 P0）」** —— 顶层字段名不一致 / **`biz_no` 传递链路未闭合** / `open_id` 应为 `user_id` / `message_id` 未解析 / 失败无用户反馈 / 本地无数据（P0-2）。③ 实测证据：**用官方报文格式打我方 ⇒ `回调缺少 biz_no/task_id`**；用含顶层 `biz_no` 的自造格式才走到"无对应实例"⇒ ★ 定位「用户点同意后回调 400、界面零反馈」的**真实原因**。 | 交付总监 |
 | V2.8 | 2026-09-27 | ★★ **补齐「通知」链路（实测驱动）**：① **§6 标题计数 4 → 5** 并新增行「**发审批 Bot 消息**」`POST /open-apis/approval/v1/message/send`（`template_id=1008` 收到审批待办）；② **§6.1 新增该接口契约** —— ★★ **「待办进列表」与「发消息通知」是两个独立动作**（官方原文「当有新的审批待办…时，**可以通过**飞书审批的 Bot 告知用户」），**仅推 `external_instances` 不会产生任何提醒**；★ `actions[]` **四个 URL 缺一不可**（`url`+`pc_url`+`android_url`+`ios_url`；缺 ⇒ `60001 actionUrls incomplete error`）；★ 本接口 **`texts` 接受 map**（与 `external_approvals` 的数组形态**相反**）；成功返回 `data.message_id`（实测 `{"code":0,…}`）。③ 与 `01a §…` **通知渠道「飞书 Bot（主）＋ 站内兜底」口径对齐** —— PRD 已规划、**此前代码零实现**。 | 交付总监 |
 | V2.7 | 2026-09-27 | **新增 §6.1「转向 ③ 新增的出方向接口」（契约按实测校准）**：① **`POST /external_approvals`** —— ★ **`approval_code` 走「自定义 code」池**（命中即更新、**未命中静默新建**）；★ **`i18n_resources[].texts` 必须是数组**（传 map ⇒ `9499`，**与官方文档示例不符**）；★ `locale`/`is_default` 飞书**不校验**，须自查。② **`GET /external_approvals/{真实code}`** —— ★ 路径参数须「真实 code」，而读回字段返回「自定义 code」。③ **`POST /external_instances`** —— ★ 审批人在 **`task_list[].open_id`/`user_id`**（**官方无 `assignees`**，传错**静默忽略** ⇒ 任务不进「待办」）；★ 两键在 **`task_list[].action_configs`**；★ 单据编号走 **`extra.business_key`**；★ 成功回显 `data.data` 双层。④ **`check`** 成功返回 `data.diff_instances`。⑤ ★ 归纳**三类静默缺陷**（未知字段忽略 / 不校验 `locale` / 列表接口缺权限报误导性 `99991663`）⇒ **不得以 `code:0` 判通过**。 | 交付总监 |

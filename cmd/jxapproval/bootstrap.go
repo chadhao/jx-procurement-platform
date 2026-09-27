@@ -147,11 +147,16 @@ func run(version string) error {
 
 	// ---- ⑤ 飞书通道适配层 + inbox（长连接 sink）----
 	// 开发模式且未配置凭据时，改用内存 dev 客户端：使 /internal/dev/inject-event 可端到端落库（不依赖飞书）。
-	var client feishu.Client = feishu.NewHTTPClient(env.AppID, env.AppSecret, logger, metrics)
+	feishuHTTP := feishu.NewHTTPClient(env.AppID, env.AppSecret, logger, metrics)
+	var client feishu.Client = feishuHTTP
 	if env.IsDev() && (env.AppID == "" || env.AppSecret == "") {
 		client = feishu.NewDevClient()
 		logger.Warn("开发模式且未配置飞书凭据：使用内存 dev 客户端（注入事件可端到端落库）")
 	}
+	// ★ 身份转换端口（docs/16 §2-A-3）：回调官方发 user_id（租户内域），须换 open_id 后
+	//   再进准入鉴权。生产/dev 一律挂真实 HTTP 实现（转换失败 ⇒ 回调侧可见拒绝 40000）；
+	//   dev 内存客户端不支持该端点，属可接受降级（dev 无真实回调流量）。
+	contact := feishu.ContactClient(feishuHTTP)
 	inboxSvc := inbox.NewService(db, metrics, logger)
 	longconn := feishu.NewLongConn(env.AppID, env.AppSecret, inboxSvc, logger)
 
@@ -288,6 +293,7 @@ func run(version string) error {
 		WebUI:              webui.Handler(),
 		Version:            version,
 		Feishu:             client,
+		Contact:            contact,
 		Objects:            attachStore,
 	})
 	if env.IsDev() {

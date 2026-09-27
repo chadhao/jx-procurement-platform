@@ -103,9 +103,14 @@ func TestCallbackWiring_InstanceCodeAndAssignee(t *testing.T) {
 		t.Fatalf("读取 handlers_approval.go 失败: %v", err)
 	}
 	s := string(src)
-	// (a) 容忍 gofmt 对齐：InstanceCode:<空格>strings.TrimSpace(body.InstanceCode)
-	if re := regexp.MustCompile(`InstanceCode:\s+strings\.TrimSpace\(body\.InstanceCode\)`); !re.MatchString(s) {
-		t.Errorf("回调接线缺失：应把 body.InstanceCode 下传进 flow.CallbackRequest（否则防串单校验在生产不可达）")
+	// (a) 容忍 gofmt 对齐：官方字段校准后（docs/16 §2-A-1），报文主读字段＝instance_id，
+	//     旧 instance_code 降为兼容读 —— 断言按新口径核对「下传 flow.CallbackRequest」的接线。
+	if re := regexp.MustCompile(`InstanceCode:\s+strings\.TrimSpace\(firstNonEmptyStr\(body\.InstanceID, body\.InstanceCode\)\)`); !re.MatchString(s) {
+		t.Errorf("回调接线缺失：应把 body.InstanceID（兼容 InstanceCode）下传进 flow.CallbackRequest（否则防串单校验在生产不可达）")
+	}
+	// (a-2) ★ user_id 域红线（docs/16 §2-A-3）：转换端口接进 handler（绝不拿 user_id 冒充 open_id）。
+	if !strings.Contains(s, "d.Contact.GetOpenIDByUserID") {
+		t.Errorf("回调接线缺失：user_id→open_id 转换端口未接入（docs/16 §2-A-3 红线）")
 	}
 	// (b) 非本人回调 → 显式映射
 	if !strings.Contains(s, "errors.Is(err, flow.ErrNotAssignee)") {

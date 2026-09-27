@@ -33,8 +33,8 @@ func upsertApprovalDef(ctx context.Context, q execer, def *ApprovalDef) error {
 	_, err := q.ExecContext(ctx, `
 INSERT INTO t_approval_def
   (approval_code, doc_type, name, group_name, visible_scope_json, create_link_pc, create_link_mobile,
-   callback_url, callback_token, callback_key, form_summary_json, def_version, updated_at)
-VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)
+   callback_url, callback_token, callback_key, form_summary_json, feishu_code, def_version, updated_at)
+VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
 ON CONFLICT(approval_code) DO UPDATE SET
   doc_type           = excluded.doc_type,
   name               = excluded.name,
@@ -46,12 +46,13 @@ ON CONFLICT(approval_code) DO UPDATE SET
   callback_token     = COALESCE(NULLIF(excluded.callback_token,''), t_approval_def.callback_token),
   callback_key       = COALESCE(NULLIF(excluded.callback_key,''), t_approval_def.callback_key),
   form_summary_json  = COALESCE(NULLIF(excluded.form_summary_json,''), t_approval_def.form_summary_json),
+  feishu_code        = COALESCE(NULLIF(excluded.feishu_code,''), t_approval_def.feishu_code),
   def_version        = excluded.def_version,
   updated_at         = excluded.updated_at`,
 		def.ApprovalCode, def.DocType, def.Name, nullStr(def.GroupName), nullStr(def.VisibleScopeJSON),
 		nullStr(def.CreateLinkPC), nullStr(def.CreateLinkMobile), nullStr(def.CallbackURL),
 		nullStr(def.CallbackToken), nullStr(def.CallbackKey), nullStr(def.FormSummaryJSON),
-		version, fmtTime(timeNow().UTC()))
+		nullStr(def.FeishuCode), version, fmtTime(timeNow().UTC()))
 	if err != nil {
 		return fmt.Errorf("store: 写入审批定义 %s 失败: %w", def.ApprovalCode, err)
 	}
@@ -100,7 +101,7 @@ const approvalDefSelectSQL = `
 SELECT approval_code, doc_type, name, COALESCE(group_name,''), COALESCE(visible_scope_json,''),
        COALESCE(create_link_pc,''), COALESCE(create_link_mobile,''), COALESCE(callback_url,''),
        COALESCE(callback_token,''), COALESCE(callback_key,''), COALESCE(form_summary_json,''),
-       COALESCE(def_version,1), updated_at
+       COALESCE(feishu_code,''), COALESCE(def_version,1), updated_at
 FROM t_approval_def`
 
 func scanApprovalDef(s interface {
@@ -112,7 +113,7 @@ func scanApprovalDef(s interface {
 	)
 	if err := s.Scan(&def.ApprovalCode, &def.DocType, &def.Name, &def.GroupName, &def.VisibleScopeJSON,
 		&def.CreateLinkPC, &def.CreateLinkMobile, &def.CallbackURL, &def.CallbackToken, &def.CallbackKey,
-		&def.FormSummaryJSON, &def.DefVersion, &updated); err != nil {
+		&def.FormSummaryJSON, &def.FeishuCode, &def.DefVersion, &updated); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, ErrNotFound
 		}

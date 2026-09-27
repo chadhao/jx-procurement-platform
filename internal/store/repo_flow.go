@@ -288,11 +288,11 @@ func (d *DB) InsertFlowOpLogTx(ctx context.Context, tx *sql.Tx, op *FlowOpLog) (
 	}
 	res, err := tx.ExecContext(ctx, `
 INSERT OR IGNORE INTO t_flow_op_log
-  (biz_no, node_id, task_id, op_type, round, actor_open_id, from_status, to_status, reason, extra_json, created_at)
-VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
+  (biz_no, node_id, task_id, op_type, round, actor_open_id, from_status, to_status, reason, extra_json, message_id, created_at)
+VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
 		op.BizNo, nullStr(op.NodeID), nullStr(op.TaskID), op.OpType, round, nullStr(op.ActorOpenID),
 		nullStr(op.FromStatus), nullStr(op.ToStatus), nullStr(op.Reason), nullStr(op.ExtraJSON),
-		fmtTime(op.CreatedAt))
+		nullStr(op.MessageID), fmtTime(op.CreatedAt))
 	if err != nil {
 		return false, fmt.Errorf("store: 写入操作留痕失败: %w", err)
 	}
@@ -309,7 +309,7 @@ func (d *DB) ListFlowOpLogs(ctx context.Context, bizNo string) ([]FlowOpLog, err
 SELECT op_id, biz_no, COALESCE(node_id,''), COALESCE(task_id,''), op_type,
        COALESCE(round,0),
        COALESCE(actor_open_id,''), COALESCE(from_status,''), COALESCE(to_status,''),
-       COALESCE(reason,''), COALESCE(extra_json,''), created_at
+       COALESCE(reason,''), COALESCE(extra_json,''), COALESCE(message_id,''), created_at
 FROM t_flow_op_log WHERE biz_no = ? ORDER BY op_id`, bizNo)
 	if err != nil {
 		return nil, err
@@ -324,7 +324,7 @@ FROM t_flow_op_log WHERE biz_no = ? ORDER BY op_id`, bizNo)
 			created string
 		)
 		if err := rows.Scan(&op.OpID, &op.BizNo, &op.NodeID, &op.TaskID, &op.OpType, &round,
-			&op.ActorOpenID, &op.FromStatus, &op.ToStatus, &op.Reason, &op.ExtraJSON, &created); err != nil {
+			&op.ActorOpenID, &op.FromStatus, &op.ToStatus, &op.Reason, &op.ExtraJSON, &op.MessageID, &created); err != nil {
 			return nil, err
 		}
 		op.Round = int(round)

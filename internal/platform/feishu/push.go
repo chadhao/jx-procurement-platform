@@ -6,9 +6,11 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
+	"strings"
 	"sync"
 
 	"github.com/chadhao/jx-procurement-platform/internal/observ"
@@ -44,6 +46,15 @@ type ExternalTask struct {
 	NodeName       string `json:"node_name"`
 	AssigneeOpenID string `json:"assignee_open_id"`
 	Status         string `json:"status"`
+	// ActionContext 操作上下文（docs/16 §2-B）：**我方自定义**的压缩 JSON 字符串
+	// `{"biz_no":"…","task_id":"…"}`，随待办下发、期望飞书在回调时**原样回传**——
+	// 这是回调侧 `biz_no` 的**主读**来源（官方**不发**顶层 biz_no，docs/16 G-1）。
+	// ★★ 「飞书原样回传 action_context」系官方文档表述、**尚未实测**（docs/16 §7 V-1），
+	// 联调第一轮必须首验；若不回传/改写，回调侧由 `instance_id` 反解兜底（§2-A-2），
+	// 链路仍通但须回 docs/09 台账记实测结果。
+	// ★ 兼容：旧快照推的是纯 task_id 字符串（非 `{` 开头）——回调侧对非 JSON 的
+	// action_context 直接忽略、走反解兜底，两侧约定**同批**落地（docs/16 §2-B 同批约束）。
+	ActionContext string `json:"action_context,omitempty"`
 }
 
 // InstanceSnapshot external_instances 上报快照。
@@ -94,9 +105,17 @@ func BuildSnapshot(inst *store.Instance, tasks []store.FlowTask, ccList []string
 		if t.ReleaseState != "RELEASED" {
 			continue // ★ 未释放整体省略（不推、不生成待办）
 		}
+		// ★ action_context 承载 biz_no（docs/16 §2-B）：压缩 JSON `{"biz_no":…,"task_id":…}`，
+		//   键名与回调解侧约定**必须同批**（解侧＝internal/httpapi/handlers_approval.go 的
+		//   biz_no 主读路径）。map 序列化时 Go 按键名升序输出，形态确定可测。
+		ac, err := json.Marshal(map[string]string{"biz_no": inst.BizNo, "task_id": t.TaskID})
+		if err != nil {
+			return InstanceSnapshot{}, fmt.Errorf("feishu: 组装 action_context 失败: %w", err)
+		}
 		snap.TaskList = append(snap.TaskList, ExternalTask{
 			TaskID: t.TaskID, NodeID: t.NodeID, NodeName: t.NodeName,
 			AssigneeOpenID: t.AssigneeOpenID, Status: t.Status,
+			ActionContext: string(ac),
 		})
 	}
 	if len(snap.TaskList) > MaxTaskList {
@@ -186,6 +205,22 @@ func (p *Pusher) Push(ctx context.Context, bizNo string) (PushResult, error) {
 		p.log.Error("推送组装失败（不静默截断）", "biz_no", bizNo, "error", err.Error())
 		return PushResult{}, err
 	}
+	// ★★ 双 code 池消歧（docs/16 G-8 / §2-C）：读/推实例要走「真实 code」，而
+	//   `approval_code` 字段名同指两物（实测：GET 读回的 approval_code ＝ 自定义 code）。
+	//   ⇒ 推实例的 snap.ApprovalCode **优先取 t_approval_def.feishu_code**（Registry.Register
+	//   落库的 POST 响应回填值）、为空则回退 inst.ApprovalCode（我方自定义 code）。
+	//   ★ 双池归属未实测（docs/16 §7 V-4）⇒ **双写、不猜**；定义缺失时静默回退自定义 code
+	//   （回退本身不吞错误：GetApprovalDef 的 ErrNotFound 属正常态，其余错误仅告警）。
+	code := inst.ApprovalCode
+	if def, derr := p.db.GetApprovalDef(ctx, inst.ApprovalCode); derr == nil {
+		if fc := strings.TrimSpace(def.FeishuCode); fc != "" {
+			code = fc
+		}
+	} else if !errors.Is(derr, store.ErrNotFound) {
+		p.log.Warn("推送前读取审批定义失败（回退自定义 approval_code 推送）",
+			"biz_no", bizNo, "approval_code", inst.ApprovalCode, "error", derr.Error())
+	}
+	snap.ApprovalCode = code
 	// ★ 快照守卫（docs/16 §2-D 纪律三）：实例 PENDING 但 RELEASED 任务数为 0 ⇒
 	//   无任务快照是异常态（推出去也没有可操作待办，多为任务链未建/释放态异常）。
 	//   **只 warn、不拦截、不改变返回值语义**（REPLACE 首推等场景由上层判断）。

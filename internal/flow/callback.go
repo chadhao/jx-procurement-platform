@@ -45,6 +45,16 @@ type CallbackRequest struct {
 	OpType         string // APPROVE / REJECT
 	OperatorOpenID string
 	Reason         string
+	// ★ 0013 批新增（docs/16 §2-A-4，只加字段、不改既有字段语义）：
+	// ApprovalCode 报文 `approval_code`（官方必填）——与实例/定义的双池一致性校验
+	// （verifyCallbackToken 宽松档，docs/16 G-8 / §7 V-4 待实测）。
+	ApprovalCode string
+	// MessageID 报文 `message_id`（卡片操作时官方必填）：落 `t_flow_op_log.message_id`
+	//（0013 新列），供第 3 批「失败时调 message/update 更新卡片」（docs/16 §2-F）。
+	MessageID string
+	// OperatorUserID 报文 `user_id` 的**转换前原值**（排障留痕；★★ 绝不参与鉴权比较——
+	// user_id 与 open_id 不同域，拿去比 assignee 恒不命中 ⇒ 假 403，docs/16 §2-A-3 红线）。
+	OperatorUserID string
 }
 
 // CallbackResult 同步返回结果。
@@ -88,7 +98,7 @@ func (s *Service) HandleCallback(ctx context.Context, req CallbackRequest) (Call
 	}
 
 	// ① token 校验（报文真实性；必须可见地拒绝）。
-	if err := s.verifyCallbackToken(ctx, req.BizNo, req.Token); err != nil {
+	if err := s.verifyCallbackToken(ctx, req.BizNo, req.Token, req.ApprovalCode); err != nil {
 		return CallbackResult{}, err
 	}
 
@@ -134,7 +144,13 @@ func (s *Service) HandleCallback(ctx context.Context, req CallbackRequest) (Call
 // ★ (b) `biz_no` 不存在 → 返回**可见的 4xx 语义**（`ErrInvalidSubmit`，handler 已映射 → 400），
 // 而**非 500**：未知 `biz_no` 属**请求问题**、不是服务端故障；返回 500 会让飞书**无限重试**
 // 且掩盖真实原因（本仓库头号红线＝静默 / 误报）。
-func (s *Service) verifyCallbackToken(ctx context.Context, bizNo, token string) error {
+//
+// ★ 双 code 池校验（docs/16 G-8 / §2-A-4，**宽松档**）：报文 `approval_code` 与
+// `inst.ApprovalCode`（我方自定义池）、`def.FeishuCode`（0013 新列，POST 响应回填值候选）
+// **双池任一命中即放行**。★★ 未实测前**只做「命中才放行、不命中告警但不拒」的宽松档**
+// （先宽后严）：报文 `approval_code` 属哪个池未经实测（docs/16 §7 V-4），**不把未实测假设
+// 写成硬拦截**——硬拦截会让全部真实回调 403，比放行严重得多。V-4 实测后升格为强校验。
+func (s *Service) verifyCallbackToken(ctx context.Context, bizNo, token, reportApprovalCode string) error {
 	inst, err := s.db.GetInstanceByBizNo(ctx, bizNo)
 	if err != nil {
 		if errors.Is(err, store.ErrNotFound) {
@@ -157,6 +173,13 @@ func (s *Service) verifyCallbackToken(ctx context.Context, bizNo, token string) 
 	got := strings.TrimSpace(token)
 	if want == "" || subtle.ConstantTimeCompare([]byte(want), []byte(got)) != 1 {
 		return ErrInvalidToken
+	}
+	// 双 code 池宽松档（V-4 待实测）：不命中 → 告警但不拒（绝不静默，也不硬拦）。
+	if ac := strings.TrimSpace(reportApprovalCode); ac != "" &&
+		ac != strings.TrimSpace(inst.ApprovalCode) && ac != strings.TrimSpace(def.FeishuCode) {
+		s.log.Warn("回调 approval_code 与本地定义双池均不匹配（双池归属未实测 V-4，宽松档仅告警不拒绝）",
+			"biz_no", bizNo, "report_approval_code", ac,
+			"inst_approval_code", inst.ApprovalCode, "def_feishu_code", def.FeishuCode)
 	}
 	return nil
 }
@@ -233,7 +256,11 @@ func (s *Service) recordCallback(ctx context.Context, req CallbackRequest, op st
 			BizNo: req.BizNo, TaskID: req.TaskID, OpType: op,
 			ActorOpenID: req.OperatorOpenID, Reason: req.Reason,
 			FromStatus: TaskPending, ToStatus: op,
-			Round: task.Round, CreatedAt: time.Now(),
+			Round: task.Round,
+			// ★ 0013 新列（docs/16 §2-A-4）：卡片消息 id 随回调落盘——既是排障留痕，
+			//   也是第 3 批「失败时调 message/update 更新卡片」（docs/16 §2-F）的数据来源。
+			MessageID: req.MessageID,
+			CreatedAt: time.Now(),
 		})
 		return err
 	})

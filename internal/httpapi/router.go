@@ -54,6 +54,10 @@ type Deps struct {
 	Version            string
 	// Feishu 飞书客户端：附件**按需拉取**需要（B39）。为 nil 时下载端点返回 502。
 	Feishu feishu.Client
+	// Contact 身份转换端口（user_id → open_id，docs/16 §2-A-3）：回调官方发 user_id
+	//（租户内域），我方全库统存 open_id ⇒ 必须转换后再进准入鉴权。为 nil 时回调若带
+	// user_id 将 503 可见失败（绝不静默放行、更不得拿 user_id 冒充 open_id——假 403 红线）。
+	Contact feishu.ContactClient
 	// Objects 附件对象存储（主存）。为 nil 时**不缓存、直接转发**（降级，不是静默丢功能）。
 	Objects objectstore.Store
 }
@@ -96,7 +100,10 @@ func NewRouter(d Deps) *echo.Echo {
 	// ★★ 必须挂 **root `e`**、与 `/auth/*` 同组，**绝不进 `api` 组** —— 飞书回调请求
 	//    **无会话 cookie**，若挂 `requireSession` 会 401 全失败且静默（docs/11 R14 / docs/05 §3.14）。
 	//    该路径**不走** api 组、不施会话中间件；业务层凭 action_callback_token 校验（flow.HandleCallback）。
-	e.POST("/approval/external/callback", d.handleExternalApprovalCallback)
+	// ★ 第三个参数＝**回调报文留痕中间件**（docs/16 §2-E / G-7）：只挂本条路由、
+	//    **不全局生效**（其他路由 body 不落日志，最小化）；token 全打码 / reason 截 200 /
+	//    attachments 只记条数，详见 middleware_callback.go。
+	e.POST("/approval/external/callback", d.handleExternalApprovalCallback, d.callbackBodyLog)
 
 	// ---- 业务接口（会话域，自动施加行·列过滤）----
 	api := e.Group("/api", d.requireSession)

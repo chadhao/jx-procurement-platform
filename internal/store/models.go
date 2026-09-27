@@ -331,13 +331,18 @@ type FlowOpLog struct {
 	// ★ 0011 增列：轮次（回退重激活 +1）。回调幂等键含 round（ux_flow_op_callback），
 	//   回退复用同一 task_id 后再次 APPROVE/REJECT 不得被误判为重复回调（静默不推进）。
 	//   仅 APPROVE/REJECT 两处写入点要求携带任务当前 round；其余 op_type 保持 0。
-	Round     int
+	Round int
+	// ★ 0013 增列：飞书回调报文 `message_id`（卡片操作时官方必填）。
+	//   写入者＝recordCallback（internal/flow/callback.go，docs/16 §2-A-4）；
+	//   消费者＝第 3 批「失败时调 message/update 更新卡片」（docs/16 §2-F，本期只落盘）。
+	//   ★ 可空、无回填（既有行无对应卡片语义，0013 头注释既定）。
+	MessageID string
 	CreatedAt time.Time
 }
 
 // ApprovalDef 三方审批定义注册表行（t_approval_def，04a §1.1 / §3）。
 type ApprovalDef struct {
-	ApprovalCode     string // PK（命中即更新、未命中即新建）
+	ApprovalCode     string // PK（命中即更新、未命中即新建）；★ 恒为我方自定义 code（docs/16 G-8）
 	DocType          string // 我方单据类型（11 类；唯一）
 	Name             string
 	GroupName        string
@@ -348,8 +353,13 @@ type ApprovalDef struct {
 	CallbackToken    string
 	CallbackKey      string
 	FormSummaryJSON  string
-	DefVersion       int
-	UpdatedAt        time.Time
+	// ★ 0013 增列：飞书侧「真实 code」候选（docs/16 G-8 双 code 池）。
+	//   写入者＝Registry.Register（把 POST external_approvals 响应回填值落此列）；
+	//   读取者＝Pusher.Push（推实例优先取 feishu_code，空则回退 approval_code）。
+	//   ★ 双池归属未实测（docs/16 §7 V-4）⇒ 双写、不猜。
+	FeishuCode string
+	DefVersion int
+	UpdatedAt  time.Time
 }
 
 // PushRecord 推送流水行（t_push_record，04a §1.1 / §10 S4）。

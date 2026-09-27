@@ -34,20 +34,63 @@ const codeApprovalConflict = 40901
 
 // ---------- 入站回调（★ 独立入站面，绕开会话中间件）----------
 
-// extCallbackBody 飞书三方审批回调报文（字段名待 Q17 实采校准）。
+// extCallbackBody 飞书三方审批回调报文。
+//
+// ★★ 字段名已按官方《三方快捷审批回调》2026-09-27 实测校准（docs/16 §2-A-1 / G-1；
+//
+//	实测铁证：官方格式打我方 ⇒ `回调缺少 biz_no/task_id`，旧自造格式才走到「无对应实例」）。
+//	官方字段：action_type(必) / user_id(必) / approval_code(必) / token(必) / action_context /
+//	instance_id / task_id / message_id(卡片操作必填) / id / reason / attachments / encrypt。
+//	★★ 官方【不发】顶层 biz_no —— biz_no 的主读来源＝action_context 内 JSON
+//	（推侧 BuildSnapshot 写入，docs/16 §2-B）；顶层 biz_no / instance_code / open_id /
+//	action_name / operator.open_id **降为兼容读**、不再是主读字段（兼容窗口见下）。
+//
+// ★ 兼容窗口＝**一个发布版本**（docs/16 §2-A-2；本批随 V2.10 上线，**废弃时点＝下一个
+//
+//	发布版本切换时删除「兼容读」段**，届时须同步 05-API §3.14 与 16 §2-A-2 的口径）。
 type extCallbackBody struct {
-	Token         string `json:"token"`
-	ActionName    string `json:"action_name"` // APPROVE / REJECT
-	ActionType    string `json:"action_type"` // 兼容字段
-	BizNo         string `json:"biz_no"`
-	InstanceCode  string `json:"instance_code"`
-	TaskID        string `json:"task_id"`
-	OpenID        string `json:"open_id"`
-	Reason        string `json:"reason"`
-	ActionContext string `json:"action_context"` // 可能为 JSON 字符串（内含定位字段）
-	Operator      struct {
+	// ---- 官方字段（主读）----
+	ActionType    string            `json:"action_type"`    // APPROVE / REJECT（官方必填）
+	UserID        string            `json:"user_id"`        // 操作人 user_id（租户内域，官方必填）
+	ApprovalCode  string            `json:"approval_code"`  // 官方必填；双 code 池宽松校验用（docs/16 G-8）
+	Token         string            `json:"token"`          // action_callback_token
+	ActionContext string            `json:"action_context"` // 我方自定义上下文 JSON（推侧写入、期望原样回传；V-1 待实测）
+	InstanceID    string            `json:"instance_id"`    // 我方口径 {app_id}:{biz_no}
+	TaskID        string            `json:"task_id"`        // 列表操作必填
+	MessageID     string            `json:"message_id"`     // 卡片消息 id（落 t_flow_op_log.message_id，0013）
+	ID            string            `json:"id"`             // 官方报文 id（留痕用）
+	Reason        string            `json:"reason"`         // 审批意见
+	Attachments   []json.RawMessage `json:"attachments"`    // 附件（留痕只记条数；内容不解析）
+	Encrypt       string            `json:"encrypt"`        // 加密标记（原样留痕）
+	// ---- 兼容读（旧自造报文；兼容窗口＝一个发布版本，见上）----
+	ActionName   string `json:"action_name"`   // 旧操作字段（→ action_type）
+	BizNo        string `json:"biz_no"`        // ★ 官方不发；仅最后兜底（须打 warn）
+	InstanceCode string `json:"instance_code"` // 旧实例标识字段（→ instance_id）
+	OpenID       string `json:"open_id"`       // 旧操作人字段（同域，免转换）
+	Operator     struct {
 		OpenID string `json:"open_id"`
 	} `json:"operator"`
+}
+
+// callbackACInner action_context 内 JSON 的解出形态（推侧 BuildSnapshot 写入
+// `{"biz_no":…,"task_id":…}`；兼容期允许旧自造报文携带 open_id 等定位字段）。
+type callbackACInner struct {
+	BizNo    string `json:"biz_no"`
+	TaskID   string `json:"task_id"`
+	OpenID   string `json:"open_id"`
+	Operator struct {
+		OpenID string `json:"open_id"`
+	} `json:"operator"`
+}
+
+// bizNoFromInstanceID 从我方 instance_id 反解 biz_no（docs/16 §2-A-2 兜底链）：
+// 我方推的 instance_id ＝ `{app_id}:{biz_no}`（flow.Service.instanceCode，04a §3.3），
+// 剥掉 `app_id:` 前缀即得；无冒号（appID 为空的开发/测试态＝裸单号）则原样返回。
+func bizNoFromInstanceID(instanceID string) string {
+	if i := strings.Index(instanceID, ":"); i >= 0 {
+		return instanceID[i+1:]
+	}
+	return instanceID
 }
 
 // handleExternalApprovalCallback 处理飞书「同意 / 拒绝」回调（仅两键；四操作不在回调内）。
@@ -64,23 +107,80 @@ func (d Deps) handleExternalApprovalCallback(c echo.Context) error {
 	if err := json.NewDecoder(c.Request().Body).Decode(&body); err != nil {
 		return fail(c, http.StatusBadRequest, codeBadRequest, "回调报文非法: "+err.Error())
 	}
-	// action_context 兼容：若为 JSON 字符串，则并入定位字段（缺字段时取之）。
-	if ac := strings.TrimSpace(body.ActionContext); strings.HasPrefix(ac, "{") {
-		var inner extCallbackBody
-		if err := json.Unmarshal([]byte(ac), &inner); err == nil {
-			body.BizNo = firstNonEmptyStr(body.BizNo, inner.BizNo)
-			body.InstanceCode = firstNonEmptyStr(body.InstanceCode, inner.InstanceCode)
-			body.TaskID = firstNonEmptyStr(body.TaskID, inner.TaskID)
-			body.OpenID = firstNonEmptyStr(body.OpenID, inner.OpenID, inner.Operator.OpenID)
+
+	// ★ action_context 解析（docs/16 §2-B 解侧；与推侧 BuildSnapshot 同批约定）：
+	//   以 `{` 开头 ⇒ 我方写入的 JSON（主读 biz_no；兼容期兼读 task_id / open_id）；
+	//   否则（旧纯 task_id 字符串等）⇒ **忽略**、走 instance_id 反解兜底（§2-A-2）。
+	ac := strings.TrimSpace(body.ActionContext)
+	var inner callbackACInner
+	if strings.HasPrefix(ac, "{") {
+		if err := json.Unmarshal([]byte(ac), &inner); err != nil {
+			// 回传上下文解析失败不致命（biz_no 还有 instance_id 反解兜底），但必须可见。
+			d.Log.Warn("回调 action_context 解析失败（走 instance_id 反解兜底）",
+				"trace_id", traceID(c), "error", err.Error())
 		}
 	}
+
+	// ★ biz_no 三级读法（docs/16 §2-A-2）：
+	//   ① 主读＝action_context 内 JSON 的 biz_no（官方不发顶层 biz_no）；
+	//   ② 兜底＝从 instance_id 反解（我方 instance_id ＝ {app_id}:{biz_no}，剥前缀即得）；
+	//   ③ 最后兜底＝顶层 biz_no（旧自造报文；★★ 官方不发该字段，命中必须打 warn——
+	//     兼容窗口＝一个发布版本，废弃时点见 extCallbackBody 注释）。
+	bizNo := strings.TrimSpace(firstNonEmptyStr(inner.BizNo))
+	if bizNo == "" {
+		instanceID := strings.TrimSpace(firstNonEmptyStr(body.InstanceID, body.InstanceCode))
+		bizNo = strings.TrimSpace(bizNoFromInstanceID(instanceID))
+	}
+	if bizNo == "" && strings.TrimSpace(body.BizNo) != "" {
+		bizNo = strings.TrimSpace(body.BizNo)
+		d.Log.Warn("回调使用顶层 biz_no（官方《三方快捷审批回调》不发该字段；兼容窗口最后兜底，废弃时点见 extCallbackBody 注释）",
+			"trace_id", traceID(c), "biz_no", bizNo)
+	}
+	// task_id：顶层主读；兼容期可读 action_context 内 JSON（docs/16 §2-A-2）。
+	taskID := strings.TrimSpace(firstNonEmptyStr(body.TaskID, inner.TaskID))
+
+	// ★ 操作人读法（docs/16 §2-A-2/A-3）：user_id 优先（租户内域，须**转换**）；
+	//   无 user_id 时读 open_id（旧自造报文，同域、免转换）。
+	// ★★ 红线（docs/16 §2-A-3，逐字执行）：绝不把 user_id 直接塞进 OperatorOpenID——
+	//   user_id 与 open_id 不同域，拿去比 assignee_open_id 恒不命中 ⇒ 假 403；
+	//   转换失败 ⇒ 可见拒绝（40000）＋告警日志，绝不静默放行。
+	// ★ 操作人读法（docs/16 §2-A-2/A-3）：user_id 优先（租户内域，须**转换**）；
+	//   无 user_id 时读 open_id（旧自造报文，同域、免转换；兼容候选＝报文顶层 / operator 对象 /
+	//   action_context 内 JSON 三处）。
+	operatorOpenID := strings.TrimSpace(
+		firstNonEmptyStr(body.OpenID, body.Operator.OpenID, inner.OpenID, inner.Operator.OpenID))
+	operatorUserID := strings.TrimSpace(body.UserID)
+	if operatorUserID != "" {
+		if d.Contact == nil {
+			// 转换端口未装配＝装配缺陷，可见失败（503），绝不静默放行。
+			return fail(c, http.StatusServiceUnavailable, codeNotReady,
+				"回调操作人身份转换服务未装配（user_id 域无法鉴权）")
+		}
+		openID, err := d.Contact.GetOpenIDByUserID(c.Request().Context(), operatorUserID)
+		if err != nil {
+			// ★ 转换失败 ⇒ 可见拒绝 40000 ＋ 告警日志（不落 op_log、不占幂等键，定案 #62）。
+			d.Log.Error("回调 user_id→open_id 转换失败（可见拒绝，不占幂等键）",
+				"trace_id", traceID(c), "user_id", operatorUserID, "error", err.Error())
+			return fail(c, http.StatusBadRequest, codeBadRequest,
+				"回调操作人身份转换失败（user_id 域 → open_id 域）: "+err.Error())
+		}
+		operatorOpenID = strings.TrimSpace(openID)
+	}
+
 	req := flow.CallbackRequest{
-		Token:          body.Token,
-		BizNo:          strings.TrimSpace(body.BizNo),
-		InstanceCode:   strings.TrimSpace(body.InstanceCode), // ★ 下传报文 instance_id（口径 {app_id}:{biz_no}）→ flow 侧「报文与 biz_no 不一致即拒」
-		TaskID:         strings.TrimSpace(body.TaskID),
-		OpType:         strings.ToUpper(firstNonEmptyStr(body.ActionName, body.ActionType)),
-		OperatorOpenID: firstNonEmptyStr(body.OpenID, body.Operator.OpenID),
+		Token: body.Token,
+		// ★ InstanceCode 下传报文 instance_id（官方字段；旧 instance_code 兼容）
+		//   → flow 侧「报文与 biz_no 不一致即拒」（防串单）。
+		InstanceCode: strings.TrimSpace(firstNonEmptyStr(body.InstanceID, body.InstanceCode)),
+		BizNo:        bizNo,
+		TaskID:       taskID,
+		OpType:       strings.ToUpper(firstNonEmptyStr(body.ActionType, body.ActionName)),
+		// ★★ user_id 恒经转换后才落 OperatorOpenID（见上红线注释）；兼容期旧报文
+		//   的 open_id 同域直读。OperatorUserID 仅排障留痕、不参与鉴权（A-4）。
+		OperatorOpenID: operatorOpenID,
+		OperatorUserID: operatorUserID,
+		ApprovalCode:   strings.TrimSpace(body.ApprovalCode),
+		MessageID:      strings.TrimSpace(body.MessageID),
 		Reason:         body.Reason,
 	}
 	res, err := d.Flow.HandleCallback(c.Request().Context(), req)
