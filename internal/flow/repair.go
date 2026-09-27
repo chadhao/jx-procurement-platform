@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+
+	"github.com/chadhao/jx-procurement-platform/internal/store"
 )
 
 // repair.go —— 派生式修复循环（#69 ②）：把「已落盘、未推进」的回调**重驱动**到推进完成。
@@ -29,6 +31,16 @@ type RepairReport struct {
 	Skipped  int      // 被状态机守卫挡回（未轮到 / 节点未到 / 越权 / 非法迁移）＝无需推进，非失败
 	Failed   int      // 重驱动报错的行数
 	Errors   []string // 失败明细（`biz_no/task_id: err`）
+	// Failures 「最终失败」行的结构化明细（第 3 批新增，docs/16 §2-F-③）：
+	// 供装配层对每行调 message/update 标注飞书卡片（用落盘的 message_id）。
+	// ★ 只增不改：Errors 字符串明细保留（既有日志/断言消费方不变）。
+	Failures []RepairFailure
+}
+
+// RepairFailure 一行「重驱动失败」的结构化留痕（F：卡片失败反馈的数据来源）。
+type RepairFailure struct {
+	Op  store.StuckApprovalOp // 卡住的行（含落盘的 message_id，可能为空）
+	Err error                 // 重驱动失败原因
 }
 
 // RepairPendingApprovals 扫出「已落盘、未推进」的回调并重驱动之，返回本次结果。
@@ -67,6 +79,9 @@ func (s *Service) RepairPendingApprovals(ctx context.Context) (RepairReport, err
 			rep.Failed++
 			rep.Errors = append(rep.Errors,
 				fmt.Sprintf("%s/%s: %v", op.BizNo, op.TaskID, derr))
+			// ★ 第 3 批（docs/16 §2-F-③）：结构化留痕供装配层做卡片失败反馈
+			// （message_id 为空时由反馈器拦截，不发同步请求）。
+			rep.Failures = append(rep.Failures, RepairFailure{Op: op, Err: derr})
 		}
 	}
 	return rep, nil

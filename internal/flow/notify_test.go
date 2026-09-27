@@ -16,7 +16,7 @@ type fakeSender struct {
 	sent []string
 }
 
-func (f *fakeSender) Send(_ context.Context, target, _ string) error {
+func (f *fakeSender) Send(_ context.Context, _ string, target, _ string) error {
 	if f.fail[target] {
 		return errors.New("发送失败(模拟)")
 	}

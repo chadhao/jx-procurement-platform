@@ -23,8 +23,13 @@ const (
 )
 
 // Sender 通知发送端口（Bot / 站内）。可为 nil → 只落 `EXPECTED`（供重试 / 告警）。
+//
+// ★ 第 3 批扩展（docs/16 §2-F 关联项）：签名加 `bizNo` —— 真实发送实现
+// （feishu.NotifySender → POST /approval/v1/message/send）需按单定位实例才能组装合法报文
+// （申请人 title_user_id / 审批名 / 摘要 / 「查看详情」链接均依赖 biz_no），
+// 无 biz_no 只能发空壳消息 ⇒ 端口必须携带。既有 FakeSender 同步适配。
 type Sender interface {
-	Send(ctx context.Context, targetOpenID, event string) error
+	Send(ctx context.Context, bizNo, targetOpenID, event string) error
 }
 
 // notifyOnType 需要「通知已审批通过者」的事件类型（01a §4.7：转交 / 回退 / 撤回）。
@@ -109,7 +114,7 @@ func (n *Notifier) OnFlowEvent(ctx context.Context, ev FlowEvent) {
 	for _, tgt := range targets {
 		status := store.NotifySent
 		var lastErr string
-		if err := n.sender.Send(ctx, tgt, event); err != nil {
+		if err := n.sender.Send(ctx, ev.BizNo, tgt, event); err != nil {
 			status = store.NotifyFailed
 			lastErr = err.Error()
 		}

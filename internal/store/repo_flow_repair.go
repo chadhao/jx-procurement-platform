@@ -32,7 +32,8 @@ import (
 //	（`act` 自带幂等守卫）。
 func (d *DB) ListStuckApprovalOps(ctx context.Context) ([]StuckApprovalOp, error) {
 	rows, err := d.QueryContext(ctx, `
-SELECT o.biz_no, o.task_id, o.op_type, COALESCE(o.round, 0), COALESCE(o.actor_open_id, '')
+SELECT o.biz_no, o.task_id, o.op_type, COALESCE(o.round, 0), COALESCE(o.actor_open_id, ''),
+       COALESCE(o.message_id, '')
 FROM t_flow_op_log o
 JOIN t_flow_task t ON t.task_id = o.task_id AND t.biz_no = o.biz_no
 JOIN t_instance  i ON i.biz_no  = o.biz_no
@@ -52,7 +53,7 @@ ORDER BY o.op_id`)
 	for rows.Next() {
 		var s StuckApprovalOp
 		var round int64
-		if err := rows.Scan(&s.BizNo, &s.TaskID, &s.OpType, &round, &s.ActorOpenID); err != nil {
+		if err := rows.Scan(&s.BizNo, &s.TaskID, &s.OpType, &round, &s.ActorOpenID, &s.MessageID); err != nil {
 			return nil, fmt.Errorf("store: 解析待修复审批留痕失败: %w", err)
 		}
 		s.Round = int(round)
@@ -68,4 +69,9 @@ type StuckApprovalOp struct {
 	OpType      string // APPROVE / REJECT
 	Round       int    // op_log.round（与 task.round 对齐）
 	ActorOpenID string // op_log 记录的操作人（准入时已校验 = 任务 assignee）
+	// MessageID 卡片消息 id（0013 新列，recordCallback 从回调报文落盘）。
+	// ★ 第 3 批消费（docs/16 §2-F-③）：修复循环对「最终失败」行据此调 message/update
+	// 标注卡片；为空（非卡片操作报文）⇒ 上层不发同步请求。本列为**只增读取**，
+	// 不改变本查询的任何筛选/排序语义（第 2 批既有行为不变）。
+	MessageID string
 }

@@ -172,16 +172,31 @@ func run(version string) error {
 	// 三方审批定义客户端（ExternalApprovalClient）、出方向推送客户端（PushClient）、
 	// 对账 check 客户端（ExtCheckClient）：生产＝同一个 `*HTTPClient`；开发（无凭据）＝内存替身，
 	// 使 `DEV_MODE` 端到端可用（不依赖飞书凭据）。
+	// ★ 第 3 批（docs/16 §2-F）：同惯例追加两个端口 ——
+	//   ① messageClient（审批 Bot 消息更新，message/update；请求体字段待 V-2 实测定稿）；
+	//   ② notifySender（待办通知发送，message/send；flow.Sender 实现）。
 	var (
-		extClient   feishu.ExternalApprovalClient
-		pushClient  feishu.PushClient
-		checkClient feishu.ExtCheckClient
+		extClient     feishu.ExternalApprovalClient
+		pushClient    feishu.PushClient
+		checkClient   feishu.ExtCheckClient
+		messageClient feishu.MessageUpdateClient
+		notifySender  flow.Sender
 	)
 	if hc, ok := client.(*feishu.HTTPClient); ok {
 		extClient, pushClient, checkClient = hc, hc, hc
+		messageClient = hc
+		notifySender = feishu.NewNotifySender(db, hc, env.CallbackDomain, logger)
+		if strings.TrimSpace(env.CallbackDomain) == "" {
+			// ★ 通知的「查看详情」四 URL 缺一即 60001（实测）；无域名配置宁可可见失败
+			//   （t_notify_log.FAILED 留痕、漏发可检出），绝不编造 URL。
+			logger.Warn("JX_CALLBACK_DOMAIN 未配置：待办通知的「查看详情」链接无法构造，" +
+				"通知发送将可见失败（t_notify_log 记 FAILED；漏发可检出）")
+		}
 	} else {
 		extClient, pushClient, checkClient = feishu.NewFakeExternalApprovalClient(),
 			feishu.NewFakePushClient(), feishu.NewFakeExtCheckClient()
+		messageClient = feishu.NewFakeMessageClient()
+		notifySender = feishu.NewFakeNotifySender()
 	}
 
 	// 定义注册表：装配即用；生产装载入口＝POST /api/admin/approval/defs/sync（docs/16 §2-C），
@@ -192,9 +207,12 @@ func run(version string) error {
 	// 审批领域服务（唯一状态源）：注入台账映射（finalize 落账）与日志。
 	flowSvc := flow.NewWithConfig(db, env.AppID, maps, logger)
 
-	// 事件订阅者：① 通知（sender=nil → 仅落 EXPECTED，可被漏发检出）② 出方向推送。
+	// 事件订阅者：① 通知（第 3 批接通：生产＝feishu.NotifySender（message/send，实测契约），
+	// 开发＝Fake；两阶段 EXPECTED→SENT/FAILED 落盘机制不变）② 出方向推送。
 	// ★ 二者均在**事务提交后**由 flow.emit 分发（04a §2.5），失败不影响主流程。
-	flowSvc.Subscribe(flow.NewNotifier(db, nil, logger))
+	// ★ notifySender 以 flow.Sender 类型承接（上方 var 块）—— NotifySender/FakeNotifySender
+	//   的方法集与 flow.Sender 的编译期一致性由该赋值保证（feishu 包不反向依赖 flow）。
+	flowSvc.Subscribe(flow.NewNotifier(db, notifySender, logger))
 	flowSvc.Subscribe(&flowPushSubscriber{pusher: pusher, log: logger})
 
 	// 回调异步推进端口：`flow.HandleCallback` 同步路径只落 op_log + 调此端口。
@@ -313,7 +331,10 @@ func run(version string) error {
 
 	// ★ 派生式修复循环（#69 ②）：独立 goroutine；兜底「已落盘、未推进」的回调
 	//   （#69 ① 落盘即 200 后，推进失败不再由 HTTP 重试驱动，见 internal/flow/repair.go）。
-	go approvalRepairLoop(ctx, flowSvc, logger)
+	//   ★ 第 3 批（docs/16 §2-F-③）：对「最终失败」行用落盘 message_id 调 message/update
+	//   标注飞书卡片（message_id 为空不发请求；失败只记日志不回滚业务）。
+	repairFeedback := feishu.NewRepairCardFeedback(messageClient, logger)
+	go approvalRepairLoop(ctx, flowSvc, repairFeedback, logger)
 
 	// 长连接状态回填健康检查。
 	go func() {
@@ -372,7 +393,11 @@ func s3ConfigOrNil(endpoint, bucket, region, ak, sk string, pathStyle bool) *obj
 // ★ 启动即跑一次（catch-up）：把进程重启前卡住的行捞回来；之后每 `approvalRepairInterval` 扫一次。
 // ★ 与 worker / 长连接 / 对账等并列的独立 goroutine；`ctx` 取消即退出。
 // ★ 逻辑委托 `flow.Service.RepairPendingApprovals`（查 = store 只读扫描；写 = 幂等 `act`）。
-func approvalRepairLoop(ctx context.Context, svc *flow.Service, log *slog.Logger) {
+// ★ 第 3 批（docs/16 §2-F-③）：每轮对「最终失败」行经 repairFeedback 调 message/update
+//
+//	标注卡片 —— message_id 为空时反馈器拦截（无卡可更新，不发同步请求）；
+//	卡片更新失败只记日志、不回滚业务（与「落盘即 200」纪律一致）。
+func approvalRepairLoop(ctx context.Context, svc *flow.Service, feedback *feishu.RepairCardFeedback, log *slog.Logger) {
 	runOnce := func() {
 		rep, err := svc.RepairPendingApprovals(ctx)
 		if err != nil {
@@ -387,6 +412,10 @@ func approvalRepairLoop(ctx context.Context, svc *flow.Service, log *slog.Logger
 			"skipped", rep.Skipped, "failed", rep.Failed)
 		for _, e := range rep.Errors {
 			log.Warn("审批修复循环：单行重驱动失败（不影响其余行）", "detail", e)
+		}
+		// ★ F-③：最终失败行的卡片反馈（反馈器内部做空 message_id 拦截与防重）。
+		for _, f := range rep.Failures {
+			feedback.OnRepairFailure(ctx, f.Op.BizNo, f.Op.TaskID, f.Op.Round, f.Op.MessageID, f.Err)
 		}
 	}
 	runOnce() // catch-up：先捞一次重启前卡住的行
