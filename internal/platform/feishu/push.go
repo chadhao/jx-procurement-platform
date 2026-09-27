@@ -55,6 +55,12 @@ type ExternalInstanceLink struct {
 // **不一致**——`external_approvals` / `external_instances` 要求数组（传 map ⇒
 // `9499 Invalid parameter type in json: texts`）；而 `approval/v1/message/send` 接受 map
 // （官方示例即 map）。⇒ **不能假设"同一平台同一字段形态一致"**，逐接口按官方示例＋实测校准。
+//
+// ★ 2026-09-28 二次核对（官方 Go SDK oapi-sdk-go `I18nResource.Texts []*I18nResourceText`，
+// `I18nResourceText{Key,Value}`）⇒ 本接口 texts **确为数组形态**（与手工构造数组推 `{"code":0}`
+// 的实测互证）；官方文档网页示例折叠不可见，以 SDK 请求定义＋实测为准。
+// Key 约束：官方仅要求 **以 `@i18n@` 开头**（I18nResourceText.Key 注释），未见长度/字符集约束
+// （文档不可见处，如实标注）——我方用 `@i18n@node_<node_id>` 式稳定 key（见 nodeI18nKey）。
 type ExternalI18nText struct {
 	Key   string `json:"key"`
 	Value string `json:"value"`
@@ -74,6 +80,28 @@ type ExternalI18nResource struct {
 // 值在 i18n_resources.texts 中按 Key:Value 赋值）。
 const I18nKeyInstanceTitle = "@i18n@instance_title"
 
+// I18nKeyNodeNamePrefix task_list[*].node_name 的 i18n key 前缀——完整 key 形如
+// `@i18n@node_<node_id>`（nodeI18nKey 生成）。
+const I18nKeyNodeNamePrefix = "@i18n@node_"
+
+// ★★ 本接口「值语义」核对结论（2026-09-28，官方《同步三方审批实例》字段表＋官方 Go SDK
+// oapi-sdk-go 请求定义逐字段核对；真机报错 1390001
+// "Default i18n has no key: 部门负责人审批" 驱动）：
+//
+//   - **要求传 `@i18n@` key（实际文案放 i18n_resources.texts 的 value）**：
+//     实例级 `title` / `user_name` / `department_name`；task 级 `node_name` / `title`；
+//     表单 `form[].name` / `form[].value`。
+//   - **传实际值**：`open_id` / `user_id` / `department_id` / 各时间戳 / `links` / `status` 等。
+//   - `cc_node[].title`：官方 SDK 注释为「抄送任务名称。」，**无** @i18n@ 要求（与 task
+//     `title` 不同，不外推）；我方未下发 cc_list（Push 传 nil），不动。
+//   - 我方**未下发**的 key 型字段（实例 title / user_name / department_name / form /
+//     task title）**一律不新增**（官方标"否"的保持不发）；实例展示名由未传 title 时的
+//     官方回退（取审批定义 name）＋ 我方 i18n_resources 中 instance_title 文案兜底。
+//
+// ★★ 教训（勿删）：本接口多个字段的"值"必须是 **i18n key 而非实际文案**——字段名、
+// 类型、**值语义**三者都要按官方字段表核对；"字段名对、类型对、值传实际文案"照样
+// 1390001（飞书拿 key 去 i18n_resources 查文案，查不到即报错）。
+
 // ExternalTask 快照中的单个任务（仅含已 RELEASED 的）。
 //
 // ★★ 教训（2026-09-28 联调实测 99992402，勿删）：`task_list[*]` 的 `links` /
@@ -89,8 +117,16 @@ const I18nKeyInstanceTitle = "@i18n@instance_title"
 // ★ 时间字段格式：**Unix 毫秒时间戳字符串**（如 "1790528336224"）；未完成任务
 // `end_time` 传 **"0"**（换算纪律见 feishuMilli / taskEndMillis 注释）。
 type ExternalTask struct {
-	TaskID   string `json:"task_id"`
-	NodeID   string `json:"node_id"`
+	TaskID string `json:"task_id"`
+	NodeID string `json:"node_id"`
+	// NodeName 节点名称（task_list[*].node_name）。★★ 2026-09-28 实测 1390001
+	// "Default i18n has no key: 部门负责人审批"：官方字段表要求**传 i18n key**
+	//（示例 `@i18n@…`，"需要在 i18n_resources 中传该名称对应的国际化文案"），
+	// **不是实际文案**——飞书拿 key 去 i18n_resources.texts 查文案，查不到即报错。
+	// 我方下发 `@i18n@node_<node_id>`（nodeI18nKey 生成，同 node_id 稳定同 key），
+	// 实际中文名（store.FlowTask.NodeName）放 I18nResources 对应 key 的 value；
+	// NodeName 为空 ⇒ 降级取 node_id/task_id 并记 warn（不静默发空）。
+	// 另：官方还有 task 级 `title`（同样要求 i18n key）——我方**未下发**，不新增。
 	NodeName string `json:"node_name"`
 	// OpenID 审批人（task_list[*].open_id）。★★ 历史缺陷：曾用 `assignee_open_id`
 	//（未知字段被平台静默忽略 ⇒ 任务不被指派）；2026-09-28 实测后改正，语义不变。
@@ -144,7 +180,9 @@ type InstanceSnapshot struct {
 	TaskList []ExternalTask       `json:"task_list"`
 	CCList   []string             `json:"cc_list,omitempty"`
 	// I18nResources 国际化文案（实例级必填；**数组形态**——与 message/send 的 map
-	// 形态相反，见 ExternalI18nText 教训注释）。
+	// 形态相反，见 ExternalI18nText 教训注释）。内容由两部分 key↔value 组成：
+	// ① instance_title（实例展示名）② 每个 task_list[*].node_name 的 key 配对文案
+	//（BuildSnapshot 保证交叉一致：node_name 里的每个 key 在此都有对应文案）。
 	I18nResources []ExternalI18nResource `json:"i18n_resources"`
 }
 
@@ -252,12 +290,30 @@ func instanceEndMillis(inst *store.Instance, log *slog.Logger) string {
 	return feishuMilli(t)
 }
 
+// nodeI18nKey 由 node_id 生成 node_name 的 i18n key（`@i18n@node_<node_id>`）。
+//
+// ★ 稳定性：官方要求同一审批定义内不同实例的相同节点 node_id 保持不变 ⇒ 同一节点
+// 每次生成**同一 key**，平台侧可一致识别、i18n 文案可复用。
+// ★ node_id 缺失 ⇒ 退化 `@i18n@task_<task_id>`（稳定性差于 node_id，仅兜底；
+// key 仍须与 i18n_resources.texts 成对出现，否则飞书 1390001）。
+// ★ key 命名约束：官方仅要求以 `@i18n@` 开头（未见长度/字符集限制，文档不可见处如实标注）。
+func nodeI18nKey(nodeID, taskID string) string {
+	if id := strings.TrimSpace(nodeID); id != "" {
+		return I18nKeyNodeNamePrefix + id
+	}
+	return "@i18n@task_" + strings.TrimSpace(taskID)
+}
+
 // instanceI18nResources 实例级 i18n_resources（**必填**、**数组形态**）。
 //
 // 展示名优先取审批定义名（t_approval_def.name，由 Pusher.Push 经 GetApprovalDef
 // 读出后传入）；定义缺失 ⇒ **明确降级**为 DocType → BizNo 并记 warn——
 // **绝不静默发空**（必填字段发空数组即便被平台容忍，实例名也无从展示）。
-func instanceI18nResources(defName, docType, bizNo string, log *slog.Logger) []ExternalI18nResource {
+//
+// ★ nodeTexts：task_list[*].node_name 各 i18n key 的对应文案（BuildSnapshot 生成，
+// key↔value 严格成对）——**只发实例 title 的 key 而不给 node key 配文案 ⇒ 飞书
+// 1390001 "Default i18n has no key"**（2026-09-28 实测根因）。
+func instanceI18nResources(defName, docType, bizNo string, nodeTexts []ExternalI18nText, log *slog.Logger) []ExternalI18nResource {
 	name := strings.TrimSpace(defName)
 	if name == "" {
 		name = strings.TrimSpace(docType)
@@ -269,10 +325,13 @@ func instanceI18nResources(defName, docType, bizNo string, log *slog.Logger) []E
 				"biz_no", bizNo, "doc_type", docType)
 		}
 	}
+	texts := make([]ExternalI18nText, 0, 1+len(nodeTexts))
+	texts = append(texts, ExternalI18nText{Key: I18nKeyInstanceTitle, Value: name})
+	texts = append(texts, nodeTexts...)
 	return []ExternalI18nResource{{
 		Locale:    "zh-CN",
 		IsDefault: true,
-		Texts:     []ExternalI18nText{{Key: I18nKeyInstanceTitle, Value: name}},
+		Texts:     texts,
 	}}
 }
 
@@ -284,8 +343,15 @@ func instanceI18nResources(defName, docType, bizNo string, log *slog.Logger) []E
 // ★ defName（t_approval_def.name，调用方经 GetApprovalDef 读出）：实例级
 // i18n_resources 展示名的第一来源；为空 ⇒ 降级 DocType → BizNo 并记 warn
 // （instanceI18nResources；不静默发空）。
+// ★ task_list[*].node_name（2026-09-28 实测 1390001）：下发 **i18n key**
+// （nodeI18nKey：`@i18n@node_<node_id>`，同 node_id 稳定同 key）；实际中文名
+// （store.FlowTask.NodeName）写入 I18nResources 对应 key 的 value——**key 与文案
+// 严格成对**，每个 node_name key 都能在 texts 中找到（否则飞书 1390001）。NodeName
+// 为空 ⇒ 降级取 node_id → task_id 并记 warn（不静默发空）；同 node_id 多任务同名
+// ⇒ 文案去重共用一条（冲突时取首个并记 warn）。
 // ★ log 仅用于数据异常的退化 warn（终态任务缺 closed_at / 终态实例缺结束时刻 /
-// 实例缺 created_at / 缺 applicant_open_id / 定义缺失降级）；nil 时跳过 warn。
+// 实例缺 created_at / 缺 applicant_open_id / 定义缺失降级 / 节点名缺失降级 /
+// 同 key 节点名冲突）；nil 时跳过 warn。
 func BuildSnapshot(inst *store.Instance, tasks []store.FlowTask, ccList []string, detailBase string, defName string, log *slog.Logger) (InstanceSnapshot, error) {
 	if inst == nil {
 		return InstanceSnapshot{}, fmt.Errorf("feishu: 组装快照失败: 实例为空")
@@ -294,6 +360,9 @@ func BuildSnapshot(inst *store.Instance, tasks []store.FlowTask, ccList []string
 		return InstanceSnapshot{}, fmt.Errorf("feishu: 组装快照失败: detailBase 为空，无法构造 links" +
 			"（实例级与 task_list[*].links 均为必填，2026-09-28 实测 99992402；JX_CALLBACK_DOMAIN 未配置？）")
 	}
+	// node_name i18n key → 实际节点名（循环内收集，循环后并入 I18nResources，
+	// 保证 key↔文案同批生成、严格成对）。
+	nodeI18nValues := make(map[string]string)
 	snap := InstanceSnapshot{
 		ApprovalCode: inst.ApprovalCode,
 		InstanceID:   inst.InstanceCode,
@@ -304,10 +373,10 @@ func BuildSnapshot(inst *store.Instance, tasks []store.FlowTask, ccList []string
 		StartTime: feishuMilli(inst.CreatedAt),
 		EndTime:   instanceEndMillis(inst, log),
 		// ★ 实例级发起人 open_id（官方 open_id/user_id 二选一必传）。
-		OpenID:        inst.ApplicantOpenID,
-		Links:         externalLinks(detailBase, inst.BizNo),
-		CCList:        ccList,
-		I18nResources: instanceI18nResources(defName, inst.DocType, inst.BizNo, log),
+		OpenID: inst.ApplicantOpenID,
+		Links:  externalLinks(detailBase, inst.BizNo),
+		CCList: ccList,
+		// I18nResources 在 task 循环后统一组装（需先收集 node_name 的 key↔文案）。
 	}
 	if log != nil {
 		if inst.CreatedAt.IsZero() {
@@ -330,8 +399,33 @@ func BuildSnapshot(inst *store.Instance, tasks []store.FlowTask, ccList []string
 		if err != nil {
 			return InstanceSnapshot{}, fmt.Errorf("feishu: 组装 action_context 失败: %w", err)
 		}
+		// ★ node_name 下发 i18n key（2026-09-28 实测 1390001 根因修复，语义见
+		//   ExternalTask.NodeName / nodeI18nKey 注释）；实际中文名收集为 key↔value 配对。
+		nodeKey := nodeI18nKey(t.NodeID, t.TaskID)
+		nodeText := strings.TrimSpace(t.NodeName)
+		if nodeText == "" {
+			nodeText = strings.TrimSpace(t.NodeID)
+			if nodeText == "" {
+				nodeText = strings.TrimSpace(t.TaskID)
+			}
+			if log != nil {
+				log.Warn("★ 任务节点名缺失：node_name 的 i18n 文案降级取 node_id/task_id（不静默发空——"+
+					"key 无对应文案会被飞书 1390001 拒绝；应回查流程定义的节点命名）",
+					"biz_no", inst.BizNo, "task_id", t.TaskID, "node_id", t.NodeID)
+			}
+		}
+		if prev, ok := nodeI18nValues[nodeKey]; ok {
+			if prev != nodeText && log != nil {
+				log.Warn("★ 同一 node i18n key 对应多个不同节点名（同实例同 node_id 应同名；取首个）",
+					"biz_no", inst.BizNo, "node_key", nodeKey, "kept", prev, "dropped", nodeText)
+			}
+		} else {
+			nodeI18nValues[nodeKey] = nodeText
+		}
 		snap.TaskList = append(snap.TaskList, ExternalTask{
-			TaskID: t.TaskID, NodeID: t.NodeID, NodeName: t.NodeName,
+			TaskID: t.TaskID, NodeID: t.NodeID,
+			// ★ NodeName 是 i18n key（非实际文案——2026-09-28 实测 1390001 教训）。
+			NodeName:      nodeKey,
 			OpenID:        t.AssigneeOpenID, // ★ json tag 是 open_id（2026-09-28 实测，见 ExternalTask 注释）
 			Status:        t.Status,
 			CreateTime:    feishuMilli(t.CreatedAt),
@@ -341,6 +435,19 @@ func BuildSnapshot(inst *store.Instance, tasks []store.FlowTask, ccList []string
 			ActionContext: string(ac),
 		})
 	}
+	// node_name key↔文案配对：按 task_list 顺序去重生成（同 key 取首个；顺序确定 ⇒
+	// snapshotHash 稳定）。★ 交叉一致性约束：body 中每个 task_list[*].node_name key
+	// 都必须在此处有文案（回归断言见 push_body_test.go）。
+	nodeTexts := make([]ExternalI18nText, 0, len(nodeI18nValues))
+	seenNodeKey := make(map[string]struct{}, len(nodeI18nValues))
+	for _, t := range snap.TaskList {
+		if _, ok := seenNodeKey[t.NodeName]; ok {
+			continue
+		}
+		seenNodeKey[t.NodeName] = struct{}{}
+		nodeTexts = append(nodeTexts, ExternalI18nText{Key: t.NodeName, Value: nodeI18nValues[t.NodeName]})
+	}
+	snap.I18nResources = instanceI18nResources(defName, inst.DocType, inst.BizNo, nodeTexts, log)
 	if len(snap.TaskList) > MaxTaskList {
 		return InstanceSnapshot{}, fmt.Errorf("feishu: task_list 超限 %d > %d（失败告警，绝不静默截断）",
 			len(snap.TaskList), MaxTaskList)
@@ -504,6 +611,10 @@ func (p *Pusher) Push(ctx context.Context, bizNo string) (PushResult, error) {
 // ★ `update_time` 官方字段表标 **string**（Unix 毫秒/版本控制用递增值）：由
 // int64 版本值转字符串下发；对账侧（external_check.go）同值同形，防"同值误判差异"。
 // ★ open_id 条件必填（open_id/user_id 二选一）；为空则省略（BuildSnapshot 已 warn）。
+// ★ 值语义纪律（2026-09-28 实测 1390001）：task_list[*].node_name / i18n_resources
+// 的 key↔value 配对由 BuildSnapshot 保证（node_name 是 i18n key，文案在 texts）；
+// 官方要求 i18n key 型的字段（实例 title / user_name / department_name / form /
+// task title）我方均未下发、不新增（见 push.go 顶部「值语义核对结论」注释块）。
 func (c *HTTPClient) UpsertExternalInstance(ctx context.Context, updateMode string, snap InstanceSnapshot) error {
 	body := map[string]any{
 		"approval_code":  snap.ApprovalCode,

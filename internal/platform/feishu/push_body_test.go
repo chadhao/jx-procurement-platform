@@ -26,7 +26,10 @@ import (
 // 本文件三层锁死：
 //  1. 纯 BuildSnapshot 层：task 级字段齐、时间戳为 Unix 毫秒**字符串**、end_time 语义；
 //     ★ 实例级 start_time / end_time / open_id / i18n_resources（数组形态、texts 齐备）；
-//  2. httptest 假飞书端点层：断言**实际发出的 body**（防「结构体对了但 body 组装漏字段」）；
+//     ★ node_name 值语义（2026-09-28 实测 1390001）：下发 @i18n@ key、与 texts 配对、
+//     不含实际中文名（TestNodeI18nKey / TestBuildSnapshotNodeI18nDedupeAndFallback）；
+//  2. httptest 假飞书端点层：断言**实际发出的 body**（防「结构体对了但 body 组装漏字段」），
+//     含 node_name key ↔ i18n_resources.texts 的**交叉一致性**断言；
 //  3. 回归：第 6 批 task_list[*] 的成果不回退。
 
 var (
@@ -56,14 +59,14 @@ func TestBuildSnapshotRequiredFields(t *testing.T) {
 	}
 	tasks := []store.FlowTask{
 		// 未终态：end_time 必须为 "0"。
-		{TaskID: "t-pending", NodeID: "n1", AssigneeOpenID: "ou_a", Status: "PENDING",
+		{TaskID: "t-pending", NodeID: "n1", NodeName: "部门负责人审批", AssigneeOpenID: "ou_a", Status: "PENDING",
 			ReleaseState: "RELEASED", CreatedAt: snapCreatedAt, UpdatedAt: snapUpdatedAt},
 		// 终态 + closed_at：end_time ＝ closed_at 毫秒。
-		{TaskID: "t-closed", NodeID: "n2", AssigneeOpenID: "ou_b", Status: "APPROVED",
+		{TaskID: "t-closed", NodeID: "n2", NodeName: "财务负责人审批", AssigneeOpenID: "ou_b", Status: "APPROVED",
 			ReleaseState: "RELEASED", CreatedAt: snapCreatedAt, UpdatedAt: snapUpdatedAt,
 			ClosedAt: &snapClosedAt},
 		// 终态但 closed_at 缺失：退化取 updated_at（数据异常语义，值形态仍须正确）。
-		{TaskID: "t-closed-no-ts", NodeID: "n3", AssigneeOpenID: "ou_c", Status: "REJECTED",
+		{TaskID: "t-closed-no-ts", NodeID: "n3", NodeName: "总经理审批", AssigneeOpenID: "ou_c", Status: "REJECTED",
 			ReleaseState: "RELEASED", CreatedAt: snapCreatedAt, UpdatedAt: snapUpdatedAt},
 	}
 	snap, err := BuildSnapshot(inst, tasks, nil, testDetailBase, "采购申请审批", nil)
@@ -133,7 +136,8 @@ func TestBuildSnapshotRequiredFields(t *testing.T) {
 	if got := snap.OpenID; got != "ou_user" {
 		t.Errorf("实例级 open_id = %q, 期望 ou_user（t_instance.applicant_open_id）", got)
 	}
-	// ⑨ 实例级 i18n_resources（官方必填；★ 数组形态，texts[].key/value 齐备）。
+	// ⑨ 实例级 i18n_resources（官方必填；★ 数组形态，texts[].key/value 齐备）：
+	//    1 条实例 title + 3 条 node_name 配对文案。
 	if len(snap.I18nResources) != 1 {
 		t.Fatalf("i18n_resources = %d 项, 期望 1", len(snap.I18nResources))
 	}
@@ -142,9 +146,33 @@ func TestBuildSnapshotRequiredFields(t *testing.T) {
 		t.Errorf("i18n_resources[0] = {locale:%s,is_default:%v}, 期望 zh-CN/true（官方枚举＋显式默认）",
 			res.Locale, res.IsDefault)
 	}
-	if len(res.Texts) != 1 || res.Texts[0].Key != I18nKeyInstanceTitle || res.Texts[0].Value != "采购申请审批" {
-		t.Errorf("i18n_resources[0].texts = %+v, 期望 [{key:%s,value:采购申请审批}]（数组形态）",
-			res.Texts, I18nKeyInstanceTitle)
+	if len(res.Texts) != 4 {
+		t.Fatalf("i18n_resources[0].texts = %d 项(%+v), 期望 4（title + 3 个 node key 配对）", len(res.Texts), res.Texts)
+	}
+	if res.Texts[0].Key != I18nKeyInstanceTitle || res.Texts[0].Value != "采购申请审批" {
+		t.Errorf("texts[0] = %+v, 期望 {key:%s,value:采购申请审批}（数组形态）", res.Texts[0], I18nKeyInstanceTitle)
+	}
+	// ⑩ node_name 值语义（2026-09-28 实测 1390001）：必须是 @i18n@ 开头的 key、
+	//    **不含实际中文名**；且 i18n_resources 中有 key↔value 严格配对的文案。
+	for i, want := range []string{"部门负责人审批", "财务负责人审批", "总经理审批"} {
+		key := snap.TaskList[i].NodeName
+		if !strings.HasPrefix(key, "@i18n@") {
+			t.Errorf("task[%d].node_name = %q, 期望 @i18n@ 开头的 i18n key", i, key)
+		}
+		if strings.Contains(key, want) {
+			t.Errorf("task[%d].node_name = %q, 不得含实际文案 %q（1390001 根因）", i, key, want)
+		}
+		paired := false
+		for _, tx := range res.Texts {
+			if tx.Key == key && tx.Value == want {
+				paired = true
+				break
+			}
+		}
+		if !paired {
+			t.Errorf("task[%d].node_name key %q 在 i18n_resources 中无 {key,value:%q} 配对文案: %+v",
+				i, key, want, res.Texts)
+		}
 	}
 }
 
@@ -238,6 +266,86 @@ func TestBuildSnapshotEmptyDetailBaseFails(t *testing.T) {
 	tasks := []store.FlowTask{{TaskID: "t1", ReleaseState: "RELEASED", Status: "PENDING"}}
 	if _, err := BuildSnapshot(inst, tasks, nil, "", "", nil); err == nil {
 		t.Fatal("detailBase 为空应报错（实例级与 task_list[*].links 均必填）")
+	}
+}
+
+// TestNodeI18nKey nodeI18nKey 的 key 生成：node_id 优先（同节点稳定同 key）、
+// 缺失退化 task_id（仍 @i18n@ 开头）。
+func TestNodeI18nKey(t *testing.T) {
+	if got := nodeI18nKey("n1", "t1"); got != "@i18n@node_n1" {
+		t.Errorf("nodeI18nKey(n1,t1) = %q, 期望 @i18n@node_n1", got)
+	}
+	if got := nodeI18nKey(" n1 ", "t1"); got != "@i18n@node_n1" {
+		t.Errorf("nodeI18nKey 带空白 = %q, 期望去空白后 @i18n@node_n1", got)
+	}
+	if got := nodeI18nKey("", "t9"); got != "@i18n@task_t9" {
+		t.Errorf("node_id 缺失时 = %q, 期望退化 @i18n@task_t9", got)
+	}
+}
+
+// TestBuildSnapshotNodeI18nDedupeAndFallback node_name i18n 的去重与降级：
+//
+//	① 同 node_id 多任务 ⇒ 共用同一 key、文案只出现一条（去重）；
+//	② NodeName 为空 ⇒ 文案降级取 node_id（不静默发空——key 无文案即 1390001）；
+//	③ node_id 也缺 ⇒ 退化 task_id key ＋ 文案取 task_id。
+func TestBuildSnapshotNodeI18nDedupeAndFallback(t *testing.T) {
+	inst := &store.Instance{BizNo: "PR-5", ApprovalCode: "c", InstanceCode: "app:PR-5",
+		Status: "PENDING", DocType: "PR", ApplicantOpenID: "ou_user"}
+	tasks := []store.FlowTask{
+		{TaskID: "t1", NodeID: "n1", NodeName: "部门负责人审批", AssigneeOpenID: "ou_a",
+			Status: "PENDING", ReleaseState: "RELEASED"},
+		// 同 node_id 同名（会签场景）：去重共用 key。
+		{TaskID: "t2", NodeID: "n1", NodeName: "部门负责人审批", AssigneeOpenID: "ou_b",
+			Status: "PENDING", ReleaseState: "RELEASED"},
+		// NodeName 缺失：文案降级取 node_id。
+		{TaskID: "t3", NodeID: "n2", AssigneeOpenID: "ou_c",
+			Status: "PENDING", ReleaseState: "RELEASED"},
+		// node_id 也缺：退化 task key ＋ 文案取 task_id。
+		{TaskID: "t4", NodeName: "", AssigneeOpenID: "ou_d",
+			Status: "PENDING", ReleaseState: "RELEASED"},
+	}
+	snap, err := BuildSnapshot(inst, tasks, nil, testDetailBase, "采购申请审批", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(snap.TaskList) != 4 {
+		t.Fatalf("task_list = %d 条, 期望 4", len(snap.TaskList))
+	}
+	// ① 同 node_id ⇒ 同 key（稳定可复现，平台侧一致识别）。
+	if snap.TaskList[0].NodeName != "@i18n@node_n1" || snap.TaskList[1].NodeName != "@i18n@node_n1" {
+		t.Errorf("同 node_id 应同 key: %q / %q", snap.TaskList[0].NodeName, snap.TaskList[1].NodeName)
+	}
+	// ② NodeName 缺失 ⇒ key 仍 @i18n@ 开头。
+	for i, wantKey := range []string{"@i18n@node_n1", "@i18n@node_n1", "@i18n@node_n2", "@i18n@task_t4"} {
+		if snap.TaskList[i].NodeName != wantKey {
+			t.Errorf("task[%d].node_name = %q, 期望 %q", i, snap.TaskList[i].NodeName, wantKey)
+		}
+	}
+	// ③ texts：1 条 title + 3 条去重后的 node 配对文案。
+	res := snap.I18nResources[0]
+	if len(res.Texts) != 4 {
+		t.Fatalf("texts = %d 项(%+v), 期望 4（title + 3 个去重 node key）", len(res.Texts), res.Texts)
+	}
+	pairs := make(map[string]string, len(res.Texts))
+	for _, tx := range res.Texts {
+		pairs[tx.Key] = tx.Value
+	}
+	wantPairs := map[string]string{
+		I18nKeyInstanceTitle: "采购申请审批",
+		"@i18n@node_n1":      "部门负责人审批",
+		"@i18n@node_n2":      "n2", // NodeName 缺 ⇒ 降级 node_id（可见，不静默发空）
+		"@i18n@task_t4":      "t4", // node_id 缺 ⇒ 退化 task key，文案取 task_id
+	}
+	for k, want := range wantPairs {
+		if pairs[k] != want {
+			t.Errorf("texts[%q] = %q, 期望 %q", k, pairs[k], want)
+		}
+	}
+	// ④ 交叉一致性：每个 task_list[*].node_name 都能配到文案。
+	for _, tk := range snap.TaskList {
+		if _, ok := pairs[tk.NodeName]; !ok {
+			t.Errorf("node_name key %q 无配对文案（1390001 形态）", tk.NodeName)
+		}
 	}
 }
 
@@ -344,12 +452,20 @@ func TestPushSendsRequiredFieldsOverHTTP(t *testing.T) {
 		t.Errorf("i18n_resources[0] = %v, 期望 locale=zh-CN / is_default=true", ir)
 	}
 	texts, ok := ir["texts"].([]any)
-	if !ok || len(texts) != 1 {
-		t.Fatalf("i18n_resources[0].texts = %v, 期望数组形态且 1 项（★ 传 map ⇒ 9499 实测缺陷）", ir["texts"])
+	if !ok || len(texts) != 2 {
+		t.Fatalf("i18n_resources[0].texts = %v, 期望数组形态且 2 项（instance_title + node 配对文案；★ 传 map ⇒ 9499 实测缺陷）", ir["texts"])
 	}
 	text0, _ := texts[0].(map[string]any)
 	if text0["key"] != I18nKeyInstanceTitle || text0["value"] != "采购申请审批" {
 		t.Errorf("texts[0] = %v, 期望 {key:%s,value:采购申请审批}", text0, I18nKeyInstanceTitle)
+	}
+	// ④' 收集 texts 的 key→value 配对（供 node_name 交叉一致性断言用）。
+	textPairs := make(map[string]string, len(texts))
+	for _, tx := range texts {
+		m, _ := tx.(map[string]any)
+		k, _ := m["key"].(string)
+		v, _ := m["value"].(string)
+		textPairs[k] = v
 	}
 
 	// ⑤ 实例级 links（官方字段表必填；本次实测飞书未报但应补齐）。
@@ -403,5 +519,33 @@ func TestPushSendsRequiredFieldsOverHTTP(t *testing.T) {
 	taskID := bizNo + "-n1-ou_a-1-1"
 	if got, _ := task["action_context"].(string); got != `{"biz_no":"`+bizNo+`","task_id":"`+taskID+`"}` {
 		t.Errorf("action_context = %q, 期望 {\"biz_no\":…,\"task_id\":…}", got)
+	}
+	// ⑩ node_name 值语义（2026-09-28 实测 1390001 "Default i18n has no key"）：
+	//    必须是 @i18n@ 开头的 i18n key（= "@i18n@node_n1"），**不含实际中文名**。
+	nodeName, _ := task["node_name"].(string)
+	if nodeName != "@i18n@node_n1" {
+		t.Errorf("task_list[0].node_name = %q, 期望 i18n key \"@i18n@node_n1\"", nodeName)
+	}
+	if strings.Contains(nodeName, "部门负责人审批") {
+		t.Errorf("task_list[0].node_name = %q, 不得含实际文案（飞书拿 key 查 i18n_resources，查不到即 1390001）", nodeName)
+	}
+	// ⑪ 交叉一致性：body 里每个 task_list[*].node_name key 都能在 i18n_resources.texts
+	//    中找到 key↔value 配对（防"发了 key 但没给文案"——正是本次 1390001 的形态）。
+	for i, tk := range body.Tasks {
+		nk, _ := tk["node_name"].(string)
+		if !strings.HasPrefix(nk, "@i18n@") {
+			t.Errorf("task_list[%d].node_name = %q, 期望 @i18n@ 开头的 i18n key", i, nk)
+		}
+		v, ok := textPairs[nk]
+		if !ok {
+			t.Errorf("task_list[%d].node_name key %q 在 i18n_resources.texts 无配对文案: %v（1390001 形态）", i, nk, textPairs)
+			continue
+		}
+		if v == "" {
+			t.Errorf("task_list[%d].node_name key %q 的配对文案为空（不静默发空）", i, nk)
+		}
+	}
+	if got := textPairs["@i18n@node_n1"]; got != "部门负责人审批" {
+		t.Errorf("texts[@i18n@node_n1] = %q, 期望实际节点名 \"部门负责人审批\"", got)
 	}
 }

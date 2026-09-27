@@ -67,6 +67,7 @@ func seedInstance(t *testing.T, db *store.DB, bizNo string, updateTime int64) {
 	}
 	tasks := []store.FlowTask{
 		{TaskID: bizNo + "-n1-ou_a-1-1", BizNo: bizNo, NodeID: "n1", NodeSeq: 1, Round: 1,
+			NodeName:       "部门负责人审批",
 			AssigneeOpenID: "ou_a", Status: "PENDING", ReleaseState: "RELEASED", TaskOrder: 1,
 			CreatedAt: pushAt, UpdatedAt: pushAt},
 		{TaskID: bizNo + "-n2-ou_b-1-2", BizNo: bizNo, NodeID: "n2", NodeSeq: 2, Round: 1,
