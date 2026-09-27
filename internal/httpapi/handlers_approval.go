@@ -82,12 +82,23 @@ func (d Deps) handleExternalApprovalCallback(c echo.Context) error {
 	}
 	res, err := d.Flow.HandleCallback(c.Request().Context(), req)
 	if err != nil {
-		// ★★ #69 专用分支：**已受理但推进失败**（`CallbackResult.Accepted==true` + err≠nil，
-		//   见 flow callback.go:110-115）—— 归 #69 统一处理（响应契约 + 可恢复路径**两半同批**）。
-		//   此处**维持 500、勿单方改**：改成"已受理即 200"＝把可见的失败换成**静默卡死**
-		//   （幂等键已占 → 飞书重试判 Duplicate → 永不重推）。逐枚举项的测试**不含**此半。
+		// ★★ #69 ①：**已落盘（Accepted）即 200** —— 只要 op_log 已写入（或幂等命中），请求即**已受理**；
+		//   此后 advancer 的推进成败**不得**决定 HTTP 码（用户口径 D2：「先落盘，落盘成功就返回 200，
+		//   然后慢慢跑业务」，D2 亦明言「不存在超时问题这就够了」）。把 err **记日志**
+		//   （含定位键 biz_no/task_id/op_type/round）以便观测、**绝不静默**。
+		//   ★ 真正的重驱动由 ② 的派生式修复循环（`flow.Service.RepairPendingApprovals`）兜底：
+		//     它扫「op_log 有 APPROVE/REJECT 留痕、但任务仍 PENDING（同 round、已释放、实例非终态）」
+		//     的行重驱动之（`act` 幂等，连跑不双推进）。
+		//   ★★ 缺 ② 则 ① 会把**可见失败**变成**静默卡死**：落盘后回 200 → 飞书不再重试 →
+		//     而幂等键已占（重发回调也判 Duplicate）→ 该任务**永不重推**。故 ①② 必须同批。
 		if res.Accepted {
-			return fail(c, http.StatusInternalServerError, codeInternal, err.Error())
+			d.Log.ErrorContext(c.Request().Context(),
+				"审批回调已受理但异步推进失败（已回 200；由派生式修复循环重驱动）",
+				"biz_no", req.BizNo, "task_id", req.TaskID, "op_type", req.OpType,
+				"round", res.Round, "duplicate", res.Duplicate, "error", err.Error())
+			return ok(c, map[string]any{
+				"accepted": res.Accepted, "duplicate": res.Duplicate, "advance_deferred": true,
+			})
 		}
 		// ★ 未受理：**枚举式**错误→状态码映射（定案 #60：枚举优于逐例；见 callbackErrorStatus，
 		//   表见 docs/05-API §3.14）。未分类才落 500，绝不让已知 4xx 落 500。
@@ -106,6 +117,9 @@ func (d Deps) handleExternalApprovalCallback(c echo.Context) error {
 }
 
 // callbackErrorStatus 把回调路径的领域错误**枚举式**映射为 HTTP 状态码 + 业务码。
+//
+// ★ **仅适用于「未受理」**（`CallbackResult.Accepted==false`）：已受理（落盘/幂等命中）一律 200，
+// 不进入本表（见 handler 中的 #69 ① 分支）。
 //
 // 规则（team-lead 裁定）：① 客户端可纠正 → 4xx；② 服务端故障 → 5xx；③ 已受理（幂等命中）→ 200（不在此）。
 // 表（见 docs/05-API §3.14）：

@@ -51,6 +51,9 @@ type CallbackRequest struct {
 type CallbackResult struct {
 	Accepted  bool // 已受理（写入 op_log 或幂等命中）
 	Duplicate bool // 幂等命中（重复回调）
+	// Round 命中任务的当前轮次（#69 ①）：供 handler 在「已受理但推进失败」时记日志定位；
+	// 早期未定位到任务的拒绝路径（非法 op / 缺字段 / token 失败）此值为 0。
+	Round int
 }
 
 // Advancer 异步推进端口：worker 消费 op_log 后调用它做真正的状态机推进。
@@ -104,21 +107,23 @@ func (s *Service) HandleCallback(ctx context.Context, req CallbackRequest) (Call
 	// ③ 幂等落盘（同步路径唯一的写；执行到此处＝该请求**已通过准入**）。
 	inserted, err := s.recordCallback(ctx, req, op, task)
 	if err != nil {
-		return CallbackResult{}, err
+		return CallbackResult{Round: task.Round}, err
 	}
 	if !inserted {
 		// 重复回调：幂等 no-op，返回 Accepted（对飞书仍应 200）。
-		return CallbackResult{Accepted: true, Duplicate: true}, nil
+		return CallbackResult{Accepted: true, Duplicate: true, Round: task.Round}, nil
 	}
 
 	// ④ 入队（异步推进）——同步路径到此返回。
 	if s.advancer != nil {
 		if err := s.advancer(ctx, req); err != nil {
 			// 已落盘：推进失败由 worker 重试；此处把错误透出以便观测，但回调本身已受理。
-			return CallbackResult{Accepted: true}, err
+			// ★ #69：`Accepted=true`（已落盘）语义下，handler 一律回 200；本 err 仅用于**日志**，
+			//   真正的重驱动由派生式修复循环（RepairPendingApprovals）按 round 对齐兜底。
+			return CallbackResult{Accepted: true, Round: task.Round}, err
 		}
 	}
-	return CallbackResult{Accepted: true}, nil
+	return CallbackResult{Accepted: true, Round: task.Round}, nil
 }
 
 // verifyCallbackToken 校验回调 token：按 biz_no → 实例 → approval_code → 定义 → callback_token。

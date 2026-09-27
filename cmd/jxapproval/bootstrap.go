@@ -44,6 +44,12 @@ import (
 const (
 	workerPoolSize = 4
 	sessionTTL     = 8 * time.Hour
+
+	// approvalRepairInterval 派生式修复循环（#69 ②）的扫查间隔。
+	// ★ 依据：#69 ①「落盘即 200」后，推进失败**不再由 HTTP 重试驱动**（飞书收到 200 不再重试）
+	//   → 必须由本地循环兜底。审批推进非高频、且重驱动走幂等的 `act`，30s 的延迟对用户口径
+	//   「先落盘…然后**慢慢跑业务**」完全可接受；启动先跑一次做 catch-up（捞回重启前卡住的行）。
+	approvalRepairInterval = 30 * time.Second
 )
 
 // subscribeTargetCodes 启动时要订阅的事件源（显式枚举）。
@@ -283,6 +289,10 @@ func run(version string) error {
 	// ★ 审批对账循环（T03）：独立 goroutine；未配置外部 check 端口时该方法自行告警并空跑退出。
 	go approvalRec.Run(ctx)
 
+	// ★ 派生式修复循环（#69 ②）：独立 goroutine；兜底「已落盘、未推进」的回调
+	//   （#69 ① 落盘即 200 后，推进失败不再由 HTTP 重试驱动，见 internal/flow/repair.go）。
+	go approvalRepairLoop(ctx, flowSvc, logger)
+
 	// 长连接状态回填健康检查。
 	go func() {
 		ticker := time.NewTicker(2 * time.Second)
@@ -332,6 +342,41 @@ func s3ConfigOrNil(endpoint, bucket, region, ak, sk string, pathStyle bool) *obj
 	return &objectstore.S3Config{
 		Endpoint: endpoint, Bucket: bucket, Region: region,
 		AccessKey: ak, SecretKey: sk, PathStyle: pathStyle,
+	}
+}
+
+// approvalRepairLoop 周期性地把「已落盘、未推进」的回调**重驱动**到位（#69 ②）。
+//
+// ★ 启动即跑一次（catch-up）：把进程重启前卡住的行捞回来；之后每 `approvalRepairInterval` 扫一次。
+// ★ 与 worker / 长连接 / 对账等并列的独立 goroutine；`ctx` 取消即退出。
+// ★ 逻辑委托 `flow.Service.RepairPendingApprovals`（查 = store 只读扫描；写 = 幂等 `act`）。
+func approvalRepairLoop(ctx context.Context, svc *flow.Service, log *slog.Logger) {
+	runOnce := func() {
+		rep, err := svc.RepairPendingApprovals(ctx)
+		if err != nil {
+			log.Error("审批修复循环：扫描待修复行失败（下一轮重试）", "error", err.Error())
+			return
+		}
+		if rep.Scanned == 0 {
+			return
+		}
+		log.Info("审批修复循环：重驱动已落盘未推进的回调",
+			"scanned", rep.Scanned, "repaired", rep.Repaired,
+			"skipped", rep.Skipped, "failed", rep.Failed)
+		for _, e := range rep.Errors {
+			log.Warn("审批修复循环：单行重驱动失败（不影响其余行）", "detail", e)
+		}
+	}
+	runOnce() // catch-up：先捞一次重启前卡住的行
+	ticker := time.NewTicker(approvalRepairInterval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			runOnce()
+		}
 	}
 }
 
