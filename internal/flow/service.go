@@ -129,11 +129,13 @@ type SubmitInput struct {
 
 // Service 审批领域服务。
 type Service struct {
-	db    *store.DB
-	gen   *number.Generator
-	appID string
-	maps  *config.Maps // 台账映射（finalize 落账用；可为 nil＝不落台账）
-	log   *slog.Logger
+	db       *store.DB
+	gen      *number.Generator
+	appID    string
+	maps     *config.Maps // 台账映射（finalize 落账用；可为 nil＝不落台账）
+	log      *slog.Logger
+	subs     []Subscriber // 流程事件订阅者（通知 / 审计 / 推送 / 台账）
+	advancer Advancer     // 回调异步推进端口（见 callback.go；nil＝仅落 op_log 不入队）
 }
 
 // New 构造审批服务。appID 用于生成 `instance_id = {app_id}:{biz_no}`（04a §3.3 / §6.3）。
@@ -184,7 +186,10 @@ func (s *Service) Submit(ctx context.Context, in SubmitInput) (string, error) {
 		at = time.Now()
 	}
 
-	var bizNo string
+	var (
+		bizNo  string
+		events []FlowEvent
+	)
 	err := s.db.WithTx(ctx, func(tx *sql.Tx) error {
 		var err error
 		bizNo, err = s.gen.AllocTx(ctx, tx, in.DocType, at)
@@ -260,11 +265,19 @@ func (s *Service) Submit(ctx context.Context, in SubmitInput) (string, error) {
 			BizNo: bizNo, OpType: OpSubmit, ActorOpenID: in.ApplicantOpenID,
 			ToStatus: InstancePending, Reason: in.PrevBizNo, CreatedAt: at,
 		})
-		return err
+		if err != nil {
+			return err
+		}
+		events = append(events, FlowEvent{
+			Type: EventSubmitted, BizNo: bizNo, InstanceCode: inst.InstanceCode, DocType: in.DocType,
+			ActorOpenID: in.ApplicantOpenID, Reason: in.PrevBizNo, At: at,
+		})
+		return nil
 	})
 	if err != nil {
 		return "", err
 	}
+	s.emit(ctx, events...) // ★ 事务提交后统一分发（04a §2.5）
 	return bizNo, nil
 }
 
@@ -281,7 +294,8 @@ func (s *Service) Reject(ctx context.Context, bizNo, taskID, actorOpenID, reason
 // Cancel 撤回（仅发起人；未终结前可撤）→ 实例 CANCELED、在途任务 DONE。
 func (s *Service) Cancel(ctx context.Context, bizNo, actorOpenID, reason string) error {
 	at := time.Now()
-	return s.db.WithTx(ctx, func(tx *sql.Tx) error {
+	var events []FlowEvent
+	err := s.db.WithTx(ctx, func(tx *sql.Tx) error {
 		inst, err := s.db.GetInstanceByBizNoTx(ctx, tx, bizNo)
 		if err != nil {
 			return err
@@ -292,6 +306,12 @@ func (s *Service) Cancel(ctx context.Context, bizNo, actorOpenID, reason string)
 		if isTerminal(inst.Status) {
 			return fmt.Errorf("%w: 实例 %s 已终态 %s，不可撤回", ErrIllegalTransition, bizNo, inst.Status)
 		}
+		// ★ 撤回前先算「应有通知集合」（撤回会把在途置 DONE，事后算不出"曾通过者"）→ 通知已通过者（01a §4.7）。
+		preTasks, err := s.db.ListFlowTasksTx(ctx, tx, bizNo)
+		if err != nil {
+			return err
+		}
+		notifyTargets := ExpectedNotifyTargets(preTasks, actorOpenID)
 		if err := s.terminalizeTx(ctx, tx, inst, InstanceCanceled, at, reason); err != nil {
 			return err
 		}
@@ -305,18 +325,30 @@ func (s *Service) Cancel(ctx context.Context, bizNo, actorOpenID, reason string)
 		}); err != nil {
 			return err
 		}
-		_, err = s.db.InsertFlowOpLogTx(ctx, tx, &store.FlowOpLog{
+		if _, err := s.db.InsertFlowOpLogTx(ctx, tx, &store.FlowOpLog{
 			BizNo: bizNo, OpType: OpCancel, ActorOpenID: actorOpenID,
 			FromStatus: InstancePending, ToStatus: InstanceCanceled, Reason: reason, CreatedAt: at,
+		}); err != nil {
+			return err
+		}
+		events = append(events, FlowEvent{
+			Type: EventCanceled, BizNo: bizNo, InstanceCode: inst.InstanceCode, DocType: inst.DocType,
+			ActorOpenID: actorOpenID, Reason: reason, At: at, NotifyTargets: notifyTargets,
 		})
-		return err
+		return nil
 	})
+	if err != nil {
+		return err
+	}
+	s.emit(ctx, events...)
+	return nil
 }
 
 // act 是同意/拒绝的共用实现。
 func (s *Service) act(ctx context.Context, bizNo, taskID, actor, opType, reason string) error {
 	at := time.Now()
-	return s.db.WithTx(ctx, func(tx *sql.Tx) error {
+	var events []FlowEvent
+	err := s.db.WithTx(ctx, func(tx *sql.Tx) error {
 		inst, err := s.db.GetInstanceByBizNoTx(ctx, tx, bizNo)
 		if err != nil {
 			return err
@@ -384,16 +416,41 @@ func (s *Service) act(ctx context.Context, bizNo, taskID, actor, opType, reason 
 		}
 		// ★ 状态史（每次迁移都留痕，非仅终态；docs/11 R02）：状态取推进后的实例状态，
 		//   节点名用于时间线定位；同 (状态, 人, 意见) 全同则去重、不消耗 event_seq（#37）。
-		_, _, err = s.db.AppendStatusHistory(ctx, tx, &store.StatusHistory{
+		if _, _, err := s.db.AppendStatusHistory(ctx, tx, &store.StatusHistory{
 			InstanceCode:   inst.InstanceCode,
 			Status:         inst.Status,
 			TaskNode:       task.NodeName,
 			OperatorOpenID: actor,
 			Opinion:        reason,
 			OccurredAt:     at,
+		}); err != nil {
+			return err
+		}
+		// ★ 收集流程事件（提交后统一分发，04a §2.5）。
+		evType := EventTaskApproved
+		if opType == OpReject {
+			evType = EventTaskRejected
+		}
+		events = append(events, FlowEvent{
+			Type: evType, BizNo: bizNo, InstanceCode: inst.InstanceCode, DocType: inst.DocType,
+			NodeID: task.NodeID, NodeName: task.NodeName, TaskID: taskID, ActorOpenID: actor,
+			Reason: reason, At: at,
 		})
-		return err
+		switch inst.Status {
+		case InstanceApproved:
+			events = append(events, FlowEvent{Type: EventInstanceApproved, BizNo: bizNo,
+				InstanceCode: inst.InstanceCode, DocType: inst.DocType, ActorOpenID: actor, At: at})
+		case InstanceRejected:
+			events = append(events, FlowEvent{Type: EventInstanceRejected, BizNo: bizNo,
+				InstanceCode: inst.InstanceCode, DocType: inst.DocType, ActorOpenID: actor, At: at})
+		}
+		return nil
 	})
+	if err != nil {
+		return err
+	}
+	s.emit(ctx, events...)
+	return nil
 }
 
 // createTasksTx 建该实例全部节点的任务（PENDING），并按**顺序会签**设置释放状态。

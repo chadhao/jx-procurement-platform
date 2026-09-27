@@ -22,7 +22,7 @@ func newFlowDB(t *testing.T) *store.DB {
 	t.Helper()
 	db := storetest.NewDB(t)
 	if err := db.UpsertApprovalDef(context.Background(), &store.ApprovalDef{
-		ApprovalCode: "code-pr", DocType: "PR", Name: "采购申请",
+		ApprovalCode: "code-pr", DocType: "PR", Name: "采购申请", CallbackToken: "tok-pr",
 	}); err != nil {
 		t.Fatalf("预置审批定义失败: %v", err)
 	}

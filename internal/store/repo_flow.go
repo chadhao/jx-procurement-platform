@@ -91,6 +91,31 @@ WHERE task_id = ?`, releaseHeld, now, taskID); err != nil {
 	return nil
 }
 
+// ResetFlowTaskTx 重置任务的 状态 / 释放状态 / 轮次（回退「按顺序位重放」用，04a §2.3 末行）。
+//
+// ★ 与 UpdateFlowTaskStatusTx 的区别：本方法一并重置 `release_state` 与 `round`、并清空 `closed_at`，
+// 用于"把被回退节点整体置回 PENDING 且重置释放"；**历史不删除**（op_log 另行追加）。
+func (d *DB) ResetFlowTaskTx(ctx context.Context, tx *sql.Tx, taskID, status, releaseState string, round int) error {
+	releaseState = strings.ToUpper(strings.TrimSpace(releaseState))
+	if releaseState != releaseHeld && releaseState != releaseReleased {
+		releaseState = releaseHeld
+	}
+	if round <= 0 {
+		round = 1
+	}
+	res, err := tx.ExecContext(ctx, `
+UPDATE t_flow_task SET status = ?, release_state = ?, round = ?, closed_at = NULL, updated_at = ?
+WHERE task_id = ?`,
+		status, releaseState, round, fmtTime(timeNow().UTC()), taskID)
+	if err != nil {
+		return fmt.Errorf("store: 重置任务 %s 失败: %w", taskID, err)
+	}
+	if n, err := res.RowsAffected(); err == nil && n == 0 {
+		return fmt.Errorf("store: 重置任务 %s 失败: %w", taskID, ErrNotFound)
+	}
+	return nil
+}
+
 // ListTasksByNodeTx 在事务内列出某实例某节点下的全部任务，按**释放顺序**升序。
 //
 // ★ 排序键＝`node_seq, task_order`（显式契约列）：04a §2.3 要求「同 node_id 按次序逐级释放」，
