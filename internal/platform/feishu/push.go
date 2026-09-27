@@ -137,6 +137,16 @@ func NewPusher(db *store.DB, client PushClient, log *slog.Logger) *Pusher {
 
 // Push 推送某实例当前快照。
 //
+// ★★ 落库纪律（docs/16 §2-D 纪律一）：**本方法是推实例的唯一入口**，其数据源就是本地
+//
+//	`t_instance`（GetInstanceByBizNo）与 `t_flow_task`（ListFlowTasks）——本地行是推送的
+//	**前提**，而非推送的副产品。**禁止任何「只推飞书、不落本地」的生产路径**。
+//	正规链路：`flow.Submit`（internal/flow/service.go）**同事务**写 `t_instance` +
+//	`t_flow_task` + 状态史 + op_log，事务提交后经 `flow.emit` 分发 `flowPushSubscriber`
+//	（cmd/jxapproval/bootstrap.go）才调到本方法 ⇒ 本地行**天然先于**推送存在，回调可命中。
+//	手工 curl 直推 `external_instances` 仅限联调排障，且须知道该实例**本地不可回调**
+//	（无 `t_instance` 行 ⇒ 回调报「无对应实例」，正是 docs/16 实测现象）。
+//
 // ★ 幂等 / 单调（04a §3.1）：仅当 `update_time` **大于**已推送的最大版本时才真正推送；
 // 否则跳过（Skipped）——避免"落后快照 REPLACE 抹掉已推进数据"。
 func (p *Pusher) Push(ctx context.Context, bizNo string) (PushResult, error) {
@@ -175,6 +185,14 @@ func (p *Pusher) Push(ctx context.Context, bizNo string) (PushResult, error) {
 		// 超限等：告警且**不写流水**（这是"请求有误"，非"平台不支持"；S12）。
 		p.log.Error("推送组装失败（不静默截断）", "biz_no", bizNo, "error", err.Error())
 		return PushResult{}, err
+	}
+	// ★ 快照守卫（docs/16 §2-D 纪律三）：实例 PENDING 但 RELEASED 任务数为 0 ⇒
+	//   无任务快照是异常态（推出去也没有可操作待办，多为任务链未建/释放态异常）。
+	//   **只 warn、不拦截、不改变返回值语义**（REPLACE 首推等场景由上层判断）。
+	//   字面量与 flow.InstancePending 同值（PENDING）；不反向依赖领域包。
+	if inst.Status == "PENDING" && len(snap.TaskList) == 0 {
+		p.log.Warn("★ 快照守卫：实例 PENDING 但 RELEASED 任务数为 0（无任务快照是异常态）",
+			"biz_no", bizNo, "status", inst.Status, "update_time", inst.UpdateTime)
 	}
 	mode := ChooseUpdateMode(first, false)
 	hash := snapshotHash(snap)

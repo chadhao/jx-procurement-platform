@@ -3,11 +3,14 @@ package httpapi
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"strings"
 
 	"github.com/labstack/echo/v4"
 
+	"github.com/chadhao/jx-procurement-platform/internal/approval"
+	"github.com/chadhao/jx-procurement-platform/internal/config"
 	"github.com/chadhao/jx-procurement-platform/internal/flow"
 	"github.com/chadhao/jx-procurement-platform/internal/permission"
 	"github.com/chadhao/jx-procurement-platform/internal/store"
@@ -499,6 +502,141 @@ func (d Deps) handleApprovalDefs(c echo.Context) error {
 		})
 	}
 	return ok(c, map[string]any{"items": items})
+}
+
+// handleAdminApprovalDefsSync 三方审批定义装载（主通道；docs/16 §2-C 通道①）。
+//
+// ★ 路由：`POST /api/admin/approval/defs/sync`（admin 组；鉴权＝requireSysAdmin，
+//
+//	与 `/api/admin` 域语义一致，API §3.9）。
+//
+// ★ 流程：读 `t_config_mapping(map_kind='approval_code')`（map_key＝code、map_value＝doc_type，
+//
+//	清单正本＝docs/reference/config-mapping.sample.json 的 approval_code 节，11 类）→
+//	组装 []approval.DefInput → d.ApprovalDefs.Sync(...)（幂等：approval_code 命中即更新）。
+//
+// ★ 可见失败（绝不 200 静默，定案 #21 同源纪律）：
+//
+//	① 清单为空              → 400（未导入配置映射）；
+//	② code 仍是占位符       → 400（复用 config.IsPlaceholder，与导入层同一 marker 清单）；
+//	③ doc_type 不在 11 类内 → 400；
+//	④ 回调 token/域名未配置 → 503（定义无 token 则回调校验恒失败，拒绝装载）。
+//
+// ★ token 一处配置两侧一致：`Env.ActionCallbackToken`（JX_ACTION_CALLBACK_TOKEN）随
+//
+//	DefInput.CallbackToken 下发飞书，本地落 `t_approval_def.callback_token` 同值
+//	（verifyCallbackToken 按实例 → 定义 → token 常数时间比对）。
+//
+// ★ 响应返回可核对计数（synced/created/updated/skipped/failed + items 明细），
+//
+//	供运维自证；部分失败 → HTTP 500 但计数与明细照返（approval.ErrSyncFailed，S7）。
+func (d Deps) handleAdminApprovalDefsSync(c echo.Context) error {
+	idn, allowed := d.requireSysAdmin(c)
+	if !allowed {
+		return nil // requireSysAdmin 已写出 403/401 响应并留痕
+	}
+	ctx := c.Request().Context()
+	if d.ApprovalDefs == nil {
+		return fail(c, http.StatusServiceUnavailable, codeNotReady, "三方审批定义注册表未装配")
+	}
+	// ④ 回调配置门禁：token / 域名缺一即拒绝装载（不制造"定义已建但回调永远校验失败"的半成品）。
+	if d.Env == nil || strings.TrimSpace(d.Env.ActionCallbackToken) == "" {
+		return fail(c, http.StatusServiceUnavailable, codeNotReady,
+			"回调 token 未配置（JX_ACTION_CALLBACK_TOKEN）：定义无 token 则回调校验恒失败，拒绝装载")
+	}
+	if d.Env == nil || strings.TrimSpace(d.Env.CallbackDomain) == "" {
+		return fail(c, http.StatusServiceUnavailable, codeNotReady,
+			"回调域名未配置（JX_CALLBACK_DOMAIN）：无法组装 action_callback_url，拒绝装载")
+	}
+
+	// ① 读清单（读库而非启动期 Maps 快照：导入后无需重启即可装载）。
+	rows, err := d.DB.ListConfigMappings(ctx, "approval_code")
+	if err != nil {
+		return fail(c, http.StatusInternalServerError, codeInternal, err.Error())
+	}
+	if len(rows) == 0 {
+		return fail(c, http.StatusBadRequest, codeBadRequest,
+			"approval_code 配置清单为空：请先导入配置映射（docs/reference/config-mapping.sample.json "+
+				"的 approval_code 节，替换占位符后经配置映射导入写入 t_config_mapping）")
+	}
+
+	// ②③ 占位符 / doc_type 二次校验（导入层已拦，此处防绕过导入通道的直写脏数据）。
+	var violations []string
+	for _, r := range rows {
+		code := strings.TrimSpace(r.MapKey)
+		dt := strings.TrimSpace(r.MapValue)
+		switch {
+		case code == "" || dt == "":
+			violations = append(violations, fmt.Sprintf("code=%q doc_type=%q：存在空值", code, dt))
+		case config.IsPlaceholder(code):
+			violations = append(violations,
+				fmt.Sprintf("code=%s：仍是未替换的占位符——请填入飞书审批后台的真实 approval_code", code))
+		case !inDocTypes(dt):
+			violations = append(violations,
+				fmt.Sprintf("code=%s：doc_type=%q 不在 11 类（%s）之内", code, dt, strings.Join(config.DocTypes, "/")))
+		}
+	}
+	if len(violations) > 0 {
+		return fail(c, http.StatusBadRequest, codeBadRequest,
+			"approval_code 清单不可装载："+strings.Join(violations, "；"))
+	}
+
+	// 组装 DefInput：名称取配置 remark（清单正本各条自带单据名），缺省退回 doc_type；
+	// 分组留空（飞书 group_name 可选，COALESCE 保留既有值）；回调 URL/token 来自环境配置。
+	callbackURL := strings.TrimRight(strings.TrimSpace(d.Env.CallbackDomain), "/") + "/approval/external/callback"
+	inputs := make([]approval.DefInput, 0, len(rows))
+	for _, r := range rows {
+		dt := strings.TrimSpace(r.MapValue)
+		inputs = append(inputs, approval.DefInput{
+			DocType:       dt,
+			ApprovalCode:  strings.TrimSpace(r.MapKey),
+			Name:          firstNonEmptyStr(strings.TrimSpace(r.Remark), dt),
+			CallbackURL:   callbackURL,
+			CallbackToken: d.Env.ActionCallbackToken,
+		})
+	}
+
+	res, err := d.ApprovalDefs.Sync(ctx, inputs)
+	var created, updated int
+	for _, it := range res.Items {
+		if it.Err != "" {
+			continue
+		}
+		if it.Created {
+			created++
+		} else {
+			updated++
+		}
+	}
+	counts := map[string]any{
+		"synced":  created + updated,
+		"created": created,
+		"updated": updated,
+		"skipped": 0, // 占位符/空清单等在上方已整体拒绝，不存在部分跳过
+		"failed":  res.Failed,
+		"items":   res.Items,
+	}
+	if err != nil {
+		// 部分失败必须可见（approval.ErrSyncFailed）：500 + 计数与明细照返，运维可核对失败条目。
+		return c.JSON(http.StatusInternalServerError, Envelope{
+			Code: codeInternal, Data: counts, Message: err.Error(), TraceID: traceID(c),
+		})
+	}
+	d.audit(ctx, &store.AuditLogRow{ActorOpenID: idn.OpenID, ActorRole: idn.Role,
+		Action: "approval_defs_sync", Resource: "approval", Result: "allow",
+		DetailJSON: fmt.Sprintf(`{"synced":%d,"created":%d,"updated":%d}`,
+			created+updated, created, updated)})
+	return ok(c, counts)
+}
+
+// inDocTypes 判断 doc_type 是否在 11 类清单内（清单正本＝config.DocTypes，不复制值）。
+func inDocTypes(dt string) bool {
+	for _, v := range config.DocTypes {
+		if v == dt {
+			return true
+		}
+	}
+	return false
 }
 
 // ---------- 内部对账入口（★ 审批对账唯一入口，R24）----------

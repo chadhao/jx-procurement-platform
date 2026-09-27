@@ -43,6 +43,16 @@ type Env struct {
 	RustFSAK        string // JX_RUSTFS_AK（敏感）
 	RustFSSK        string // JX_RUSTFS_SK（敏感）
 
+	// CallbackDomain 对外回调域名（JX_CALLBACK_DOMAIN，docs/04 §6.4 配置键正本）。
+	// ★ 消费端：`POST /api/admin/approval/defs/sync` 组装定义的 `action_callback_url`
+	//   （＝ `<domain>/approval/external/callback`）。
+	CallbackDomain string // JX_CALLBACK_DOMAIN
+	// ActionCallbackToken 三方审批定义下发的**回调校验 token**（敏感，docs/04 §6.4）。
+	// ★ 一处配置、两侧一致：注册定义时随 `DefInput.CallbackToken` 下发飞书
+	//   （external.action_callback_token），本地落 `t_approval_def.callback_token` 同值
+	//   （docs/16 §2-C）。未配置 ⇒ sync 端点**可见拒绝**（定义无 token 则回调校验恒失败）。
+	ActionCallbackToken string // JX_ACTION_CALLBACK_TOKEN（敏感）
+
 	RunEnv            string // JX_ENV: prod / test
 	DevMode           bool   // DEV_MODE
 	ReconcileInterval time.Duration
@@ -60,30 +70,32 @@ func LoadEnv() (*Env, error) {
 	}
 
 	return &Env{
-		AppID:             getenv("JX_APP_ID", ""),
-		AppSecret:         getenv("JX_APP_SECRET", ""),
-		DataDir:           dataDir,
-		AttachDir:         getenv("JX_ATTACH_DIR", filepath.Join(dataDir, "attachments")),
-		DBPath:            dbPath,
-		ListenAddr:        getenv("JX_LISTEN_ADDR", "127.0.0.1:8080"),
-		SessionKey:        getenv("JX_SESSION_KEY", ""),
-		InternalToken:     getenv("JX_INTERNAL_TOKEN", ""),
-		LockPath:          lockPath,
-		S3Endpoint:        getenv("JX_S3_ENDPOINT", ""),
-		S3Bucket:          getenv("JX_S3_BUCKET", ""),
-		S3Region:          getenv("JX_S3_REGION", "us-east-1"),
-		S3PathStyle:       getenvBool("JX_S3_PATH_STYLE", true),
-		S3AK:              getenv("JX_S3_AK", ""),
-		S3SK:              getenv("JX_S3_SK", ""),
-		RustFSEndpoint:    getenv("JX_RUSTFS_ENDPOINT", ""),
-		RustFSBucket:      getenv("JX_RUSTFS_BUCKET", getenv("JX_S3_BUCKET", "")),
-		RustFSRegion:      getenv("JX_RUSTFS_REGION", getenv("JX_S3_REGION", "us-east-1")),
-		RustFSPathStyle:   getenvBool("JX_RUSTFS_PATH_STYLE", getenvBool("JX_S3_PATH_STYLE", true)),
-		RustFSAK:          getenv("JX_RUSTFS_AK", ""),
-		RustFSSK:          getenv("JX_RUSTFS_SK", ""),
-		RunEnv:            getenv("JX_ENV", "prod"),
-		DevMode:           getenvBool("DEV_MODE", false),
-		ReconcileInterval: time.Duration(intervalHours) * time.Hour,
+		AppID:               getenv("JX_APP_ID", ""),
+		AppSecret:           getenv("JX_APP_SECRET", ""),
+		DataDir:             dataDir,
+		AttachDir:           getenv("JX_ATTACH_DIR", filepath.Join(dataDir, "attachments")),
+		DBPath:              dbPath,
+		ListenAddr:          getenv("JX_LISTEN_ADDR", "127.0.0.1:8080"),
+		SessionKey:          getenv("JX_SESSION_KEY", ""),
+		InternalToken:       getenv("JX_INTERNAL_TOKEN", ""),
+		CallbackDomain:      getenv("JX_CALLBACK_DOMAIN", ""),
+		ActionCallbackToken: getenv("JX_ACTION_CALLBACK_TOKEN", ""),
+		LockPath:            lockPath,
+		S3Endpoint:          getenv("JX_S3_ENDPOINT", ""),
+		S3Bucket:            getenv("JX_S3_BUCKET", ""),
+		S3Region:            getenv("JX_S3_REGION", "us-east-1"),
+		S3PathStyle:         getenvBool("JX_S3_PATH_STYLE", true),
+		S3AK:                getenv("JX_S3_AK", ""),
+		S3SK:                getenv("JX_S3_SK", ""),
+		RustFSEndpoint:      getenv("JX_RUSTFS_ENDPOINT", ""),
+		RustFSBucket:        getenv("JX_RUSTFS_BUCKET", getenv("JX_S3_BUCKET", "")),
+		RustFSRegion:        getenv("JX_RUSTFS_REGION", getenv("JX_S3_REGION", "us-east-1")),
+		RustFSPathStyle:     getenvBool("JX_RUSTFS_PATH_STYLE", getenvBool("JX_S3_PATH_STYLE", true)),
+		RustFSAK:            getenv("JX_RUSTFS_AK", ""),
+		RustFSSK:            getenv("JX_RUSTFS_SK", ""),
+		RunEnv:              getenv("JX_ENV", "prod"),
+		DevMode:             getenvBool("DEV_MODE", false),
+		ReconcileInterval:   time.Duration(intervalHours) * time.Hour,
 	}, nil
 }
 
@@ -105,6 +117,7 @@ func (e *Env) MissingSecrets() []string {
 	check("JX_APP_SECRET", e.AppSecret)
 	check("JX_SESSION_KEY", e.SessionKey)
 	check("JX_INTERNAL_TOKEN", e.InternalToken)
+	check("JX_ACTION_CALLBACK_TOKEN", e.ActionCallbackToken)
 	return missing
 }
 

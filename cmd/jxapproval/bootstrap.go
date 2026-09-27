@@ -130,6 +130,21 @@ func run(version string) error {
 		logger.Warn("以下敏感环境变量尚未配置（开发模式可忽略）", "missing", missing)
 	}
 
+	// ---- ④′ 启动自检：三方审批定义装载检查（docs/16 §2-C 通道②；不自动建定义）----
+	// ★ 定义未装载的后果是「静默无数据」：提交侧 S7 → 40901，回调侧实例存在性关被拒。
+	//   此处只 warn + 置 health 状态位（不自动建，避免启动期网络依赖飞书）；
+	//   生产装载入口＝POST /api/admin/approval/defs/sync（requireSysAdmin）。
+	if n, err := db.CountApprovalDefs(ctx); err != nil {
+		logger.Warn("启动自检：读取 t_approval_def 行数失败", "error", err.Error())
+	} else if n == 0 {
+		logger.Warn("★ 启动自检：t_approval_def 为空（三方定义未装载，回调/提交将 40901）" +
+			"——请以系统管理员调用 POST /api/admin/approval/defs/sync 装载")
+		health.SetApprovalDefs(false)
+	} else {
+		logger.Info("启动自检：三方审批定义已装载", "def_count", n)
+		health.SetApprovalDefs(true)
+	}
+
 	// ---- ⑤ 飞书通道适配层 + inbox（长连接 sink）----
 	// 开发模式且未配置凭据时，改用内存 dev 客户端：使 /internal/dev/inject-event 可端到端落库（不依赖飞书）。
 	var client feishu.Client = feishu.NewHTTPClient(env.AppID, env.AppSecret, logger, metrics)
@@ -164,7 +179,8 @@ func run(version string) error {
 			feishu.NewFakePushClient(), feishu.NewFakeExtCheckClient()
 	}
 
-	// 定义注册表：装配即用（定义注册/更新的管理端点另行排期，故此处不新增路由）。
+	// 定义注册表：装配即用；生产装载入口＝POST /api/admin/approval/defs/sync（docs/16 §2-C），
+	// 清单源＝t_config_mapping(map_kind='approval_code')，启动自检见 ④′。
 	approvalDefs := approval.NewRegistry(db, extClient, logger)
 	// 出方向推送服务（external_instances）。
 	pusher := feishu.NewPusher(db, pushClient, logger)

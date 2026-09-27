@@ -154,6 +154,13 @@ func isPlaceholder(v string) bool {
 	return false
 }
 
+// IsPlaceholder 判断取值是否为未替换的占位符（导出包装）。
+//
+// ★ 为什么导出：定义装载端点（POST /api/admin/approval/defs/sync，docs/16 §2-C）
+// 对 `t_config_mapping` 现值做**二次占位符校验**时，必须与导入层（定案 #21）用
+// **同一份 marker 清单**——复制清单到调用方必然漂移，故统一从这里取判定。
+func IsPlaceholder(v string) bool { return isPlaceholder(v) }
+
 // Validate 严格校验导入载荷；任一条不合规即整体拒绝（**不部分导入**，避免半个映射上线的静默错配）。
 func (p *ImportPayload) Validate() error {
 	if p == nil {

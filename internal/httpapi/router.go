@@ -42,7 +42,8 @@ type Deps struct {
 	// ★ 回调与页面两键**走同一状态机出口**（docs/11 R11），故共用此一个服务实例。
 	Flow *flow.Service
 	// ApprovalDefs 三方审批定义注册表（approval.Registry + feishu.ExternalApprovalClient）。
-	// 装配即用：定义注册/更新经此实例；对应的管理端点另行排期（本批不新增路由，避免与 docs 漂移）。
+	// 装配即用：定义注册/更新经此实例；生产装载入口＝`POST /api/admin/approval/defs/sync`
+	// （docs/16 §2-C 通道①，admin 组 + requireSysAdmin）。
 	ApprovalDefs *approval.Registry
 	// ApprovalReconciler 审批对账器（T03）：`POST /internal/approval/check` 唯一入口（R24）。
 	ApprovalReconciler *jsync.ApprovalReconciler
@@ -163,6 +164,11 @@ func NewRouter(d Deps) *echo.Echo {
 	admin.GET("/users", d.handleAdminUsersGet)
 	admin.POST("/users", d.handleAdminUsersPost)
 	admin.PATCH("/users/:open_id", d.handleAdminUsersPatch)
+	// ---- 三方审批定义装载（docs/16 §2-C 通道①：主通道）----
+	// ★ 清单源＝`t_config_mapping(map_kind='approval_code')`（清单正本＝
+	//   docs/reference/config-mapping.sample.json 的 approval_code 节，11 类）；
+	//   幂等（approval_code 命中即更新）；占位符未替换 / 清单为空 ⇒ 可见错误，不静默成功。
+	admin.POST("/approval/defs/sync", d.handleAdminApprovalDefsSync)
 
 	// ---- 前端静态资源（embed 产物；缺失时 controller 降级为占位页）----
 	// ★ 注意：Echo 的通配路由 "/*" 不匹配根路径 "/"，须单独注册根路由，

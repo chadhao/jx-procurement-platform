@@ -166,6 +166,14 @@ func (s *Service) instanceCode(bizNo string) string {
 
 // Submit 提交：同事务内生成单号 + 建实例（PENDING）+ 建首节点任务 + 留痕。
 // 返回业务单号。失败即回滚，不产生半成品实例。
+//
+// ★★ 落库纪律（docs/16 §2-D 纪律一）：本方法**同事务**写 `t_instance` + `t_flow_task` +
+//
+//	状态史 + op_log；事务提交后经 `flow.emit` 分发订阅者（含 `flowPushSubscriber` →
+//	`feishu.Pusher.Push`）才推飞书 ⇒ **本地行天然先于推送存在，回调可命中**。
+//	推实例的唯一入口是 `Pusher.Push`，其数据源正是本方法落下的本地行——
+//	**禁止任何「只推飞书、不落本地」的生产路径**（手工 curl 直推 external_instances
+//	仅限联调排障，且该实例本地不可回调）。
 func (s *Service) Submit(ctx context.Context, in SubmitInput) (string, error) {
 	if err := validateSubmit(in); err != nil {
 		return "", err
