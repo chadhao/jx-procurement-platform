@@ -57,6 +57,7 @@ func runImportConfig(checkOnly bool, path string) error {
 		return err
 	}
 	reportNonExtractable(payload)
+	reportReservedBizFields(payload)
 	reportUnconsumedThresholds(payload)
 	if checkOnly {
 		fmt.Printf("校验通过：approval_code %d / field_id %d / ledger_type %d / threshold %d / ledger_field %d，合计 %d 条（未写入库）\n",
@@ -92,9 +93,40 @@ func runImportConfig(checkOnly bool, path string) error {
 	}
 	fmt.Printf("配置映射导入完成：approval_code %d / field_id %d / ledger_type %d / threshold %d / ledger_field %d，合计 %d 条；db=%s\n",
 		res.ApprovalCode, res.FieldID, res.LedgerType, res.Threshold, res.LedgerField, res.Total(), env.DBPath)
+	if len(res.ReplacedKinds) > 0 {
+		// 导入 = 「本载荷涉及的映射类」全量替换（先清空再写入）。必须说出来：
+		// 这是「配置以文件为准」的语义，用户要知道自己刚刚覆盖了哪些类。
+		fmt.Printf("已全量替换映射类：%s（表内该类内容现等于文件内容，旧的 value 已清除）\n",
+			strings.Join(res.ReplacedKinds, ", "))
+	}
+	if len(res.EmptyKinds) > 0 {
+		// ★ 非阻断但必须可见：这些类在文件里是空的，因此**未被替换**——
+		//   表里可能还留着上一版的内容。若不提示，"以为清了其实没清" 就是一次静默。
+		fmt.Fprintf(os.Stderr, "注意：以下映射类在本次文件中为空，**未被替换**（表内保留既有内容）：%s\n",
+			strings.Join(res.EmptyKinds, ", "))
+	}
 	if res.LedgerField > 0 {
 		fmt.Printf("台账字段定义 %d 条已写入 t_ledger_field_def：写接口据此校验 fields 键名（该台账无登记则不校验）\n",
 			res.LedgerField)
+	}
+	// 一对多提示（B47）：台账映射可一对多，按 doc_type 计数会低报。
+	if res.LedgerType > 0 {
+		multi := 0
+		seen := map[string][]string{}
+		for _, e := range payload.LedgerType {
+			k := strings.TrimSpace(e.Key)
+			v := strings.TrimSpace(e.Value)
+			if !inListStr(v, seen[k]) {
+				seen[k] = append(seen[k], v)
+			}
+		}
+		for _, v := range seen {
+			if len(v) > 1 {
+				multi++
+			}
+		}
+		fmt.Printf("台账映射 %d 条 / 覆盖 %d 个 doc_type（其中 %d 个 doc_type 落了多个台账 —— 一对多）\n",
+			res.LedgerType, len(seen), multi)
 	}
 
 	// 回读自证：导入后必须能按 approval_code 反查到单据类型，否则模板订阅会静默无数据。
@@ -133,7 +165,29 @@ func reportNonExtractable(p *config.ImportPayload) {
 	fmt.Fprintf(os.Stderr, "注意：以下 %d 个 biz_field 合法但**不参与规范列抽取**（只落 t_instance_field）：%s\n",
 		len(unknown), strings.Join(unknown, ", "))
 	fmt.Fprintf(os.Stderr, "      可抽取的名字：%s\n", strings.Join(config.ExtractableBizFieldNames(), ", "))
-	fmt.Fprintf(os.Stderr, "      若其中本意是抽取金额/供应商等，请核对拼写；确认新字段则忽略本提示。\n")
+	fmt.Fprintf(os.Stderr, "      三种可能：① **拼写错误**（如 amount 误写成 amout）；"+
+		"② 该字段的规范位置是**台账运营表**（应在台账页登记，不由模板映射）；"+
+		"③ 属**预留字段**（见下一条提示）。\n")
+}
+
+// reportReservedBizFields 提示「已登记但当前无消费端」的透传字段（静默审计 C3）。
+//
+// ★ 不阻断，但必须可见 —— 与 reportUnconsumedThresholds 同一思路：
+// 把模板控件映射到这类名字，值会落进 ext_json **却无人读取**，是"配了却不生效"。
+func reportReservedBizFields(p *config.ImportPayload) {
+	if names := p.ReservedUsedBizFields(); len(names) > 0 {
+		fmt.Fprintf(os.Stderr, "注意：以下 %d 个 biz_field 已登记为**预留、当前无消费端**（值会落 ext_json 但无人读取）：%s\n",
+			len(names), strings.Join(names, ", "))
+		fmt.Fprintf(os.Stderr, "      若非必要，建议**暂不映射**；确有需要请登记为正式透传字段并补消费端。\n")
+	}
+	if names := p.RemovedUsedBizFields(); len(names) > 0 {
+		fmt.Fprintf(os.Stderr, "警告：以下 %d 个 biz_field **已确认不该由模板映射**：%s\n",
+			len(names), strings.Join(names, ", "))
+		for _, n := range names {
+			fmt.Fprintf(os.Stderr, "      · %s —— %s\n", n, config.RemovedBizFieldReason(n))
+		}
+		fmt.Fprintf(os.Stderr, "      映射它们**不会生效**（值落存档 ext_json，而消费端读的是别处）。\n")
+	}
 }
 
 // reportUnconsumedThresholds 提示「已登记但当前无消费端」的阈值键（假配置）。
@@ -149,4 +203,14 @@ func reportUnconsumedThresholds(p *config.ImportPayload) {
 		len(unconsumed), strings.Join(unconsumed, ", "))
 	fmt.Fprintf(os.Stderr, "      当前真正生效的阈值键：split_supplier_month, spot_check_range\n")
 	fmt.Fprintf(os.Stderr, "      这是「假配置」提示，非错误；口径可先行登记，待对应功能实现后自动生效。\n")
+}
+
+// inListStr 判断字符串是否已在切片中（保序去重用）。
+func inListStr(v string, list []string) bool {
+	for _, x := range list {
+		if x == v {
+			return true
+		}
+	}
+	return false
 }
