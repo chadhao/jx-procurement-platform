@@ -24,6 +24,20 @@ const (
 	OpRollback = "ROLLBACK"
 )
 
+// AddSignTiming 加签时机（`G2`，01a §4.3）：**操作人在加签时当场选择**。
+//
+// ★ 缺省/空值 = `AddSignAfter`（后置）—— 保持既有调用方语义不变。
+type AddSignTiming string
+
+const (
+	// AddSignAfter 后置（默认）：新任务 `task_order = 本节点 max + 1` 追加到**队尾**；
+	// 原审批人**须继续等到其后所有人同意**（聚合按 node 全员）。与既有实现一致。
+	AddSignAfter AddSignTiming = "AFTER"
+	// AddSignBefore 前置：新任务 `task_order = 当前办理人 order`，同节点 `order >= 该值` 者**整体 +1**；
+	// **新增者先审**，当前办理人及其后让位。跳过的是**尚未审批**的当前办理人，故不重审已通过者。
+	AddSignBefore AddSignTiming = "BEFORE"
+)
+
 // ErrNotAssignee 操作者非该任务审批人（越权操作必须**可见地拒绝**）。
 var ErrNotAssignee = errors.New("flow: 操作者非该任务审批人")
 
@@ -115,13 +129,28 @@ func (s *Service) Transfer(ctx context.Context, bizNo, taskID, actorOpenID, targ
 	return nil
 }
 
-// AddSign 加签（＝顺序会签，01a §4.3）：新任务并入**同 node_id**、按 **task_order 插到队尾**。
+// AddSign 加签（＝顺序会签，01a §4.3；`G2` **前置/后置由操作人当场选**）：
+// 新任务并入**同 node_id**，`task_order` 由 `timing` 决定插入位：
 //
-// ★ 顺序会签：新任务先 `HELD`，**轮到才释放**；★ 原审批人**须继续等到其之后所有人同意**（聚合按 node 全员）。
-// ★ `G2`（前置/后置）**待用户拍板** → 未定之前按**后置**实现（追加到队尾），并**保留 `node_seq` 扩展位**，
+//   - `AddSignAfter`（**默认**，缺省/空值）：`task_order = 本节点 max + 1` 追加到**队尾**；
+//     原审批人**须继续等到其后所有人同意**（聚合按 node 全员）。
+//   - `AddSignBefore`：`task_order = 当前办理人 order`，同节点 `order >= 该值` 者**整体 +1** →
+//     **新增者先审**（插到当前办理人**之前**），当前办理人及其后让位（`RELEASED → HELD`）。
 //
-//	不自行前置。若将 G2 定为"前置"，改动点＝新任务 `task_order` 取当前首位两侧的插入点（本函数预留位置）。
-func (s *Service) AddSign(ctx context.Context, bizNo, taskID, actorOpenID, targetOpenID, targetName, reason string) error {
+// ★ 两条共同约束：
+//  1. **都不得使已 `APPROVED` 的任务重审**：前置插到的是**尚未审批**的「当前办理人」之前
+//     （`order < 当前办理人 order` 的已通过者原样不动）。
+//  2. **不变量（04a §2.3）必须成立**：任一时刻整实例「可办理」(`RELEASED ∧ PENDING`) 任务**恰 1 个**；
+//     前置把可办理者由「当前办理人」**转为「新增者」**，**不是两个都可办理**。
+//
+// ★ 终态实例加签一律拒绝；`HELD` 任务、非本人一律拒绝。
+func (s *Service) AddSign(ctx context.Context, bizNo, taskID, actorOpenID, targetOpenID, targetName, reason string, timing AddSignTiming) error {
+	if timing == "" {
+		timing = AddSignAfter // 缺省＝后置（保持既有调用方语义）
+	}
+	if timing != AddSignAfter && timing != AddSignBefore {
+		return fmt.Errorf("%w: 非法加签时机 %q（仅 %s / %s）", ErrInvalidSubmit, timing, AddSignAfter, AddSignBefore)
+	}
 	at := time.Now()
 	var events []FlowEvent
 	err := s.db.WithTx(ctx, func(tx *sql.Tx) error {
@@ -149,18 +178,53 @@ func (s *Service) AddSign(ctx context.Context, bizNo, taskID, actorOpenID, targe
 			return fmt.Errorf("%w: 加签目标为空", ErrInvalidSubmit)
 		}
 
-		// 新任务并入同 node_id，按 task_order 插到队尾（后置，G2 未定）。
-		newID, order, err := s.allocNodeTaskIDTx(ctx, tx, bizNo, task.NodeID, targetOpenID, task.Round)
+		nodeTasks, err := s.db.ListTasksByNodeTx(ctx, tx, bizNo, task.NodeID)
 		if err != nil {
 			return err
+		}
+
+		var (
+			newOrder int
+			yieldID  string // 前置：需让位（RELEASED→HELD）的「当前办理人」task_id
+		)
+		switch timing {
+		case AddSignBefore:
+			// 「当前办理人」＝同节点内**首个 PENDING** 任务（顺序会签不变量下即唯一「可办理」者）。
+			cur := firstPendingTask(nodeTasks)
+			if cur == nil {
+				return fmt.Errorf("%w: 节点 %s 无待办理任务，无法前置加签", ErrIllegalTransition, task.NodeID)
+			}
+			newOrder = cur.TaskOrder
+			yieldID = cur.TaskID
+			// 当前办理人及其后整体 +1，腾出插入位（保持同节点 task_order 无重复、无空洞）。
+			if _, err := s.db.ShiftFlowTaskOrderTx(ctx, tx, bizNo, task.NodeID, newOrder, 1); err != nil {
+				return err
+			}
+		default: // AddSignAfter
+			newOrder = maxTaskOrder(nodeTasks) + 1
+		}
+
+		newID, err := s.allocNodeTaskIDForOrderTx(ctx, tx, bizNo, task.NodeID, targetOpenID, task.Round, newOrder)
+		if err != nil {
+			return err
+		}
+		release := ReleaseHeld
+		if timing == AddSignBefore {
+			release = ReleaseReleased // 前置：新增者先审
 		}
 		if err := s.db.UpsertFlowTaskTx(ctx, tx, &store.FlowTask{
 			TaskID: newID, BizNo: bizNo, NodeID: task.NodeID, NodeName: task.NodeName,
 			NodeSeq: task.NodeSeq, Round: task.Round, AssigneeOpenID: targetOpenID, AssigneeName: targetName,
-			Status: TaskPending, ReleaseState: ReleaseHeld, TaskOrder: order,
+			Status: TaskPending, ReleaseState: release, TaskOrder: newOrder,
 			CreatedAt: at, UpdatedAt: at,
 		}); err != nil {
 			return err
+		}
+		// 前置：当前办理人让位（RELEASED → HELD），令「可办理」由新增者承接（不变量仍 = 1）。
+		if yieldID != "" {
+			if err := s.db.SetReleaseStateTx(ctx, tx, yieldID, ReleaseHeld); err != nil {
+				return err
+			}
 		}
 		if _, err := s.db.InsertFlowOpLogTx(ctx, tx, &store.FlowOpLog{
 			BizNo: bizNo, NodeID: task.NodeID, TaskID: newID, OpType: OpAddSign,
@@ -169,7 +233,9 @@ func (s *Service) AddSign(ctx context.Context, bizNo, taskID, actorOpenID, targe
 		}); err != nil {
 			return err
 		}
-		// 保持「至多 1 个 RELEASED」不变量：若原审批人已通过、新任务成为下一个待办，则释放它。
+		// 保持「至多 1 个 RELEASED」不变量：
+		//   前置已让位（新增者 RELEASED、当前办理人 HELD）→ 本调用为空转；
+		//   后置下若原审批人已通过、新任务成为下一个待办 → 释放它。
 		tasks, err := s.db.ListFlowTasksTx(ctx, tx, bizNo)
 		if err != nil {
 			return err
@@ -275,29 +341,69 @@ func (s *Service) Rollback(ctx context.Context, bizNo, actorOpenID, targetNodeID
 
 // ---------- 辅助 ----------
 
-// allocNodeTaskIDTx 为某节点追加任务分配 task_id 与 task_order（队尾），保证全库唯一。
+// allocNodeTaskIDTx 为某节点追加任务分配 task_id 与 task_order（**队尾**：本节点 max + 1），保证全库唯一。
+//
+// ★ 后置加签语义（`01a §4.3`）：新任务排到本节点**最末**（`后加者后审`）。
 func (s *Service) allocNodeTaskIDTx(ctx context.Context, tx *sql.Tx, bizNo, nodeID, openID string, round int) (string, int, error) {
 	nodeTasks, err := s.db.ListTasksByNodeTx(ctx, tx, bizNo, nodeID)
 	if err != nil {
 		return "", 0, err
 	}
-	order := 0
-	for _, t := range nodeTasks {
-		if t.TaskOrder > order {
-			order = t.TaskOrder
-		}
+	order := maxTaskOrder(nodeTasks) + 1
+	id, err := s.allocNodeTaskIDForOrderTx(ctx, tx, bizNo, nodeID, openID, round, order)
+	if err != nil {
+		return "", 0, err
 	}
-	order++
+	return id, order, nil
+}
+
+// allocNodeTaskIDForOrderTx 在**指定 `task_order`** 处分配一个全库唯一的 `task_id`。
+//
+// ★ 与 `allocNodeTaskIDTx` 的区别：`task_order` 由调用方**显式给定**（前置加签＝插入位，
+// 后置加签＝队尾），**绝不因 task_id 撞车而改变插入位**（改序＝静默改变"谁先审"）。
+// 撞车时只对 task_id 追加消歧后缀，`order` 保持不变。
+//
+// `task_id` 形态（04a §3.3 确定性生成、含 `biz_no` 保全局唯一）：
+// `{biz_no}-{node_id}-{open_id}-{round}-{order}`；撞车退化为尾缀 `-c{i}`。
+func (s *Service) allocNodeTaskIDForOrderTx(ctx context.Context, tx *sql.Tx, bizNo, nodeID, openID string, round, order int) (string, error) {
 	for i := 0; i < 1000; i++ {
 		id := fmt.Sprintf("%s-%s-%s-%d-%d", bizNo, nodeID, openID, round, order)
-		if _, err := s.db.GetFlowTaskTx(ctx, tx, id); errors.Is(err, store.ErrNotFound) {
-			return id, order, nil
-		} else if err != nil {
-			return "", 0, err
+		if i > 0 {
+			id = fmt.Sprintf("%s-%s-%s-%d-%d-c%d", bizNo, nodeID, openID, round, order, i)
 		}
-		order++
+		if _, err := s.db.GetFlowTaskTx(ctx, tx, id); errors.Is(err, store.ErrNotFound) {
+			return id, nil
+		} else if err != nil {
+			return "", err
+		}
 	}
-	return "", 0, fmt.Errorf("flow: 分配 task_id 失败（重试耗尽）")
+	return "", fmt.Errorf("flow: 分配加签 task_id 失败（重试耗尽）")
+}
+
+// firstPendingTask 返回同节点任务中**首个 `PENDING`** 者（列表已按 `node_seq, task_order` 升序）。
+//
+// ★ 顺序会签不变量（04a §2.3）下，同节点任一时刻「可办理」(`RELEASED ∧ PENDING`) 恰 1 个，
+// 即该节点**首个 `PENDING`** 任务 ＝「当前办理人」；`AddSignBefore` 即以它为插入锚点。
+// 无 `PENDING`（节点已决/已终结）返回 nil。
+func firstPendingTask(tasks []store.FlowTask) *store.FlowTask {
+	for i := range tasks {
+		if tasks[i].Status == TaskPending {
+			return &tasks[i]
+		}
+	}
+	return nil
+}
+
+// maxTaskOrder 返回同节点任务中最大的 `task_order`（无任务返回 0）。
+// 「队尾」＝`maxTaskOrder + 1`（后置加签）。
+func maxTaskOrder(tasks []store.FlowTask) int {
+	max := 0
+	for _, t := range tasks {
+		if t.TaskOrder > max {
+			max = t.TaskOrder
+		}
+	}
+	return max
 }
 
 // actorHasTask 判断某 open_id 是否拥有实例内至少一个任务（回退操作者校验）。

@@ -106,7 +106,7 @@ func TestAddSignAppendsToTail(t *testing.T) {
 	bizNo := submitOneNode(t, svc, "ou_m1")
 
 	m1 := taskFor(t, db, bizNo, "ou_m1")
-	if err := svc.AddSign(ctx, bizNo, m1.TaskID, "ou_m1", "ou_m9", "加签人", "补充意见"); err != nil {
+	if err := svc.AddSign(ctx, bizNo, m1.TaskID, "ou_m1", "ou_m9", "加签人", "补充意见", flow.AddSignAfter); err != nil {
 		t.Fatalf("加签失败: %v", err)
 	}
 	m9 := taskFor(t, db, bizNo, "ou_m9")
@@ -146,12 +146,259 @@ func TestAddSignNegatives(t *testing.T) {
 	ctx := context.Background()
 	bizNo := submitSeqNode(t, svc)
 	a := taskFor(t, db, bizNo, "ou_a")
-	if err := svc.AddSign(ctx, bizNo, a.TaskID, "ou_x", "ou_m9", "", ""); !errors.Is(err, flow.ErrNotAssignee) {
+	if err := svc.AddSign(ctx, bizNo, a.TaskID, "ou_x", "ou_m9", "", "", flow.AddSignAfter); !errors.Is(err, flow.ErrNotAssignee) {
 		t.Errorf("非本人加签应 ErrNotAssignee，实际: %v", err)
 	}
 	b := taskFor(t, db, bizNo, "ou_b")
-	if err := svc.AddSign(ctx, bizNo, b.TaskID, "ou_b", "ou_m9", "", ""); !errors.Is(err, flow.ErrTaskHeld) {
+	if err := svc.AddSign(ctx, bizNo, b.TaskID, "ou_b", "ou_m9", "", "", flow.AddSignAfter); !errors.Is(err, flow.ErrTaskHeld) {
 		t.Errorf("HELD 任务加签应 ErrTaskHeld，实际: %v", err)
+	}
+}
+
+// ---------- 加签时机 · 前置 / 后置（G2，01a §4.3） ----------
+
+// releasedPendingCount 统计整实例「可办理」(RELEASED ∧ PENDING) 任务数。
+//
+// ★ 顺序会签不变量（04a §2.3）：任一时刻**恰 1 个**（终态除外）。
+//   - 加签前置把可办理者由「当前办理人」**转为「新增者」**（不是两个都能办）；
+//   - 已通过者虽仍 `RELEASED`，但 `status=APPROVED` → **不计入**（不变量针对「可办理」）。
+func releasedPendingCount(t *testing.T, db *store.DB, bizNo string) int {
+	t.Helper()
+	tasks, err := db.ListFlowTasks(context.Background(), bizNo)
+	if err != nil {
+		t.Fatalf("读取任务失败: %v", err)
+	}
+	n := 0
+	for _, tk := range tasks {
+		if tk.ReleaseState == flow.ReleaseReleased && tk.Status == flow.TaskPending {
+			n++
+		}
+	}
+	return n
+}
+
+// nodeOrderSeq 返回某节点各任务 `task_order`（`ListFlowTasks` 已按 `node_seq, task_order` 升序）。
+func nodeOrderSeq(t *testing.T, db *store.DB, bizNo, nodeID string) []int {
+	t.Helper()
+	tasks, err := db.ListFlowTasks(context.Background(), bizNo)
+	if err != nil {
+		t.Fatalf("读取任务失败: %v", err)
+	}
+	var out []int
+	for _, tk := range tasks {
+		if tk.NodeID == nodeID {
+			out = append(out, tk.TaskOrder)
+		}
+	}
+	return out
+}
+
+// TestAddSignBeforeInsertsBeforeCurrent 前置加签（正向）：新增者排到「当前办理人」**之前** →
+//
+//	先加者先审；当前办理人让位（RELEASED→HELD）但**仍在链上**；不变量恒 = 1。
+func TestAddSignBeforeInsertsBeforeCurrent(t *testing.T) {
+	db := newFlowDB(t)
+	svc := flow.New(db, "app")
+	ctx := context.Background()
+	bizNo := submitSeqNode(t, svc) // n1: ou_a(1) RELEASED；ou_b/c HELD；n2: ou_gm HELD
+
+	if got := releasedPendingCount(t, db, bizNo); got != 1 {
+		t.Fatalf("加签前 RELEASED∧PENDING = %d，期望 1", got)
+	}
+	a := taskFor(t, db, bizNo, "ou_a") // 当前办理人
+
+	// ou_a 前置加签 ou_z：新加者先审。
+	if err := svc.AddSign(ctx, bizNo, a.TaskID, "ou_a", "ou_z", "前置人", "先审", flow.AddSignBefore); err != nil {
+		t.Fatalf("前置加签失败: %v", err)
+	}
+	z := taskFor(t, db, bizNo, "ou_z")
+	if z.NodeID != "n1" {
+		t.Errorf("前置任务 node_id = %s，期望 n1（并入同 node）", z.NodeID)
+	}
+	if z.Status != flow.TaskPending || z.ReleaseState != flow.ReleaseReleased {
+		t.Errorf("前置任务 = {status:%s release:%s}，期望 {PENDING RELEASED}（先加者先审）",
+			z.Status, z.ReleaseState)
+	}
+	aAfter := taskFor(t, db, bizNo, "ou_a")
+	if z.TaskOrder >= aAfter.TaskOrder {
+		t.Errorf("前置 task_order=%d 未排到当前办理人（%d）之前", z.TaskOrder, aAfter.TaskOrder)
+	}
+	// 当前办理人让位：RELEASED → HELD（仍在链上、仍 PENDING）。
+	if aAfter.Status != flow.TaskPending || aAfter.ReleaseState != flow.ReleaseHeld {
+		t.Errorf("让位后当前办理人 = {status:%s release:%s}，期望 {PENDING HELD}",
+			aAfter.Status, aAfter.ReleaseState)
+	}
+	// 不变量：整实例仍恰 1 个可办理（＝新增者）。
+	if got := releasedPendingCount(t, db, bizNo); got != 1 {
+		t.Errorf("前置加签后 RELEASED∧PENDING = %d，期望 1（不得两人同时可办）", got)
+	}
+
+	// 新增者先审 → 通过后当前办理人才被释放（顺序链前进一步）。
+	if err := svc.Approve(ctx, bizNo, z.TaskID, "ou_z", "同意"); err != nil {
+		t.Fatalf("前置人同意失败: %v", err)
+	}
+	if got := releasedPendingCount(t, db, bizNo); got != 1 {
+		t.Errorf("前置人同意后 RELEASED∧PENDING = %d，期望 1", got)
+	}
+	if got := taskFor(t, db, bizNo, "ou_a").ReleaseState; got != flow.ReleaseReleased {
+		t.Errorf("前置人同意后当前办理人应被释放，实际 %s", got)
+	}
+	if got := instOf(t, db, bizNo).Status; got != flow.InstancePending {
+		t.Errorf("节点未全部通过时实例 = %s，期望 PENDING", got)
+	}
+	// 当前办理人同意 → 继续按链推进（ou_b 释放）。
+	if err := svc.Approve(ctx, bizNo, aAfter.TaskID, "ou_a", "同意"); err != nil {
+		t.Fatalf("当前办理人同意失败: %v", err)
+	}
+	if got := taskFor(t, db, bizNo, "ou_b").ReleaseState; got != flow.ReleaseReleased {
+		t.Errorf("ou_a 同意后 ou_b 应被释放，实际 %s", got)
+	}
+}
+
+// TestAddSignAfterDefaultAndExplicit 后置（回归 + 缺省）：空 timing 与 AddSignAfter 同义 → 追加到队尾。
+//
+// ★ 回归保护：G2 引入 `timing` 入参后，**既有调用方语义（缺省后置）不得改变**。
+func TestAddSignAfterDefaultAndExplicit(t *testing.T) {
+	db := newFlowDB(t)
+	svc := flow.New(db, "app")
+	ctx := context.Background()
+	bizNo := submitSeqNode(t, svc) // n1: ou_a(1) RELEASED；ou_b(2)/ou_c(3) HELD
+
+	a := taskFor(t, db, bizNo, "ou_a")
+	// 缺省（空串）→ 后置；必须与显式 AddSignAfter 同义。
+	if err := svc.AddSign(ctx, bizNo, a.TaskID, "ou_a", "ou_z", "后置人", "", ""); err != nil {
+		t.Fatalf("缺省加签失败: %v", err)
+	}
+	z := taskFor(t, db, bizNo, "ou_z")
+	b := taskFor(t, db, bizNo, "ou_b")
+	c := taskFor(t, db, bizNo, "ou_c")
+	if !(z.TaskOrder > b.TaskOrder && z.TaskOrder > c.TaskOrder) {
+		t.Errorf("缺省（后置）task_order=%d 未追加到队尾（ou_b=%d, ou_c=%d）", z.TaskOrder, b.TaskOrder, c.TaskOrder)
+	}
+	if z.ReleaseState != flow.ReleaseHeld {
+		t.Errorf("后置新任务应先 HELD，实际 %s", z.ReleaseState)
+	}
+	// 后置不改变当前办理人的可办理态（仍是 ou_a）。
+	if got := taskFor(t, db, bizNo, "ou_a").ReleaseState; got != flow.ReleaseReleased {
+		t.Errorf("后置加签不应改动当前办理人释放态，实际 %s", got)
+	}
+	if got := releasedPendingCount(t, db, bizNo); got != 1 {
+		t.Errorf("后置加签后 RELEASED∧PENDING = %d，期望 1", got)
+	}
+}
+
+// TestAddSignBeforeDoesNotReReviewApproved ★ 负向①：前置**不得重审、不得重排已 `APPROVED` 者**。
+func TestAddSignBeforeDoesNotReReviewApproved(t *testing.T) {
+	db := newFlowDB(t)
+	svc := flow.New(db, "app")
+	ctx := context.Background()
+	bizNo := submitSeqNode(t, svc)
+
+	a := taskFor(t, db, bizNo, "ou_a")
+	if err := svc.Approve(ctx, bizNo, a.TaskID, "ou_a", "同意"); err != nil {
+		t.Fatalf("ou_a 同意失败: %v", err)
+	}
+	aBefore := taskFor(t, db, bizNo, "ou_a")
+	if aBefore.Status != flow.TaskApproved {
+		t.Fatalf("ou_a 应为 APPROVED，实际 %s", aBefore.Status)
+	}
+	// 当前办理人 = ou_b；ou_b 前置加签 ou_z。
+	b := taskFor(t, db, bizNo, "ou_b")
+	if err := svc.AddSign(ctx, bizNo, b.TaskID, "ou_b", "ou_z", "前置人", "", flow.AddSignBefore); err != nil {
+		t.Fatalf("前置加签失败: %v", err)
+	}
+	// 已通过者：状态与次序均**不得**被改动。
+	aAfter := taskFor(t, db, bizNo, "ou_a")
+	if aAfter.Status != flow.TaskApproved {
+		t.Errorf("已通过者被重审：status %s → %s", aBefore.Status, aAfter.Status)
+	}
+	if aAfter.TaskOrder != aBefore.TaskOrder {
+		t.Errorf("已通过者 task_order 被改动：%d → %d（前置插到当前办理人之前，不得重排已通过者）",
+			aBefore.TaskOrder, aAfter.TaskOrder)
+	}
+	// 次序：已通过者(ou_a) < 新增者(ou_z) < 当前办理人(ou_b)。
+	z := taskFor(t, db, bizNo, "ou_z")
+	bAfter := taskFor(t, db, bizNo, "ou_b")
+	if !(aAfter.TaskOrder < z.TaskOrder && z.TaskOrder < bAfter.TaskOrder) {
+		t.Errorf("次序错误：需 ou_a(%d) < ou_z(%d) < ou_b(%d)",
+			aAfter.TaskOrder, z.TaskOrder, bAfter.TaskOrder)
+	}
+}
+
+// TestAddSignTerminalRejected ★ 负向②：实例终态 → 加签（前置/后置）**一律** `ErrIllegalTransition`。
+func TestAddSignTerminalRejected(t *testing.T) {
+	db := newFlowDB(t)
+	svc := flow.New(db, "app")
+	ctx := context.Background()
+	bizNo := submitSeqNode(t, svc)
+	a := taskFor(t, db, bizNo, "ou_a")
+	if err := svc.Cancel(ctx, bizNo, "ou_app", "撤回"); err != nil {
+		t.Fatalf("撤回失败: %v", err)
+	}
+	for _, timing := range []flow.AddSignTiming{flow.AddSignAfter, flow.AddSignBefore} {
+		if err := svc.AddSign(ctx, bizNo, a.TaskID, "ou_a", "ou_z", "", "", timing); !errors.Is(err, flow.ErrIllegalTransition) {
+			t.Errorf("终态实例加签(%s)应 ErrIllegalTransition，实际: %v", timing, err)
+		}
+	}
+	// 可见失败：不产生半成品任务。
+	tasks, err := db.ListFlowTasks(ctx, bizNo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tk := range tasks {
+		if tk.AssigneeOpenID == "ou_z" {
+			t.Errorf("终态加签不应落任务，实际新增 assignee=ou_z")
+		}
+	}
+}
+
+// TestAddSignBeforeTaskOrderUniqueContiguous ★ 负向③：前置加签后同节点 `task_order` **唯一且连续**（无重复/无空洞）。
+//
+// 前置依赖 `order ≥ 当前办理人 order` 的整体 +1 腾位；若漏平移或平移阈值错 → 出现重复或空洞 → 本用例必红。
+func TestAddSignBeforeTaskOrderUniqueContiguous(t *testing.T) {
+	db := newFlowDB(t)
+	svc := flow.New(db, "app")
+	ctx := context.Background()
+	bizNo := submitSeqNode(t, svc)
+	a := taskFor(t, db, bizNo, "ou_a")
+	if err := svc.AddSign(ctx, bizNo, a.TaskID, "ou_a", "ou_z", "", "", flow.AddSignBefore); err != nil {
+		t.Fatalf("前置加签失败: %v", err)
+	}
+	orders := nodeOrderSeq(t, db, bizNo, "n1")
+	if len(orders) != 4 {
+		t.Fatalf("前置加签后同节点任务数 = %d，期望 4（3 原 + 1 新）", len(orders))
+	}
+	seen := map[int]bool{}
+	for i, o := range orders {
+		if seen[o] {
+			t.Fatalf("同节点 task_order 重复：%v（前置必须整体 +1 腾位，不得撞位）", orders)
+		}
+		seen[o] = true
+		if o != i+1 {
+			t.Fatalf("同节点 task_order 非连续：%v（期望 1..%d）", orders, len(orders))
+		}
+	}
+}
+
+// TestAddSignInvalidTimingRejected 负向④：非法 `timing` 必须**可见地失败**（`ErrInvalidSubmit`），不得静默按后置处理。
+func TestAddSignInvalidTimingRejected(t *testing.T) {
+	db := newFlowDB(t)
+	svc := flow.New(db, "app")
+	ctx := context.Background()
+	bizNo := submitSeqNode(t, svc)
+	a := taskFor(t, db, bizNo, "ou_a")
+	err := svc.AddSign(ctx, bizNo, a.TaskID, "ou_a", "ou_z", "", "", flow.AddSignTiming("SIDEWAYS"))
+	if !errors.Is(err, flow.ErrInvalidSubmit) {
+		t.Errorf("非法加签时机应 ErrInvalidSubmit，实际: %v", err)
+	}
+	tasks, lerr := db.ListFlowTasks(ctx, bizNo)
+	if lerr != nil {
+		t.Fatal(lerr)
+	}
+	for _, tk := range tasks {
+		if tk.AssigneeOpenID == "ou_z" {
+			t.Errorf("非法加签时机不应落任务，实际新增 assignee=ou_z")
+		}
 	}
 }
 

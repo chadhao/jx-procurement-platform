@@ -133,6 +133,38 @@ func (d *DB) ListTasksByNodeTx(ctx context.Context, tx *sql.Tx, bizNo, nodeID st
 	return collectFlowTasks(rows)
 }
 
+// ShiftFlowTaskOrderTx 把某实例某节点内 `task_order >= fromOrder` 的任务**整体平移** delta。
+//
+// ★ 用途＝**前置加签腾位**（`01a §4.3` 加签时机 · 前置）：在「当前办理人 order」处插入新任务前，
+// 把该位及其后所有任务的 `task_order` 整体 +1，腾出插入位 → 平移后同节点 `task_order` 仍**无重复、无空洞**。
+//
+// ★ 契约：`task_order` 是同节点**唯一顺序键**（迁移 0009）；本方法**不依赖 `rowid` / `task_id`**。
+//
+// ★ 为什么可安全整体平移：迁移 0009 的 `task_order` **无 UNIQUE 约束**（仅 `NOT NULL DEFAULT 0`），
+// 故 `UPDATE … SET task_order = task_order + 1` 不会触发唯一冲突（默认走一次全表扫描的 UPDATE，逐行自增无碰撞）。
+//
+// ★ **只改 `task_order`**：绝不动 `status` / `release_state` / `round` —— 平移**不得重审已 `APPROVED` 者**、
+// 也**不得改动释放态**（释放态由调用方按「让位」语义单独设置）。
+//
+// 返回受影响行数（供调用方断言「确有多行被平移」）。
+func (d *DB) ShiftFlowTaskOrderTx(ctx context.Context, tx *sql.Tx, bizNo, nodeID string, fromOrder, delta int) (int64, error) {
+	if delta == 0 {
+		return 0, nil
+	}
+	res, err := tx.ExecContext(ctx, `
+UPDATE t_flow_task SET task_order = task_order + ?, updated_at = ?
+WHERE biz_no = ? AND node_id = ? AND task_order >= ?`,
+		delta, fmtTime(timeNow().UTC()), bizNo, nodeID, fromOrder)
+	if err != nil {
+		return 0, fmt.Errorf("store: 平移节点 %s 任务次序失败: %w", nodeID, err)
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return 0, err
+	}
+	return n, nil
+}
+
 // UpdateFlowTaskStatusTx 更新任务状态（+ updated_at / closed_at）。
 func (d *DB) UpdateFlowTaskStatusTx(ctx context.Context, tx *sql.Tx, taskID, status string, closedAt *time.Time) error {
 	closed := ""
