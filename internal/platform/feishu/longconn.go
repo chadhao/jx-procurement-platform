@@ -18,13 +18,32 @@ type EventSink interface {
 	HandleEvent(ctx context.Context, payload []byte) error
 }
 
-// approvalEventTypes 需注册的审批事件类型（同时覆盖 2.0 与 1.0 两种键名，增强兼容性）。
-var approvalEventTypes = []string{
+// retiredApprovalEventTypes ③ 下**不再处理**的审批事件类型（同时覆盖 2.0 与 1.0 两种键名）。
+//
+// ★ 处置：这些键**仍然注册**，但处理器是 no-op（返回 nil → 飞书得到 200）。
+//
+//	为什么"删了处理却保留注册"：③ 下我方是唯一状态源，审批事件不得再进入我方事件链
+//	（N10 / F1）；但若**完全不注册**，飞书对残留审批事件的推送会得到非 200 → 触发
+//	**重试风暴**（S8 / R07）。故：既不交给我方 sink，也不让飞书重试。
+var retiredApprovalEventTypes = []string{
 	"approval.instance.status_changed_v4",
 	"approval.task.status_changed_v4",
 	"approval.approval.updated_v4",
 	"approval_instance",
 	"approval_task",
+}
+
+// sinkEventTypes 当前**交给 EventSink 处理**的事件类型。
+//
+// ★ ③ 下审批事件**不在其中**（见 retiredApprovalEventTypes）；通讯录（部门/人员）事件
+//
+//	待 docs/08 批次接入，故当前**显式为空**——这是刻意的空，不是遗漏。
+//	守卫测试 `SinkRoutedEventTypes()` 会断言审批事件键不在交给 sink 的集合里。
+var sinkEventTypes = []string{}
+
+// SinkRoutedEventTypes 返回当前交给 EventSink 处理的事件类型（副本，供守卫测试断言）。
+func SinkRoutedEventTypes() []string {
+	return append([]string(nil), sinkEventTypes...)
 }
 
 // LongConn 封装飞书长连接 WebSocket（M0）。
@@ -60,7 +79,17 @@ func (l *LongConn) Connected() bool { return l.connected.Load() }
 // Run 启动长连接并阻塞，直到 ctx 取消。SDK 内部处理保活与重连。
 func (l *LongConn) Run(ctx context.Context) error {
 	d := dispatcher.NewEventDispatcher("", "")
-	for _, et := range approvalEventTypes {
+
+	// ① 退役的审批事件：注册 no-op（返回 nil → 200），阻止飞书重试风暴（S8/R07），
+	//    但**绝不**把报文交给 sink（我方是唯一状态源，N10/F1）。
+	for _, et := range retiredApprovalEventTypes {
+		d.OnCustomizedEvent(et, func(ctx context.Context, _ *larkevent.EventReq) error {
+			return nil
+		})
+	}
+
+	// ② 仍需我方处理的事件（③ 下审批事件不在其中；通讯录事件待 docs/08 接入）。
+	for _, et := range sinkEventTypes {
 		eventType := et
 		d.OnCustomizedEvent(eventType, func(ctx context.Context, req *larkevent.EventReq) error {
 			// ★ 同步路径纪律：这里只把报文交给 inbox，绝不在此调用飞书 API 或 sleep。

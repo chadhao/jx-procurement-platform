@@ -1,4 +1,8 @@
-// Package sync 实现「必须先订阅」与「对账补拉」两项硬约束（M0）。
+// Package sync 承载事件订阅与对账（M0）。
+//
+// ★ 架构转向 ③ 后的本包定位：只承载 **external_instances/check 的方向判断对账**（另行排期）；
+//
+//	旧的实例「对账补拉」器（Reconciler）**已作废，勿恢复**（R23：其补拉会覆盖我方已推进状态）。
 package sync
 
 import (

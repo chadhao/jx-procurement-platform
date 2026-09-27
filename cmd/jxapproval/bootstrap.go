@@ -1,3 +1,13 @@
+// Package main 装配 jxapproval 服务（单实例）。
+//
+// ★ 架构转向 ③（审批核心迁至我方 · 飞书三方审批）—— 本文件的装配纪律：
+//
+//	· 审批事件**不再订阅**：我方是唯一状态源（N10 / F1），再订阅飞书审批事件
+//	  会与旧事件链一起把已推进的终态覆盖回 PENDING（R18/R23）；
+//	· 旧「定时对账器 + 调度器」装配**已退役**（R23：旧对账"补拉"经 ingest 覆盖我方状态）；
+//	· worker 事件链（inbox → worker → ingest）暂留作过渡，其写入者退役见 T02b。
+//
+// 守卫测试见 bootstrap_wiring_test.go —— 若有人把旧审批订阅 / 旧对账器接回来，测试必须转红。
 package main
 
 import (
@@ -30,6 +40,15 @@ const (
 	workerPoolSize = 4
 	sessionTTL     = 8 * time.Hour
 )
+
+// subscribeTargetCodes 启动时要订阅的事件源（显式枚举）。
+//
+// ★ ③ 口径（N10 / F1）：**审批事件不再订阅** —— 审批核心已迁至我方，我方是唯一状态源；
+//
+//	再订阅飞书审批事件会与旧链一起把已推进的终态覆盖回 PENDING（R18/R23）。
+//	通讯录（部门/人员）事件的订阅在 docs/08 批次接入，故当前**显式为空集**：
+//	这是刻意的空，不是遗漏。守卫测试会断言此集合不含任何审批事件键。
+var subscribeTargetCodes = []string{}
 
 // run 完成依赖装配与生命周期管理。
 func run(version string) error {
@@ -92,7 +111,7 @@ func run(version string) error {
 		return fmt.Errorf("装载配置映射失败: %w", err)
 	}
 	logger.Info("配置映射已装载", "approval_code_count", maps.Approval.Len(),
-		"ledger_type_count", len(maps.Ledger), "threshold_count", len(maps.Thresholds))
+		"ledger_type_count", maps.LedgerMappingCount(), "threshold_count", len(maps.Thresholds))
 	if maps.Approval.Len() == 0 {
 		logger.Warn("★ 配置表中无 approval_code 映射（PRD Q1 待确认）——订阅与事件落库将无数据，属预期（占位 TODO(Q1)）")
 	}
@@ -114,13 +133,14 @@ func run(version string) error {
 	ingestor := worker.NewIngestor(db, maps, logger)
 	wk := worker.NewWorker(db, client, ingestor, metrics, logger)
 
-	// ---- ⑦ 订阅 + 对账 ----
+	// ---- ⑦ 订阅（③ 口径：不订阅审批事件，见 subscribeTargetCodes）----
+	// ★ R23 退役：旧「定时对账器 + 调度器」的装配已在此**摘除** —— 只要它还挂着，
+	//   每跑一次就经 reconcile.go 的补拉路径覆盖我方已推进状态（"对账"名义下的隐蔽覆盖）。
+	//   本批次**不**装配 flow/approval/number（另行排期）。
 	subscriber := sync.NewSubscriber(db, client, maps, metrics, logger)
-	reconciler := sync.NewReconciler(db, client, ingestor, maps, metrics, logger)
-	scheduler := sync.NewScheduler(reconciler, env.ReconcileInterval, logger)
 
-	// ---- ⑧ 启动自检第 1 项：必须先订阅（否则静默无数据，FR-M0-03/04）----
-	_, failed := subscriber.SubscribeAll(ctx)
+	// ---- ⑧ 启动自检第 1 项：订阅（显式空集；通讯录事件待 docs/08 接入）----
+	_, failed := subscriber.Subscribe(ctx, subscribeTargetCodes)
 	if env.AppID == "" || env.AppSecret == "" {
 		logger.Warn("未配置飞书凭据，订阅结果为预期失败（开发模式）；配置凭据后须重订阅")
 	}
@@ -165,27 +185,27 @@ func run(version string) error {
 		Inbox:      inboxSvc,
 		Worker:     wk,
 		Subscriber: subscriber,
-		Reconciler: reconciler,
-		Perm:       permLoader,
-		Auth:       auth,
-		Maps:       maps,
-		WebUI:      webui.Handler(),
-		Version:    version,
-		Feishu:     client,
-		Objects:    attachStore,
+		// ★ Reconciler 不再装配（R23 退役）：Deps.Reconciler 保持零值 nil。
+		//   /internal/sync/reconcile 路由属旧路径，其退役/改造随 httpapi 一并排期。
+		Perm:    permLoader,
+		Auth:    auth,
+		Maps:    maps,
+		WebUI:   webui.Handler(),
+		Version: version,
+		Feishu:  client,
+		Objects: attachStore,
 	})
 	if env.IsDev() {
 		logger.Warn("开发模式已开启：已注册 POST /internal/dev/inject-event（仅本地验证用）")
 	}
 
-	// ---- ⑪ 运行：长连接 + worker + 定时对账 + HTTP ----
+	// ---- ⑪ 运行：长连接 + worker + HTTP（★ 定时对账已退役，见 ⑦ / R23）----
 	go func() {
 		if err := longconn.Run(ctx); err != nil && ctx.Err() == nil {
 			logger.Error("长连接异常退出", "error", err.Error())
 		}
 	}()
 	wk.Start(ctx, workerPoolSize)
-	go scheduler.Run(ctx)
 
 	// 长连接状态回填健康检查。
 	go func() {

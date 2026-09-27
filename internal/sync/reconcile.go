@@ -17,12 +17,16 @@ import (
 // defaultLookback 首次对账默认回看时长（尚无游标时）。
 const defaultLookback = 30 * 24 * time.Hour
 
-// Reconciler 对账补拉：批量取实例 ID → 与本地集合求差 → 取详情幂等补录（架构 §4.5）。
-// 这是唯一被允许的「非事件」数据入口；它不是轮询审批状态，而是按 ID 对账求差。
+// Reconciler 旧「实例对账补拉」器 —— ★ ③ 下**已作废（deprecated），勿恢复**。
+//
+// ★ R23（"对账"名义下的隐蔽覆盖）：本器原会经 `ingestor.Ingest` 把飞书侧实例详情
+//
+//	"缺则补"回库；而 ③ 下**我方才是状态源** → 该"补拉"会用飞书侧旧数据**覆盖我方已推进
+//	的状态**。现已：① bootstrap 不再装配/调度本器；② Run 不再调用 ingest（补录路径退役）。
+//	③ 的新对账器为独立的 `external_instances/check` 方向判断对账（另行排期），**不复用本器**。
 type Reconciler struct {
 	db       *store.DB
 	client   feishu.Client
-	ingestor *worker.Ingestor
 	maps     *config.Maps
 	m        *observ.Metrics
 	log      *slog.Logger
@@ -31,14 +35,19 @@ type Reconciler struct {
 }
 
 // NewReconciler 构造对账器。
-func NewReconciler(db *store.DB, client feishu.Client, ingestor *worker.Ingestor, maps *config.Maps, m *observ.Metrics, log *slog.Logger) *Reconciler {
+//
+// ★ 形参 `_ *worker.Ingestor` **已作废**（R23 退役旧写入者）：为兼容既有调用方
+//
+//	（`internal/httpapi` 的测试夹具）暂保留该形参位，但本器**不再持有、也不再触发 ingest**。
+//	待旧路径整体退役后，此形参将一并删除。
+func NewReconciler(db *store.DB, client feishu.Client, _ *worker.Ingestor, maps *config.Maps, m *observ.Metrics, log *slog.Logger) *Reconciler {
 	if m == nil {
 		m = observ.NewMetrics()
 	}
 	if log == nil {
 		log = observ.NewLogger("info", nil)
 	}
-	return &Reconciler{db: db, client: client, ingestor: ingestor, maps: maps, m: m,
+	return &Reconciler{db: db, client: client, maps: maps, m: m,
 		log: observ.WithComponent(log, "reconcile"), now: func() time.Time { return time.Now().UTC() },
 		lookback: defaultLookback}
 }
@@ -86,28 +95,20 @@ func (r *Reconciler) Run(ctx context.Context, approvalCode string, from, to time
 			}
 		}
 
-		filled := 0
-		for _, id := range missing {
-			det, err := r.client.GetInstanceDetail(ctx, id)
-			if err != nil {
-				r.log.Error("补录取详情失败（次日窗口重叠补齐）", "instance_code", id, "error", err.Error())
-				continue
-			}
-			if strings.TrimSpace(det.InstanceCode) == "" {
-				det.InstanceCode = id
-			}
-			if err := r.ingestor.Ingest(ctx, det, worker.SourceReconcile); err != nil {
-				r.log.Error("补录入库失败", "instance_code", id, "error", err.Error())
-				continue
-			}
-			filled++
+		// ★ R23 退役：旧对账是"缺则补"——对每个缺失实例 GetInstanceDetail + ingestor.Ingest
+		//   （把飞书侧详情重新入库）。③ 下我方才是状态源，这条补录路径会**覆盖我方已推进
+		//   状态**，故此处**只发现、不再入库**：仅记录告警与计数，等新方向判断对账器接管。
+		if len(missing) > 0 {
+			r.log.Warn("对账发现缺失实例，但补录路径已退役（R23）：仅记录，不再 ingest",
+				"approval_code", code, "missing", len(missing))
 		}
 
+		const filled = 0 // 补录已退役，恒为 0
 		if err := r.recordCursor(ctx, code, to, len(missing), filled); err != nil {
 			r.log.Error("记录对账游标失败", "approval_code", code, "error", err.Error())
 		}
 		r.m.AddReconcile(int64(len(missing)), int64(filled))
-		r.log.Info("对账完成", "approval_code", code, "missing", len(missing), "filled", filled,
+		r.log.Info("对账完成（补录已退役）", "approval_code", code, "missing", len(missing), "filled", filled,
 			"from", f.Format(time.RFC3339), "to", to.Format(time.RFC3339))
 
 		totalMissing += len(missing)

@@ -38,7 +38,13 @@ ON CONFLICT(ledger_type, biz_no) DO UPDATE SET
   purpose_class_l1 = COALESCE(NULLIF(excluded.purpose_class_l1,''), t_ledger_archive.purpose_class_l1),
   purpose_class_l2 = COALESCE(NULLIF(excluded.purpose_class_l2,''), t_ledger_archive.purpose_class_l2),
   biz_date = COALESCE(NULLIF(excluded.biz_date,''), t_ledger_archive.biz_date),
-  ext_json = excluded.ext_json,
+  -- ★ R19：ext_json 承载**变更链检索**（contract_no 等），无条件覆盖会被 "{}" 抹掉。
+  --   改为「空不覆盖」：新值为 NULL / '' / '{}' 时保留既有值，非空才正常覆盖。
+  ext_json = CASE
+               WHEN excluded.ext_json IS NULL OR TRIM(excluded.ext_json) IN ('', '{}')
+                 THEN t_ledger_archive.ext_json
+               ELSE excluded.ext_json
+             END,
   updated_at = excluded.updated_at`,
 		a.LedgerType, nullStr(a.BizNo), nullStr(a.InstanceCode), nullStr(a.SourceDocType),
 		nullStr(a.Department), nullStr(a.ApplicantOpenID), nullStr(a.SubmitterOpenID), a.AmountCents,
