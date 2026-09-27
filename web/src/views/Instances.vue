@@ -1,5 +1,10 @@
 <script setup>
 // 审批实例列表：筛选 + 分页 + 行过滤（服务端强制，前端仅展示可见行）。
+//
+// ★ R12 语义对齐（转向 ③）：`instance_code` 语义已变 —— 旧库为「飞书原生实例 code」，
+//   ③ 后为我方实例号 `{app_id}:{biz_no}`（04 §A30 / C11、04a §3.3）。页面主键仍用
+//   instance_code，但「业务单号 biz_no」才是审批流转的入口（§3.13 路径用 biz_no）。
+//   故：biz_no 列改为链接「审批操作台」，instance_code 列保留（指向实例详情）。
 import { onMounted, reactive, ref } from 'vue'
 import { fetchInstances } from '../api'
 import { statusClass, statusLabel, fmtTime } from '../utils'
@@ -66,6 +71,10 @@ onMounted(load)
 <template>
   <div class="panel">
     <h2>审批实例</h2>
+    <p class="muted">
+      ③ 后 instance_code ＝ 我方实例号（{app_id}:{biz_no}），不再等同飞书原生实例 code；
+      审批流转请点「biz_no」进「审批操作台」。
+    </p>
     <div class="toolbar">
       <input v-model="filters.approval_code" placeholder="approval_code" @keyup.enter="search" />
       <input v-model="filters.doc_type" placeholder="doc_type" @keyup.enter="search" />
@@ -84,36 +93,44 @@ onMounted(load)
     <div v-if="err" class="error">{{ err }}</div>
     <div v-else-if="loading" class="empty">加载中…</div>
     <div v-else-if="!items.length" class="empty">暂无数据</div>
-    <table v-else>
-      <thead>
-        <tr>
-          <th>instance_code</th>
-          <th>单据类型</th>
-          <th>biz_no</th>
-          <th>状态</th>
-          <th>部门</th>
-          <th class="right">金额</th>
-          <th>来源</th>
-          <th>更新时间</th>
-        </tr>
-      </thead>
-      <tbody>
-        <tr v-for="it in items" :key="it.instance_code">
-          <td>
-            <router-link :to="`/instances/${encodeURIComponent(it.instance_code)}`">
-              {{ it.instance_code }}
-            </router-link>
-          </td>
-          <td>{{ it.doc_type || '-' }}</td>
-          <td>{{ it.biz_no || '-' }}</td>
-          <td><span class="tag" :class="statusClass(it.status)">{{ statusLabel(it.status) }}</span></td>
-          <td>{{ it.department || '-' }}</td>
-          <td class="right">{{ it.amount_display || '-' }}</td>
-          <td>{{ it.source || '-' }}</td>
-          <td>{{ fmtTime(it.updated_at) }}</td>
-        </tr>
-      </tbody>
-    </table>
+
+    <div v-else class="table-scroll">
+      <table>
+        <thead>
+          <tr>
+            <th>instance_code</th>
+            <th>单据类型</th>
+            <th>biz_no</th>
+            <th>状态</th>
+            <th>部门</th>
+            <th class="right">金额</th>
+            <th>来源</th>
+            <th>更新时间</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr v-for="it in items" :key="it.instance_code">
+            <td>
+              <router-link :to="`/instances/${encodeURIComponent(it.instance_code)}`">
+                {{ it.instance_code }}
+              </router-link>
+            </td>
+            <td>{{ it.doc_type || '-' }}</td>
+            <td>
+              <router-link v-if="it.biz_no" :to="`/approval/${encodeURIComponent(it.biz_no)}`">
+                {{ it.biz_no }}
+              </router-link>
+              <span v-else>-</span>
+            </td>
+            <td><span class="tag" :class="statusClass(it.status)">{{ statusLabel(it.status) }}</span></td>
+            <td>{{ it.department || '-' }}</td>
+            <td class="right">{{ it.amount_display || '-' }}</td>
+            <td>{{ it.source || '-' }}</td>
+            <td>{{ fmtTime(it.updated_at) }}</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
 
     <div class="pager">
       <span>共 {{ total }} 条 · 第 {{ page }} 页</span>

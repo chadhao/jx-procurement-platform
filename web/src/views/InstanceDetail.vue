@@ -1,7 +1,13 @@
 <script setup>
-// 实例详情：基础信息 + 字段明细 + 状态时间线（追加式保留驳回→重提全链）。
+// 实例详情：基础信息 + 状态时间线（追加式保留驳回→重提全链）。
+//
+// ★ R12 语义对齐（转向 ③）：
+//   ① `GET /api/instances/{code}/fields` **已作废（F3）** —— 原生控件链作废、恒空、再无生产者；
+//      表单字段改由我方提交页 / 三方审批定义持有，故本页**移除字段明细面板**，不再依赖该端点。
+//   ② 审批流转（同意/拒绝/四操作）与细粒度「操作留痕（ops）」在「审批操作台」（§3.13），
+//      本页以其 `biz_no` 为入口。
 import { onMounted, ref } from 'vue'
-import { fetchInstance, fetchInstanceFields, fetchInstanceTimeline } from '../api'
+import { fetchInstance, fetchInstanceTimeline } from '../api'
 import { statusClass, statusLabel, fmtTime } from '../utils'
 
 const props = defineProps({ code: { type: String, required: true } })
@@ -9,20 +15,17 @@ const props = defineProps({ code: { type: String, required: true } })
 const loading = ref(true)
 const err = ref('')
 const inst = ref(null)
-const fields = ref([])
 const timeline = ref([])
 
 async function load() {
   loading.value = true
   err.value = ''
   try {
-    const [i, f, t] = await Promise.all([
+    const [i, t] = await Promise.all([
       fetchInstance(props.code),
-      fetchInstanceFields(props.code).catch(() => ({ fields: [] })),
       fetchInstanceTimeline(props.code).catch(() => ({ events: [] })),
     ])
     inst.value = i
-    fields.value = f.fields || []
     timeline.value = t.events || []
   } catch (e) {
     err.value = e.message || String(e)
@@ -39,6 +42,9 @@ onMounted(load)
     <div class="panel">
       <div class="toolbar">
         <router-link to="/instances">← 返回列表</router-link>
+        <router-link v-if="inst && inst.biz_no" :to="`/approval/${encodeURIComponent(inst.biz_no)}`">
+          <button class="primary">进入审批操作台</button>
+        </router-link>
       </div>
       <div v-if="err" class="error">{{ err }}</div>
       <div v-else-if="loading" class="empty">加载中…</div>
@@ -67,33 +73,18 @@ onMounted(load)
       </template>
     </div>
 
+    <!-- ★ 字段明细：端点 GET /api/instances/{code}/fields 已随转向 ③ 作废（F3），不再渲染。 -->
     <div class="panel">
       <h2>字段明细</h2>
-      <div v-if="!fields.length" class="empty">暂无字段</div>
-      <table v-else>
-        <thead>
-          <tr>
-            <th>field_id</th>
-            <th>字段名</th>
-            <th>业务字段</th>
-            <th>值</th>
-            <th>类型</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr v-for="(f, idx) in fields" :key="idx">
-            <td>{{ f.field_id || '-' }}</td>
-            <td>{{ f.field_name || '-' }}</td>
-            <td>{{ f.biz_field || '-' }}</td>
-            <td>{{ f.value || '-' }}</td>
-            <td>{{ f.value_type || '-' }}</td>
-          </tr>
-        </tbody>
-      </table>
+      <p class="muted">
+        本面板已作废（转向 ③ · 作废项 F3）：三方审批定义<b>不含原生表单控件</b>，表单字段改由
+        <b>我方提交页</b> / 三方审批定义持有，旧端点恒空、不再有生产者。
+      </p>
     </div>
 
     <div class="panel">
-      <h2>状态时间线</h2>
+      <h2>状态史</h2>
+      <p class="muted">状态变更史（含驳回→重提完整链条）。逐操作轨迹见「审批操作台」的「操作留痕」。</p>
       <div v-if="!timeline.length" class="empty">暂无记录</div>
       <ul v-else class="timeline">
         <li v-for="(ev, idx) in timeline" :key="idx">
@@ -102,7 +93,7 @@ onMounted(load)
             <span class="muted"> · #{{ ev.event_seq }} · {{ fmtTime(ev.occurred_at) }}</span>
           </div>
           <div class="muted">
-            节点：{{ ev.task_node || '-' }} · 操作人：{{ ev.operator || '-' }}
+            节点：{{ ev.task_node || '—（本期恒空，见 §3.4）' }} · 操作人：{{ ev.operator || '-' }}
           </div>
           <div v-if="ev.opinion">{{ ev.opinion }}</div>
         </li>

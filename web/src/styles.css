@@ -173,6 +173,13 @@ button.ghost {
   cursor: pointer;
 }
 
+button.danger {
+  background: #fff;
+  color: var(--danger);
+  border-color: var(--danger);
+  cursor: pointer;
+}
+
 button:disabled {
   opacity: 0.5;
   cursor: not-allowed;
@@ -326,4 +333,159 @@ button:disabled {
   color: var(--muted);
   font-size: 13px;
   margin: 0 0 20px;
+}
+
+/* 侧栏外壳的登录容器（App.vue .login-shell） */
+.login-shell {
+  min-height: 100vh;
+}
+
+/* ---------- 表格横向滚动容器（宽表不撑破窄容器） ---------- */
+.table-scroll {
+  width: 100%;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.table-scroll > table {
+  min-width: 560px;
+}
+
+/* ---------- 行内表单（审批操作台的操作表单） ---------- */
+.inline-form {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+  margin: 8px 0;
+}
+
+.inline-form label {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.radio-group {
+  display: inline-flex;
+  gap: 4px;
+  align-items: center;
+}
+
+/* ---------- 响应式（R15 · 飞书 SIDEBAR 抽屉 / 窄视口） ----------
+   ★ 症状：`.sidebar` 固定 216px + 全文无 @media → 在飞书「侧边抽屉」（宽度常 < 760px）
+   内，`main` 被固定侧栏挤压 → 主内容横向溢出、表格/表单撑破抽屉。
+   ★ 对策：≤900px 折叠为「顶部横向导航 + 纵向布局」；≤560px 进一步压缩内边距并允许表格横滚。 */
+@media (max-width: 900px) {
+  .layout {
+    flex-direction: column;
+    min-height: 100vh;
+  }
+
+  .sidebar {
+    width: 100%;
+    flex: 0 0 auto;
+    border-right: none;
+    border-bottom: 1px solid var(--border);
+    padding: 10px 12px;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px;
+    position: sticky;
+    top: 0;
+    z-index: 10;
+  }
+
+  .sidebar .brand {
+    flex: 1 0 100%;
+    padding: 2px 2px 8px;
+    font-size: 14px;
+  }
+
+  .sidebar .nav-link {
+    display: inline-block;
+    margin-bottom: 0;
+    padding: 6px 10px;
+    border: 1px solid var(--border);
+    font-size: 13px;
+  }
+
+  .main {
+    min-width: 0;
+  }
+
+  .topbar {
+    height: 48px;
+    padding: 0 12px;
+  }
+
+  .content {
+    padding: 12px;
+  }
+
+  .panel {
+    padding: 12px;
+  }
+
+  .kv {
+    grid-template-columns: 120px 1fr;
+  }
+
+  .grid {
+    grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  }
+}
+
+@media (max-width: 560px) {
+  body {
+    font-size: 13px;
+  }
+
+  .content {
+    padding: 8px;
+  }
+
+  .panel {
+    padding: 10px;
+    margin-bottom: 10px;
+  }
+
+  .panel h2 {
+    font-size: 14px;
+  }
+
+  /* 键值对单列，避免窄抽屉里 160px 标签列把值挤没 */
+  .kv {
+    grid-template-columns: 1fr;
+    gap: 2px 0;
+  }
+
+  .kv dt {
+    margin-top: 6px;
+  }
+
+  .toolbar {
+    gap: 6px;
+  }
+
+  .toolbar input,
+  .toolbar select {
+    flex: 1 1 100%;
+  }
+
+  .topbar .who {
+    font-size: 12px;
+  }
+
+  /* 登录卡在抽屉内铺满并收紧 */
+  .login-wrap {
+    min-height: auto;
+    align-items: stretch;
+    padding: 16px;
+  }
+
+  .login-card {
+    width: 100%;
+    padding: 20px 16px;
+  }
 }

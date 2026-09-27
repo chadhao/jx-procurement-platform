@@ -33,6 +33,20 @@ export function fmtTime(s) {
   return d.toLocaleString('zh-CN', { hour12: false })
 }
 
+/** 操作留痕 op_type → 中文（t_flow_op_log；四操作 + 回调）。 */
+export function opTypeLabel(op) {
+  const map = {
+    SUBMIT: '提交',
+    APPROVE: '同意',
+    REJECT: '拒绝',
+    TRANSFER: '转交',
+    ADDSIGN: '加签',
+    ROLLBACK: '回退',
+    CANCEL: '撤回',
+  }
+  return map[(op || '').toUpperCase()] || op || '-'
+}
+
 export function pathOf(obj, key) {
   if (!obj) return undefined
   return obj[key]

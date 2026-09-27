@@ -142,3 +142,46 @@ export const patchReimbursement = (id, payload) =>
 /** 按合同号回溯历次变更（次数 / 累计金额 / 所取档位；行·列权限服务端裁剪）。 */
 export const fetchContractChanges = (bizNo) =>
   api.get(`/api/contract/${encodeURIComponent(bizNo)}/changes`)
+
+// ---- 审批流转（M9 · 转向 ③ 新增，契约见 docs/05-API.md §3.13）----
+// ★ 说明：审批的「流转」已迁至我方系统（飞书只保留展示 / 待办 / 通知 + 两键）。
+//   路径形如 `POST /api/approval/{biz_no}/<action>`，`{biz_no}` ＝ 业务单号（非 instance_id）。
+
+/** 我的待办（数据源 t_flow_task：RELEASED ∧ PENDING ∧ assignee=me）。 */
+export const fetchMyTasks = (params) => api.get('/api/approval/tasks', params)
+
+/** 审批详情 + 时间线（时间线 ＝ t_flow_op_log，含四操作 + 回调）。 */
+export const fetchApproval = (bizNo) => api.get(`/api/approval/${encodeURIComponent(bizNo)}`)
+
+/** 三方审批定义清单（t_approval_def；管理页可选，系统管理员）。 */
+export const fetchApprovalDefs = () => api.get('/api/approval/defs')
+
+/** 我方提交：生成编号 + 建实例 + 首推飞书。 */
+export const submitApproval = (payload) => api.post('/api/approval/submit', payload)
+
+/** 我方页面「同意」。与飞书回调共用同一状态机出口。 */
+export const approveTask = (bizNo, body) =>
+  api.post(`/api/approval/${encodeURIComponent(bizNo)}/approve`, body)
+
+/** 我方页面「拒绝」。 */
+export const rejectTask = (bizNo, body) =>
+  api.post(`/api/approval/${encodeURIComponent(bizNo)}/reject`, body)
+
+/** 转交：原任务 TRANSFERRED，新增同 node_id 任务。 */
+export const transferTask = (bizNo, body) =>
+  api.post(`/api/approval/${encodeURIComponent(bizNo)}/transfer`, body)
+
+/**
+ * 加签（＝顺序会签）：新增同 node_id 任务，按 `task_order` 插入。
+ * ★ `timing ∈ {AFTER, BEFORE}` —— 由「操作人当场选」，缺省 `AFTER`（后置）。
+ */
+export const addsignTask = (bizNo, body) =>
+  api.post(`/api/approval/${encodeURIComponent(bizNo)}/addsign`, body)
+
+/** 回退：实例保持 PENDING，上一节点任务置回 PENDING。 */
+export const rollbackTask = (bizNo, body) =>
+  api.post(`/api/approval/${encodeURIComponent(bizNo)}/rollback`, body)
+
+/** 撤回（仅发起人本人）：实例 → CANCELED；关闭流程、非删除。 */
+export const cancelInstance = (bizNo, body) =>
+  api.post(`/api/approval/${encodeURIComponent(bizNo)}/cancel`, body)
