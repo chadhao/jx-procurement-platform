@@ -67,7 +67,7 @@ func (d Deps) callbackBodyLog(next echo.HandlerFunc) echo.HandlerFunc {
 			"approval_code":  body.ApprovalCode,
 			"instance_id":    body.InstanceID,
 			"task_id":        body.TaskID,
-			"message_id":     body.MessageID,
+			"message_id":     body.MessageID.String(),
 			"id":             body.ID,
 			"encrypt":        body.Encrypt,
 			"action_context": body.ActionContext,
@@ -89,7 +89,7 @@ func (d Deps) callbackBodyLog(next echo.HandlerFunc) echo.HandlerFunc {
 		logArgs := []any{
 			"trace_id", traceID(c),
 			"biz_no", bizNo,
-			"message_id", body.MessageID,
+			"message_id", body.MessageID.String(),
 			"status", c.Response().Status,
 			"body_bytes", len(raw),
 		}

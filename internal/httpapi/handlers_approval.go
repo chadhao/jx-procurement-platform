@@ -34,6 +34,36 @@ const codeApprovalConflict = 40901
 
 // ---------- 入站回调（★ 独立入站面，绕开会话中间件）----------
 
+// flexID 兼容「平台发**数字**」与「发**字符串**」两种形态的 id 字段。
+//
+// ★★ 依据（2026-09-28 真机实测 ＋ 官方字段表）：
+//   - 官方《三方快捷审批回调》字段表明确 **`message_id` 类型为 `int64`**；
+//   - 实测平台发的正是**未加引号的数字**（`"message_id":7690275278685244603`）；
+//   - 而我方调 `message/update` 时同一个值用**字符串**形态被平台接受（读写不对称）。
+//
+// ⇒ 若用 `string` 接收：Go 报 `json: cannot unmarshal number into Go value of type string`
+// ⇒ **整个 Decode 失败** ⇒ 回调整体 400（`duration_ms: 0`、未做任何 IO）——这正是
+// 2026-09-28「飞书真实点击恒 400、而我方用字符串手工复现却 200」的**唯一根因**。
+// ⇒ `json.Number` 亦不可用（它只接受 JSON 数字、不接受字符串）⇒ 故自定义本类型。
+//
+// ★ 教训：**核对平台报文时，字段「类型」与字段「名」同等重要** ——
+// 只对名字不对类型，会在解析层就失败，且错误现象离根因很远（表现为"报文非法"）。
+type flexID string
+
+// UnmarshalJSON 同时接受 JSON 数字、JSON 字符串与 null。
+func (f *flexID) UnmarshalJSON(b []byte) error {
+	s := strings.TrimSpace(string(b))
+	if s == "null" || s == "" {
+		*f = ""
+		return nil
+	}
+	*f = flexID(strings.Trim(s, `"`))
+	return nil
+}
+
+// String 取字符串形态（落库 / 比较 / 日志用）。
+func (f flexID) String() string { return string(f) }
+
 // extCallbackBody 飞书三方审批回调报文。
 //
 // ★★ 字段名已按官方《三方快捷审批回调》2026-09-27 实测校准（docs/16 §2-A-1 / G-1；
@@ -57,7 +87,7 @@ type extCallbackBody struct {
 	ActionContext string            `json:"action_context"` // 我方自定义上下文 JSON（推侧写入、期望原样回传；V-1 待实测）
 	InstanceID    string            `json:"instance_id"`    // 我方口径 {app_id}:{biz_no}
 	TaskID        string            `json:"task_id"`        // 列表操作必填
-	MessageID     string            `json:"message_id"`     // 卡片消息 id（落 t_flow_op_log.message_id，0013）
+	MessageID     flexID            `json:"message_id"`     // 卡片消息 id（落 t_flow_op_log.message_id，0013）
 	ID            string            `json:"id"`             // 官方报文 id（留痕用）
 	Reason        string            `json:"reason"`         // 审批意见
 	Attachments   []json.RawMessage `json:"attachments"`    // 附件（留痕只记条数；内容不解析）
@@ -180,7 +210,7 @@ func (d Deps) handleExternalApprovalCallback(c echo.Context) error {
 		OperatorOpenID: operatorOpenID,
 		OperatorUserID: operatorUserID,
 		ApprovalCode:   strings.TrimSpace(body.ApprovalCode),
-		MessageID:      strings.TrimSpace(body.MessageID),
+		MessageID:      strings.TrimSpace(body.MessageID.String()),
 		Reason:         body.Reason,
 	}
 	res, err := d.Flow.HandleCallback(c.Request().Context(), req)
