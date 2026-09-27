@@ -50,6 +50,14 @@ const (
 	OpCancel  = "CANCEL"
 )
 
+// 任务释放状态（顺序会签 · 分段释放，04a §2.3 / 01a §4.3）。
+const (
+	// ReleaseHeld 未释放：飞书侧不推、不生成待办；「还没轮到」→ 不得办理。
+	ReleaseHeld = "HELD"
+	// ReleaseReleased 已释放：当前可办理。
+	ReleaseReleased = "RELEASED"
+)
+
 // 领域错误（均为**可见失败**，不静默吞掉）。
 var (
 	// ErrInvalidSubmit 提交入参非法。
@@ -58,6 +66,9 @@ var (
 	ErrIllegalTransition = errors.New("flow: 非法状态迁移")
 	// ErrNodeNotReached 操作了尚未到达的节点。
 	ErrNodeNotReached = errors.New("flow: 节点尚未到达")
+	// ErrTaskHeld 操作了尚未释放（HELD）的任务 —— 顺序会签下「还没轮到」。
+	// 非静默：明确拒绝，绝不把「未轮到的办理」算作成功。
+	ErrTaskHeld = errors.New("flow: 任务尚未释放（顺序会签未轮到）")
 )
 
 // Approver 审批人。
@@ -245,8 +256,17 @@ func (s *Service) act(ctx context.Context, bizNo, taskID, actor, opType, reason 
 		}
 
 		// ④ 节点到达校验：只有"当前节点"可操作（防未来节点提前审批这一不可能状态）。
+		//    ★ 先于释放门禁：**未来节点**的拒绝口径是 `ErrNodeNotReached`（节点未到达），
+		//      与"本节点已到达、但还没轮到我"的 `ErrTaskHeld` 区分开，错误语义更精确。
 		if err := s.ensureNodeReachedTx(ctx, tx, bizNo, task.NodeSeq); err != nil {
 			return err
+		}
+
+		// ⑤ 顺序会签释放门禁（04a §2.3）：本节点已到达、但该任务尚未释放（HELD）→「还没轮到我」。
+		//    ★ 必须**明确拒绝**（非静默成功）：把「未轮到的同意」当成有效会签票，
+		//      会让节点在"后一位尚未收到通知"时就提前通过，直接静默破坏会签语义。
+		if task.ReleaseState == ReleaseHeld {
+			return fmt.Errorf("%w: 任务 %s（节点 %s）", ErrTaskHeld, taskID, task.NodeID)
 		}
 
 		newTaskStatus := TaskApproved
@@ -268,27 +288,43 @@ func (s *Service) act(ctx context.Context, bizNo, taskID, actor, opType, reason 
 	})
 }
 
-// createTasksTx 建该实例全部节点的任务（PENDING）。
+// createTasksTx 建该实例全部节点的任务（PENDING），并按**顺序会签**设置释放状态。
 //
 // ★ 为什么一次性建全链任务：`t_flow_task` 是唯一持久化"审批链"的地方（04a §1.1 无独立链路表），
 //
-//	推进时需据此判断"下一节点"。为避免后续节点被提前操作，`act` 用 `ensureNodeReachedTx`
-//	做"只有当前节点可操作"的门禁（节点是否到达由更小 seq 的节点是否全部通过决定）。
+//	推进时需据此判断"下一节点"与"下一个应释放的人"。为避免后续节点被提前操作，
+//	`act` 用 `ensureNodeReachedTx` 做"只有当前节点可操作"的门禁。
+//
+// ★★ 顺序会签 · 分段释放（04a §2.3，用户定案「上个人审批之后，下个人才能收到通知」）：
+//   - **提交时只释放「第一个节点里第一位审批人」这一个任务**（RELEASED）；
+//   - **其余任务全部 HELD**（含后续节点）——否则后续节点的审批人会在「尚未轮到」时收到待办/通知，
+//     直接违背顺序会签的核心制度直觉。
+//   - 「同 node 内逐级、跨 node 顺序」由 advanceTx 的 releaseNextTx 在每次同意后推进。
+//
+// ★ 幂等（快照重推）：`UpsertFlowTaskTx` 冲突即 `DO NOTHING` —— 同 `task_id` 重推
+//
+//	**绝不**把已 `RELEASED`/`APPROVED`/`REJECTED` 的任务置回 `HELD`（那是"被撞回起点"的静默缺陷）。
 func (s *Service) createTasksTx(ctx context.Context, tx *sql.Tx, bizNo string, nodes []NodeSpec, at time.Time) error {
 	ordered := make([]NodeSpec, len(nodes))
 	copy(ordered, nodes)
 	sort.SliceStable(ordered, func(i, j int) bool { return ordered[i].Seq < ordered[j].Seq })
 
 	idx := 0
+	firstReleased := false
 	for _, n := range ordered {
 		for _, ap := range n.Approvers {
 			idx++
 			// task_id 确定性生成（04a §3.3）：同快照重推得同一 ID，避免"审批中心看不到数据"。
 			taskID := fmt.Sprintf("%s-%s-%d-%d", n.NodeID, ap.OpenID, 1, idx)
+			release := ReleaseHeld
+			if !firstReleased {
+				release = ReleaseReleased // 全链仅第一个任务在提交时释放
+				firstReleased = true
+			}
 			t := &store.FlowTask{
 				TaskID: taskID, BizNo: bizNo, NodeID: n.NodeID, NodeName: n.NodeName,
 				NodeSeq: n.Seq, Round: 1, AssigneeOpenID: ap.OpenID, AssigneeName: ap.Name,
-				Status: TaskPending, CreatedAt: at, UpdatedAt: at,
+				Status: TaskPending, ReleaseState: release, CreatedAt: at, UpdatedAt: at,
 			}
 			if err := s.db.UpsertFlowTaskTx(ctx, tx, t); err != nil {
 				return err
@@ -339,8 +375,56 @@ func (s *Service) advanceTx(ctx context.Context, tx *sql.Tx, inst *store.Instanc
 	if allApproved {
 		return s.terminalizeTx(ctx, tx, inst, InstanceApproved, at, "")
 	}
+	// ③ 顺序会签推进（04a §2.3）：释放「已到达且尚未通过」节点的下一个 HELD 任务。
+	//   放在终态判定之后：一旦实例终态即不再释放（否则会给终态实例的后续任务"续命"）。
+	if err := s.releaseNextTx(ctx, tx, inst.BizNo, tasks); err != nil {
+		return err
+	}
 	// 仍在流转：仅推进版本号（每次状态变更都要推一次，04a §3.1 / S2）。
 	return s.saveInstanceTx(ctx, tx, inst, at)
+}
+
+// releaseNextTx 顺序会签 · 逐级释放（04a §2.3）。
+//
+// 对每个「已到达且尚未通过」的节点，释放其**下一个应办理**的 HELD 任务：
+//   - 「已到达」＝所有 seq 更小的节点均已通过（与 act 的 ensureNodeReachedTx 同一判据）；
+//     未到达的节点整体保持 HELD —— 飞书侧不推、不生成待办（满足"下个人才收到通知"）。
+//   - 「下一个应办理」＝该节点内按释放顺序**第一个未通过（PENDING）任务**，且其之前的任务全部
+//     APPROVED；若之前出现 REJECTED，则不再释放（不越级、不给驳回节点续命）。
+//   - 每次推进至多让每个节点多释放一个任务（顺序链一次只前进一步）。
+func (s *Service) releaseNextTx(ctx context.Context, tx *sql.Tx, bizNo string, tasks []store.FlowTask) error {
+	for _, seq := range distinctSeqs(tasks) {
+		if nodeDecision(tasks, seq) != nodePending {
+			continue // 已通过 / 已驳回：不再释放
+		}
+		if !nodeReached(tasks, seq) {
+			continue // 节点尚未到达：保持 HELD
+		}
+		nodeID := nodeIDOfSeq(tasks, seq)
+		if nodeID == "" {
+			continue
+		}
+		nodeTasks, err := s.db.ListTasksByNodeTx(ctx, tx, bizNo, nodeID)
+		if err != nil {
+			return err
+		}
+		for _, t := range nodeTasks {
+			if t.Status == TaskApproved {
+				continue // 顺序链已走过该任务
+			}
+			if t.Status == TaskRejected {
+				break // 前面有驳回 → 本节点剩余任务不再释放
+			}
+			// 该节点内第一个仍 PENDING 的任务：尚未释放则释放之，然后停止（其后再保持 HELD）。
+			if t.ReleaseState == ReleaseHeld {
+				if err := s.db.SetReleaseStateTx(ctx, tx, t.TaskID, ReleaseReleased); err != nil {
+					return err
+				}
+			}
+			break
+		}
+	}
+	return nil
 }
 
 // terminalizeTx 把实例置为终态，并被动终结其余在途任务。
@@ -432,6 +516,26 @@ func distinctSeqs(tasks []store.FlowTask) []int {
 	}
 	sort.Ints(out)
 	return out
+}
+
+// nodeReached 判断节点 seq 是否「已到达」：所有更小 seq 的节点均已通过（04a §2.3）。
+func nodeReached(tasks []store.FlowTask, seq int) bool {
+	for _, prev := range priorSeqs(tasks, seq) {
+		if nodeDecision(tasks, prev) != nodeApproved {
+			return false
+		}
+	}
+	return true
+}
+
+// nodeIDOfSeq 返回某 node_seq 对应的 node_id（同节点内各任务 node_id 相同；无则空串）。
+func nodeIDOfSeq(tasks []store.FlowTask, seq int) string {
+	for _, t := range tasks {
+		if t.NodeSeq == seq {
+			return t.NodeID
+		}
+	}
+	return ""
 }
 
 // priorSeqs 返回严格小于 seq 的全部已出现 node_seq（升序）。

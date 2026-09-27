@@ -5,7 +5,14 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
+)
+
+// 任务释放状态（0008，04a §2.3）。字符串与 flow 包的 ReleaseHeld/ReleaseReleased 一致。
+const (
+	releaseHeld     = "HELD"
+	releaseReleased = "RELEASED"
 )
 
 // ---------- 我方任务 / 节点（t_flow_task，04a §1.1） ----------
@@ -27,19 +34,74 @@ func (d *DB) UpsertFlowTaskTx(ctx context.Context, tx *sql.Tx, t *FlowTask) erro
 	if t.ClosedAt != nil {
 		closed = fmtTime(*t.ClosedAt)
 	}
+	// ★ 释放状态：调用方一般显式给出；缺省按「已释放」写入（＝旧语义，避免漏写即静默冻结）。
+	release := strings.ToUpper(strings.TrimSpace(t.ReleaseState))
+	if release != releaseHeld && release != releaseReleased {
+		release = releaseReleased
+	}
 	_, err := tx.ExecContext(ctx, `
 INSERT INTO t_flow_task
   (task_id, biz_no, node_id, node_name, node_seq, round, assignee_open_id, assignee_name,
-   status, action_context, created_at, updated_at, closed_at)
-VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)
+   status, action_context, release_state, weight, created_at, updated_at, closed_at)
+VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
 ON CONFLICT(task_id) DO NOTHING`,
 		t.TaskID, t.BizNo, t.NodeID, nullStr(t.NodeName), t.NodeSeq, round,
 		t.AssigneeOpenID, nullStr(t.AssigneeName), t.Status, nullStr(t.ActionContext),
+		release, t.Weight,
 		fmtTime(t.CreatedAt), fmtTime(t.UpdatedAt), nullStr(closed))
 	if err != nil {
 		return fmt.Errorf("store: 写入任务 %s 失败: %w", t.TaskID, err)
 	}
 	return nil
+}
+
+// SetReleaseStateTx 设置任务释放状态（顺序会签逐级释放，04a §2.3）。
+//
+// ★ 单向纪律（防「被撞回起点」的静默缺陷）：
+//   - 本方法**只用于把 HELD 任务释放为 RELEASED**（`RELEASED` 分支带 `WHERE release_state='HELD'`
+//     守卫，重复释放＝幂等 no-op，绝不改动已释放/已终结任务）；
+//   - `HELD` 分支保留给未来「回退后重置释放」（04a §2.3 末行）；本期无调用点，仅提供能力。
+//
+// 返回 error 仅在 DB 失败时非 nil；「无行受影响」在 RELEASED 分支属正常（已释放/已终结），不报错。
+func (d *DB) SetReleaseStateTx(ctx context.Context, tx *sql.Tx, taskID, state string) error {
+	state = strings.ToUpper(strings.TrimSpace(state))
+	if state != releaseHeld && state != releaseReleased {
+		return fmt.Errorf("store: 非法 release_state %q（仅 HELD/RELEASED）", state)
+	}
+	now := fmtTime(timeNow().UTC())
+	if state == releaseReleased {
+		// 单向：仅 HELD → RELEASED。
+		if _, err := tx.ExecContext(ctx, `
+UPDATE t_flow_task SET release_state = ?, updated_at = ?
+WHERE task_id = ? AND release_state = ?`, releaseReleased, now, taskID, releaseHeld); err != nil {
+			return fmt.Errorf("store: 释放任务 %s 失败: %w", taskID, err)
+		}
+		return nil
+	}
+	// HELD：仅供未来「回退重置释放」使用。
+	if _, err := tx.ExecContext(ctx, `
+UPDATE t_flow_task SET release_state = ?, updated_at = ?
+WHERE task_id = ?`, releaseHeld, now, taskID); err != nil {
+		return fmt.Errorf("store: 重置任务 %s 释放状态失败: %w", taskID, err)
+	}
+	return nil
+}
+
+// ListTasksByNodeTx 在事务内列出某实例某节点下的全部任务，按**释放顺序**升序。
+//
+// ★ 排序键＝`node_seq, rowid`：04a §2.3 要求「同 node_id 按 node_seq 逐级释放」，
+//
+//	但本仓库 `node_seq` 语义＝**节点顺序**（同一节点内各任务 node_seq 相同）。
+//	故同节点内以 `rowid`（＝createTasksTx 的插入顺序＝审批人声明顺序）作稳定次序键，
+//	「逐级释放」据此取「该节点内下一个 HELD」。
+func (d *DB) ListTasksByNodeTx(ctx context.Context, tx *sql.Tx, bizNo, nodeID string) ([]FlowTask, error) {
+	rows, err := tx.QueryContext(ctx,
+		flowTaskSelectSQL+` WHERE biz_no = ? AND node_id = ? ORDER BY node_seq, rowid`, bizNo, nodeID)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+	return collectFlowTasks(rows)
 }
 
 // UpdateFlowTaskStatusTx 更新任务状态（+ updated_at / closed_at）。
@@ -72,9 +134,13 @@ func (d *DB) GetFlowTask(ctx context.Context, taskID string) (*FlowTask, error) 
 	return scanFlowTask(row)
 }
 
-// ListFlowTasks 列出某业务单号的全部任务（按 node_seq、task_id 升序）。
+// ListFlowTasks 列出某业务单号的全部任务（按 node_seq、插入顺序升序）。
+//
+// ★ 次序键用 `node_seq, rowid`：同 node_seq（同节点）内以插入顺序稳定排序
+//
+//	（task_id 含 open_id，字典序≠声明序，不能作次序键）。释放顺序依赖此序。
 func (d *DB) ListFlowTasks(ctx context.Context, bizNo string) ([]FlowTask, error) {
-	rows, err := d.QueryContext(ctx, flowTaskSelectSQL+` WHERE biz_no = ? ORDER BY node_seq, task_id`, bizNo)
+	rows, err := d.QueryContext(ctx, flowTaskSelectSQL+` WHERE biz_no = ? ORDER BY node_seq, rowid`, bizNo)
 	if err != nil {
 		return nil, err
 	}
@@ -82,9 +148,9 @@ func (d *DB) ListFlowTasks(ctx context.Context, bizNo string) ([]FlowTask, error
 	return collectFlowTasks(rows)
 }
 
-// ListFlowTasksTx 在事务内列出某业务单号的全部任务。
+// ListFlowTasksTx 在事务内列出某业务单号的全部任务（序列同 ListFlowTasks）。
 func (d *DB) ListFlowTasksTx(ctx context.Context, tx *sql.Tx, bizNo string) ([]FlowTask, error) {
-	rows, err := tx.QueryContext(ctx, flowTaskSelectSQL+` WHERE biz_no = ? ORDER BY node_seq, task_id`, bizNo)
+	rows, err := tx.QueryContext(ctx, flowTaskSelectSQL+` WHERE biz_no = ? ORDER BY node_seq, rowid`, bizNo)
 	if err != nil {
 		return nil, err
 	}
@@ -95,6 +161,7 @@ func (d *DB) ListFlowTasksTx(ctx context.Context, tx *sql.Tx, bizNo string) ([]F
 const flowTaskSelectSQL = `
 SELECT task_id, biz_no, node_id, COALESCE(node_name,''), node_seq, COALESCE(round,1),
        assignee_open_id, COALESCE(assignee_name,''), status, COALESCE(action_context,''),
+       COALESCE(release_state,'HELD'), weight,
        created_at, updated_at, COALESCE(closed_at,'')
 FROM t_flow_task`
 
@@ -115,16 +182,22 @@ func scanFlowTask(s interface {
 }) (*FlowTask, error) {
 	var (
 		t                FlowTask
+		weight           sql.NullInt64
 		created, updated string
 		closed           string
 	)
 	if err := s.Scan(&t.TaskID, &t.BizNo, &t.NodeID, &t.NodeName, &t.NodeSeq, &t.Round,
 		&t.AssigneeOpenID, &t.AssigneeName, &t.Status, &t.ActionContext,
+		&t.ReleaseState, &weight,
 		&created, &updated, &closed); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, ErrNotFound
 		}
 		return nil, err
+	}
+	if weight.Valid {
+		v := int(weight.Int64)
+		t.Weight = &v
 	}
 	t.CreatedAt = parseTime(created)
 	t.UpdatedAt = parseTime(updated)

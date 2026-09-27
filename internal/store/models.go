@@ -300,9 +300,14 @@ type FlowTask struct {
 	AssigneeName   string // 审批人姓名（展示）
 	Status         string // PENDING/APPROVED/REJECTED/TRANSFERRED/DONE
 	ActionContext  string // 回调定位（原样回传）
-	CreatedAt      time.Time
-	UpdatedAt      time.Time
-	ClosedAt       *time.Time // 终结时刻
+	// ★ 0008 增列（04a §1.1 / §2.3）：顺序会签「分段释放」。
+	//   HELD＝未释放（飞书侧不推、不生成待办）；RELEASED＝已释放（当前可办理）。
+	ReleaseState string // HELD / RELEASED
+	// ★ 0008 增列：票签 / 并行会签扩展位；一期「不可配为并签」→ 恒 nil。
+	Weight    *int
+	CreatedAt time.Time
+	UpdatedAt time.Time
+	ClosedAt  *time.Time // 终结时刻
 }
 
 // FlowOpLog 操作留痕行（t_flow_op_log，04a §1.1）。

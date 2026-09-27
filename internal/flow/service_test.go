@@ -2,6 +2,7 @@ package flow_test
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"testing"
 	"time"
@@ -300,5 +301,191 @@ func TestSubmitValidation(t *testing.T) {
 	// 不得落任何实例。
 	if n := storetest.Count(t, db, `SELECT COUNT(*) FROM t_instance`); n != 0 {
 		t.Errorf("非法提交不应落实例，实际 %d 条", n)
+	}
+}
+
+// ---------- 顺序会签 · 分段释放（A6，04a §2.3） ----------
+
+// submitSeqNode 提交一张「node1 会签 3 人 + node2 单人」的单据（顺序会签夹具）。
+func submitSeqNode(t *testing.T, svc *flow.Service) string {
+	t.Helper()
+	bizNo, err := svc.Submit(context.Background(), flow.SubmitInput{
+		DocType: "PR", ApprovalCode: "code-pr", ApplicantOpenID: "ou_app", ApplicantName: "张三",
+		Nodes: []flow.NodeSpec{
+			{NodeID: "n1", NodeName: "会签", Seq: 1, Approvers: []flow.Approver{
+				{OpenID: "ou_a", Name: "甲"}, {OpenID: "ou_b", Name: "乙"}, {OpenID: "ou_c", Name: "丙"}}},
+			{NodeID: "n2", NodeName: "终审", Seq: 2, Approvers: []flow.Approver{
+				{OpenID: "ou_gm", Name: "总"}}},
+		},
+		At: flowAt,
+	})
+	if err != nil {
+		t.Fatalf("提交失败: %v", err)
+	}
+	return bizNo
+}
+
+// releaseOf 取某审批人任务的释放状态（HELD/RELEASED）。
+func releaseOf(t *testing.T, db *store.DB, bizNo, assignee string) string {
+	t.Helper()
+	return taskFor(t, db, bizNo, assignee).ReleaseState
+}
+
+// TestSeqSignInitialOnlyFirstReleased ① 同 node 3 人：仅 1 RELEASED、2 HELD；
+//
+//	且后续 node 的任务在提交时全部 HELD（不得提前释放 → 飞书侧不生成待办）。
+func TestSeqSignInitialOnlyFirstReleased(t *testing.T) {
+	db := storetest.NewDB(t)
+	svc := flow.New(db, "app")
+	bizNo := submitSeqNode(t, svc)
+
+	if got := releaseOf(t, db, bizNo, "ou_a"); got != flow.ReleaseReleased {
+		t.Errorf("node1 首位 ou_a = %s, 期望 RELEASED", got)
+	}
+	for _, ap := range []string{"ou_b", "ou_c"} {
+		if got := releaseOf(t, db, bizNo, ap); got != flow.ReleaseHeld {
+			t.Errorf("node1 非首位 %s = %s, 期望 HELD", ap, got)
+		}
+	}
+	if got := releaseOf(t, db, bizNo, "ou_gm"); got != flow.ReleaseHeld {
+		t.Errorf("后续 node 的 ou_gm = %s, 期望 HELD（顺序会签不得提前释放）", got)
+	}
+}
+
+// TestSeqSignReleasesNextOnApprove ② 第 1 人 APPROVED 后 → 第 2 人变 RELEASED、第 3 人仍 HELD。
+func TestSeqSignReleasesNextOnApprove(t *testing.T) {
+	db := storetest.NewDB(t)
+	svc := flow.New(db, "app")
+	ctx := context.Background()
+	bizNo := submitSeqNode(t, svc)
+
+	a := taskFor(t, db, bizNo, "ou_a")
+	if err := svc.Approve(ctx, bizNo, a.TaskID, "ou_a", "同意"); err != nil {
+		t.Fatalf("同意 ou_a 失败: %v", err)
+	}
+	if got := releaseOf(t, db, bizNo, "ou_b"); got != flow.ReleaseReleased {
+		t.Errorf("ou_b 在 ou_a 同意后 = %s, 期望 RELEASED", got)
+	}
+	if got := releaseOf(t, db, bizNo, "ou_c"); got != flow.ReleaseHeld {
+		t.Errorf("ou_c 应仍 = HELD（尚未轮到），实际 %s", got)
+	}
+}
+
+// TestSeqSignHeldTaskCannotApprove ③ 负向：未释放（HELD）任务上同意/拒绝**必须被拒**（非静默）。
+func TestSeqSignHeldTaskCannotApprove(t *testing.T) {
+	db := storetest.NewDB(t)
+	svc := flow.New(db, "app")
+	ctx := context.Background()
+	bizNo := submitSeqNode(t, svc)
+
+	// ou_b 尚 HELD（ou_a 未同意）→ 同意必须返回 ErrTaskHeld。
+	b := taskFor(t, db, bizNo, "ou_b")
+	if err := svc.Approve(ctx, bizNo, b.TaskID, "ou_b", "抢跑"); !errors.Is(err, flow.ErrTaskHeld) {
+		t.Fatalf("未释放任务同意应返回 ErrTaskHeld，实际: %v", err)
+	}
+	if err := svc.Reject(ctx, bizNo, b.TaskID, "ou_b", "抢跑拒绝"); !errors.Is(err, flow.ErrTaskHeld) {
+		t.Fatalf("未释放任务拒绝应返回 ErrTaskHeld，实际: %v", err)
+	}
+	// 被拒后任务状态不得改变，实例仍 PENDING。
+	if got := taskFor(t, db, bizNo, "ou_b"); got.Status != flow.TaskPending || got.ReleaseState != flow.ReleaseHeld {
+		t.Errorf("非法操作改动了任务：status=%s release=%s", got.Status, got.ReleaseState)
+	}
+	if got := instOf(t, db, bizNo).Status; got != flow.InstancePending {
+		t.Errorf("实例状态 = %s, 期望 PENDING", got)
+	}
+}
+
+// TestSeqSignNextNodeOnlyAfterFullNode ④ 全 node APPROVED 才推进下一 node。
+func TestSeqSignNextNodeOnlyAfterFullNode(t *testing.T) {
+	db := storetest.NewDB(t)
+	svc := flow.New(db, "app")
+	ctx := context.Background()
+	bizNo := submitSeqNode(t, svc)
+
+	approve := func(ap string) {
+		t.Helper()
+		tk := taskFor(t, db, bizNo, ap)
+		if err := svc.Approve(ctx, bizNo, tk.TaskID, ap, "同意"); err != nil {
+			t.Fatalf("同意 %s 失败: %v", ap, err)
+		}
+	}
+	approve("ou_a")
+	approve("ou_b")
+	// node1 尚有 ou_c 未同意 → 下一 node 保持 HELD。
+	if got := releaseOf(t, db, bizNo, "ou_gm"); got != flow.ReleaseHeld {
+		t.Errorf("node1 未全员同意时 ou_gm = %s, 期望 HELD", got)
+	}
+	approve("ou_c") // node1 全员同意 → 释放下一 node
+	if got := releaseOf(t, db, bizNo, "ou_gm"); got != flow.ReleaseReleased {
+		t.Errorf("node1 全员同意后 ou_gm = %s, 期望 RELEASED", got)
+	}
+	if got := instOf(t, db, bizNo).Status; got != flow.InstancePending {
+		t.Errorf("node2 未审时实例 = %s, 期望 PENDING", got)
+	}
+	approve("ou_gm")
+	if got := instOf(t, db, bizNo).Status; got != flow.InstanceApproved {
+		t.Errorf("全部通过后实例 = %s, 期望 APPROVED", got)
+	}
+}
+
+// TestSeqSignRejectStopsRelease ⑤ 任一 REJECTED → 同 node 剩余任务不再释放。
+func TestSeqSignRejectStopsRelease(t *testing.T) {
+	db := storetest.NewDB(t)
+	svc := flow.New(db, "app")
+	ctx := context.Background()
+	bizNo := submitSeqNode(t, svc)
+
+	a := taskFor(t, db, bizNo, "ou_a")
+	if err := svc.Approve(ctx, bizNo, a.TaskID, "ou_a", "同意"); err != nil {
+		t.Fatal(err)
+	}
+	// ou_a 同意后 ou_b 已释放；此时 ou_b 拒绝 → 实例驳回；ou_c 不得被释放。
+	b := taskFor(t, db, bizNo, "ou_b")
+	if err := svc.Reject(ctx, bizNo, b.TaskID, "ou_b", "驳回"); err != nil {
+		t.Fatal(err)
+	}
+	if got := instOf(t, db, bizNo).Status; got != flow.InstanceRejected {
+		t.Fatalf("驳回后实例 = %s, 期望 REJECTED", got)
+	}
+	if got := releaseOf(t, db, bizNo, "ou_c"); got != flow.ReleaseHeld {
+		t.Errorf("驳回后 ou_c = %s, 期望 HELD（不再释放）", got)
+	}
+	if got := taskFor(t, db, bizNo, "ou_c").Status; got != flow.TaskDone {
+		t.Errorf("驳回后 ou_c 任务 = %s, 期望 DONE（被动终结）", got)
+	}
+}
+
+// TestSeqSignRepushDoesNotResetRelease ⑥ 快照重推（同 task_id 重写）不得把已 RELEASED/APPROVED 置回 HELD。
+func TestSeqSignRepushDoesNotResetRelease(t *testing.T) {
+	db := storetest.NewDB(t)
+	svc := flow.New(db, "app")
+	ctx := context.Background()
+	bizNo := submitSeqNode(t, svc)
+
+	a := taskFor(t, db, bizNo, "ou_a")
+	if err := svc.Approve(ctx, bizNo, a.TaskID, "ou_a", "同意"); err != nil {
+		t.Fatal(err)
+	}
+	// 模拟「落后快照重推」：以同 task_id、旧状态（PENDING/HELD）再次 upsert。
+	stale := []store.FlowTask{
+		{TaskID: a.TaskID, BizNo: bizNo, NodeID: "n1", NodeSeq: 1, Round: 1,
+			AssigneeOpenID: "ou_a", Status: flow.TaskPending, ReleaseState: flow.ReleaseHeld,
+			CreatedAt: flowAt, UpdatedAt: flowAt},
+		{TaskID: taskFor(t, db, bizNo, "ou_b").TaskID, BizNo: bizNo, NodeID: "n1", NodeSeq: 1, Round: 1,
+			AssigneeOpenID: "ou_b", Status: flow.TaskPending, ReleaseState: flow.ReleaseHeld,
+			CreatedAt: flowAt, UpdatedAt: flowAt},
+	}
+	for _, s := range stale {
+		if err := db.WithTx(ctx, func(tx *sql.Tx) error { return db.UpsertFlowTaskTx(ctx, tx, &s) }); err != nil {
+			t.Fatalf("重推 upsert 失败: %v", err)
+		}
+	}
+	// ou_a：APPROVED + RELEASED 必须原封不动。
+	if got := taskFor(t, db, bizNo, "ou_a"); got.Status != flow.TaskApproved || got.ReleaseState != flow.ReleaseReleased {
+		t.Errorf("重推把已审批任务改回：status=%s release=%s（期望 APPROVED/RELEASED）", got.Status, got.ReleaseState)
+	}
+	// ou_b：已被释放，不得被旧快照置回 HELD。
+	if got := releaseOf(t, db, bizNo, "ou_b"); got != flow.ReleaseReleased {
+		t.Errorf("重推把已释放任务置回 %s（期望 RELEASED）", got)
 	}
 }

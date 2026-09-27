@@ -2,7 +2,9 @@ package store
 
 import (
 	"context"
+	"database/sql"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -81,6 +83,22 @@ func TestQAMigrationFreshAndIdempotent(t *testing.T) {
 			t.Errorf("t_instance 缺列 %s（migrations/0007 未生效）", c)
 		}
 	}
+	// 架构转向 ③ 顺序会签（migration 0008）：t_flow_task 补 release_state / weight。
+	ftCols := qaColumns(t, db, "t_flow_task")
+	for _, c := range []string{"release_state", "weight"} {
+		if !ftCols[c] {
+			t.Errorf("t_flow_task 缺列 %s（migrations/0008 未生效）", c)
+		}
+	}
+	// release_state 必须有默认值（NOT NULL DEFAULT 'HELD'）—— 新行漏写时不得为 NULL。
+	var dflt sql.NullString
+	if err := db.QueryRowContext(ctx,
+		`SELECT dflt_value FROM pragma_table_info('t_flow_task') WHERE name='release_state'`).Scan(&dflt); err != nil {
+		t.Fatalf("查 release_state 默认值失败: %v", err)
+	}
+	if !dflt.Valid || strings.Trim(dflt.String, "'\"") != "HELD" {
+		t.Errorf("t_flow_task.release_state 默认值 = %v, 期望 'HELD'", dflt)
+	}
 	// ★ 前提 P3：UNIQUE(biz_no) 兜底必须存在（锁号不被静默破坏）。
 	var nBizUx int
 	if err := db.QueryRowContext(ctx,
@@ -91,9 +109,10 @@ func TestQAMigrationFreshAndIdempotent(t *testing.T) {
 		t.Errorf("唯一索引 ux_instance_biz_no 不存在（锁号前提 P3 被破坏）")
 	}
 
-	// 迁移版本清单随新增迁移同步（0004 供应商归一、0005 附件、0006 台账一对多、0007 审批核心）。
+	// 迁移版本清单随新增迁移同步（0004 供应商归一、0005 附件、0006 台账一对多、0007 审批核心、0008 顺序会签释放）。
 	for _, v := range []string{"0001_init.sql", "0002_idem_unique.sql", "0003_submission_scope.sql",
-		"0004_supplier_norm.sql", "0005_attachment.sql", "0006_ledger_multi.sql", "0007_approval_core.sql"} {
+		"0004_supplier_norm.sql", "0005_attachment.sql", "0006_ledger_multi.sql", "0007_approval_core.sql",
+		"0008_flow_task_release.sql"} {
 		var n int
 		if err := db.QueryRowContext(ctx,
 			`SELECT COUNT(*) FROM t_schema_migrations WHERE version = ?`, v).Scan(&n); err != nil {
@@ -114,8 +133,9 @@ func TestQAMigrationFreshAndIdempotent(t *testing.T) {
 		t.Fatalf("查版本总数失败: %v", err)
 	}
 	// ★ 期望值＝仓库内迁移文件数（新增迁移时同步此处；
-	//   0004 Q20 supplier_norm、0005 附件元数据、0006 台账映射一对多 B47、0007 审批核心转向③）。
-	const wantMigrations = 7
+	//   0004 Q20 supplier_norm、0005 附件元数据、0006 台账映射一对多 B47、0007 审批核心转向③、
+	//   0008 t_flow_task 顺序会签 release_state/weight）。
+	const wantMigrations = 8
 	if total != wantMigrations {
 		t.Errorf("迁移版本总数 = %d, 期望 %d（重复执行不得重复登记）", total, wantMigrations)
 	}
