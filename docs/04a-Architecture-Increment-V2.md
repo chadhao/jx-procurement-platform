@@ -9,7 +9,7 @@
 | 项 | 内容 |
 |---|---|
 | 文档名称 | 采购与费用审批平台（自建侧）· 增量架构设计（架构转向 ③） |
-| 版本 | V2.4（增量首版 + `01a` **V1.4** 同步；含 **`update_mode` 选型判据** · **从零建 HTTPS 面** · **会签本期不可配** · **三路适配性审计回填** · **单列前置任务 `T02b` 写入者交棒** · **收口：§6.4 锁号兜底索引措辞修订 + `instance_id` 口径对齐 §6.3** · **V2.2 新增 §17 部署与入网 + 静默防护 S15** · **V2.3 顺序会签 `task_order` + 不变量 + §3.5 定义装载** · **V2.4 加签 `timing` 前置/后置（§2.3 / §5.2 / 类图 `+AddSign(timing)`），逐字正本＝`05-API §3.13`**） |
+| 版本 | V2.5（增量首版 + `01a` **V1.4** 同步；含 **`update_mode` 选型判据** · **从零建 HTTPS 面** · **会签本期不可配** · **三路适配性审计回填** · **单列前置任务 `T02b` 写入者交棒** · **收口：§6.4 锁号兜底索引措辞修订 + `instance_id` 口径对齐 §6.3** · **V2.2 新增 §17 部署与入网 + 静默防护 S15** · **V2.3 顺序会签 `task_order` + 不变量 + §3.5 定义装载** · **V2.4 加签 `timing` 前置/后置（§2.3 / §5.2 / 类图 `+AddSign(timing)`），逐字正本＝`05-API §3.13`**） |
 | 日期 | 2026-09-27 |
 | 上游文档 | `01a-PRD-Increment-V2.md`（增量需求正本 **V1.4**，已采纳本文 §15 的 C1–C11，并入 §4.7 通知 / §5.5 配额 / QV2-A24~A25，并纠正会签误判；V1.4 并入第三轮口径 D1/D2/D6）、`01-PRD.md`（V1.6）、`04-Architecture.md`（V1.0 基线）、`08-Org-Sync-Design.md`（V1.2）、`README.md`（关键定案 #1~#46） |
 | 被取代 | `04-Architecture.md` §0「本系统是审批引擎的旁路」、ADR-06（编号不在自建侧生成）、ADR-07（只 4 接口）、§4 事件流水线（仅限**流转归属**相关位点） |
@@ -527,7 +527,7 @@ sequenceDiagram
 
 | 项 | 原 | 转向后 |
 |---|---|---|
-| `t_instance.department` | 原生**部门控件**值（`extract.go:81-84`） | **通讯录镜像快照**（`08` `t_org_department` 名称，提交时刻冻结） |
+| `t_instance.department` | 原生**部门控件**值（`internal/worker/extract.go` 的原生控件抽取；**审计时点 `875b9e4`** —— ★ 现值指向：F3 弃用） | **通讯录镜像快照**（`08` `t_org_department` 名称，提交时刻冻结） |
 | 申请人部门 | 实例自带字段 | 镜像 `open_id → 部门` |
 | 部门 ID | 实例 `department_id`（已解析未用） | 经 `08` **路线甲**桥接为 `open_department_id`（`od-`） |
 
@@ -536,7 +536,7 @@ sequenceDiagram
 | 令牌 | 是否变 | 变更点 |
 |---|---|---|
 | `SELF` / `ALL` / `ASSIGNED` / `PARTICIPATED` / `DENY` | 不改 | 语义不变 |
-| `DEPT` / `CHARGE_DEPT` | **比对方式建议改** | 现按 `department`（**名称**）`IN` 比对（`dataset.go:89-101/224-236`）→ 建议改按**部门 ID** 比对、名称兜底（`08` §4.9） |
+| `DEPT` / `CHARGE_DEPT` | **比对方式建议改** | 现按 `department`（**名称**）`IN` 比对（`internal/permission/dataset.go` 的 **DEPT 名称比对**）→ 建议改按**部门 ID** 比对、名称兜底（`08` §4.9） |
 
 ### 7.3 与通讯录镜像的耦合（`08` V1.2）
 
@@ -566,7 +566,7 @@ sequenceDiagram
 |---|---|---|
 | 审批事件 | 订阅 `approval_instance`（+ legacy `approval_task`） | **不再订阅审批实例事件** |
 | 长连接职责 | 收审批事件 | **收通讯录事件**（`08` 增量）+ 连接保活 |
-| 代码位点 | `longconn.go:22-28` 注册 5 键（含 `approval_instance`/`approval_task`） | 收敛：审批键**去订阅**；通讯录键**新增注册** |
+| 代码位点 | `internal/platform/feishu/longconn.go` 的审批键**常量段**注册 5 键（含 `approval_instance`/`approval_task`；**审计时点 `875b9e4`** —— ★ 现值指向：已收编为 `retiredApprovalEventTypes`，`R07` 已处置） | 收敛：审批键**去订阅**；通讯录键**新增注册** |
 
 ### 8.2 防御性 no-op 处理器（★ 静默防护）
 
@@ -741,7 +741,7 @@ sequenceDiagram
 |---|---|---|---|---|
 | **T01** | 三方审批适配层 + 定义注册表 | `internal/platform/feishu/external.go`（`external_approvals` 封装）· `t_approval_def` 结构体 + repo · 定义注册/更新服务 · `migrations/0007_approval_core.sql`（§1.1 表清单：6 新表 + `t_instance` 增列） | — | P0 |
 | **T02** | 编号器 + 我方实例/任务状态机 + 流程事件 | `internal/number/gen.go` + `t_doc_seq` repo · `t_instance` 增列 + `t_flow_task` repo（含 **`task_order`** / `release_state` 分段释放）· `internal/flow/service.go`（提交 / 推进 / **顺序会签**节点聚合 / 快照模型）· `internal/flow/event.go`（**`FlowEvent` 枚举 + 单一分发点**）· ★ **`migrations/0008_flow_task_release.sql`（`release_state`/`weight` 补列）—— ✅ 已落地（`commit e2f6fe3`）** · ★ **`migrations/0009_flow_task_order.sql`（`task_order` 补列）** · ★ **`store/models.go` `FlowTask` 补 `ReleaseState`/`Weight`/`TaskOrder`** · **`scripts/archive-year.sh` 锁号前提自检门禁**（见下方改动点） | T01 | P0 |
-| **T02b** | ★ **写入者交棒（旧退役 + 新接管）· 前置 · 单列** | `internal/flow/finalize.go`（**显式写每类 L 台账**，`FR-M9-12`）· 状态史写入者迁 **`flow.finalize`** / 附件**元数据**写入者迁 **`flow.Submit`**（终态回调无附件载荷）· `store/repo_instance.go` **write-once 修正** · `store/repo_ledger.go` `ext_json` 掩码修正 · ★ **退役旧写入者的两条触发路径**：① 事件 worker（`worker/pool.go`）；② ★ **`internal/sync/reconcile.go` 的 `ingest` 调用**（`reconcile.go:99` `r.ingestor.Ingest(..., worker.SourceReconcile)`）→ **退役前先将定时对账从 `bootstrap` 装配中摘除**（`bootstrap.go:119-120`）；新对账器 `sync/approval_reconcile.go`（对 `check` diff）**必须独立于 `ingest`、不得复用旧 `Reconciler`** | T02 | **P0** |
+| **T02b** | ★ **写入者交棒（旧退役 + 新接管）· 前置 · 单列** | `internal/flow/finalize.go`（**显式写每类 L 台账**，`FR-M9-12`）· 状态史写入者迁 **`flow.finalize`** / 附件**元数据**写入者迁 **`flow.Submit`**（终态回调无附件载荷）· `store/repo_instance.go` **write-once 修正** · `store/repo_ledger.go` `ext_json` 掩码修正 · ★ **退役旧写入者的两条触发路径**：① 事件 worker（`worker/pool.go`）；② ★ **`internal/sync/reconcile.go` 的 `ingest` 调用**（`r.ingestor.Ingest(..., worker.SourceReconcile)`；**审计时点 `875b9e4`** —— ★ 现值指向：`ingestor` 形参**已删除**、该调用**已退役**，`R23` 已处置）→ **退役前先将定时对账从 `bootstrap` 装配中摘除**（`bootstrap` 的 **`Reconciler` 装配点**）；新对账器 `sync/approval_reconcile.go`（对 `check` diff）**必须独立于 `ingest`、不得复用旧 `Reconciler`** | T02 | **P0** |
 | **T03** | 出方向推送 + 自适应对账 + 长连接收敛 | `internal/platform/feishu/push.go`（`external_instances`）· `SnapshotBuilder` + `PushService` + `t_push_record` · `internal/sync/approval_reconcile.go`（**自适应，基线 5 分钟**；**独立于 `ingest`、含方向判断**）· `longconn.go` 订阅收敛 + no-op 防御 | **T02b** | P0 |
 | **T04** | 回调端点 + 四操作 + 通知服务 | `internal/httpapi/handlers_approval.go`（回调 + 提交 + 四操作 REST + **我方页面 `approve`/`reject`**）· `internal/flow/ops.go`（转交/加签/回退/撤回）· `internal/flow/callback.go`（校验 + 幂等）· `internal/flow/notify.go` + `t_notify_log`（代理转交/退回通知，漏发可检出） | **T02b** | P0 |
 | **T05** | 表单/分档/提交页防错 + 指引改写 | 我方 11 类表单与校验（`web/src/...`）· 分档与审批人计算（读取镜像）· 提交页部门/人员防错 · `07` 改写为「三方审批定义建立指引」 | **T02b** | P1 |
@@ -755,7 +755,7 @@ graph TD
   T02b --> T05[T05 表单/分档/防错+指引]
 ```
 
-> ★ **`T02b` 的硬前置条件（V2.0）**：**① 先从 `bootstrap` 装配中摘除旧定时对账**（`bootstrap.go:119-120`）；**② 再退役 `ingest` 的两条触发路径**（事件 worker + `reconcile.go:99` 的 `Ingest` 调用）。**这一步必须早于任何新推送 / 新状态机上线** —— 否则旧对账**每跑一次就覆盖一次**我方已推进的状态（"对账"名义下的**隐蔽覆盖**，见 `docs/11` **R23**）。
+> ★ **`T02b` 的硬前置条件（V2.0）**：**① 先从 `bootstrap` 装配中摘除旧定时对账**（`bootstrap` 的 **`Reconciler` 装配点**）；**② 再退役 `ingest` 的两条触发路径**（事件 worker + `internal/sync/reconcile.go` 的 **`Ingest` 调用**）。**这一步必须早于任何新推送 / 新状态机上线** —— 否则旧对账**每跑一次就覆盖一次**我方已推进的状态（"对账"名义下的**隐蔽覆盖**，见 `docs/11` **R23**）。
 
 > **改动点（非新任务，随 T02 落地）**：`scripts/archive-year.sh` 增加**启动自检**——断言 ① `TABLES` 数组**不含 `t_doc_seq`**；② 脚本正文**不含 `DELETE FROM` / `DROP TABLE`**；**违反则立即失败退出**（不得静默继续）。这是把 §6.4 纪律变成**可执行门禁**（比写在文档里靠人记更可靠）。
 
@@ -887,12 +887,12 @@ graph TD
 
 ### 17.6 ★ 两个「反代引入后才暴露」的应用侧隐患（E-1 / E-2）
 
-> 这两条**不是部署配置问题，是代码前提问题**：`04` 原文假定"无入站 + 全靠回环"，引入反代后**前提被打破**。代码位点见 `11 §7.3`（`router.go:184` / `router.go:219`）。
+> 这两条**不是部署配置问题，是代码前提问题**：`04` 原文假定"无入站 + 全靠回环"，引入反代后**前提被打破**。代码位点见 `11 §7.3`（`router.go` 的 **`internalAuth` / 限流中间件**）。
 
 | # | 隐患 | 机理 | 处置 |
 |---|---|---|---|
 | **E-1** | **`RealIP` 限流塌缩** | 反代后**所有回调请求的源 IP 都是反代本机** → 限流按 IP 分桶时**所有回调共用同一个桶** → **一个桶被打满，飞书全部回调被限流**；表现为"**回调偶发失败**"而非报错（**静默族**） | ① 反代透传真实源（`X-Forwarded-For` / `X-Real-IP`），应用**只信任受信反代的该头**（`RealIP` 中间件配置**受信代理**）；② 或回调路径**改按来源身份限流**（不以 IP 为唯一键）。★ 二者**择一**，**不得放任共用单桶** |
-| **E-2** | **`internalAuth` 依赖回环** | 内部端点现靠"**仅回环可访问**"做鉴权（`router.go:184`）。一旦反代在**另一台机器**（或容器），回环前提失效 → 内部端点要么**不可达**、要么**对全网开放** | 内部端点**改为凭据鉴权**：`JX_INTERNAL_TOKEN`（Header `X-Internal-Token`）；与"应用绑回环"**解耦**（见 `05-API §3.8`） |
+| **E-2** | **`internalAuth` 依赖回环** | 内部端点现靠"**仅回环可访问**"做鉴权（`router.go` 的 **`internalAuth`**）。一旦反代在**另一台机器**（或容器），回环前提失效 → 内部端点要么**不可达**、要么**对全网开放** | 内部端点**改为凭据鉴权**：`JX_INTERNAL_TOKEN`（Header `X-Internal-Token`）；与"应用绑回环"**解耦**（见 `05-API §3.8`） |
 
 > ★ **判据一句话**：E-1 不修 → **回调限流塌缩成静默失败**；E-2 不修 → **"绑回环"与"靠回环鉴权"互相锁死**，反代换机器即**内部端点裸奔或全断**。二者都属"**上反代才炸、且不报错**"。
 
@@ -916,8 +916,9 @@ graph TD
 | V1.7 | 2026-09-27 | 依 team-lead 裁定 + `01a` **V1.4** 回改 6 处（**不重排章节号**）：**(a)** §0 冲击表/定案表 + §4.1：HTTPS 面由「**复用现有**」改为「**从零规划**」（公网域名 + 反向代理 + TLS，建议 Let's Encrypt 自动签发/续期）；**(b)** 撤销"人工兜底"——§0 冲击表/定案表 + §15 C9 改为「**停机＝审批暂停；恢复后对账同步；服务不可用期间点击"未生效、需重点"；归高可用**」，并 **关闭 QV2-A20**（留痕、不删）；**(c)** §3.1 补**硬论证**「"落后才 `UPDATE`"**本质不可实现**」（`external_tasks`/`check` 都不给操作内容 → 拿不到"是否落后" → `UPDATE` 只能默认），并**把"场景选择"与"`REPLACE` 场景下的必要条件"分开写**；**(d)** §2.3 会签「并行可配/或签可配」→ **本期不可配**（仅保留 `weight`/`node_seq` 扩展位，二期按票签/并行实现）；**(e)** `01a` 版本引用统一 **V1.4**；**(f)** QV2-A24/A25 级别 **中→高**（A24 决定对账量级 vs 1 万/月额度；A25 决定额度耗尽是否阻断推送）。 | 架构师（Bob） |
 | V1.8 | 2026-09-27 | 依 team-lead 裁定**统一推送选型口径**（**不重排章节号**）：① **§3.1 新增「★ 选型判据（唯一）」** —— **看"是否需要删飞书侧 task/抄送"**：**需要删 → `REPLACE`+全量**；**不需要删 → 一律 `UPDATE`**；**唯一例外＝首次推实例** —— **取代原"按场景罗列"**；② **纠正 §3.1 分类错误**：「**转交**」从"纯新增 / `REPLACE`"**移出**（其**含既有 task 状态变更** `TRANSFERRED`）→ **转交＝`UPDATE`**；**「加签」从 `REPLACE` 改 `UPDATE`**（新增 task、**不需删任何东西**）；③ **统一 §3.1 措辞**（"混合策略" → "**选型判据**"），并与 **§10 S3 注**、`01a §6.1` **三处一致**；④ 同步 §3.2 触发点措辞 / §11 时序图 / §5.1 / §5.3；⑤ **QV2-A28 扩为"三问"**（新增 ★**"`UPDATE` 能否新增 task/抄送"** —— 决定整套判据是否成立）+ **中→高** + **联调第一轮必测**。 | 架构师（Bob） |
 | V1.9 | 2026-09-27 | 依 team-lead 裁定回填**三路适配性审计（`docs/11`）**发现的 7 处（**不重排章节号**）：① **§4.4 / §11 时序图 / §12.3** 三处「按最严 5s」残留 → 统一为「**按 10s 设计**（官方中文 current 页）；**同步路径毫秒级回**」（对齐 `01a` V1.4 的"落盘即 200"）；② **§13 T02** 补 `release_state`/`weight` 的 **migration 变更点**（★ **`0007` 已应用 → 须 `0008`**）+ `store/models.go` `FlowTask` 补字段提示；③ **§0 定案表**「仅此一处轮询」→ 改「**审批侧对账轮询：单点解除**；通讯录侧周期对账属既有设计、另计」；④ **§3.2 / §10 S3** 补硬约束：**用 `REPLACE` 必须传"含全部已释放 task"的完整快照**；⑤ **§5.5** 补齐「**应有通知集合**」的定义（`flow` 落 `EXPECTED` → 回填 `SENT`/`FAILED` → 比对待发）；⑥ **§2.1** 显式声明 **`FR-M2-03` 原「飞书 8 态」作废、改我方 4 态**；⑦ §14 `QV2-A28` 三问确认。 | 架构师（Bob） |
-| V2.0 | 2026-09-27 | 依 team-lead 裁定落实两件事（**不重排章节号**）：① ★ **改写 §13 的「≤5 任务」形式约束** → 新增「**任务数上限让位规则**」（**上线即静默项必须独立可验收，其优先级高于「≤5」**）；② ★ **§13 单列前置任务 `T02b · 写入者交棒（旧退役 + 新接管）· P0`**（置于 T02 之后、T03/T04/T05 之前），范围含 **退役旧写入者的两条触发路径**（① 事件 worker；② ★ **`internal/sync/reconcile.go:99` 的 `r.ingestor.Ingest(...)` 调用**）+ **退役前先摘除 `bootstrap` 的旧定时对账装配**（`bootstrap.go:119-120`）+ 新对账器 `sync/approval_reconcile.go` **独立于 `ingest`、不得复用旧 `Reconciler`**；T03/T04/T05 依赖改挂 **T02b**；时序图加 T02b 节点与硬前置条件。 | 架构师（Bob） |
+| V2.0 | 2026-09-27 | 依 team-lead 裁定落实两件事（**不重排章节号**）：① ★ **改写 §13 的「≤5 任务」形式约束** → 新增「**任务数上限让位规则**」（**上线即静默项必须独立可验收，其优先级高于「≤5」**）；② ★ **§13 单列前置任务 `T02b · 写入者交棒（旧退役 + 新接管）· P0`**（置于 T02 之后、T03/T04/T05 之前），范围含 **退役旧写入者的两条触发路径**（① 事件 worker；② ★ **`internal/sync/reconcile.go:99`（当时行号）的 `r.ingestor.Ingest(...)` 调用**）+ **退役前先摘除 `bootstrap` 的旧定时对账装配**（`bootstrap.go:119-120`，当时行号）+ 新对账器 `sync/approval_reconcile.go` **独立于 `ingest`、不得复用旧 `Reconciler`**；T03/T04/T05 依赖改挂 **T02b**；时序图加 T02b 节点与硬前置条件。 | 架构师（Bob） |
 | V2.1 | 2026-09-27 | 收口批次（**不重排章节号**，与 `docs/11` V1.2 同步）：① ★ **修订 §6.4 前提 P3 措辞** —— 终态锁号兜底 `UNIQUE(biz_no)` **此前并不存在**（旧库 `0002` 表达式唯一索引作用在 `t_submission` / `t_audit_log`，**非** `t_instance`；`t_instance` 仅 `instance_code UNIQUE`）→ 由 `0007` **补建 `ux_instance_biz_no`**（全量 `UNIQUE(biz_no)`，**非** `source='flow'` 部分索引），杜绝"以为兜底早已存在"；② **§6.4 表头列名**由"现状（已核实）"改"**现状（须保持，非已自动满足）**"，P1/P2 的 `✅` 改"**须保持**"表述（三前提是**纪律**、非既成事实）；③ **§1.1 `instance_code` 语义漂移行 + §1.2 类图注**的"`instance_id = biz_no`"→ 对齐 **§6.3（建议 `{app_id}:{biz_no}`）**，消除 `04a` 内部口径不一致；④ **§1.1 `t_biz_no_used` 说明行**"`t_instance.biz_no` **已有** `UNIQUE`"的"已有"→"**`0007` 起补建 `ux_instance_biz_no`**（此前不存在）"，与 §6.4 P3 同源同修。 | 架构师（Bob） |
 | V2.2 | 2026-09-27 | 执行 `13` **A / E 组**（**新增节，末节号顺延**）：① ★ **新增 §17「部署与入网（公网入站）」**（原变更记录顺延为 **§18**）—— 覆盖 **A-1~A-7**：反代仅放行 `POST /approval/external/callback` 一条路径、TLS/ACME + 续期失败告警、IP 白名单（仅飞书出口段）/WAF、`body ≤64KB`、`JX_LISTEN_ADDR` 保持回环、配置键 `JX_CALLBACK_DOMAIN` / `JX_ACTION_CALLBACK_TOKEN`（落 `04 §6.4`）、部署 runbook（落 `docs/14`）；② ★ **§17.6 落地两个反代隐患** —— **E-1**（`RealIP` 限流塌缩）/ **E-2**（`internalAuth` 依赖回环 → 改 `JX_INTERNAL_TOKEN`）；③ §10 **新增 S15**（回调面被"证书过期 / 反代失效"静默切断）+ **回调打点追加"证书到期"**；④ §4.1 承载行补 **§17** 交叉引用。 | 架构师（Bob） |
 | V2.3 | 2026-09-27 | 执行 `13` **N1–N6**（收口 + 前批遗留）：① ★ **§1.1 `t_flow_task` 增 `task_order`** + **唯一性契约**（禁 `rowid` / `task_id` 字典序）；② ★ **§2.3 顺序会签不变量**（任一时刻整实例「可办理」任务 ≤1，可测）+ 把两处 `node_seq`→`task_order` 修正；③ **§13 T02**：`0008` 标**已落地**（`commit e2f6fe3`）+ 补 **`0009_flow_task_order.sql`**；迁移改动点加**回填**语句与理由；④ **§13 T02b** 附件元数据写入者精确为 **`flow.Submit`**；⑤ ★ **新增 §3.5 三方审批定义的装载与管理**（C-2 / `A29`）。 | 架构师（Bob） |
 | V2.4 | 2026-09-27 | 执行 `#48` 遗留补正（**`#51` 契约落地**）：★ **加签补 `timing` 前置/后置契约**（用户第四轮口径 ②「前置后置都支持、由操作人当场选」；实现 `f5be198`，常量 `flow.AddSignAfter` / `flow.AddSignBefore`）—— ① **§2.3「加签后」行**：`timing` ∈ { `AFTER`（默认）, `BEFORE` }；`AFTER`＝`task_order` 取本节点 `max(order) + 1`；`BEFORE`＝取**当前办理人** `order`、同节点 `order ≥` 者整体 +1；**已 `APPROVED` 者不动、不重审**；★ **非法值「可见拒绝」 `400`/`40000`**（`ErrInvalidSubmit`）、**绝不静默降级**；② **§5.2「加签」行** 同步补 `timing`；③ **类图 `+AddSign()` → `+AddSign(timing)`**。★ **逐字正本＝ `05-API §3.13`（V2.4）**，本节只做**指向**，避免双写漂移。 | 架构师（Bob） |
+| V2.5 | 2026-09-27 | 执行 **`#72` 符号化**（`04a` 12 处引用，定案 #74）：正文引用改**以符号 / 模式为准**（行号仅快照；下录均为**当时行号**）：① `extract.go:81-84` → 「`internal/worker/extract.go` 的原生控件抽取」（标 **审计时点 `875b9e4`**；F3 弃用）；② `dataset.go:89-101/224-236` → 「`internal/permission/dataset.go` 的 **DEPT 名称比对**」；③ `longconn.go:22-28` → 「`longconn.go` 审批键**常量段**」（现值指向 `retiredApprovalEventTypes`，`R07` 已处置）；④ §13 `T02b` 的 `reconcile.go:99` / `bootstrap.go:119-120` → 「`reconcile.go` 的 **`ingest` 调用** / `bootstrap` 的 **`Reconciler` 装配点**」；⑤ §17.6 的 `router.go:184` / `:219` → 「`router.go` 的 **`internalAuth` / 限流中间件**」；⑥ V2.0 变更行内行号标「（当时行号）」。 | 架构师（Bob） |
