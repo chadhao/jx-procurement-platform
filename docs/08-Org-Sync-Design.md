@@ -7,7 +7,7 @@
 >
 > **一句话红线**：**镜像 ≠ 权限**。同步来的通讯录是「人事目录」，**准入一律仍走 `t_user_role`（人工配置、deny by default）**。
 >
-> **版本**：V1.3 · **状态**：待评审（§5 的 **C-A~C-E** 已按**官方来源 + SDK v3.12.0 源码**查实；**C-A 经复核改定路线甲**；**V1.3 回填 D6「提交时实时回源」**，见 §2 注 / §4.12） · **依仓库现状（2026-09-27 代码基线）撰写**
+> **版本**：V1.4 · **状态**：待评审（§5 的 **C-A~C-E** 已按**官方来源 + SDK v3.12.0 源码**查实；**C-A 经复核改定路线甲**；**V1.3 回填 D6「提交时实时回源」**，见 §2 注 / §4.12；**V1.4 迁移改号 `0007` → `0012`**，见 §4.2 注 / §12） · **依仓库现状（2026-09-27 代码基线）撰写**
 
 ---
 
@@ -41,7 +41,7 @@
 | 14 | 准入解析只读 `t_user_role`；未映射/停用 → `ErrRoleNotMapped`（deny by default） | `internal/access/auth.go:47-56`、`internal/store/repo_permission.go:18` |
 | 15 | `/healthz` 暴露 `Checks()`；`/readyz` 的 `ready` = 四项自检 **AND** | `internal/httpapi/handlers_ops.go:18-53`、`internal/observ/health.go:82-85` |
 | 16 | 单实例部署（长连接集群不广播，禁止多副本），启动即抢 `singlelock`，失败拒绝启动 | `cmd/jxapproval/bootstrap.go:48-57` |
-| 17 | 迁移按文件名升序执行；下一可用序号为 **`0007`** | `internal/store/migrate.go`、`migrations/0001_init.sql` |
+| 17 | 迁移按文件名升序执行；**`0001`–`0010` 已落地**；本文 `org_directory` 迁移占用的序号＝ **`0012`**（★ `0011` 已由 `0011_flow_op_log_round.sql` 占用；原设计号 `0007` 与已落地的 `0007_approval_core.sql` 撞号，见 §12「编号变更」） | `internal/store/migrate.go`、`migrations/` |
 
 ---
 
@@ -106,8 +106,10 @@
 | 同步元信息 | **新建 `t_org_sync_state`**，**不复用 `t_sync_cursor`** | `t_sync_cursor` 主键是 `(approval_code, cursor_kind)`，通讯录无 `approval_code`；硬塞哨兵值（如 `__org__`）是「假配置」式隐患 | 多一张单行表 |
 | 部门权限 | **ID 比对为主 + 名称兜底**（双列并存） | 部门改名后按名称比对会**静默失效**（权限漏放或漏收，§1-9） | 需给 `t_user_role` 增 ID 列并改权限引擎（§4.9） |
 
-### 4.2 表设计（草案，**不落库**；由任务 T01 落为 `0007_org_directory.sql`）
+### 4.2 表设计（草案，**不落库**；由任务 T01 落为 `0012_org_directory.sql`）
 
+> ★ **编号变更（2026-09-27，team-lead 裁定）**：本节 `org_directory` 迁移**原设计号为 `0007`**，但 `0007` 已被**已落地**的 `0007_approval_core.sql` 占用 → **本设计改用 `0012_org_directory.sql`**（`0008`–`0010` 亦已落地；`0011` 归 `t_flow_op_log` 轮次去重）。★ 口径：**已落地编号不可回退，未落地设计让号**。登记见 `15-Code-Collision-Register.md` §2 行 11。
+>
 > 命名沿用仓库 `t_*` 前缀与 `*_at` ISO8601 UTC 约定；所有时间列文本存储（与既有表一致）。
 
 **`t_org_department`（部门镜像）**
@@ -422,7 +424,7 @@ sequenceDiagram
 | 与单实例锁 | 全量前**不额外加锁**：进程内已有全局 `singlelock`（`bootstrap.go:48-57`）+ 长连接单连接 | 多副本已被结构性禁止（ADR-01），重复拉取不可能发生 | 无 |
 | 就绪判据 | **不加入 `Health.Ready()`** | 若加入：飞书瞬时故障 → `ready=false` → systemd/探针可能重启应用，**把一个外部依赖故障放大成本地宕机** | 需在 `/readyz` body 里单列 `org_sync` 字段（非门禁）供观测 |
 
-> ★ **不要**把通讯录全量放进 `store.Migrate` 之前/之内：镜像表由 `0007` 建，全量必须在迁移完成后、且**异步**执行。
+> ★ **不要**把通讯录全量放进 `store.Migrate` 之前/之内：镜像表由 `0012` 建，全量必须在迁移完成后、且**异步**执行。
 
 ### 4.6 设计点 3：事件增量
 
@@ -826,7 +828,7 @@ sequenceDiagram
 > 依赖关系：**T01 → {T02, T03, T04} → T05**（T05 收口）。
 
 ### T01 · 镜像数据层（迁移 + store + 模型）
-- **涉及文件**：`migrations/0007_org_directory.sql`（新建 4 表，其中 `t_org_department` 含 **`department_id` 桥接键**；+ `t_instance`/`t_ledger_archive`/`t_user_role` 新列）、`internal/store/models.go`（+4 模型）、`internal/store/repo_org.go`（新建：Upsert/Get/List/SoftDeleteMissing/SyncState/SyncRun）、`internal/store/repo_instance.go`（+`department_id`＋`department_id_raw` 列读写）、`internal/store/repo_ledger.go`（+`department_id`＋`department_id_raw`、改 write-once）
+- **涉及文件**：`migrations/0012_org_directory.sql`（新建 4 表，其中 `t_org_department` 含 **`department_id` 桥接键**；+ `t_instance`/`t_ledger_archive`/`t_user_role` 新列）、`internal/store/models.go`（+4 模型）、`internal/store/repo_org.go`（新建：Upsert/Get/List/SoftDeleteMissing/SyncState/SyncRun）、`internal/store/repo_instance.go`（+`department_id`＋`department_id_raw` 列读写）、`internal/store/repo_ledger.go`（+`department_id`＋`department_id_raw`、改 write-once）
 - **依赖**：无
 - **验收**：`go build ./...` 通过；`storetest` 新用例覆盖「增/改/软删/复活/单行 state」；`go test ./internal/store/...` 全绿；`t_instance`/`t_ledger_archive` 的 `department` 在二次 upsert 非空不同值时**不覆盖**（N3 单测）
 - **优先级**：P0
@@ -844,7 +846,7 @@ sequenceDiagram
 - **优先级**：P0
 
 ### T04 · ID + 名称快照 与权限位点改造
-- **涉及文件**：`internal/platform/feishu/instance.go`（**消费 `DepartmentID` 作桥接键**，§4.9-a）、`internal/platform/feishu/dto.go`（+`DepartmentID`）、`internal/worker/ingest.go`（**桥接**→写 `department_id`(`od-`)＋`department_id_raw`、名称走镜像快照）、`internal/worker/extract.go`（控件 `od-` 作**交叉校验**，配合 B50）、`internal/permission/dataset.go`（S1–S4 改 ID 优先/名称兜底）、`internal/httpapi/helpers.go`（S5/S14）、`internal/store/repo_permission.go`（S6/S7）、`internal/httpapi/handlers_admin.go`（S23）、`migrations/0007` 中 `t_user_role` 两列
+- **涉及文件**：`internal/platform/feishu/instance.go`（**消费 `DepartmentID` 作桥接键**，§4.9-a）、`internal/platform/feishu/dto.go`（+`DepartmentID`）、`internal/worker/ingest.go`（**桥接**→写 `department_id`(`od-`)＋`department_id_raw`、名称走镜像快照）、`internal/worker/extract.go`（控件 `od-` 作**交叉校验**，配合 B50）、`internal/permission/dataset.go`（S1–S4 改 ID 优先/名称兜底）、`internal/httpapi/helpers.go`（S5/S14）、`internal/store/repo_permission.go`（S6/S7）、`internal/httpapi/handlers_admin.go`（S23）、`migrations/0012` 中 `t_user_role` 两列
 - **依赖**：T01（与 T03 有 `worker` 包文件交叠，建议 T03 后做或与 T03 约定同一分支）
 - **验收**：N2/N3/N8/**N13** 通过；`go test ./internal/permission/... ./internal/httpapi/...` 全绿；**权限回归**：既有 `dataset_test.go` / `policy*_test.go` 全通过（语义不劣化）
 - **优先级**：P0
@@ -879,7 +881,7 @@ sequenceDiagram
 
 ```mermaid
 graph TD
-    T01[T01 镜像数据层<br/>migration 0007 + store + 模型]
+    T01[T01 镜像数据层<br/>migration 0012 + store + 模型]
     T02[T02 全量拉取 + 每周对账<br/>orgsync + 调度 + 装配]
     T03[T03 事件增量<br/>longconn + inbox + worker 分派]
     T04[T04 ID+快照 + 权限位点改造<br/>instance/ingest/permission/admin]
@@ -912,6 +914,7 @@ graph TD
 
 | 版本 | 日期 | 变更 |
 |---|---|---|
+| V1.4 | 2026-09-27 | **迁移编号变更（纯文档；team-lead 裁定，配合 `#66`；登记见 `15-Code-Collision-Register.md` §2 行 11）**：本文 `org_directory` 迁移**原设计号 `0007`** 与**已落地**的 `0007_approval_core.sql` **撞号** → 全文改号为 **`0012_org_directory.sql`**（`0008`–`0010` 亦已落地、`0011` 归 `t_flow_op_log` 轮次去重）。★ 改动位点：§1-17（迁移序号）· **§4.2 标题 ＋ 新增「编号变更」注** · §4.5（镜像表由 `0012` 建）· §8 T01 / T04 · §10 依赖图（mermaid）。★ 口径：**已落地编号不可回退，未落地设计让号**。 |
 | V1.3 | 2026-09-27 | 执行 `13` **F 组**（`08` 正本**回填 D6**）：① §2 五条口径后**新增 D6 注**（提交时点强校验；修正"提交页不做实时比对、接受镜像滞后"旧口径）；② §4.10 **新增「提交页防错 / 实时回源只读」结构性约束行**；③ **新增 §4.12「设计点 9：提交页防错 + 提交时实时回源校验（★ D6）」**（默认带出镜像部门/主管 · 提交时实时回源一次 · 不一致以实时值为准+落标记 · 超时/失败＝告警放行且不阻断 · 离职/停用不可选 · 只读红线）。对应 `01a` FR-M9-11 / FR-M9-17。 |
 | V1.2 | 2026-09-27 | 依 team-lead 复核意见**重定 C-A**：查实 `department_id` 与 `open_department_id` 为**同一实体的两套编号**、**一次查询（`contact/v3/departments/batch`）两套都返回**（§5-C-A 证据 1–8）；采用**路线甲·镜像双 ID 列**：权威＝ `open_department_id`，由**实例自带 `department_id` 经镜像桥接**得出，**不再依赖可被申请人修改的部门控件**（控件降为**交叉校验**，§5.4）。同步改 §2-⑤ / §3(F21·F22) / §4.1 / §4.2 / §4.3 / §4.4 / §4.9 / §6 / §7(N13·N14) / §8 / §9 / §11。 |
 | V1.1 | 2026-09-27 | 钉死 §5 待确认项 **C-A~C-E**（官方来源 + SDK v3.12.0 源码）：**C-A** 部门 ID 非同一空间 → 权威 ID 改用「控件 `od-`＋目录」；**C-B** 事件键**不双拼写**＋未注册键**收不到**；**C-C** `directory/v1` 必填参数/分页/权限名；**C-D** 状态事件订正为 **v1.0 `user_status_change`**、scope 事件含 `added`；**C-E** 历史解析**不过滤软删**。同步改 §2/§3/§4.1/§4.6/§4.9/§4.11/§6/§7/§9/§11。 |
