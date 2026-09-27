@@ -21,7 +21,7 @@ func TestBuildSnapshotWritesActionContext(t *testing.T) {
 		{TaskID: "t1", NodeID: "n1", AssigneeOpenID: "ou_a", Status: "PENDING", ReleaseState: "RELEASED"},
 		{TaskID: "t2", NodeID: "n2", AssigneeOpenID: "ou_b", Status: "PENDING", ReleaseState: "HELD"},
 	}
-	snap, err := BuildSnapshot(inst, tasks, nil, "https://jx.example.com", nil)
+	snap, err := BuildSnapshot(inst, tasks, nil, "https://jx.example.com", "", nil)
 	if err != nil {
 		t.Fatal(err)
 	}

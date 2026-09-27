@@ -49,6 +49,31 @@ type ExternalInstanceLink struct {
 	MobileLink string `json:"mobile_link"`
 }
 
+// ExternalI18nText i18n_resources[].texts[] 单项——★ **数组形态** `[{"key":…,"value":…}]`。
+//
+// ★★ 教训（docs/reference/README.md 实测台账，勿删）：同一平台不同接口的 texts 形态
+// **不一致**——`external_approvals` / `external_instances` 要求数组（传 map ⇒
+// `9499 Invalid parameter type in json: texts`）；而 `approval/v1/message/send` 接受 map
+// （官方示例即 map）。⇒ **不能假设"同一平台同一字段形态一致"**，逐接口按官方示例＋实测校准。
+type ExternalI18nText struct {
+	Key   string `json:"key"`
+	Value string `json:"value"`
+}
+
+// ExternalI18nResource i18n_resources[] 单项（实例级**必填**，2026-09-28 实测 99992402）。
+//
+// ★ locale 用官方枚举 `zh-CN`（实测飞书**不校验**枚举——传 `zh_cn` 被原样接受并读回
+// ⇒ 静默缺陷，按语言匹配文案时取不到值，须自查）；is_default 须显式 true。
+type ExternalI18nResource struct {
+	Locale    string             `json:"locale"`
+	IsDefault bool               `json:"is_default"`
+	Texts     []ExternalI18nText `json:"texts"`
+}
+
+// I18nKeyInstanceTitle 实例展示名的国际化占位 key（官方要求 Key 以 `@i18n@` 开头，
+// 值在 i18n_resources.texts 中按 Key:Value 赋值）。
+const I18nKeyInstanceTitle = "@i18n@instance_title"
+
 // ExternalTask 快照中的单个任务（仅含已 RELEASED 的）。
 //
 // ★★ 教训（2026-09-28 联调实测 99992402，勿删）：`task_list[*]` 的 `links` /
@@ -92,16 +117,35 @@ type ExternalTask struct {
 
 // InstanceSnapshot external_instances 上报快照。
 //
-// ★ 2026-09-28 补实例级 `links`（官方字段表标**必填**；本次实测飞书未报，
-// 但缺了会被后续校验拦下——补齐以免步 task_list[*].links 的后尘）。
+// ★★ 教训（2026-09-28 联调实测 99992402，勿删）：**飞书报文分「实例级（顶层）」与
+// 「task_list[*] 级」两层，各有独立必填项；修完一层下一层才会暴露——必须按官方字段表
+// 逐层核对**，不得以一次 `{"code":0}` 判通过。第 6 批补的是 task_list[*] 内的
+// links / create_time / end_time / update_time；本批（2026-09-28 实测）暴露的是
+// **实例级** start_time / end_time / i18n_resources。
+//
+// 实例级必填（官方《同步三方审批实例》字段表，2026-09-28 逐字段核对）：
+// `approval_code` / `status` / `instance_id` / `links` / `start_time` / `end_time` /
+// `update_time` / `i18n_resources`；另有**条件必填**：发起人 `open_id` / `user_id`
+// **至少传一个**（字段表两项各标"否"，但注意事项明确二选一必传）。
 type InstanceSnapshot struct {
-	ApprovalCode string               `json:"approval_code"`
-	InstanceID   string               `json:"instance_id"`
-	UpdateTime   int64                `json:"update_time"`
-	Status       string               `json:"status"`
-	Links        ExternalInstanceLink `json:"links"`
-	TaskList     []ExternalTask       `json:"task_list"`
-	CCList       []string             `json:"cc_list,omitempty"`
+	ApprovalCode string `json:"approval_code"`
+	InstanceID   string `json:"instance_id"`
+	UpdateTime   int64  `json:"update_time"`
+	Status       string `json:"status"`
+	// StartTime / EndTime 实例起止时刻：Unix 毫秒**字符串**（官方字段表标 string；
+	// BuildSnapshot 内经 feishuMilli / instanceEndMillis 换算，严禁 ISO8601 直塞）。
+	// EndTime 未终态传 "0"（官方：未结束的审批为 0）。
+	StartTime string `json:"start_time"`
+	EndTime   string `json:"end_time"`
+	// OpenID 审批发起人（实例级）。官方 open_id / user_id 二选一必传；我方取
+	// t_instance.applicant_open_id（缺失 ⇒ BuildSnapshot 记 warn，不编造）。
+	OpenID   string               `json:"open_id,omitempty"`
+	Links    ExternalInstanceLink `json:"links"`
+	TaskList []ExternalTask       `json:"task_list"`
+	CCList   []string             `json:"cc_list,omitempty"`
+	// I18nResources 国际化文案（实例级必填；**数组形态**——与 message/send 的 map
+	// 形态相反，见 ExternalI18nText 教训注释）。
+	I18nResources []ExternalI18nResource `json:"i18n_resources"`
 }
 
 // PushClient external_instances 推送端口（HTTP 实现 + 测试替身）。
@@ -167,13 +211,82 @@ func taskEndMillis(t store.FlowTask, log *slog.Logger) string {
 	return feishuMilli(t.UpdatedAt)
 }
 
+// instanceTerminal 实例是否终态（官方 status 枚举中"流程已结束"的取值；
+// 字面量与官方枚举一致，不反向依赖领域包）。
+func instanceTerminal(status string) bool {
+	switch status {
+	case "APPROVED", "REJECTED", "CANCELED", "DELETED":
+		return true
+	default:
+		return false
+	}
+}
+
+// instanceEndMillis 实例级 end_time（官方：必填；**未结束为 0**，Unix 毫秒字符串）。
+//
+//   - 非终态 ＝ **"0"**；
+//   - 终态：CANCELED 优先取 `cancel_at`（撤回时刻，列级最准；t_instance 现有列，
+//     migration 0007），缺失 ⇒ 退化取 `updated_at` 并记 warn；其余终态取 `updated_at`
+//     （实例最后一次流转时刻）；两者皆缺 ⇒ **记 warn 并退 "0"**（★ 不编造时间；
+//     终态时间显示为 0 属数据异常，应回查流转链路）。
+func instanceEndMillis(inst *store.Instance, log *slog.Logger) string {
+	if !instanceTerminal(inst.Status) {
+		return "0"
+	}
+	t := inst.UpdatedAt
+	if inst.Status == "CANCELED" {
+		if inst.CancelAt != nil && !inst.CancelAt.IsZero() {
+			t = *inst.CancelAt
+		} else if log != nil {
+			log.Warn("★ 撤回实例缺 cancel_at：end_time 退化取 updated_at（数据异常，应回查撤回链路）",
+				"biz_no", inst.BizNo, "status", inst.Status)
+		}
+	}
+	if t.IsZero() {
+		if log != nil {
+			log.Warn("★ 终态实例无任何结束时刻：end_time 退 \"0\"（不编造时间；数据异常）",
+				"biz_no", inst.BizNo, "status", inst.Status)
+		}
+		return "0"
+	}
+	return feishuMilli(t)
+}
+
+// instanceI18nResources 实例级 i18n_resources（**必填**、**数组形态**）。
+//
+// 展示名优先取审批定义名（t_approval_def.name，由 Pusher.Push 经 GetApprovalDef
+// 读出后传入）；定义缺失 ⇒ **明确降级**为 DocType → BizNo 并记 warn——
+// **绝不静默发空**（必填字段发空数组即便被平台容忍，实例名也无从展示）。
+func instanceI18nResources(defName, docType, bizNo string, log *slog.Logger) []ExternalI18nResource {
+	name := strings.TrimSpace(defName)
+	if name == "" {
+		name = strings.TrimSpace(docType)
+		if name == "" {
+			name = bizNo
+		}
+		if log != nil {
+			log.Warn("★ 审批定义缺失：i18n 文案降级取 DocType/BizNo（不静默发空；应回查定义注册链路）",
+				"biz_no", bizNo, "doc_type", docType)
+		}
+	}
+	return []ExternalI18nResource{{
+		Locale:    "zh-CN",
+		IsDefault: true,
+		Texts:     []ExternalI18nText{{Key: I18nKeyInstanceTitle, Value: name}},
+	}}
+}
+
 // BuildSnapshot 组装快照：**只含已 RELEASED 的 task**；未释放整体省略。超限返回错误（不截断）。
 //
 // ★ detailBase（JX_CALLBACK_DOMAIN）：实例级与 task_list[*] 级 links 的**唯一来源**
 // （externalLinks 统一生成）。为空 ⇒ **可见失败**（links 两级均为必填，2026-09-28
 // 实测 99992402；绝不静默编造 URL——与 NotifySender 同纪律）。
-// ★ log 仅用于终态任务缺 closed_at 的退化 warn；nil 时跳过 warn。
-func BuildSnapshot(inst *store.Instance, tasks []store.FlowTask, ccList []string, detailBase string, log *slog.Logger) (InstanceSnapshot, error) {
+// ★ defName（t_approval_def.name，调用方经 GetApprovalDef 读出）：实例级
+// i18n_resources 展示名的第一来源；为空 ⇒ 降级 DocType → BizNo 并记 warn
+// （instanceI18nResources；不静默发空）。
+// ★ log 仅用于数据异常的退化 warn（终态任务缺 closed_at / 终态实例缺结束时刻 /
+// 实例缺 created_at / 缺 applicant_open_id / 定义缺失降级）；nil 时跳过 warn。
+func BuildSnapshot(inst *store.Instance, tasks []store.FlowTask, ccList []string, detailBase string, defName string, log *slog.Logger) (InstanceSnapshot, error) {
 	if inst == nil {
 		return InstanceSnapshot{}, fmt.Errorf("feishu: 组装快照失败: 实例为空")
 	}
@@ -186,8 +299,25 @@ func BuildSnapshot(inst *store.Instance, tasks []store.FlowTask, ccList []string
 		InstanceID:   inst.InstanceCode,
 		UpdateTime:   inst.UpdateTime,
 		Status:       inst.Status,
-		Links:        externalLinks(detailBase, inst.BizNo),
-		CCList:       ccList,
+		// ★ 实例级 start_time / end_time（官方必填，2026-09-28 实测 99992402）：
+		//   毫秒字符串换算，纪律同 task 三时间戳（feishuMilli / instanceEndMillis）。
+		StartTime: feishuMilli(inst.CreatedAt),
+		EndTime:   instanceEndMillis(inst, log),
+		// ★ 实例级发起人 open_id（官方 open_id/user_id 二选一必传）。
+		OpenID:        inst.ApplicantOpenID,
+		Links:         externalLinks(detailBase, inst.BizNo),
+		CCList:        ccList,
+		I18nResources: instanceI18nResources(defName, inst.DocType, inst.BizNo, log),
+	}
+	if log != nil {
+		if inst.CreatedAt.IsZero() {
+			log.Warn("★ 实例缺 created_at：start_time 退 \"0\"（不编造时间；数据异常，应回查提交链路）",
+				"biz_no", inst.BizNo, "status", inst.Status)
+		}
+		if strings.TrimSpace(inst.ApplicantOpenID) == "" {
+			log.Warn("★ 实例缺 applicant_open_id：实例级发起人 open_id/user_id 官方二选一必传，" +
+				"两者皆空可能被 99992402 拒绝（应回查提交链路的发起人落库）")
+		}
 	}
 	for _, t := range tasks {
 		if t.ReleaseState != "RELEASED" {
@@ -301,26 +431,34 @@ func (p *Pusher) Push(ctx context.Context, bizNo string) (PushResult, error) {
 	if err != nil {
 		return PushResult{}, err
 	}
-	snap, err := BuildSnapshot(inst, tasks, nil, p.detailBase, p.log)
+	// ★★ 双 code 池消歧（docs/16 G-8 / §2-C）＋ i18n 文案源（官方字段表必填项）：
+	//   定义读取**前移到 BuildSnapshot 之前**，一处读取双用——
+	//   ① 推实例的 approval_code **优先取 t_approval_def.feishu_code**（Registry.Register
+	//     落库的 POST 响应回填值）、为空回退 inst.ApprovalCode（我方自定义 code）；
+	//   ② 实例级 i18n_resources 展示名取 t_approval_def.name。
+	//   ★ 双池归属未实测（docs/16 §7 V-4）⇒ **双写、不猜**；定义缺失时静默回退自定义
+	//   code、i18n 由 BuildSnapshot 明确降级（GetApprovalDef 的 ErrNotFound 属正常态，
+	//   其余错误仅告警）。
+	code := inst.ApprovalCode
+	defName := ""
+	def, derr := p.db.GetApprovalDef(ctx, inst.ApprovalCode)
+	switch {
+	case derr == nil:
+		if fc := strings.TrimSpace(def.FeishuCode); fc != "" {
+			code = fc
+		}
+		defName = def.Name
+	case errors.Is(derr, store.ErrNotFound):
+		// 正常态：定义未注册（docs/reference 实测 t_approval_def 可为 0 行）。
+	default:
+		p.log.Warn("推送前读取审批定义失败（回退自定义 approval_code 推送）",
+			"biz_no", bizNo, "approval_code", inst.ApprovalCode, "error", derr.Error())
+	}
+	snap, err := BuildSnapshot(inst, tasks, nil, p.detailBase, defName, p.log)
 	if err != nil {
 		// 超限等：告警且**不写流水**（这是"请求有误"，非"平台不支持"；S12）。
 		p.log.Error("推送组装失败（不静默截断）", "biz_no", bizNo, "error", err.Error())
 		return PushResult{}, err
-	}
-	// ★★ 双 code 池消歧（docs/16 G-8 / §2-C）：读/推实例要走「真实 code」，而
-	//   `approval_code` 字段名同指两物（实测：GET 读回的 approval_code ＝ 自定义 code）。
-	//   ⇒ 推实例的 snap.ApprovalCode **优先取 t_approval_def.feishu_code**（Registry.Register
-	//   落库的 POST 响应回填值）、为空则回退 inst.ApprovalCode（我方自定义 code）。
-	//   ★ 双池归属未实测（docs/16 §7 V-4）⇒ **双写、不猜**；定义缺失时静默回退自定义 code
-	//   （回退本身不吞错误：GetApprovalDef 的 ErrNotFound 属正常态，其余错误仅告警）。
-	code := inst.ApprovalCode
-	if def, derr := p.db.GetApprovalDef(ctx, inst.ApprovalCode); derr == nil {
-		if fc := strings.TrimSpace(def.FeishuCode); fc != "" {
-			code = fc
-		}
-	} else if !errors.Is(derr, store.ErrNotFound) {
-		p.log.Warn("推送前读取审批定义失败（回退自定义 approval_code 推送）",
-			"biz_no", bizNo, "approval_code", inst.ApprovalCode, "error", derr.Error())
 	}
 	snap.ApprovalCode = code
 	// ★ 快照守卫（docs/16 §2-D 纪律三）：实例 PENDING 但 RELEASED 任务数为 0 ⇒
@@ -360,17 +498,27 @@ func (p *Pusher) Push(ctx context.Context, bizNo string) (PushResult, error) {
 
 // UpsertExternalInstance 推送实例快照（POST /external_instances）。
 //
-// ★ 2026-09-28 补实例级 `links`（官方字段表标必填；与 task_list[*].links 同源同构，
-// 均由 BuildSnapshot 经 externalLinks 生成）。
+// ★ 2026-09-28 按官方字段表补齐实例级必填（真机 99992402：start_time / end_time /
+// i18n_resources 缺失）：与 task_list[*] 级必填项**两层独立**，逐层核对（见
+// InstanceSnapshot 注释）。
+// ★ `update_time` 官方字段表标 **string**（Unix 毫秒/版本控制用递增值）：由
+// int64 版本值转字符串下发；对账侧（external_check.go）同值同形，防"同值误判差异"。
+// ★ open_id 条件必填（open_id/user_id 二选一）；为空则省略（BuildSnapshot 已 warn）。
 func (c *HTTPClient) UpsertExternalInstance(ctx context.Context, updateMode string, snap InstanceSnapshot) error {
 	body := map[string]any{
-		"approval_code": snap.ApprovalCode,
-		"instance_id":   snap.InstanceID,
-		"update_time":   snap.UpdateTime,
-		"update_mode":   updateMode,
-		"status":        snap.Status,
-		"links":         snap.Links,
-		"task_list":     snap.TaskList,
+		"approval_code":  snap.ApprovalCode,
+		"instance_id":    snap.InstanceID,
+		"update_time":    strconv.FormatInt(snap.UpdateTime, 10),
+		"update_mode":    updateMode,
+		"status":         snap.Status,
+		"start_time":     snap.StartTime,
+		"end_time":       snap.EndTime,
+		"links":          snap.Links,
+		"task_list":      snap.TaskList,
+		"i18n_resources": snap.I18nResources,
+	}
+	if strings.TrimSpace(snap.OpenID) != "" {
+		body["open_id"] = snap.OpenID
 	}
 	if len(snap.CCList) > 0 {
 		body["cc_list"] = snap.CCList

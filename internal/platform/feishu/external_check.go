@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strconv"
 	"strings"
 	"sync"
 
@@ -31,7 +32,8 @@ import (
 //	`99992402 field_violations=[instances: instances is required]`。
 //	本实现此前只组装了 `{"approval_code":…}` ⇒ 启动对账恒报 99992402（本批修复）。
 //	★ 字段表示**与推送侧完全一致**（BuildCheckInstance：实例 update_time＝t_instance.update_time
-//	的同一 int64 版本值；task update_time＝feishuMilli 毫秒字符串）—— check 是拿我方上报值
+//	的同一 int64 版本值转**字符串**（官方字段表标 string，2026-09-28 与推送侧同批对齐）；
+//	task update_time＝feishuMilli 毫秒字符串）—— check 是拿我方上报值
 //	与平台**存储值**比对，表示形式必须与推送时相同，否则平台把"同值"误判为差异。
 //	★ 数据源＝本地 `t_instance` / `t_flow_task`（由调用方经 ListInstancesByApprovalCode +
 //	BuildCheckInstance 组装后传入；HTTP 客户端保持纯传输、不触库）。
@@ -58,11 +60,34 @@ type ExternalCheckTask struct {
 // ExternalCheckInstance check 请求 instances[] 每项。
 //
 // ★ 官方实测要求：每项必须含 `update_time` + `tasks`（只给 instance_id ⇒ 99992402）。
-// instance update_time 与推送侧同源（t_instance.update_time 的 int64 版本值）。
+// instance update_time 与推送侧同源同形（t_instance.update_time 的 int64 版本值转
+// **字符串**下发——官方字段表标 string，2026-09-28 推送侧对齐；★ 表示形式必须与
+// 推送时相同，否则平台把"同值"误判为差异）。
 type ExternalCheckInstance struct {
 	InstanceID string              `json:"instance_id"`
-	UpdateTime int64               `json:"update_time"`
+	UpdateTime string              `json:"update_time"`
 	Tasks      []ExternalCheckTask `json:"tasks"`
+}
+
+// flexInt64 宽容解析平台回显的数值/字符串版本值（`"7"` 与 `7` 都接受）。
+//
+// ★ 教训预防（2026-09-28 message_id 事故同源）：推送侧 update_time 由 int64 对齐官方
+// string 后，平台 diff_instances 回显的 update_time 类型**未实测**——若按 int64 硬收
+// 字符串会整包解析失败。两侧类型都接受，杜绝响应解析单点故障。
+type flexInt64 int64
+
+func (f *flexInt64) UnmarshalJSON(b []byte) error {
+	s := strings.Trim(string(b), `"`)
+	if s == "" || s == "null" {
+		*f = 0
+		return nil
+	}
+	v, err := strconv.ParseInt(s, 10, 64)
+	if err != nil {
+		return fmt.Errorf("feishu: 解析版本值失败: %w（raw=%s）", err, string(b))
+	}
+	*f = flexInt64(v)
+	return nil
 }
 
 // BuildCheckInstance 组装 check 请求的实例项（镜像推送侧字段口径，一处生成杜绝漂移）：
@@ -73,7 +98,8 @@ type ExternalCheckInstance struct {
 func BuildCheckInstance(inst *store.Instance, tasks []store.FlowTask) ExternalCheckInstance {
 	out := ExternalCheckInstance{
 		InstanceID: inst.InstanceCode,
-		UpdateTime: inst.UpdateTime,
+		// ★ 与推送侧（UpsertExternalInstance body）同值同形：int64 版本值转字符串。
+		UpdateTime: strconv.FormatInt(inst.UpdateTime, 10),
 		Tasks:      []ExternalCheckTask{},
 	}
 	for _, t := range tasks {
@@ -122,9 +148,9 @@ func (c *HTTPClient) CheckExternalInstances(ctx context.Context, approvalCode st
 	}
 	var raw struct {
 		DiffInstances []struct {
-			InstanceID string `json:"instance_id"`
-			UpdateTime int64  `json:"update_time"`
-			Status     string `json:"status"`
+			InstanceID string    `json:"instance_id"`
+			UpdateTime flexInt64 `json:"update_time"` // ★ 数值/字符串都接受（见 flexInt64）
+			Status     string    `json:"status"`
 		} `json:"diff_instances"`
 	}
 	if len(data) > 0 {
@@ -138,7 +164,7 @@ func (c *HTTPClient) CheckExternalInstances(ctx context.Context, approvalCode st
 			continue
 		}
 		out = append(out, ExternalInstanceState{
-			InstanceID: d.InstanceID, UpdateTime: d.UpdateTime, Status: d.Status,
+			InstanceID: d.InstanceID, UpdateTime: int64(d.UpdateTime), Status: d.Status,
 		})
 	}
 	return out, nil

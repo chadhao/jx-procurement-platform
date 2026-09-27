@@ -33,7 +33,7 @@ func TestBuildSnapshotOnlyReleasedLimits(t *testing.T) {
 		{TaskID: "t1", NodeID: "n1", AssigneeOpenID: "ou_a", Status: "PENDING", ReleaseState: "RELEASED"},
 		{TaskID: "t2", NodeID: "n1", AssigneeOpenID: "ou_b", Status: "PENDING", ReleaseState: "HELD"},
 	}
-	snap, err := BuildSnapshot(inst, tasks, nil, "https://jx.example.com", nil)
+	snap, err := BuildSnapshot(inst, tasks, nil, "https://jx.example.com", "", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -41,7 +41,7 @@ func TestBuildSnapshotOnlyReleasedLimits(t *testing.T) {
 		t.Errorf("快照 task_list = %+v, 期望仅 t1（只含 RELEASED）", snap.TaskList)
 	}
 	// detailBase 为空 ⇒ 可见失败（links 必填；不编造 URL）。
-	if _, err := BuildSnapshot(inst, tasks, nil, "  ", nil); err == nil {
+	if _, err := BuildSnapshot(inst, tasks, nil, "  ", "", nil); err == nil {
 		t.Errorf("detailBase 为空应报错（links 必填，不编造 URL）")
 	}
 	// 超限：301 个 RELEASED。
@@ -49,7 +49,7 @@ func TestBuildSnapshotOnlyReleasedLimits(t *testing.T) {
 	for i := 0; i < MaxTaskList+1; i++ {
 		many = append(many, store.FlowTask{TaskID: "x", ReleaseState: "RELEASED"})
 	}
-	if _, err := BuildSnapshot(inst, many, nil, "https://jx.example.com", nil); err == nil {
+	if _, err := BuildSnapshot(inst, many, nil, "https://jx.example.com", "", nil); err == nil {
 		t.Errorf("task_list 超限应报错（绝不静默截断）")
 	}
 }
@@ -61,6 +61,7 @@ func seedInstance(t *testing.T, db *store.DB, bizNo string, updateTime int64) {
 	if err := db.UpsertInstance(ctx, &store.Instance{
 		InstanceCode: "app:" + bizNo, ApprovalCode: "code-pr", DocType: "PR", BizNo: bizNo,
 		Status: "PENDING", UpdateTime: updateTime, CreatedAt: pushAt, UpdatedAt: pushAt,
+		ApplicantOpenID: "ou_user",
 	}); err != nil {
 		t.Fatal(err)
 	}

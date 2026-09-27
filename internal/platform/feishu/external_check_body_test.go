@@ -72,7 +72,7 @@ func TestCheckExternalInstancesRequestBodyHasInstances(t *testing.T) {
 		ApprovalCode string `json:"approval_code"`
 		Instances    []struct {
 			InstanceID string `json:"instance_id"`
-			UpdateTime int64  `json:"update_time"`
+			UpdateTime string `json:"update_time"` // ★ 官方标 string（2026-09-28 与推送侧同批对齐）
 			Tasks      []struct {
 				TaskID     string `json:"task_id"`
 				UpdateTime string `json:"update_time"`
@@ -90,12 +90,12 @@ func TestCheckExternalInstancesRequestBodyHasInstances(t *testing.T) {
 		t.Fatalf("instances 项数 = %d, 期望 1（body=%s）", len(body.Instances), rawBody)
 	}
 	it := body.Instances[0]
-	// ② 实例项：instance_id + update_time（与推送侧同源的版本值）。
+	// ② 实例项：instance_id + update_time（与推送侧同源同形：版本值转字符串）。
 	if it.InstanceID != "app-test:PR-2609-0300" {
 		t.Errorf("instances[0].instance_id = %q, 期望 app-test:PR-2609-0300", it.InstanceID)
 	}
-	if it.UpdateTime != 7 {
-		t.Errorf("instances[0].update_time = %d, 期望 7（与推送侧同一版本值）", it.UpdateTime)
+	if it.UpdateTime != "7" {
+		t.Errorf("instances[0].update_time = %q, 期望 \"7\"（与推送侧同一版本值、字符串同形）", it.UpdateTime)
 	}
 	// ③ tasks[]：每项 task_id + update_time；★ HELD 任务未推给平台，不得出现在比对集合。
 	if len(it.Tasks) != 1 {
