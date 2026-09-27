@@ -27,6 +27,10 @@ import (
 //   action_callback_token / action_callback_key）。字段名以设计为准，真机联调按 QV2 实测校准。
 
 // ExternalApprovalDef 三方审批定义（我方 → 飞书）。
+//
+// ★★ 开关字段（EnableQuickOperate 等）必须**显式传值**：external_approvals 是
+// upsert，平台会把**未传**的开关重置为默认值 false（2026-09-27 实测教训，
+// 见 externalApprovalBody 头注）——省略即「装载一次、飞书侧配置被清一次」。
 type ExternalApprovalDef struct {
 	ApprovalCode     string // 为空＝新建；非空＝按此码更新
 	Name             string // approval_name
@@ -39,6 +43,11 @@ type ExternalApprovalDef struct {
 	CallbackURL      string // external.action_callback_url（入站回调端点）
 	CallbackToken    string // external.action_callback_token
 	CallbackKey      string // external.action_callback_key
+	// 快捷审批/批量/已读开关（external.*，2026-09-27 真机读回基线校准的字段名）。
+	EnableQuickOperate bool // external.enable_quick_operate（「同意/拒绝」两键的总开关）
+	AllowBatchOperate  bool // external.allow_batch_operate
+	SupportBatchRead   bool // external.support_batch_read
+	EnableMarkReaded   bool // external.enable_mark_readed
 }
 
 // ExternalApprovalResult 创建/更新结果（仅在调用成功后返回）。
@@ -56,6 +65,14 @@ type ExternalApprovalClient interface {
 }
 
 // externalApprovalBody 组装 external_approvals 请求体。
+//
+// ★★ 教训（2026-09-27 实测，勿删）：`POST /open-apis/approval/v4/external_approvals`
+// 是 **upsert**（approval_code 命中即更新），且平台会把**未传**的字段重置为默认值
+// ——实测：不传时服务端填 `enable_quick_operate=false` / `allow_batch_operate=false` /
+// `support_batch_read=false`（`enable_mark_readed` 同理默认 false）。
+// ⇒ **平台 upsert 会重置未传字段 ⇒ 必须显式传全，不得省略**：
+// 一旦漏传，执行一次定义装载就会把飞书侧已配置好的定义
+// （`enable_quick_operate=true` ⇒「同意/拒绝」两键）重置打没。
 func externalApprovalBody(def ExternalApprovalDef) ([]byte, error) {
 	body := map[string]any{
 		"approval_name": def.Name,
@@ -67,6 +84,11 @@ func externalApprovalBody(def ExternalApprovalDef) ([]byte, error) {
 			"action_callback_url":   def.CallbackURL,
 			"action_callback_token": def.CallbackToken,
 			"action_callback_key":   def.CallbackKey,
+			// 开关显式传全（含 false）：漏键 ⇒ 平台重置为默认 false（见上方教训）。
+			"enable_quick_operate": def.EnableQuickOperate,
+			"allow_batch_operate":  def.AllowBatchOperate,
+			"support_batch_read":   def.SupportBatchRead,
+			"enable_mark_readed":   def.EnableMarkReaded,
 		},
 	}
 	if strings.TrimSpace(def.ApprovalCode) != "" {
@@ -120,13 +142,17 @@ func (c *HTTPClient) GetExternalApproval(ctx context.Context, approvalCode strin
 		Name         string `json:"approval_name"`
 		GroupName    string `json:"group_name"`
 		External     struct {
-			CreateLinkPC     string `json:"create_link_pc"`
-			CreateLinkMobile string `json:"create_link_mobile"`
-			SupportPC        bool   `json:"support_pc"`
-			SupportMobile    bool   `json:"support_mobile"`
-			CallbackURL      string `json:"action_callback_url"`
-			CallbackToken    string `json:"action_callback_token"`
-			CallbackKey      string `json:"action_callback_key"`
+			CreateLinkPC       string `json:"create_link_pc"`
+			CreateLinkMobile   string `json:"create_link_mobile"`
+			SupportPC          bool   `json:"support_pc"`
+			SupportMobile      bool   `json:"support_mobile"`
+			CallbackURL        string `json:"action_callback_url"`
+			CallbackToken      string `json:"action_callback_token"`
+			CallbackKey        string `json:"action_callback_key"`
+			EnableQuickOperate bool   `json:"enable_quick_operate"`
+			AllowBatchOperate  bool   `json:"allow_batch_operate"`
+			SupportBatchRead   bool   `json:"support_batch_read"`
+			EnableMarkReaded   bool   `json:"enable_mark_readed"`
 		} `json:"external"`
 	}
 	if len(data) > 0 {
@@ -135,16 +161,20 @@ func (c *HTTPClient) GetExternalApproval(ctx context.Context, approvalCode strin
 		}
 	}
 	return &ExternalApprovalDef{
-		ApprovalCode:     firstNonEmpty(raw.ApprovalCode, approvalCode),
-		Name:             raw.Name,
-		GroupName:        raw.GroupName,
-		CreateLinkPC:     raw.External.CreateLinkPC,
-		CreateLinkMobile: raw.External.CreateLinkMobile,
-		SupportPC:        raw.External.SupportPC,
-		SupportMobile:    raw.External.SupportMobile,
-		CallbackURL:      raw.External.CallbackURL,
-		CallbackToken:    raw.External.CallbackToken,
-		CallbackKey:      raw.External.CallbackKey,
+		ApprovalCode:       firstNonEmpty(raw.ApprovalCode, approvalCode),
+		Name:               raw.Name,
+		GroupName:          raw.GroupName,
+		CreateLinkPC:       raw.External.CreateLinkPC,
+		CreateLinkMobile:   raw.External.CreateLinkMobile,
+		SupportPC:          raw.External.SupportPC,
+		SupportMobile:      raw.External.SupportMobile,
+		CallbackURL:        raw.External.CallbackURL,
+		CallbackToken:      raw.External.CallbackToken,
+		CallbackKey:        raw.External.CallbackKey,
+		EnableQuickOperate: raw.External.EnableQuickOperate,
+		AllowBatchOperate:  raw.External.AllowBatchOperate,
+		SupportBatchRead:   raw.External.SupportBatchRead,
+		EnableMarkReaded:   raw.External.EnableMarkReaded,
 	}, nil
 }
 

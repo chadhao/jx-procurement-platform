@@ -683,16 +683,32 @@ func (d Deps) handleAdminApprovalDefsSync(c echo.Context) error {
 
 	// 组装 DefInput：名称取配置 remark（清单正本各条自带单据名），缺省退回 doc_type；
 	// 分组留空（飞书 group_name 可选，COALESCE 保留既有值）；回调 URL/token 来自环境配置。
+	//
+	// ★★ 开关必须显式传全（2026-09-27 实测教训）：飞书 external_approvals 是 upsert，
+	// 未传的开关字段被平台重置为默认 false ⇒ 一次装载就会把飞书侧已配置好的定义
+	// （enable_quick_operate=true ⇒「同意/拒绝」两键）重置打没。故此处对齐真机读回基线：
+	// EnableQuickOperate / SupportPC / SupportMobile / AllowBatchOperate / SupportBatchRead
+	// 显式 true、EnableMarkReaded 显式 false——**不赌平台默认值**（docs/16 V-5）。
 	callbackURL := strings.TrimRight(strings.TrimSpace(d.Env.CallbackDomain), "/") + "/approval/external/callback"
+	// 发起页指向我方根路径（基线读回形态：http://office.hunanyichu.com:5500/）。
+	createLink := strings.TrimRight(strings.TrimSpace(d.Env.CallbackDomain), "/") + "/"
 	inputs := make([]approval.DefInput, 0, len(rows))
 	for _, r := range rows {
 		dt := strings.TrimSpace(r.MapValue)
 		inputs = append(inputs, approval.DefInput{
-			DocType:       dt,
-			ApprovalCode:  strings.TrimSpace(r.MapKey),
-			Name:          firstNonEmptyStr(strings.TrimSpace(r.Remark), dt),
-			CallbackURL:   callbackURL,
-			CallbackToken: d.Env.ActionCallbackToken,
+			DocType:            dt,
+			ApprovalCode:       strings.TrimSpace(r.MapKey),
+			Name:               firstNonEmptyStr(strings.TrimSpace(r.Remark), dt),
+			CreateLinkPC:       createLink,
+			CreateLinkMobile:   createLink,
+			SupportPC:          true,
+			SupportMobile:      true,
+			EnableQuickOperate: true,
+			AllowBatchOperate:  true,
+			SupportBatchRead:   true,
+			EnableMarkReaded:   false,
+			CallbackURL:        callbackURL,
+			CallbackToken:      d.Env.ActionCallbackToken,
 		})
 	}
 

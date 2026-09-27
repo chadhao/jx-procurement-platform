@@ -204,4 +204,24 @@ func TestAdminApprovalDefsSyncOK(t *testing.T) {
 	if def.DocType != "BA" {
 		t.Fatalf("doc_type = %q, 期望 BA", def.DocType)
 	}
+
+	// ④ 快捷审批开关全链显式下发（2026-09-27 教训回归：飞书 upsert 会把未传开关重置
+	// 为默认 false ⇒ 装载通道必须显式传全，否则一次装载把「同意/拒绝」两键打没）。
+	extDef, err := fake.GetExternalApproval(context.Background(), "ac-ba-001")
+	if err != nil {
+		t.Fatalf("读飞书侧定义失败: %v", err)
+	}
+	if !extDef.EnableQuickOperate || !extDef.SupportPC || !extDef.SupportMobile ||
+		!extDef.AllowBatchOperate || !extDef.SupportBatchRead {
+		t.Fatalf("快捷审批开关未显式置 true: quick=%v pc=%v mobile=%v batch=%v batchRead=%v",
+			extDef.EnableQuickOperate, extDef.SupportPC, extDef.SupportMobile,
+			extDef.AllowBatchOperate, extDef.SupportBatchRead)
+	}
+	if extDef.EnableMarkReaded {
+		t.Fatalf("enable_mark_readed 应显式为 false")
+	}
+	// 发起页指向回调域名根（对齐真机读回基线：http://office.hunanyichu.com:5500/）。
+	if extDef.CreateLinkPC != defsSyncDomain+"/" || extDef.CreateLinkMobile != defsSyncDomain+"/" {
+		t.Fatalf("create_link_pc/mobile = %q / %q, 期望 %s", extDef.CreateLinkPC, extDef.CreateLinkMobile, defsSyncDomain+"/")
+	}
 }

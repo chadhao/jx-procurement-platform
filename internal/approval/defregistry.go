@@ -20,20 +20,28 @@ import (
 )
 
 // DefInput 单个单据类型的三方审批定义入参（来自本地配置）。
+//
+// ★ 开关字段（EnableQuickOperate 等）由调用方**显式给值**（含 false）：
+// 飞书 external_approvals 是 upsert、未传字段被重置为默认 false（2026-09-27 实测教训），
+// 本层不做任何"缺省补 true"的隐藏逻辑——语义由组装方（httpapi 装载通道）一处定死。
 type DefInput struct {
-	DocType          string // 我方单据类型（BA/PR/SA/RFQ/BJ/SS/CT/PC/GR/QC/SUB）
-	ApprovalCode     string // 三方审批定义码（稳定标识；本地配置给出）
-	Name             string // 审批名称（飞书侧展示）
-	GroupName        string // 分组
-	VisibleScopeJSON string // 可见范围（原样 JSON）
-	CreateLinkPC     string // 发起页 PC（指向我方页面）
-	CreateLinkMobile string // 发起页 Mobile
-	SupportPC        bool
-	SupportMobile    bool
-	CallbackURL      string // action_callback_url
-	CallbackToken    string // action_callback_token
-	CallbackKey      string // action_callback_key
-	FormSummaryJSON  string // 飞书列表摘要（3 条）配置
+	DocType            string // 我方单据类型（BA/PR/SA/RFQ/BJ/SS/CT/PC/GR/QC/SUB）
+	ApprovalCode       string // 三方审批定义码（稳定标识；本地配置给出）
+	Name               string // 审批名称（飞书侧展示）
+	GroupName          string // 分组
+	VisibleScopeJSON   string // 可见范围（原样 JSON）
+	CreateLinkPC       string // 发起页 PC（指向我方页面）
+	CreateLinkMobile   string // 发起页 Mobile
+	SupportPC          bool
+	SupportMobile      bool
+	CallbackURL        string // action_callback_url
+	CallbackToken      string // action_callback_token
+	CallbackKey        string // action_callback_key
+	EnableQuickOperate bool   // enable_quick_operate（「同意/拒绝」两键总开关）
+	AllowBatchOperate  bool   // allow_batch_operate
+	SupportBatchRead   bool   // support_batch_read
+	EnableMarkReaded   bool   // enable_mark_readed
+	FormSummaryJSON    string // 飞书列表摘要（3 条）配置
 }
 
 // validate 校验注册入参（缺失即**显式失败**，不静默跳过）。
@@ -180,18 +188,25 @@ func (r *Registry) Sync(ctx context.Context, defs []DefInput) (SyncResult, error
 }
 
 // toExternalDef 把本地入参转为适配层 DTO。
+//
+// ★ 开关字段逐一透传（不在此层兜底默认值）：显式性由 httpapi 装载通道保证，
+// 适配层负责把**所有**开关写进请求体（漏传即被平台重置，见 feishu.externalApprovalBody）。
 func toExternalDef(in DefInput) feishu.ExternalApprovalDef {
 	return feishu.ExternalApprovalDef{
-		ApprovalCode:     in.ApprovalCode,
-		Name:             in.Name,
-		GroupName:        in.GroupName,
-		VisibleScopeJSON: in.VisibleScopeJSON,
-		CreateLinkPC:     in.CreateLinkPC,
-		CreateLinkMobile: in.CreateLinkMobile,
-		SupportPC:        in.SupportPC,
-		SupportMobile:    in.SupportMobile,
-		CallbackURL:      in.CallbackURL,
-		CallbackToken:    in.CallbackToken,
-		CallbackKey:      in.CallbackKey,
+		ApprovalCode:       in.ApprovalCode,
+		Name:               in.Name,
+		GroupName:          in.GroupName,
+		VisibleScopeJSON:   in.VisibleScopeJSON,
+		CreateLinkPC:       in.CreateLinkPC,
+		CreateLinkMobile:   in.CreateLinkMobile,
+		SupportPC:          in.SupportPC,
+		SupportMobile:      in.SupportMobile,
+		CallbackURL:        in.CallbackURL,
+		CallbackToken:      in.CallbackToken,
+		CallbackKey:        in.CallbackKey,
+		EnableQuickOperate: in.EnableQuickOperate,
+		AllowBatchOperate:  in.AllowBatchOperate,
+		SupportBatchRead:   in.SupportBatchRead,
+		EnableMarkReaded:   in.EnableMarkReaded,
 	}
 }
