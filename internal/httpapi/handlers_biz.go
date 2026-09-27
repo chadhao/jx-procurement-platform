@@ -3,6 +3,7 @@ package httpapi
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"strconv"
 	"strings"
@@ -12,6 +13,7 @@ import (
 
 	"github.com/chadhao/jx-procurement-platform/internal/access"
 	"github.com/chadhao/jx-procurement-platform/internal/config"
+	"github.com/chadhao/jx-procurement-platform/internal/jsonutil"
 	"github.com/chadhao/jx-procurement-platform/internal/permission"
 	"github.com/chadhao/jx-procurement-platform/internal/store"
 )
@@ -277,7 +279,13 @@ func (d Deps) handleLedgerList(c echo.Context) error {
 		qcByRelated = d.loadLinkedInspections(ctx, rows, cond)
 	}
 	for _, a := range rows {
-		ops := d.loadOps(ctx, table, a.BizNo)
+		// 读路径：单行运营字段坏掉不应让整页 500 → 降级为空，但**必须留痕**（不静默）。
+		ops, opsErr := d.loadOps(ctx, table, a.BizNo)
+		if opsErr != nil {
+			d.Log.Warn("运营字段解析失败，本行按空处理（数据已损坏，请检查写入方）",
+				"ledger_type", table, "biz_no", a.BizNo, "error", opsErr.Error())
+			ops = map[string]any{}
+		}
 		row := ledgerRowMap(a, ops, d.formulaFlags(ctx, table, a))
 		attachLinkedInspection(row, a, qcByRelated)
 		// ★ 列级投影在序列化阶段裁剪，无权限字段连字段名都不出现（TC-07）；
@@ -322,7 +330,12 @@ func (d Deps) handleLedgerGet(c echo.Context) error {
 	if err != nil {
 		return fail(c, http.StatusNotFound, codeNotFound, "记录不存在")
 	}
-	ops := d.loadOps(ctx, table, a.BizNo)
+	ops, opsErr := d.loadOps(ctx, table, a.BizNo)
+	if opsErr != nil {
+		d.Log.Warn("运营字段解析失败，本行按空处理（数据已损坏，请检查写入方）",
+			"ledger_type", table, "biz_no", a.BizNo, "error", opsErr.Error())
+		ops = map[string]any{}
+	}
 	row := ledgerRowMap(*a, ops, d.formulaFlags(ctx, table, *a))
 	if table == "L07" {
 		attachLinkedInspection(row, *a, d.loadLinkedInspections(ctx, []store.LedgerArchive{*a}, cond))
@@ -380,7 +393,18 @@ func (d Deps) handleLedgerPatch(c echo.Context) error {
 		return fail(c, http.StatusBadRequest, codeBadRequest, "fields 不能为空")
 	}
 
-	ops := d.loadOps(ctx, table, a.BizNo)
+	// ★ 写路径：**必须**拒绝解析失败，绝不能"当空继续"（静默审计 C6）。
+	//   下面的逻辑是「读既有 ops → 合入本次 fields → **整体写回**」。若把损坏的
+	//   ops_json 当成空对象，本次写回就会把**该行既有的全部运营字段抹掉**，
+	//   而接口仍返回 200 —— 一次静默的数据丢失。
+	ops, opsErr := d.loadOps(ctx, table, a.BizNo)
+	if opsErr != nil {
+		d.audit(ctx, &store.AuditLogRow{ActorOpenID: idn.OpenID, ActorRole: idn.Role, Action: "update",
+			Resource: "ledger:" + table, TargetID: c.Param("id"), Result: "deny",
+			DetailJSON: `{"reason":"ops_json_unparsable"}`})
+		return fail(c, http.StatusInternalServerError, codeInternal,
+			"该行既有运营字段无法解析，为免覆盖丢失已拒绝写入（请先修复 ops_json）: "+opsErr.Error())
+	}
 	// 台账字段定义白名单（Q14-B 第 4 项）：该台账**登记过**字段定义时，只接受登记过的键名，
 	// 使 t_ledger_field_def 具备消费端（不再是"配了没人读"的空表）；未登记则不做键名限制（向后兼容）。
 	declared, err := d.DB.LedgerFieldKeys(ctx, table)
@@ -480,12 +504,17 @@ func (d Deps) archiveAllowed(ctx context.Context, cond permission.Condition, id 
 	return n > 0, nil
 }
 
-func (d Deps) loadOps(ctx context.Context, ledgerType, bizNo string) map[string]any {
-	out := map[string]any{}
-	if o, err := d.DB.GetOps(ctx, ledgerType, bizNo); err == nil && strings.TrimSpace(o.OpsJSON) != "" {
-		_ = json.Unmarshal([]byte(o.OpsJSON), &out)
+func (d Deps) loadOps(ctx context.Context, ledgerType, bizNo string) (map[string]any, error) {
+	o, err := d.DB.GetOps(ctx, ledgerType, bizNo)
+	if err != nil {
+		if errors.Is(err, store.ErrNotFound) {
+			return map[string]any{}, nil
+		}
+		return nil, err
 	}
-	return out
+	// ★ 不再 `_ = json.Unmarshal(...)`（静默审计 C6）：非法 JSON 会**返回错误**而不是
+	//   静默留空 —— 读路径据此降级并留痕，写路径据此拒绝（见各调用点）。
+	return jsonutil.Object(o.OpsJSON)
 }
 
 func (d Deps) formulaFlags(ctx context.Context, ledgerType string, a store.LedgerArchive) map[string]any {

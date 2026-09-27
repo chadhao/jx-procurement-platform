@@ -8,6 +8,7 @@ import (
 
 	"github.com/labstack/echo/v4"
 
+	"github.com/chadhao/jx-procurement-platform/internal/jsonutil"
 	"github.com/chadhao/jx-procurement-platform/internal/permission"
 	"github.com/chadhao/jx-procurement-platform/internal/store"
 )
@@ -123,9 +124,12 @@ func (d Deps) handleContractChanges(c echo.Context) error {
 		items            = make([]map[string]any, 0, len(changes))
 	)
 	for _, ch := range changes {
-		var ext map[string]any
-		if strings.TrimSpace(ch.ExtJSON) != "" {
-			_ = json.Unmarshal([]byte(ch.ExtJSON), &ext)
+		// ★ 解析失败不再静默当空（静默审计 C6）：这里读不到差额会**退用存档行金额**，
+		//   进而影响变更链的「累计变更金额 / 所取档位」——静默意味着数字可能算错。
+		ext, extBad := jsonutil.ObjectOrEmpty(ch.ExtJSON)
+		if extBad {
+			d.Log.Warn("变更单 ext_json 解析失败，本笔按未提供差额处理（金额将退用存档行，可能偏差）",
+				"biz_no", ch.BizNo, "contract_no", contractNo, "error", "ext_json 非法")
 		}
 		changeCents, hasChange := pickInt(ext, changeAmountKeys)
 		originalCents, hasOriginal := pickInt(ext, originalAmountKeys)

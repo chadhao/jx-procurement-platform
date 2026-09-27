@@ -266,7 +266,12 @@ ORDER BY id DESC LIMIT 1`, key, actor).Scan(&detail)
 			SubmissionID int64  `json:"submission_id"`
 			PayloadHash  string `json:"payload_hash"`
 		}
-		_ = json.Unmarshal([]byte(detail.String), &payload)
+		// ★ 不再静默（静默审计 C6）：`detail_json` 解析失败与「历史遗留空指纹」是**两件事**，
+		//   混为一谈会让运维按错误线索排查（"历史遗留"看起来是正常的）。
+		//   此处返回错误 = **fail-closed**：调用方拿不到记录 → 绝不会误判为"同载荷可复用"。
+		if err := json.Unmarshal([]byte(detail.String), &payload); err != nil {
+			return nil, false, fmt.Errorf("submission: 幂等键记录损坏（detail_json 非法，key=%s）: %w", key, err)
+		}
 		rec.SubmissionID = payload.SubmissionID
 		rec.PayloadHash = payload.PayloadHash
 	}

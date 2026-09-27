@@ -12,6 +12,7 @@ import (
 	"github.com/labstack/echo/v4"
 
 	"github.com/chadhao/jx-procurement-platform/internal/access"
+	"github.com/chadhao/jx-procurement-platform/internal/jsonutil"
 	"github.com/chadhao/jx-procurement-platform/internal/permission"
 	"github.com/chadhao/jx-procurement-platform/internal/store"
 )
@@ -105,10 +106,9 @@ func formatCents(cents int64) string {
 
 // ledgerRowMap 组装台账行（存档 + 运营合并视图）。
 func ledgerRowMap(a store.LedgerArchive, ops map[string]any, flags map[string]any) map[string]any {
-	archive := map[string]any{}
-	if strings.TrimSpace(a.ExtJSON) != "" {
-		_ = json.Unmarshal([]byte(a.ExtJSON), &archive)
-	}
+	// ★ 解析失败不再静默当空（静默审计 C6）：坏行会带一个**可见标记**，
+	//   使「这一行的扩展字段缺失」被识别为**数据损坏**，而不是"本来就没填"。
+	archive, extBad := jsonutil.ObjectOrEmpty(a.ExtJSON)
 	row := map[string]any{
 		"id":            a.ID,
 		"ledger_type":   a.LedgerType,
@@ -125,6 +125,9 @@ func ledgerRowMap(a store.LedgerArchive, ops map[string]any, flags map[string]an
 	if a.AmountCents != nil {
 		row["amount_cents"] = *a.AmountCents
 		row["amount_display"] = formatCents(*a.AmountCents)
+	}
+	if extBad {
+		row["_data_warning"] = "ext_json 解析失败：本行扩展字段（含金额同义键）缺失，属数据损坏，请检查写入方"
 	}
 	return row
 }

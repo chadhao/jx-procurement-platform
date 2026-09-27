@@ -21,6 +21,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/chadhao/jx-procurement-platform/internal/jsonutil"
 	"github.com/chadhao/jx-procurement-platform/internal/store"
 )
 
@@ -59,6 +60,11 @@ type Result struct {
 	Charts      []Chart          `json:"charts"`
 	Supervision map[string]any   `json:"supervision"`
 	Alerts      []map[string]any `json:"alerts"`
+	// Warnings 本次构建中发现的**数据质量问题**（如 ext_json/ops_json 解析失败的行数）。
+	//
+	// ★ 为什么要有：坏行原先只是"少几个字段"，指标**偏低却不报错**。
+	//   有了它，"数字不对"至少有一个可追的线索（静默审计 C6）。
+	Warnings []string `json:"warnings,omitempty"`
 }
 
 // Chart 图表序列（key/type/series）。
@@ -107,6 +113,8 @@ type Builder struct {
 	db         *store.DB
 	now        func() time.Time
 	splitCents int64
+	// corruptRows 本次构建中 ext_json / ops_json 解析失败的行数（见 Result.Warnings）。
+	corruptRows int
 }
 
 // New 构造聚合器（默认时钟 time.Now，默认拆分阈值 1,000 元）。
@@ -147,11 +155,23 @@ func DashboardName(id int) string {
 }
 
 // Build 计算某看板数据。id=13（预算执行）本期不启用 → 返回空序列且不报错（HTTP 200）。
-func (b *Builder) Build(ctx context.Context, id int, period string, q Query) (Result, error) {
+func (b *Builder) Build(ctx context.Context, id int, period string, q Query) (res Result, err error) {
+	b.corruptRows = 0
+	// ★ 静默审计 C6：`ext_json` / `ops_json` 解析失败原先只是"这一行少了些字段"，
+	//   指标会**偏低却不报错**。这里把坏行数带上响应（`warnings`），
+	//   让"数字不对"至少有一个可追的线索，而不是只看到一个小了的数字。
+	defer func() {
+		if err == nil && b.corruptRows > 0 {
+			res.Warnings = append(res.Warnings, fmt.Sprintf(
+				"有 %d 行的扩展/运营字段无法解析（数据损坏），相关指标可能偏低 —— 请检查写入方",
+				b.corruptRows))
+		}
+	}()
+
 	if strings.TrimSpace(period) == "" {
 		period = b.now().Format("2006-01")
 	}
-	res := Result{
+	res = Result{
 		ID: id, Name: DashboardName(id), Period: period,
 		Cards: []map[string]any{}, Charts: []Chart{}, Alerts: []map[string]any{},
 		Supervision: emptySupervision(),
@@ -520,8 +540,13 @@ WHERE ` + where
 			r.AmountCents = amount.Int64
 			r.HasAmount = true
 		}
-		r.ArchiveExt = decodeJSONMap(extRaw)
-		r.Ops = decodeJSONMap(opsRaw)
+		// ★ 解析失败不再静默当空（静默审计 C6）：记数并让 Build 把它带进 `warnings`。
+		var badExt, badOps bool
+		r.ArchiveExt, badExt = decodeJSONMap(extRaw)
+		r.Ops, badOps = decodeJSONMap(opsRaw)
+		if badExt || badOps {
+			b.corruptRows++
+		}
 		out = append(out, r)
 	}
 	return out, sqlRows.Err()
@@ -818,13 +843,13 @@ func alert(key, desc string, count int) map[string]any {
 
 // ---------- 解析与格式化小工具 ----------
 
-func decodeJSONMap(raw string) map[string]any {
-	out := map[string]any{}
-	if strings.TrimSpace(raw) == "" {
-		return out
-	}
-	_ = json.Unmarshal([]byte(raw), &out)
-	return out
+// decodeJSONMap 解析 JSON 文本为对象；第二个返回值表示**是否解析失败**。
+//
+// ★ 必须把"失败"返回出去（静默审计 C6）：原先 `_ = json.Unmarshal` 让坏数据
+//
+//	与"没有数据"完全等价，指标静默偏低而无人察觉。
+func decodeJSONMap(raw string) (map[string]any, bool) {
+	return jsonutil.ObjectOrEmpty(raw)
 }
 
 func jsonStr(v any) string {
