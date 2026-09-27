@@ -7,7 +7,7 @@
 | 项 | 内容 |
 |---|---|
 | 文档名称 | 采购与费用审批平台（自建侧）· 接口设计 |
-| 版本 | **V2.7**（+ 2026-09-27 实测：**新增 §6.1「转向 ③ 新增的出方向接口」** —— `external_approvals` / `external_instances` / `check` 三条契约按实测校准，含「双 code 池」「`texts` 须数组」「审批人字段」三项关键更正；含 V2.6 §3.8 入参校正 ＋ `approval_code` 命名歧义；含 V2.5 `#74` 批量 A） |
+| 版本 | **V2.8**（+ 2026-09-27 实测：**§6 接口计数 4 → 5**，新增 **§6.1「发通知（Bot 消息）」`POST /open-apis/approval/v1/message/send`（`template_id=1008`）** —— 落实**③ 口径 2 的「通知」**；含 V2.7 §6.1 出方向契约 ＋ V2.6 §3.8 入参校正 ＋ V2.5 `#74` 批量 A） |
 | 日期 | 2026-09-26 |
 | 上游文档 | `01-PRD.md`、`02-UseCase.md`、`03-TestCase.md`、`04-Architecture.md` |
 | 语言纪律 | 简体中文 |
@@ -829,9 +829,10 @@ sequenceDiagram
 
 ---
 
-## 6. 飞书侧接口（**实际调用 4 个，出方向**）
+## 6. 飞书侧接口（**实际调用 5 个，出方向**）
 
 > 以下路径**抄自输入文件**（README / 技术方案书 §6.1），不自造。
+> ★ **本表第 1–4 行是「模式 A」遗留口径**（订阅 / 取详情 / 对账 / 附件）；**转向 ③ 后新增的在 §6.1**。★ 计数：**4 → 5**（③ 新增**发审批 Bot 消息**）。
 
 | 用途 | 接口 | 方向 / 计费 |
 |---|---|---|
@@ -841,6 +842,7 @@ sequenceDiagram
 | 附件下载 | `GET`（飞书附件下载接口） | 出方向；计入 |
 | ~~附件上传~~ | ~~`POST /open-apis/approval/openapi/v2/file/upload`~~ | ★ **本期不调用**：模式 A 下本系统**不创建实例**，附件由申请人在飞书侧上传 → 上传链路属模式 B 遗留、**零调用点**（FR-M0-09 / 实现说明 §M.3）。**接口能力仍在飞书侧，只是本系统不用** |
 | 事件接收 | 长连接 WebSocket：**只订阅 `approval_instance`** | 出方向；**事件订阅不计入调用量**。★ `approval_task` **本期不订阅**（PRD §3.2 N10） |
+| ★★ **发审批 Bot 消息（通知）** | `POST /open-apis/approval/v1/message/send`（**`template_id=1008`「收到审批待办」**） | 出方向；审批 API（**计入**）。★ **③ 口径 2「飞书只做展示 / 待办 / 通知」里的「通知」＝本接口**，**须我方主动调用**（见 §6.1） |
 
 - **设计纪律**：**用事件订阅，绝不轮询**（FR-M0-12 / TC-25）。
 - ★ **只订阅 `approval_instance`**：`approval_task`（节点级）本期不订阅 —— 订阅了却无处理逻辑，等于凭空增加事件量与失败面。**逐模板订阅**时只开 `approval_instance`。
@@ -857,6 +859,9 @@ sequenceDiagram
 | 查三方审批定义 | `GET /open-apis/approval/v4/external_approvals/{真实code}` | ★ **路径参数必须是「真实 code」**（＝创建响应返回值）；**读回字段 `approval_code` 返回的却是「自定义 code」** ⇒ 同一字段名两样东西 |
 | 推/更实例 | `POST /open-apis/approval/v4/external_instances` | ★ 审批人在 **`task_list[].open_id` / `user_id`**（**官方无 `assignees`**；传错**静默忽略** ⇒ 任务不进「待办」）。★ 「同意/拒绝」两键在 **`task_list[].action_configs`**（`action_type` = `APPROVE` / `REJECT`）。★ 单据编号走顶层 **`extra.business_key`**。★ 成功回显为 **`data.data` 双层嵌套** |
 | 实例对账 | `POST /open-apis/approval/v4/external_instances/check` | ★ 入参 **`instances[]`** 每项含 `update_time`＋`tasks`；成功返回 `data.diff_instances`（**空数组＝零差异**） |
+| ★★ **发通知（Bot 消息）** | `POST /open-apis/approval/v1/message/send` | ★★ **这是「通知」的唯一实现路径**（官方原文：「当有新的审批待办…时，**可以通过**飞书审批的 Bot 告知用户」）—— **推实例 `external_instances` 只让任务进「待办」，不会自动发消息**。★ `template_id=**1008**`＝「收到审批待办」（**支持快捷审批参数**）。★ **`actions[]` 四个 URL 缺一不可**（`url`＋`pc_url`＋`android_url`＋`ios_url`，只给 3 个 ⇒ **`60001 actionUrls incomplete error`**）。★ 本接口 **`i18n_resources.texts` 接受 map 形态**（与 `external_approvals` 的数组形态**相反**）。★ 成功返回 `data.message_id` |
+
+- ★★ **铁律（③ 口径 2）**：**「待办进列表」与「发消息通知」是两个独立动作**，后者必须我方主动调用。仅推 `external_instances` ⇒ 审批人**在飞书看不到任何提醒**（本次实测踩中）。
 
 - ★★ **三类静默缺陷**（联调必须以**回读 / 对账**自证，**不得以 `code:0` 判通过**）：① **未知字段被静默忽略**（`assignees`）；② **不校验 `locale` 枚举**（`zh_cn` 被接受）；③ **列表类接口权限不足时报误导性 `99991663`**（而非 `99991672`）。
 - ★ **计费**：审批 API **计入**调用量（与上表一致）；建定义应**幂等缓存、不重复调用**。
@@ -946,6 +951,7 @@ sequenceDiagram
 
 | 版本 | 日期 | 变更 | 作者 |
 |---|---|---|---|
+| V2.8 | 2026-09-27 | ★★ **补齐「通知」链路（实测驱动）**：① **§6 标题计数 4 → 5** 并新增行「**发审批 Bot 消息**」`POST /open-apis/approval/v1/message/send`（`template_id=1008` 收到审批待办）；② **§6.1 新增该接口契约** —— ★★ **「待办进列表」与「发消息通知」是两个独立动作**（官方原文「当有新的审批待办…时，**可以通过**飞书审批的 Bot 告知用户」），**仅推 `external_instances` 不会产生任何提醒**；★ `actions[]` **四个 URL 缺一不可**（`url`+`pc_url`+`android_url`+`ios_url`；缺 ⇒ `60001 actionUrls incomplete error`）；★ 本接口 **`texts` 接受 map**（与 `external_approvals` 的数组形态**相反**）；成功返回 `data.message_id`（实测 `{"code":0,…}`）。③ 与 `01a §…` **通知渠道「飞书 Bot（主）＋ 站内兜底」口径对齐** —— PRD 已规划、**此前代码零实现**。 | 交付总监 |
 | V2.7 | 2026-09-27 | **新增 §6.1「转向 ③ 新增的出方向接口」（契约按实测校准）**：① **`POST /external_approvals`** —— ★ **`approval_code` 走「自定义 code」池**（命中即更新、**未命中静默新建**）；★ **`i18n_resources[].texts` 必须是数组**（传 map ⇒ `9499`，**与官方文档示例不符**）；★ `locale`/`is_default` 飞书**不校验**，须自查。② **`GET /external_approvals/{真实code}`** —— ★ 路径参数须「真实 code」，而读回字段返回「自定义 code」。③ **`POST /external_instances`** —— ★ 审批人在 **`task_list[].open_id`/`user_id`**（**官方无 `assignees`**，传错**静默忽略** ⇒ 任务不进「待办」）；★ 两键在 **`task_list[].action_configs`**；★ 单据编号走 **`extra.business_key`**；★ 成功回显 `data.data` 双层。④ **`check`** 成功返回 `data.diff_instances`。⑤ ★ 归纳**三类静默缺陷**（未知字段忽略 / 不校验 `locale` / 列表接口缺权限报误导性 `99991663`）⇒ **不得以 `code:0` 判通过**。 | 交付总监 |
 | V2.6 | 2026-09-27 | 依 team-lead 飞书**实测裁定**（**纯文档**）：**§3.8 `POST /internal/approval/check`** 补两条上游契约 —— ① **`external_instances/check` 入参字段名校正为 `instances[]`，且每项必须含 `update_time` ＋ `tasks`**（只给 `instance_id` ⇒ `99992402 field validation failed`）；② **`external_approvals` 读回须用创建响应返回的 `approval_code` 作路径参数**（**`?approval_code=` 形态不通**）；并**写清 `approval_code` 字段名歧义**（创建响应 / 路径参数里的＝「查询键」；定义体 `data.approval_code` ＝我方传入的值）。 | 架构师（Bob） |
 | V2.5 | 2026-09-27 | 执行 `#74` **批量 A**：§3.8 退役端点 **body** 引用改为符号 **`handlers_ops.go` 的 `handleReconcile`**（退役 `410 Gone` body）。 | 架构师（Bob） |
