@@ -7,7 +7,7 @@
 | 项 | 内容 |
 |---|---|
 | 文档名称 | 回调入站部署 Runbook |
-| 版本 | V1.3 |
+| 版本 | V1.4 |
 | 日期 | 2026-09-27 |
 | 关联 | `04a §17`（设计）· `11 §7.2 / §7.3`（缺口与隐患）· `13` A-1~A-7 · `05-API §3.8` |
 | 语言纪律 | 简体中文 |
@@ -66,8 +66,15 @@
 ## 6. 联调（回调连通性）
 
 - 飞书端对一张联调单触发「同意 / 拒绝」→ 观察回调落 `t_flow_op_log`（`action_type` / `action_context` / `token` 校验通过）。
+- ★★ **联调自检（必做，`docs/16 §6.2` 官方报文样例）**：用**官方字段名**的报文打回调 —— 报文含 `action_type`(必)/`user_id`(必)/`approval_code`(必)/`token`(必)/`action_context`/`instance_id`/`task_id`/`message_id`/`id`/`reason`/`attachments`/`encrypt`，**无顶层 `biz_no`**（★ 官方不发顶层 `biz_no`）。
+  ```bash
+  curl -s -X POST http://127.0.0.1:5001/approval/external/callback -H 'Content-Type: application/json' -d '{ "action_type":"APPROVE","user_id":"<操作人user_id>","approval_code":"<定义code>","token":"<action_callback_token>","instance_id":"{app_id}:<biz_no>","task_id":"<我方task_id>","message_id":"<卡片消息id>","action_context":"{\"biz_no\":\"<biz_no>\",\"task_id\":\"<task_id>\"}","reason":"同意" }'
+  ```
+  ★ **判据**：**HTTP 200 ＋ `accepted:true`**（**不再出现** `回调缺少 biz_no/task_id` ⇒ 证明字段映射层 ＋ `biz_no` 三级读法生效）；随后 `t_flow_task` 推进、`external_instances` 重推。★ 负向：缺 `user_id` / `approval_code` ⇒ **400 ＋ 留痕可见**（`04a §4.2` / `§10 S16`）。
+  ★ 留痕检索：`grep <biz_no>` / `trace_id` 查 http 日志（body 已留痕、token 打码；`docs/16 §2-E`）。
+- ★★ **警示：不要用手工 `curl` 直推 `external_instances` 代替联调** —— 手工推实例**绕过了本地落库**，飞书侧任务进「待办」但**我方 `t_instance` 无行** ⇒ 回调到达时报 **`无对应实例`（40000）**、**永远走不通闭环**（本次实测正是此现象）。★ 正规链路＝**我方 `POST /api/approval/submit` 发起**（本地先行、推送在后）；手工 curl **仅限排障**，且须知**该实例本地不可回调**（`docs/16 §2-D` 纪律二）。
 - 反向验证：**故意错 token** → 应**拒绝并告警**（`04a §4.1` / `§10 S5`）。
-- 覆盖项与判定见 `09-Integration-Verification-Checklist.md`。
+- 覆盖项与判定见 `09-Integration-Verification-Checklist.md`（★ 回调实测四问 **`V-1`~`V-4`** 在 §2 阶段一）。
 
 ## 7. 回滚
 
@@ -138,6 +145,7 @@ ss -ltnp | grep ':8080'     # 期望：127.0.0.1:8080（非 0.0.0.0）
 
 | 版本 | 日期 | 变更 | 作者 |
 |---|---|---|---|
+| V1.4 | 2026-09-27 | **回调修复收口（纯文档）**：**§6 联调** 新增两块 —— ① ★★ **联调自检**：用**官方字段名**报文（`action_type`/`user_id`/`approval_code`/`token`/`action_context`/`instance_id`/`task_id`/`message_id`…，**无顶层 `biz_no`**）打回调，判据＝**HTTP 200 ＋ `accepted:true`（不再 400）**，附可照做的 `curl` 与留痕检索命令；② ★★ **警示「不要用手工 `curl` 直推 `external_instances` 代替联调」**（绕过本地落库 ⇒ `t_instance` 无行 ⇒ 回调报 `无对应实例`、闭环走不通；正规链路＝`POST /api/approval/submit`）。★ 覆盖项指向 `09` §2（含新增 **`V-1`~`V-4`**）。 | 产品经理（Alice） |
 | V1.0 | 2026-09-27 | 首版骨架：前置条件 / 域名 / 证书 / 反代 / 白名单 / 应用自检 / 联调 / 回滚（`13` A-7、`11 §7.2`）。具体域名与飞书出口网段待定，标 `TODO`（`QV2-A19`）。 | 架构师（Bob） |
 | V1.1 | 2026-09-27 | 执行 `13` **N7**（补全）：新增 **§8 反向代理样例（Nginx）** + **§9 部署后一键验证命令**（`curl`/`openssl`/`ss`），把 `TODO` 收敛到**域名 / 飞书出口网段**两项（`QV2-A19`）。 | 架构师（Bob） |
 | V1.3 | 2026-09-27 | ★ **新增 §9.1「联调环境实测记录」**：本环境实际用 **Caddy（`:5000`）→ `127.0.0.1:5001` ＋ 路由器端口转发（公网 `:5500`）**（非 Nginx＋443）。实测 `POST http://office.hunanyichu.com:5500/approval/external/callback` → **HTTP 400 ＋ 业务错误 JSON**（**非 404/502/连接失败**）⇒ **公网 → 端口转发 → Caddy → 应用** 全链**已打通**；内网直连一致、日志逐条带 `trace_id` ⇒ ★ **`QV2-A19` 的"入站面"在本环境已验证可达，飞书两键回调必然可送达**。 | 交付总监 |

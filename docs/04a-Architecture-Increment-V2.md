@@ -9,7 +9,7 @@
 | 项 | 内容 |
 |---|---|
 | 文档名称 | 采购与费用审批平台（自建侧）· 增量架构设计（架构转向 ③） |
-| 版本 | V2.6（增量首版 + `01a` **V1.4** 同步；含 **`update_mode` 选型判据** · **从零建 HTTPS 面** · **会签本期不可配** · **三路适配性审计回填** · **单列前置任务 `T02b` 写入者交棒** · **收口：§6.4 锁号兜底索引措辞修订 + `instance_id` 口径对齐 §6.3** · **V2.2 新增 §17 部署与入网 + 静默防护 S15** · **V2.3 顺序会签 `task_order` + 不变量 + §3.5 定义装载** · **V2.4 加签 `timing` 前置/后置（§2.3 / §5.2 / 类图 `+AddSign(timing)`），逐字正本＝`05-API §3.13`** · **V2.6 新增 §17.0 前提澄清：平台未要求 HTTPS / 443（HTTPS 属我方选择；`QV2-A19` 实测）**） |
+| 版本 | **V2.7**（增量首版 + `01a` **V1.4** 同步；含 **`update_mode` 选型判据** · **从零建 HTTPS 面** · **会签本期不可配** · **三路适配性审计回填** · **单列前置任务 `T02b` 写入者交棒** · **收口：§6.4 锁号兜底索引措辞修订 + `instance_id` 口径对齐 §6.3** · **V2.2 新增 §17 部署与入网 + 静默防护 S15** · **V2.3 顺序会签 `task_order` + 不变量 + §3.5 定义装载** · **V2.4 加签 `timing` 前置/后置（§2.3 / §5.2 / 类图 `+AddSign(timing)`），逐字正本＝`05-API §3.13`** · **V2.6 新增 §17.0 前提澄清：平台未要求 HTTPS / 443** · **★ V2.7 回调链路修复收口：§3.2 `action_context` 写 `biz_no` ＋ `action_configs` 两键 / §4.2 字段映射层（官方名↔内部名 ＋ `biz_no` 三级读法 ＋ `user_id→open_id` 转换 ＋ 双 code 池）/ §5.5 通知必推（`message/send` 四 URL ＋ `message/update`）/ §6.3 `biz_no` 反解 / §10 S16–S17 ＋ §12.2 N-12–N-13 / 幂等键统一 4 列**） |
 | 日期 | 2026-09-27 |
 | 上游文档 | `01a-PRD-Increment-V2.md`（增量需求正本 **V1.4**，已采纳本文 §15 的 C1–C11，并入 §4.7 通知 / §5.5 配额 / QV2-A24~A25，并纠正会签误判；V1.4 并入第三轮口径 D1/D2/D6）、`01-PRD.md`（V1.6）、`04-Architecture.md`（V1.0 基线）、`08-Org-Sync-Design.md`（V1.2）、`README.md`（关键定案 #1~#46） |
 | 被取代 | `04-Architecture.md` §0「本系统是审批引擎的旁路」、ADR-06（编号不在自建侧生成）、ADR-07（只 4 接口）、§4 事件流水线（仅限**流转归属**相关位点） |
@@ -321,7 +321,7 @@ stateDiagram-v2
 | 部分 | 构造规则 | 约束 |
 |---|---|---|
 | `form` | 仅关键 3 项：**单号 / 金额 / 事由**，`[{name,value}]` 简化键值对 | 仅前 3 条、**≤2048 字符**；真正的表单在我方页面 |
-| `task_list[]` | 由 `t_flow_task` 导出，**仅含 `release_state=RELEASED` 的 task**（顺序会签分段释放，§2.3）；每项含 `task_id`/assignee/`status`/`title`/`node_id`/`node_name`/三时间戳/`action_context`/`action_configs` | **≤300**；超限**直接失败告警、绝不截断**（见 §10）；★ **若用 `REPLACE`（全量替换），快照必须含「全部已 `RELEASED` 的 task」** —— 否则会**删掉本次未推送的已释放 task**（与 §2.3「未释放 task 整体省略」叠加，见 §10 S3） |
+| `task_list[]` | 由 `t_flow_task` 导出，**仅含 `release_state=RELEASED` 的 task**（顺序会签分段释放，§2.3）；每项含 `task_id`/assignee/`status`/`title`/`node_id`/`node_name`/三时间戳/**`action_context`**/**`action_configs`** | **≤300**；超限**直接失败告警、绝不截断**（见 §10）；★ **若用 `REPLACE`（全量替换），快照必须含「全部已 `RELEASED` 的 task」** —— 否则会**删掉本次未推送的已释放 task**（与 §2.3「未释放 task 整体省略」叠加，见 §10 S3）。★★ **`action_context` 必须写压缩 JSON 字符串 `{"biz_no":"<单号>","task_id":"<task_id>"}`** —— ★ **官方回调【不发】顶层 `biz_no`，本字段是 `biz_no` 回传的【唯一载体】**；推侧（写）与解侧（读）**键名必须同批约定**，缺一即链路断裂（定案 #53；第 2 批 `d94580f`）。★★ **`action_configs` 必须配「同意 / 拒绝」两键**（`[{"action_type":"APPROVE"},{"action_type":"REJECT"}]`）—— 与定义级 `enable_quick_operate=true` **两者都要到位**，否则飞书侧两键不出现（口径 2 落空；`reference/README.md` ★★ 条） |
 | `cc_list[]` | 由规则带出的抄送人（镜像在职人员） | **≤200** |
 | `display_method` | 推荐 `SIDEBAR`（不打断飞书上下文）；可选 `BROWSER` | 见 `01a` §5.1 |
 
@@ -389,16 +389,42 @@ sequenceDiagram
 | 安全 | 校验 `token`（定义时下发）；`encrypt` 加密体按约定解密 | 非法 token → **拒绝并告警** |
 | 承载 | ★ **从零建**：新增**反向代理**（**若采用 HTTPS 则对外终止 TLS** → 转发至本机 Echo 回环端口 `127.0.0.1:8080`）；**应用侧不新增监听端口**，反代**只暴露回调一条路径**（★ **部署 / 证书 / 白名单 / 配置键细则见 §17「部署与入网」**） | 与"无入站端口"的处置：旧稿「**复用既有对外 HTTPS 面**」**不成立**（`.env.example` 仅绑回环 `127.0.0.1:8080`、仓库内**无任何反代/TLS 配置**、且尚未部署）→ 改为**从零规划**；加固＝仅暴露回调路径、`token` 校验、路径限速、body 上限 |
 
-### 4.2 回调参数与处理
+### 4.2 回调参数与处理（★ 含**字段映射层**，2026-09-27 按官方报文校准）
 
-| 参数 | 用途 |
+> ★★ **本层是「官方字段名 ↔ 我方内部名」的显式映射**（第 2 批 `d94580f` 落地）。★ **官方【不发】顶层 `biz_no` / `open_id` / `instance_code`** ⇒ 一律**按官方字段名解析**；旧自造字段降为**兼容读**（窗口＝一个发布版本）。
+
+| 官方字段（主读） | 我方内部名 | 说明 |
+|---|---|---|
+| `action_type` | （直接） | 仅 `APPROVE` / `REJECT`（四操作**不在回调内**）；兼容期可回退读旧 `action_name` |
+| `user_id` | `OperatorOpenID`（**经转换**） | 操作人**租户内 `user_id`**；★ **与我方统存的 `open_id` 不同域** → 须经 `contact/v3` 换 `open_id` 后再进 `admitCallback`（§4.2.1）；★ **绝不把 `user_id` 直接塞进 `OperatorOpenID`**（域不同 ⇒ 恒不命中 ⇒ 假 403）。旧报文带 `open_id` 时直接作 operator（同域，免转换） |
+| `approval_code` | （一致性校验） | 三元定义 Code；与实例定义**双池任一命中即放行**（双 code 池，§4.2.2） |
+| `token` | （校验） | 与 `t_approval_def.callback_token` 常数时间比较 |
+| `action_context` | `biz_no` / `task_id` | ★★ **解 JSON**：主读 `biz_no`（`{"biz_no":…,"task_id":…}`，由推侧 §3.2 写入）；★ **非 `{` 开头（旧纯 `task_id` 串）⇒ 忽略、走兜底** |
+| `instance_id` | `biz_no`（**兜底**） | `biz_no` **三级读法**之二：从 `{app_id}:{biz_no}` 反解剥 `app_id:` 前缀（§3.3 / §6.3） |
+| `task_id` | `task_id` | 定位任务（官方：列表操作必填）；兼容期可读 `action_context` 内 JSON |
+| `message_id` | `MessageID` | 卡片操作必填；**暂存**（迁移 `0013` 加 `t_flow_op_log.message_id`），供失败反馈 `message/update` 用（§5.5） |
+| `id` / `reason` / `attachments` | （直接） | 意见 / 附件（可选，随 `action_configs`） |
+| `encrypt` | （解密） | 加密体按约定解密 |
+
+> ★ **`biz_no` 三级读法（优先级）**：① `action_context` JSON 的 `biz_no`（**主读**）→ ② `instance_id` 反解剥 `{app_id}:` → ③ 顶层 `biz_no`（**仅兼容期最后兜底、且必打 `warn` 日志**）。★ 任一级命中即用；三级全空 ⇒ **40000 可见拒绝**（不静默）。
+
+#### 4.2.1 `user_id` ↔ `open_id` 转换（A-3 落地）
+
+| 项 | 结论 |
 |---|---|
-| `action_type` | 仅 `APPROVE` / `REJECT`（四操作**不在回调内**） |
-| `action_context` | 我方提交时写入的原样回传 → 用于定位 `biz_no` / `task_id` / 节点 |
-| `user_id` | 操作人（映射为 `open_id`，做 `assignee=me` 校验） |
-| `task_id` | 定位任务 |
-| `reason` / `attachments` | 意见 / 附件（可选，随 `action_configs`） |
-| `token` / `encrypt` | 校验 / 解密 |
+| 我方统存 | **全库统存 `open_id`**（`t_user_role.open_id` / `t_flow_task.assignee_open_id` / `Session.OpenID`）；**不改库内 ID 域**（改域＝全系统重写，违反定案 #47） |
+| 转换策略 | 回调 `user_id` → `internal/platform/feishu/contact.go` 的 **`GetOpenIDByUserID`**（`GET /open-apis/contact/v3/users/{user_id}?user_id_type=user_id`，**10min TTL 进程内缓存**）→ 得 `open_id` 后进 `admitCallback` |
+| 转换失败 | ★ **400 / 40000 可见拒绝 ＋ 告警日志**；**不落盘、不占幂等键**（定案 #62）；★ 端点形态与 scope **待联调实测 `V-3`** |
+| 排障留痕 | `flow.CallbackRequest` 保留转换前原值 `OperatorUserID`（排障用） |
+
+#### 4.2.2 `approval_code` 双 code 池（G-8）
+
+| 项 | 结论 |
+|---|---|
+| 背景 | `POST external_approvals` 用「自定义 code」匹配（命中即更新），返回**真实 code**；`GET` 与推实例**必须用真实 code**；而读回字段 `approval_code` 返回自定义 code ⇒ **同一字段名两样东西** |
+| 落库归位 | 迁移 `0013` 给 `t_approval_def` 加 **`feishu_code`**（真实 code 候选列）；`Registry.Register` **双写**（`approval_code`＝我方自定义 code 作 PK、`feishu_code`＝平台响应回填值） |
+| 推送 | `Pusher.Push` **优先 `feishu_code`、空则回退 `approval_code`** |
+| 回调校验 | ★ **宽松档**：报文 `approval_code` 与 `inst.ApprovalCode` / `feishu_code` **任一命中即放行**；**不命中仅告警、不拒**（双池归属**待实测 `V-4`** 前不做硬拦截——**先宽后严**，避免用未实测假设做硬拦截）；★ V-4 实测后升格强校验 |
 
 ### 4.3 回调幂等（★ 设计补强）
 
@@ -406,7 +432,7 @@ sequenceDiagram
 
 | 层 | 幂等手段 |
 |---|---|
-| 记录层 | `t_flow_op_log` 对 (`biz_no`,`task_id`,`op_type`) 建**唯一约束**（仅 APPROVE/REJECT）；重复 → `INSERT OR IGNORE`、直接回 200 |
+| 记录层 | `t_flow_op_log` 对 (`biz_no`,`task_id`,`op_type`,**`round`**) 建**唯一约束**（仅 APPROVE/REJECT）；重复 → `INSERT OR IGNORE`、直接回 200。★★ **4 列含 `round`**（迁移 `0011_flow_op_log_round.sql`）：**回退重激活复用同一 `task_id`**，仅靠 3 列会把"回退后经回调再次审批"**判成重复、静默不推进**（定案 #68 路径不对称）；4 列后才区分两次审批 |
 | 状态机层 | "对已 APPROVED 的任务再 APPROVE" = **no-op**（第二道防线） |
 | 响应 | 无论幂等命中与否，**≤10s 内返回 HTTP 200**（否则飞书重试） |
 
@@ -461,7 +487,7 @@ sequenceDiagram
 | 项 | 规则 |
 |---|---|
 | 触发场景 | ① 代理转交后通知**被转交人**（及可选原节点相关人）；② **回退后通知已被审批通过者**（其结论被作废需知情）；③ 撤回后通知在途审批人 |
-| 渠道 | 飞书应用消息 / 待办 Bot（可选，见 `01a` §5.4）；**通知失败不得阻塞状态机**（异步、可重试、进死信） |
+| 渠道 | 飞书**审批 Bot 消息**（**主渠道，非可选** —— 见 `01a` §5.4/§8 **FR-M0-17**）＋ 我方**站内通知兜底**；★★ **发送＝`POST /open-apis/approval/v1/message/send`**（`template_id=**1008**`「收到审批待办」）—— ★ **推实例只让任务进「待办」，不会自动发消息**，通知**必须我方主动调用**；★ `actions[]` **四个 URL 缺一不可**（`url`＋`pc_url`＋`android_url`＋`ios_url`，缺 ⇒ `60001 actionUrls incomplete error`）、该接口 **`texts` 接受 map**（与 `external_approvals` 的数组形态**相反**）、★ **`code!=0` 一律判失败（HTTP 200 不代表成功）**；★★ **失败反馈＝`POST /open-apis/approval/v1/message/update`**（回调失败时更新卡片；`message_id` 空则不发、**请求体字段待实测 `V-2`**）。**通知失败不得阻塞状态机**（异步、可重试、进死信） |
 | 留痕 | 每发一条写 `t_notify_log`（对象 / 渠道 / 结果 / 时间 / 重试次数 / 错误） |
 | **漏发可检出** | ★ **「应有集合」的定义（V1.9 补齐）**：由 **`flow` 在每次操作后**按「**该单内已 `APPROVED` 的审批人**（+ 被转交人 / 在途审批人，按上方触发场景）」算出**应有通知对象**，**先落 `t_notify_log` 的"应发记录"（`status=EXPECTED`）**，再由**实际发送结果回填 `SENT`/`FAILED`**；巡检比对「`EXPECTED` vs 非 `SENT`」→ 缺者**补发 + 告警**（呼应 §10 静默防护主题） |
 | 与状态机关系 | 通知是**旁路副作用**：状态迁移**先提交事务**，再异步发通知；**绝不**因通知失败回滚审批 |
@@ -506,6 +532,7 @@ sequenceDiagram
 |---|---|
 | 取值 | **建议 `{app_id}:{biz_no}`**（见 §3.3）；若坚持 `01a` 的裸 `biz_no`，须接受"多环境共用应用会撞 ID"风险 |
 | 理由 | 一个字段同时承担"业务号 + 三方实例号"，减少对账错位；加前缀消除跨环境撞号 |
+| ★ **`biz_no` 反解用途** | 回调报文**官方不发顶层 `biz_no`** ⇒ `instance_id` 的 `{app_id}:{biz_no}` 结构是 `biz_no` 的**兜底来源**：剥掉 `app_id:` 前缀即得 `biz_no`。★ 与 `action_context`（**主读**，§3.2 写入 `{"biz_no":…,"task_id":…}`）构成 `biz_no` **三级读法**（§4.2）：`action_context` → **本反解** → 顶层兜底+warn |
 
 ### 6.4 锁号的三个前提（**不得破坏**）
 
@@ -647,6 +674,8 @@ sequenceDiagram
 | S13 | **锁号被静默破坏** | 归档/清理脚本动了 `t_doc_seq` 或删除 `t_instance` 行（破坏 §6.4 三前提） | §6.4 三前提 + 归档脚本**自检门禁**（§13 改动点） | 负向断言"**终态单号复用被拒**"（§12.2 N-11）+ 归档后复跑同断言 |
 | **S14** ★ | **陈旧快照覆盖飞书侧新状态** | 本地快照**落后**于飞书侧时，`REPLACE` 全量把飞书侧 `APPROVED` 覆盖回 `PENDING`（**正常运行时竞态**，非停机恢复） | ★ 首选 **`update_mode=UPDATE`**（§3.1，机制消除）；回调**先落库再推**；对账**判方向**（§9.2） | 对账方向判断 + 告警；**待实测 QV2-A28**（飞书是否允许 `APPROVED`→`PENDING` 回退） |
 | **S15** ★ | **回调面被"证书过期 / 反代失效"静默切断** | 反代 TLS 证书过期、或反代规则被误改 → 飞书回调**整体不可达**（**静默族**：不报错，只是"点了没反应 / 飞书重试后丢弃"） | ACME 自动续期 + **续期失败告警**（**§17.2**）；反代**仅放行回调一条路径**（**§17.1**）；限流**不得按 IP 单桶**（**§17.6 E-1**） | ★ **证书剩余有效期打点**（**§17.2** → `04 §8.2` 指标 + `04 §8.3` 告警）+ **回调路径连通性自检**（**§17.5**） |
+| **S16** ★ | **回调字段名不匹配 ⇒ 400 且客户端零反馈** | 我方解析的字段名与官方报文不一致（如按 `biz_no`/`open_id`/`instance_code` 主读，而官方发 `action_type`/`user_id`/`approval_code`/`instance_id`）⇒ **回调恒 400**；飞书侧表现为"**点了同意没反应**"（**用户观感＝无反馈**） | ★ **按官方字段名解析 ＋ 兼容读**（§4.2 映射层，`d94580f`）；★ **留痕**：`callbackBodyLog`（**只挂回调一条路由**）记 body（token 打码）→ **一旦到达必可观测**；★ **落盘即 200**（已受理一律 200） | 回调 **400 计数 + 告警**；`grep <biz_no>` / `trace_id` 检索留痕；联调自检＝**用官方报文样例打回调确认不再 400**（`docs/14 §6`） |
+| **S17** ★ | **「仅推实例」被当成「已通知」** | 只调 `external_instances`（任务进「待办」）而**不调** `message/send` ⇒ 审批人**在飞书看不到任何提醒**（本次实测**已踩中**）；而两处接口**各自都返回成功** ⇒ **"成功"≠"通知到了"** | ★ **通知＝独立动作**（§5.5 / `05-API §6.1`）：`flow.Sender` 端口接通 `NotifySender`（内调 `message/send`）；★ **两阶段 EXPECTED→SENT/FAILED**（§5.5 漏发可检出） | ★ **回读 / 对账自证**（**不得以 `code:0` 判通过**）；巡检比对 `t_notify_log` 应有集合 → 缺者补发 + 告警（§12.2 **N-10**） |
 
 > ★ **入站面的部署 / 证书 / 白名单 / 配置键**全量细则见 **§17「部署与入网（公网入站）」**；其中配置键 `JX_CALLBACK_DOMAIN` / `JX_ACTION_CALLBACK_TOKEN` 落 **`04-Architecture.md §6.4 环境变量清单`**（配置项正本在 `04`，`04a §6` 为单据编号节）。
 
@@ -717,6 +746,8 @@ sequenceDiagram
 | N-9 | 部门镜像滞后 → 提交快照与现状不一致可追溯（快照冻结） |
 | N-10 | 通知漏发（应有通知未发出）→ 巡检比对 `t_notify_log` 应有集合 → 补发 + 告警 |
 | N-11 | **终态单号复用被拒**（FR-M9-15）：撤回后重发得新号、旧号不可复用；★ **归档脚本执行一次后再试复用旧号，仍须被拒**（覆盖 §6.4 前提） |
+| N-12 | **回调字段名不匹配 ⇒ 400（客户端零反馈）**：用**官方报文格式**打回调（`action_type`/`user_id`/`approval_code`/`instance_id`，**无顶层 `biz_no`**）⇒ 应 **200 并推进**（**不得**再出现「缺少 biz_no/task_id」400）；★ **负向**：故意缺 `user_id` / `approval_code` ⇒ **400 ＋ 留痕可见**（不静默） |
+| N-13 | **「仅推实例」不得当「已通知」**：只推 `external_instances` 时，`t_notify_log` **无 `SENT` 记录** ⇒ 巡检须能报出「应有通知未发出」（**证明两动作确实独立**）；★ 反证：接通 `message/send` 后 `SENT` 回填、且 `code!=0` 时判 `FAILED`（**HTTP 200 不算成功**） |
 
 ### 12.3 映射到 `03-TestCase.md`（`01a` §10.3 已列，本文补设计侧验收点）
 
@@ -937,3 +968,4 @@ graph TD
 | V2.4 | 2026-09-27 | 执行 `#48` 遗留补正（**`#51` 契约落地**）：★ **加签补 `timing` 前置/后置契约**（用户第四轮口径 ②「前置后置都支持、由操作人当场选」；实现 `f5be198`，常量 `flow.AddSignAfter` / `flow.AddSignBefore`）—— ① **§2.3「加签后」行**：`timing` ∈ { `AFTER`（默认）, `BEFORE` }；`AFTER`＝`task_order` 取本节点 `max(order) + 1`；`BEFORE`＝取**当前办理人** `order`、同节点 `order ≥` 者整体 +1；**已 `APPROVED` 者不动、不重审**；★ **非法值「可见拒绝」 `400`/`40000`**（`ErrInvalidSubmit`）、**绝不静默降级**；② **§5.2「加签」行** 同步补 `timing`；③ **类图 `+AddSign()` → `+AddSign(timing)`**。★ **逐字正本＝ `05-API §3.13`（V2.4）**，本节只做**指向**，避免双写漂移。 | 架构师（Bob） |
 | V2.5 | 2026-09-27 | 执行 **`#72` 符号化**（`04a` 12 处引用，定案 #74）：正文引用改**以符号 / 模式为准**（行号仅快照；下录均为**当时行号**）：① `extract.go:81-84` → 「`internal/worker/extract.go` 的原生控件抽取」（标 **审计时点 `875b9e4`**；F3 弃用）；② `dataset.go:89-101/224-236` → 「`internal/permission/dataset.go` 的 **DEPT 名称比对**」；③ `longconn.go:22-28` → 「`longconn.go` 审批键**常量段**」（现值指向 `retiredApprovalEventTypes`，`R07` 已处置）；④ §13 `T02b` 的 `reconcile.go:99` / `bootstrap.go:119-120` → 「`reconcile.go` 的 **`ingest` 调用** / `bootstrap` 的 **`Reconciler` 装配点**」；⑤ §17.6 的 `router.go:184` / `:219` → 「`router.go` 的 **`internalAuth` / 限流中间件**」；⑥ V2.0 变更行内行号标「（当时行号）」。 | 架构师（Bob） |
 | V2.6 | 2026-09-27 | 依 team-lead **分级核查**裁定，修正「回调**必须**公网可达 HTTPS」这条**缺一级来源**的断言（**不重排章节号**）：① ★ **§17 新增 §17.0「前提澄清：平台并未要求 HTTPS / 443（2026-09-27 分级核查）」** —— 列**分级来源**（**一级**：飞书开放平台《三方快捷审批回调》**2025-04-21** ·《创建三方审批定义》，**两页均无协议 / 端口要求**；**三级**：CSDN 社区问答「强制 443」**不采用**）＋ **关键区分**（「必须 HTTPS」**属事件订阅（Webhook）**；我方事件走**长连接 `larkws`、不需公网 URL** ⇒ 不适用）＋ 明确 **HTTPS ≠ 443**（TLS 不绑端口；DNS-01 / 手工放证书可绕开 80/443）＋ `QV2-A19` / `QV2-02` 指针；② **§17.1「反代角色」行** 加注「**（若采用 HTTPS）**…★ **亦可先用 HTTP（见 §17.0）**」；③ **§17.2 标题** 加「**· ★ 仅当采用 HTTPS 时**」、**端口行**加注「★ 该端口为**我方选择**，非平台要求（见 §17.0）」；④ ★ **同批第二批收口（同断言多处消歧）**：**§0 冲击表「入站」行** + **§0 定案表** 去「**必须** HTTPS」绝对化 → 「**公网可达入站**（★ HTTPS 属我方选择、非平台要求，见 §17.0）」/「**从零规划对外入站面**（若采用 HTTPS 则加 TLS）」；**§4.1「可达性」行**同步改「**必须公网可达入站**」、**§4.1「承载」行**改「**若采用 HTTPS 则**对外终止 TLS」；**§17 背景句**「从零建 HTTPS 面」→「从零建**公网入站面**」。★ 与 `14-Deploy-Runbook` V1.2、`09` V1.3、`reference/README` 同批。 | 架构师（Bob） |
+| V2.7 | 2026-09-27 | **回调链路修复的文档收口（纯文档，事实＝已落地代码，4 批：`5fe1671` / `d94580f` / `36df709` / `c6e26d7`）**：① ★ **§3.2 快照构造** —— `task_list[]` 的 **`action_context` 必须写压缩 JSON `{"biz_no":…,"task_id":…}`**（官方回调**不发**顶层 `biz_no`，本字段是 `biz_no` 回传**唯一载体**）；补 **`action_configs` 必须配「同意/拒绝」两键**（与定义级 `enable_quick_operate=true` 两者都要到位）。② ★★ **§4.2 重写为「字段映射层」** —— 官方字段名 ↔ 内部名逐项对照 ＋ **`biz_no` 三级读法**（`action_context` → `instance_id` 反解 → 顶层兜底+warn）＋ 旧格式兼容读；**新增 §4.2.1 `user_id ↔ open_id` 转换**（`contact.go` 的 `GetOpenIDByUserID`，10min TTL，**绝不把 `user_id` 塞进 `OperatorOpenID`**，失败 400 可见拒绝）＋ **§4.2.2 `approval_code` 双 code 池**（`0013` 加 `feishu_code`、推实例优先 `feishu_code`、回调校验**宽松档**）。③ ★ **§4.3 幂等键由 3 元组改 4 列**（含 `round`，迁移 `0011`；回退重激活复用同一 `task_id`，缺 `round` 会静默不推进）。④ ★ **§5.5 通知流水** —— 通知**必推**（FR-M0-17）＋ 接口归属（`message/send` `template_id=1008` · **四 URL 缺一不可** · `texts` 收 map · **`code!=0` 判失败**）＋ 失败反馈 `message/update`。⑤ **§6.3** 补 `instance_id` → `biz_no` 反解用途。⑥ **§10 新增 S16/S17** ＋ **§12.2 新增 N-12/N-13**。★ 仍待联调实测的**平台行为**：`V-1`~`V-4`（见 `docs/09` §2 / `docs/16 §7`），**不得写成结论**。 | 产品经理（Alice） |

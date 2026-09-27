@@ -7,7 +7,7 @@
 | 项 | 内容 |
 |---|---|
 | 文档名称 | 采购与费用审批平台（自建侧）· 接口设计 |
-| 版本 | **V2.10**（+ 2026-09-27：**§3.9 补 `POST /api/admin/approval/defs/sync` 契约条目**（三方定义装载主通道；静默审计 C5 归零）；含 V2.9 §3.14 回调报文按官方实测校准 ＋「实测缺口清单（6 条，属 P0）」＋ V2.8 §6 计数 4→5 与 §6.1 通知契约 ＋ V2.7 §6.1 出方向契约 ＋ V2.6 §3.8 入参校正） |
+| 版本 | **V2.11**（+ 2026-09-27：**回调链路修复的文档收口** —— §3.14「实测缺口清单」6 条**全部翻面为已闭合**（附提交号、原文留痕）＋ §3.13 补 `action_context` 硬要求 ＋ §6/§6.1 补 `message/update`（计数 **5 → 6**）＋ **幂等键统一为 4 列**（含 `round`，迁移 `0011`）；含 V2.10 §3.9 `defs/sync` ＋ V2.9 §3.14 官方字段校准 ＋ V2.8 §6 计数 4→5 ＋ V2.7 §6.1 出方向契约 ＋ V2.6 §3.8 入参校正） |
 | 日期 | 2026-09-26 |
 | 上游文档 | `01-PRD.md`、`02-UseCase.md`、`03-TestCase.md`、`04-Architecture.md` |
 | 语言纪律 | 简体中文 |
@@ -575,8 +575,8 @@ sequenceDiagram
 |---|---|
 | 鉴权 | **飞书免登会话**（`requireSession`）；逐端点叠加本人 / 角色 / 行级校验 |
 | 路径形如 | `POST /api/approval/{biz_no}/<action>` —— `{biz_no}` ＝**业务单号**（非 `instance_id`） |
-| 幂等 | 写操作支持 `Idempotency-Key`（§8）；★ **四操作 / 两键另以 `t_flow_op_log` 唯一约束兜底**（`04a §4.3`） |
-| ★ 推送 | 每次操作后**必须主动重推实例**（★ **默认 `update_mode=UPDATE`**；**仅"需删"与"首次"用 `REPLACE`**，`04a §3.1` 判据）；否则飞书待办**静默不更新** |
+| 幂等 | 写操作支持 `Idempotency-Key`（§8）；★ **四操作 / 两键另以 `t_flow_op_log` 唯一约束兜底**（`04a §4.3`）；★★ **该唯一键为 4 列 `(biz_no, task_id, op_type, round)`**（迁移 `0011_flow_op_log_round.sql` 已扩 `round`；回合用于「回退重激活」后区分同一 `task_id` 的两次审批，`04a §4.3`） |
+| ★ 推送 | 每次操作后**必须主动重推实例**（★ **默认 `update_mode=UPDATE`**；**仅"需删"与"首次"用 `REPLACE`**，`04a §3.1` 判据）；否则飞书待办**静默不更新**。★★ **且每个 `RELEASED` 任务的 `task_list[].action_context` 必须设为含 `biz_no` 的 JSON 字符串**（如 `{"biz_no":"PR-…","task_id":"…"}`）—— ★ **官方回调【不发】顶层 `biz_no`，本字段是 `biz_no` 回传的唯一载体**；不设 ⇒ 回调取不到 `biz_no`、恒 400（第 2 批 `d94580f`；详 §3.14） |
 | 响应 | 统一包裹（§2）；**状态机推进在异步侧** → 同步路径**只写 `op_log` + 入队**、返回成功（`code=0`） |
 
 #### `POST /api/approval/submit`
@@ -599,7 +599,7 @@ sequenceDiagram
 | 鉴权 | 免登会话；**须 `assignee=me` 且任务 `PENDING`**（`04a §5.1`） |
 | 请求体 | `task_id` · `opinion`（可选）· `attachments`（可选） |
 | 响应 | `{ biz_no, node_id, status }` |
-| 幂等 | `t_flow_op_log`（`biz_no`,`task_id`,`op_type`）唯一；重复 → `INSERT OR IGNORE` + 200 no-op（`04a §4.3`） |
+| 幂等 | `t_flow_op_log`（`biz_no`,`task_id`,`op_type`,**`round`**）唯一；重复 → `INSERT OR IGNORE` + 200 no-op（`04a §4.3`） |
 | 错误码 | 40100、40301、40400、**40901**（非本人任务 / 非 `PENDING`） |
 | 关联 FR | FR-M0-15、★ **FR-M9-18**（我方页面 `approve` / `reject`） |
 
@@ -672,7 +672,7 @@ sequenceDiagram
 | ★ **鉴权＝绕开会话 / OIDC 中间件** | **不在 `/api` 组**、**绝不挂 `requireSession`** —— `docs/11 R14`：飞书回调请求**无 cookie**，挂上会话中间件＝ **401 全失败且静默**；本路由在会话路由组**之外**单独注册 |
 | 鉴权（业务层） | 校验 `token`（定义下发；非法 → **拒绝 + 告警**，`S5`）；`encrypt` 体按约定解密 |
 | 请求体 | ★★ **官方报文（2026-09-27 实测校准，来源《三方快捷审批回调》）**：`action_type`(必) · **`user_id`**(必，**操作人的 user_id**) · **`approval_code`**(必) · `token`(必) · `action_context` · `instance_id` · `task_id` · `message_id` · `id` · `reason` · `attachments` · `encrypt`。★★ **官方【不发】顶层 `biz_no`** ⇒ 本系统的 `biz_no` **只能靠 `action_context` 携带 JSON 回传**（★ **推实例时必须把 `task_list[].action_context` 设为含 `biz_no` 的 JSON 字符串**，如 `{"biz_no":"PR-…","task_id":"…"}`；本字段为**我方自定义**、飞书原样回传）。★ **不要**在顶层找 `biz_no` / `open_id` / `instance_code` —— 官方字段名是 `approval_code` / `user_id` / `instance_id` |
-| ★ **幂等键** | `t_flow_op_log`（`biz_no`,`task_id`,`op_type`）**唯一约束**；重复 → `INSERT OR IGNORE`、**直接回 200**（`04a §4.3`） |
+| ★ **幂等键** | `t_flow_op_log`（`biz_no`,`task_id`,`op_type`,**`round`**）**唯一约束**（4 列，迁移 `0011_flow_op_log_round.sql`）；重复 → `INSERT OR IGNORE`、**直接回 200**（`04a §4.3`） |
 | ★ **响应＝落盘即 200** | 同步路径**只做**「校验 + 写 `op_log` + 入队」→ **毫秒级返回 HTTP 200**（官方口径 ≤10s，本设计**远低于**）；★ **不是**"按 10s 设计业务"；**业务（状态机推进 / 重推）全在异步侧**（`04a §4.4`） |
 | 错误码 | 40000（体非法）、40900（幂等冲突路径）、50000；★ **非法 token → 拒绝（40300）+ 告警**（**不返回 401**，避免暴露会话语义给飞书） |
 | 关联 FR | FR-M0-15、`04a §4` |
@@ -706,20 +706,21 @@ sequenceDiagram
 
 > ★ **门禁（`C5`）**：本节与 §3.13 的端点**必须与 `router.go` 已注册路由双向一致** —— 否则 `scripts/audit_silent.py` 的 **C5**（路由 ↔ 05-API 双向差集）报「已注册但未提及」（`docs/11 §4.2` 注）。
 
-#### ★★ 实测缺口清单（2026-09-27，**待修复，属 P0**）
+#### ★★ 实测缺口清单（2026-09-27）—— ★ **6 条全部已闭合（留痕，不删原文）**
 
-> 场景：审批人在飞书 Bot 卡片点「同意」⇒ 飞书回调我方 ⇒ **实测返回 400，客户端零反馈**。实测证据与根因如下。
+> 场景（**闭合前**）：审批人在飞书 Bot 卡片点「同意」⇒ 飞书回调我方 ⇒ **实测返回 400，客户端零反馈**。实测证据与根因如下。★★ **下表 6 条现已全部修复落地**（提交号见「状态」列）；**原文保留作史实留痕**（仓库纪律：史实留痕不篡改、加**前向指针**，对齐 `#73`）。★ **仍待联调实测的平台行为** 见末注 `V-1`~`V-4`（属**平台侧未实测项**，与下列"已闭合的本方缺陷"不是一回事）。
 
-| # | 缺口 | 实测证据 | 修复方向 |
-|---|---|---|---|
-| 1 | ★★★ **顶层字段名与官方不一致** | 用**官方报文格式**打我方 ⇒ `回调缺少 biz_no/task_id`；用**我方自造格式**（含顶层 `biz_no`）⇒ 才走到 `无对应实例` | 按官方字段为准：`user_id` / `approval_code` / `instance_id`；**不要在顶层取 `biz_no`** |
-| 2 | ★★★ **`biz_no` 传递链路未闭合** | 官方**不发**顶层 `biz_no`；本系统依赖 **`action_context` 携带 JSON** | ★ **推实例时**把 `task_list[].action_context` 设为 `{"biz_no":…,…}`；★ 当前推的是纯 `task_id` 字符串 ⇒ 回调必然取不到 `biz_no` |
-| 3 | ★★ **`open_id` 应为 `user_id`** | 官方字段表：`user_id`（操作人 user_id）**必填**，无 `open_id` | 双读兼容：`user_id` 优先、`open_id` 兜底；★ 注意两者**不同域**，需转换或统一存储口径 |
-| 4 | ★ **`message_id` 未解析** | 官方：**卡片操作时必填**；且「卡片更新失败时需调【更新审批 Bot 消息】」 | 解析并暂存 `message_id`，供卡片状态更新用 |
-| 5 | ★ **失败无用户反馈** | 官方：失败时卡片**退化为"只显示查看详情"**；超时才报错 | 回调必须可成功；失败路径需有可见反馈（"更新审批 Bot 消息"） |
-| 6 | ★ **本地无数据（P0-2）** | `t_approval_def` / `t_instance` 均 **0 行** | 定义装载（`defregistry` 接通）＋ 实例/任务落库 |
+| # | 缺口（原文，闭合前） | 实测证据 | 修复方向 | ★ 状态（提交） |
+|---|---|---|---|---|
+| 1 | ★★★ **顶层字段名与官方不一致** | 用**官方报文格式**打我方 ⇒ `回调缺少 biz_no/task_id`；用**我方自造格式**（含顶层 `biz_no`）⇒ 才走到 `无对应实例` | 按官方字段为准：`user_id` / `approval_code` / `instance_id`；**不要在顶层取 `biz_no`** | ✅ **已闭合** —— `extCallbackBody` 按官方 12 字段重写、旧字段降为**兼容读**（窗口＝一个发布版本）（第 2 批 **`d94580f`**） |
+| 2 | ★★★ **`biz_no` 传递链路未闭合** | 官方**不发**顶层 `biz_no`；本系统依赖 **`action_context` 携带 JSON** | ★ **推实例时**把 `task_list[].action_context` 设为 `{"biz_no":…,…}`；★ 当前推的是纯 `task_id` 字符串 ⇒ 回调必然取不到 `biz_no` | ✅ **已闭合** —— `push.go` 的 `ExternalTask` 新增 `action_context`；`biz_no` **三级读法**（`action_context` JSON 主读 → `instance_id` 反解剥 `{app_id}:` → 顶层兜底且**必打 warn**）（第 2 批 **`d94580f`**） |
+| 3 | ★★ **`open_id` 应为 `user_id`** | 官方字段表：`user_id`（操作人 user_id）**必填**，无 `open_id` | 双读兼容：`user_id` 优先、`open_id` 兜底；★ 注意两者**不同域**，需转换或统一存储口径 | ✅ **已闭合** —— 新增 `internal/platform/feishu/contact.go` 的 `GetOpenIDByUserID`（`GET /open-apis/contact/v3/users/{user_id}?user_id_type=user_id`，10min TTL 缓存）；★★ **红线：绝不把 `user_id` 塞进 `OperatorOpenID`**（域不同 ⇒ 假 403）；转换失败 ⇒ **400/40000 可见拒绝、不落盘不占幂等键**（第 2 批 **`d94580f`**） |
+| 4 | ★ **`message_id` 未解析** | 官方：**卡片操作时必填**；且「卡片更新失败时需调【更新审批 Bot 消息】」 | 解析并暂存 `message_id`，供卡片状态更新用 | ✅ **已闭合** —— `flow.CallbackRequest` 加 `MessageID`；迁移 `0013` 加 `t_flow_op_log.message_id`；`message/update` 已实现（第 2 批 **`d94580f`** ＋ 第 3 批 **`36df709`**） |
+| 5 | ★ **失败无用户反馈** | 官方：失败时卡片**退化为"只显示查看详情"**；超时才报错 | 回调必须可成功；失败路径需有可见反馈（"更新审批 Bot 消息"） | ✅ **已闭合** —— 新增 `message.go` 的 `UpdateApprovalMessage`（`POST /open-apis/approval/v1/message/update`）＋ `RepairCardFeedback`；修复循环对最终失败行据此更新卡片。★ **该接口请求体字段仍待联调实测 `V-2`**（第 3 批 **`36df709`**） |
+| 6 | ★ **本地无数据（P0-2）** | `t_approval_def` / `t_instance` 均 **0 行** | 定义装载（`defregistry` 接通）＋ 实例/任务落库 | ✅ **已闭合** —— 新增管理端点 `POST /api/admin/approval/defs/sync`（§3.9）＋ 启动自检（`t_approval_def` 为空 ⇒ warn ＋ `/healthz` 状态位 `approval_defs`，**只进 `/healthz` 快照、不进 `Ready()`**）（第 1 批 **`5fe1671`**） |
 
-> ★ **修复顺序**：#2 与 #1 必须**同批**（否则回调永远取不到 `biz_no`）；#6 是 #1/#2 的前置（否则过了字段关也过不了实例关）。
+> ★ **修复顺序（原文留痕）**：#2 与 #1 必须**同批**（否则回调永远取不到 `biz_no`）；#6 是 #1/#2 的前置（否则过了字段关也过不了实例关）。★ **实际批次**：第 1 批＝#6（C+D，`5fe1671`）→ 第 2 批＝#1+#2+#3+#4（A+B+E+`0013`，`d94580f`）→ 第 3 批＝#5+通知 Sender（F，`36df709`）→ 第 4 批＝「新待办产生」通知接线（`c6e26d7`）。
+> ★★ **仍待联调实测的平台行为（非本方缺陷）**：`V-1` 飞书是否原样回传 `action_context` · `V-2` `message/update` 请求体 · `V-3` `contact/v3` 按 `user_id` 查 `open_id` 的端点/scope · `V-4` `approval_code` 双 code 池归属。★ **均标「待联调实测」、不得写成结论**（落点＝`docs/09` §2 与 `docs/16 §7`）。
 
 ---
 
@@ -858,10 +859,10 @@ sequenceDiagram
 
 ---
 
-## 6. 飞书侧接口（**实际调用 5 个，出方向**）
+## 6. 飞书侧接口（**实际调用 6 个，出方向**）
 
 > 以下路径**抄自输入文件**（README / 技术方案书 §6.1），不自造。
-> ★ **本表第 1–4 行是「模式 A」遗留口径**（订阅 / 取详情 / 对账 / 附件）；**转向 ③ 后新增的在 §6.1**。★ 计数：**4 → 5**（③ 新增**发审批 Bot 消息**）。
+> ★ **本表第 1–4 行是「模式 A」遗留口径**（订阅 / 取详情 / 对账 / 附件）；**转向 ③ 后新增的在 §6.1**。★ 计数：**4 → 5**（③ 新增**发审批 Bot 消息** `message/send`）→ **5 → 6**（③ 新增**更新审批 Bot 消息** `message/update`，回调失败反馈，`docs/16 §2-F`）。
 
 | 用途 | 接口 | 方向 / 计费 |
 |---|---|---|
@@ -872,6 +873,7 @@ sequenceDiagram
 | ~~附件上传~~ | ~~`POST /open-apis/approval/openapi/v2/file/upload`~~ | ★ **本期不调用**：模式 A 下本系统**不创建实例**，附件由申请人在飞书侧上传 → 上传链路属模式 B 遗留、**零调用点**（FR-M0-09 / 实现说明 §M.3）。**接口能力仍在飞书侧，只是本系统不用** |
 | 事件接收 | 长连接 WebSocket：**只订阅 `approval_instance`** | 出方向；**事件订阅不计入调用量**。★ `approval_task` **本期不订阅**（PRD §3.2 N10） |
 | ★★ **发审批 Bot 消息（通知）** | `POST /open-apis/approval/v1/message/send`（**`template_id=1008`「收到审批待办」**） | 出方向；审批 API（**计入**）。★ **③ 口径 2「飞书只做展示 / 待办 / 通知」里的「通知」＝本接口**，**须我方主动调用**（见 §6.1） |
+| ★ **更新审批 Bot 消息（失败反馈）** | `POST /open-apis/approval/v1/message/update` | 出方向；审批 API（**计入**）。★ **用途＝修复循环对「最终失败」行把卡片标注为「处理失败、到我方页面重试」**（`docs/16 §2-F`）；★ **`message_id` 为空则不发请求**；★ **请求体字段待联调实测 `V-2`**（见 §6.1） |
 
 - **设计纪律**：**用事件订阅，绝不轮询**（FR-M0-12 / TC-25）。
 - ★ **只订阅 `approval_instance`**：`approval_task`（节点级）本期不订阅 —— 订阅了却无处理逻辑，等于凭空增加事件量与失败面。**逐模板订阅**时只开 `approval_instance`。
@@ -888,7 +890,8 @@ sequenceDiagram
 | 查三方审批定义 | `GET /open-apis/approval/v4/external_approvals/{真实code}` | ★ **路径参数必须是「真实 code」**（＝创建响应返回值）；**读回字段 `approval_code` 返回的却是「自定义 code」** ⇒ 同一字段名两样东西 |
 | 推/更实例 | `POST /open-apis/approval/v4/external_instances` | ★ 审批人在 **`task_list[].open_id` / `user_id`**（**官方无 `assignees`**；传错**静默忽略** ⇒ 任务不进「待办」）。★ 「同意/拒绝」两键在 **`task_list[].action_configs`**（`action_type` = `APPROVE` / `REJECT`）。★ 单据编号走顶层 **`extra.business_key`**。★ 成功回显为 **`data.data` 双层嵌套** |
 | 实例对账 | `POST /open-apis/approval/v4/external_instances/check` | ★ 入参 **`instances[]`** 每项含 `update_time`＋`tasks`；成功返回 `data.diff_instances`（**空数组＝零差异**） |
-| ★★ **发通知（Bot 消息）** | `POST /open-apis/approval/v1/message/send` | ★★ **这是「通知」的唯一实现路径**（官方原文：「当有新的审批待办…时，**可以通过**飞书审批的 Bot 告知用户」）—— **推实例 `external_instances` 只让任务进「待办」，不会自动发消息**。★ `template_id=**1008**`＝「收到审批待办」（**支持快捷审批参数**）。★ **`actions[]` 四个 URL 缺一不可**（`url`＋`pc_url`＋`android_url`＋`ios_url`，只给 3 个 ⇒ **`60001 actionUrls incomplete error`**）。★ 本接口 **`i18n_resources.texts` 接受 map 形态**（与 `external_approvals` 的数组形态**相反**）。★ 成功返回 `data.message_id` |
+| ★★ **发通知（Bot 消息）** | `POST /open-apis/approval/v1/message/send` | ★★ **这是「通知」的唯一实现路径**（官方原文：「当有新的审批待办…时，**可以通过**飞书审批的 Bot 告知用户」）—— **推实例 `external_instances` 只让任务进「待办」，不会自动发消息**。★ `template_id=**1008**`＝「收到审批待办」（**支持快捷审批参数**）。★ **`actions[]` 四个 URL 缺一不可**（`url`＋`pc_url`＋`android_url`＋`ios_url`，只给 3 个 ⇒ **`60001 actionUrls incomplete error`**）。★ 本接口 **`i18n_resources.texts` 接受 map 形态**（与 `external_approvals` 的数组形态**相反**）。★ 成功返回 `data.message_id`。★★ **`code != 0` 一律判失败**（**HTTP 200 不代表成功**，须按 body 的 `code` 判） |
+| ★ **更新 Bot 消息（失败反馈）** | `POST /open-apis/approval/v1/message/update` | ★★ **这是「失败时更新卡片」的唯一实现路径**（官方：回调**处理失败** ⇒ 卡片**退化为"只显示查看详情"**；仍失败 ⇒ 需我方调本接口更新卡片状态）—— 也解释了回调报文为何带 `message_id`。★ **`message_id` 为空 ⇒ 不发请求**（无卡片语义）。★ ★ **请求体字段结构待联调实测 `V-2`**（`docs/16 §7`；先建端口 + Fake，联调后定稿）—— ★ **不得把未实测的字段形态写成结论**。★ 用途落点＝`docs/16 §2-F`（修复循环对最终失败行调用） |
 
 - ★★ **铁律（③ 口径 2）**：**「待办进列表」与「发消息通知」是两个独立动作**，后者必须我方主动调用。仅推 `external_instances` ⇒ 审批人**在飞书看不到任何提醒**（本次实测踩中）。
 
@@ -980,6 +983,7 @@ sequenceDiagram
 
 | 版本 | 日期 | 变更 | 作者 |
 |---|---|---|---|
+| V2.11 | 2026-09-27 | **回调链路修复的文档收口（纯文档，事实＝已落地代码）**：① ★★ **§3.14「实测缺口清单」由「待修复」翻面为「6 条全部已闭合」** —— 新增「★ 状态（提交）」列（逐条附提交号：第 1 批 `5fe1671` / 第 2 批 `d94580f` / 第 3 批 `36df709` / 第 4 批 `c6e26d7`），**原文一字不删（史实留痕，对齐 `#73`）**；并显式区分「已闭合的本方缺陷」与「仍待联调实测的平台行为 `V-1`~`V-4`」。② **§3.13 推送行补硬要求** —— 每个 `RELEASED` 任务的 `task_list[].action_context` 必须设为含 `biz_no` 的 JSON 字符串（官方回调不发顶层 `biz_no`，本字段是 `biz_no` 回传的唯一载体）。③ **§6 计数 5 → 6** 并补「更新审批 Bot 消息」`POST /open-apis/approval/v1/message/update` 条目（§6 主表 ＋ §6.1；用途＝回调失败反馈、`message_id` 空则不发、**请求体字段待实测 `V-2`**）。④ ★ **幂等键口径统一为 4 列** —— §3.13 / §3.14 的「3 元组 `(biz_no,task_id,op_type)`」全部改为「**4 列 `(biz_no,task_id,op_type,round)`**」，与实现 `migrations/0011_flow_op_log_round.sql`（`round` 用于回退重激活后区分同一 `task_id` 的两次审批）一致。 | 产品经理（Alice） |
 | V2.10 | 2026-09-27 | **§3.9 补 `POST /api/admin/approval/defs/sync` 契约条目**（回调链路修复第 1 批新增的定义装载主通道，docs/16 §2-C 通道①；随第 2 批补登）：路径 / 鉴权（系统管理员）/ 请求（无体）/ 响应计数（`synced`·`created`·`updated`·`skipped`·`failed` ＋ `items` 明细）/ 错误码（**400**＝清单为空或含 `REPLACE_ME_` 占位符或 doc_type 越界；**503**＝`JX_ACTION_CALLBACK_TOKEN`/`JX_CALLBACK_DOMAIN` 未配置；**500**＝部分同步失败且明细照返）。★ 静默审计 **C5（「已注册但未文档」）归零**。 | 交付总监 |
 | V2.9 | 2026-09-27 | ★★ **§3.14 回调报文按官方实测校准 ＋ 新增「实测缺口清单」**：① **「请求体」行重写** —— 官方真实报文字段为 `action_type` / **`user_id`**（操作人 **user_id**）/ **`approval_code`** / `token` / `action_context` / `instance_id` / `task_id` / `message_id` / `id` / `reason` / `attachments` / `encrypt`；★★ **官方【不发】顶层 `biz_no`** ⇒ `biz_no` **只能靠 `action_context` 携带 JSON 回传**（★ 推实例时须把 `task_list[].action_context` 设为含 `biz_no` 的 JSON）。② **新增「实测缺口清单（6 条，属 P0）」** —— 顶层字段名不一致 / **`biz_no` 传递链路未闭合** / `open_id` 应为 `user_id` / `message_id` 未解析 / 失败无用户反馈 / 本地无数据（P0-2）。③ 实测证据：**用官方报文格式打我方 ⇒ `回调缺少 biz_no/task_id`**；用含顶层 `biz_no` 的自造格式才走到"无对应实例"⇒ ★ 定位「用户点同意后回调 400、界面零反馈」的**真实原因**。 | 交付总监 |
 | V2.8 | 2026-09-27 | ★★ **补齐「通知」链路（实测驱动）**：① **§6 标题计数 4 → 5** 并新增行「**发审批 Bot 消息**」`POST /open-apis/approval/v1/message/send`（`template_id=1008` 收到审批待办）；② **§6.1 新增该接口契约** —— ★★ **「待办进列表」与「发消息通知」是两个独立动作**（官方原文「当有新的审批待办…时，**可以通过**飞书审批的 Bot 告知用户」），**仅推 `external_instances` 不会产生任何提醒**；★ `actions[]` **四个 URL 缺一不可**（`url`+`pc_url`+`android_url`+`ios_url`；缺 ⇒ `60001 actionUrls incomplete error`）；★ 本接口 **`texts` 接受 map**（与 `external_approvals` 的数组形态**相反**）；成功返回 `data.message_id`（实测 `{"code":0,…}`）。③ 与 `01a §…` **通知渠道「飞书 Bot（主）＋ 站内兜底」口径对齐** —— PRD 已规划、**此前代码零实现**。 | 交付总监 |

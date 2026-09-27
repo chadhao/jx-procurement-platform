@@ -2,7 +2,7 @@
 
 > 本文件为**工程侧补充记录**，不改动任何既有文档（PRD / UseCase / TestCase / 架构 / 接口 / README）。
 > 记录范围：落地 S0/S1 地基代码过程中发现的**文档间冲突 / 歧义**、采取的实现决策与遗留动作。
-> 编制：Alex（开发经理）· 版本：**V1.10**（§A–§B 为 S0/S1 原始记录，§G/§H 为 S2 与集成轮，§H.13 为第二轮对抗性复核，§I 为缺口补齐轮，§J 为模板建立配套轮，§K 为 Q14 定案实施轮，§L 为架构完整性审查轮，§M 为口径落地轮，§N 为对象存储收口轮，§O 为降级口径收口轮，§P 为控件口径修正轮，**§Q 为架构转向 ③ 地基层轮**；★ **V1.10（`#74`）：代码引用符号化 —— §P.2「证据 4」的两处「`文件:行`」改为「`文件` ＋ 符号」**）· 最新代码 tag：`0.3.2-s3`
+> 编制：Alex（开发经理）· 版本：**V1.11**（§A–§B 为 S0/S1 原始记录，§G/§H 为 S2 与集成轮，§H.13 为第二轮对抗性复核，§I 为缺口补齐轮，§J 为模板建立配套轮，§K 为 Q14 定案实施轮，§L 为架构完整性审查轮，§M 为口径落地轮，§N 为对象存储收口轮，§O 为降级口径收口轮，§P 为控件口径修正轮，**§Q 为架构转向 ③ 地基层轮**，**§R 为回调链路修复轮（B52–B56）**；★ **V1.10（`#74`）：代码引用符号化 —— §P.2「证据 4」的两处「`文件:行`」改为「`文件` ＋ 符号」** · ★ **V1.11：新增 §R（回调链路修复 4 批 `5fe1671`/`d94580f`/`36df709`/`c6e26d7` 的 5 条缺陷台账 B52–B56，纯文档）**）· 最新代码 tag：`0.3.2-s3`
 
 ## A. 已落地范围（S0/S1）
 
@@ -1490,3 +1490,41 @@ SQLite **不支持** `IF NOT EXISTS`，与 0003 同一约定——由 `t_schema_
 - `go test ./... -count=1` → **13 个测试包全绿**（原 10 包 + 新增 `number`/`flow`/`approval`）
 - `python scripts/check_md_tables.py` → `OK 全部 Markdown 表格列数一致（已扫 14 个文件）`
 - `scripts/archive-year.sh` 锁号门禁：真实迁移库上 **exit 0**；注入 `DELETE FROM` 后被检出并拒绝
+
+---
+
+## R. 回调链路修复轮（B52–B56）
+
+> 本节记录 `docs/16-Callback-Repair-Design.md` 的 **4 批修复**（提交 `5fe1671` / `d94580f` / `36df709` / `c6e26d7`）落地过程中**实测确认的 5 条缺陷**（B52–B56）。
+> ★ 与既有 §B 编号连号（上一条为 **B51**，见 §Q）；★ **每条给「实测证据 + 修法」**；★ 本轮**只补文档、无新代码**（代码已在 4 批提交中入库）。
+
+### R.1 冲突与修复记录（B52–B56）
+
+| 编号 | 级别 | 缺陷（实测确认） | 实测证据（来源） | 修法（已落地） |
+|---|---|---|---|---|
+| **B52** | ★★★ 高 | **回调字段名与官方不一致 ⇒ 恒 400** —— `extCallbackBody` 主读 `biz_no` / `open_id` / `instance_code` / `action_name`，而官方实际发 `action_type` / **`user_id`** / **`approval_code`** / **`instance_id`** / `message_id` 等，**且官方不发顶层 `biz_no`** | **官方格式报文**打我方 ⇒ `回调缺少 biz_no/task_id`；**我方自造格式**（含顶层 `biz_no`）⇒ 才走到 `无对应实例`（`reference/README.md` ★★★ 条 · `docs/16 §1 G-1`）—— ★ **这就是"用户点同意后回调 400、界面零反馈"的真实原因** | ★ `extCallbackBody` **按官方 12 字段重写**、旧字段降为**兼容读**（窗口＝一个发布版本）；`CallbackRequest` 增 `ApprovalCode`/`MessageID`/`OperatorUserID`（第 2 批 **`d94580f`**） |
+| **B53** | ★★★ 高 | **`biz_no` 未经 `action_context` 传递** —— 推实例时 `ExternalTask` **无 `action_context` 字段**，`task_list[]` 只写 `task_id` 等 ⇒ 官方**不发顶层 `biz_no`** 时，回调**无从取得 `biz_no`** | 官方 `action_context`＝「操作上下文…原样回传」；而推侧从未写入 ⇒ 回调解侧兼容逻辑**恒走不进去**（`docs/16 §1 G-2`） | ★ `ExternalTask` **新增 `action_context`**，`BuildSnapshot` 写 `{"biz_no":…,"task_id":…}`；解侧 `biz_no` **三级读法**（`action_context` → `instance_id` 反解 → 顶层兜底+warn）（第 2 批 **`d94580f`**，与 B52 **同批**） |
+| **B54** | ★★ 高 | **仅推实例、未发通知** —— 推 `external_instances` **只让任务进「待办」**，**不会产生任何提醒**；`flow.notify.go` 的 `Sender` 端口装配时传 **nil** ⇒ 只落 `EXPECTED`、**从不发送** ⇒ 审批人在飞书**完全看不到提醒** | 官方原文「当有新的审批待办…时，**可以通过**飞书审批的 Bot 告知用户」⇒ 「待办进列表」与「发消息」**两个独立动作**（`reference/README.md` ★★ 条 · `docs/16 §2 关联项`） | ★ 新增 `internal/platform/feishu/notify.go` 的 `NotifySender` 实现 `flow.Sender`（内调 `POST /open-apis/approval/v1/message/send`，`template_id=1008`；★ **`actions[]` 四 URL 缺一不可**、★ **`texts` 用 map 形态**、★ **`code!=0` 一律判失败**）（第 3 批 **`36df709`**） |
+| **B55** | ★ 中 | **`message_id` 未暂存** —— `extCallbackBody` 无该字段、`t_flow_op_log` 无该列 ⇒ **失败时无法更新卡片**（官方：处理失败 ⇒ 卡片退化为"只显示查看详情"，需我方调【更新审批 Bot 消息】） | 官方：卡片操作时 `message_id` **必填**（`reference/README.md` ★★ 条 · `docs/16 §1 G-6`） | ★ `CallbackRequest` 加 `MessageID`；迁移 **`0013`** 加 `t_flow_op_log.message_id`；`recordCallback` 写入；新增 `message.go` 的 `UpdateApprovalMessage`（第 2 批 **`d94580f`** ＋ 第 3 批 **`36df709`**）。★ **接口请求体字段待实测 `V-2`** |
+| **B56** | ★★ 高 | **第 4 批：`notifyOnType` 无「新待办」事件 ⇒ 无触发点** —— 第 3 批只通了「通知**发送端口**」，但 `flow/notify.go` 的 `notifyOnType` **不含「新待办产生」事件** ⇒ 即使端口接通，**通知也发不出去**（**"接线了" ≠ "有触发点"**，与定案 #58 同族） | 代码侧：`OnFlowEvent` 原只处理已通过 / 已拒绝类事件；「新待办产生」**无事件订阅**（`docs/16 §3 第 4 批`） | ★ 新增 `activateOnType`（`SUBMITTED`/`TASK_APPROVED`/`TRANSFERRED`/`ADDED_SIGN`/`ROLLED_BACK`）＋ `ActivatedNotifyTargets`（收件人＝`PENDING ∧ RELEASED` 任务的 assignee，排除空/操作人本人）＋ `activationEventKey`＝`TASK_ACTIVATED:<task_id>`；`OnFlowEvent` 拆为 `notifyApproved`（原逻辑搬移、行为不变）＋ `notifyActivated`；`store.HasNotifyLog` 只读判重；★ **`ExpectedNotifyTargets` 签名与语义逐字未动**（第 4 批 **`c6e26d7`**，现行 HEAD）。★ **`HELD`（未轮到）不发通知**（与 `UC-23` 一致，防加签人提前收到提醒） |
+
+> ★ **B52–B56 的共同点**：**"看起来正常"的链路上，"最后一公里"断了** —— B52/B53 是**字段名与载体**、B54/B55 是**通知与留痕**、B56 是**触发点接线**。★ 与定案 **#58**（接线改变可达性）/ **#69**（已受理却报错）同族，处置一律遵循「**改完要问：出了问题时谁会发现？**」。
+
+### R.2 本轮新增迁移与配置键
+
+| 项 | 内容 |
+|---|---|
+| 迁移 | **`0013_callback_repair.sql`**（唯一新增）：`t_flow_op_log` 加 `message_id TEXT`；`t_approval_def` 加 `feishu_code TEXT`（均可空、无回填；★ 两列**写入者与迁移同批**，不留 R26 型"死列"） |
+| 配置键 | 新增 **`JX_CALLBACK_DOMAIN`** / **`JX_ACTION_CALLBACK_TOKEN`**（第 1 批 `5fe1671`；正本＝`04-Architecture §6.4`） |
+| 幂等键 | `t_flow_op_log` 唯一键为 **4 列 `(biz_no, task_id, op_type, round)`**（迁移 `0011`；与定案 #68 一致） |
+| 幂等键（通知侧） | `TASK_ACTIVATED:<task_id>`（本方自定义；见 §R.1 **B56**） |
+
+### R.3 本轮同步的文档
+
+| 文档 | 动作 |
+|---|---|
+| `docs/05-API.md` | §3.14 缺口清单 6 条**翻面为已闭合**（附提交号）· §3.13 补 `action_context` 硬要求 · §6/§6.1 补 `message/update`（计数 5→6）· 幂等键统一 4 列 |
+| `docs/04a-Architecture-Increment-V2.md` | §3.2 `action_context` 内容 · §4.2 字段映射层（含 §4.2.1 转换 / §4.2.2 双 code 池）· §4.3 幂等键 4 列 · §5.5 通知必推 · §6.3 反解 · §10 S16/S17 · §12.2 N-12/N-13 |
+| `docs/01a-PRD-Increment-V2.md` | §5.4 通知必推 ＋ `message/send` 域勘误（前向指针）· §6.1 推送纪律补 `action_context` · FR-M0-14/15/17 · 幂等键 4 列 |
+| `docs/09-Integration-Verification-Checklist.md` | `QV2-01` 定论 · `QV2-02` 实测 · `QV2-A32` 用户侧确认 · 新增 `V-1`~`V-4` |
+| `docs/14` · `docs/16` · `docs/reference/README.md` · `docs/07` | §6 联调自检 ＋ 手工 curl 警示 · 落地状态回填 · 实测条目（不重试 / 400 实录 / `TASK_ACTIVATED` 幂等键）· 两键装载要求 |

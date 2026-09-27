@@ -9,7 +9,7 @@
 | 项 | 内容 |
 |---|---|
 | 文档名称 | 现有系统适配性审计报告 |
-| 版本 | V1.14 |
+| 版本 | V1.15 |
 | 日期 | 2026-09-27 |
 | 审计基线 | `04a` V2.1 · `01a` V1.4.1 · `10` V1.2 · `12` V1.0 |
 | 审计范围 | `cmd/` + `internal/`（`internal/` 各包 + 新增 `flow`/`approval`/`number`，约 24,500 行 Go）· `web/src`（Vue3）· `docs/*` · `scripts/*` · `migrations/*` |
@@ -193,10 +193,10 @@
 | **R24** | 架构复核 | ★★ **两条对账入口并存的静默面** | `POST /internal/sync/reconcile`（§4.1 原判"改造"）与 `POST /internal/approval/check`（§4.2 新增）**都表现为"触发审批对账"** → **跑错入口不报错、且都回成功**（"以为对过账"）；与 `B47`（恒 0＝期望值）/`R23`（对账名义下的隐蔽覆盖）**同族** | ★ **`/internal/approval/check` ＝ 审批对账唯一入口**；`sync/reconcile` 收敛为**通讯录侧**。★ **纪律：同一职能只允许一个入口**；若需第二个，**必须双方文档写明"谁是唯一权威入口"** |
 | **R26** | 架构复核 | ★★ **门禁 `C1` 只覆盖「表创建」、不覆盖「表演进」** | `parse_columns()` 原**只解析 `CREATE TABLE`**；而 ③ 新增的列**几乎全是 `ALTER TABLE … ADD COLUMN`**（`0008` `release_state`/`weight` · `0009` `task_order` · `0010` `t_instance.ext_json`）—— 因 `0001`~`0007` **已应用、不得回改**，新列只能 `ALTER` → ★ **`ALTER` 路径完全不在 `C1` 视野** → 「**建了列但没有任何写入者**」（**`B42`**）**在演进路径上完全无法被发现**。★★ **与 `B42` 显式挂钩：`R26` ＝ `B42` 的检查路径有洞**（`B42` 是"病"，`R26` 是"该查它的门禁查不到"） | ✅ **已修（`908208f`）**：补 `ALTER TABLE <t> ADD COLUMN <c>` 解析，覆盖面 `total_cols` **269 → 284（+15）**、可**逐一点名**（`t_flow_task`+3 · `t_instance`+7 · `t_ledger_archive`+1 · `t_submission`+4），且核实 **15 列全部有写入者** → **回跑基线无新命中、无需白名单**；★ **探针双证**：「`ALTER` 加一列 + 代码从不写它」→ **改前 `[C1] 无命中` → 改后 `1 处 · 死列/预留列`** |
 | **R27** | 架构复核 | ★★ **`C8b` 覆盖面比"以为的"更窄** | `C8b` 依赖**夹具命名约定** —— **只认 `seedArchive*` / `seedOps*`** → **改名即失效**（`mkLedger` / `putRow` 看不见）；★ 且实测发现 **`seedArchiveDoc(` / `seedArchiveExt(` 并不匹配 `seedArchive(?:DocExt)?\(`** → **"以为覆盖了、其实没有"**（比"根本没覆盖"更隐蔽） | ✅ **已处置（如实登记，`908208f`）**：**如实写入门禁注释**（**不**"顺手补全名字清单"—— 那是把"按名字"的毛病再犯一遍）；★ 并**实测否掉**备选判据「按目标表（夹具写 `t_ledger_*` 即算）」：本项目测试**无裸 `INSERT INTO t_ledger_*`** → **恒空、无增益** → **暂不采用** |
-
 | **R28** | 架构复核 | ★★ **`t_ledger_archive.department` 快照被静默改写（write-once 缺口 · 「漏登记的半边」）** | `internal/store/repo_ledger.go` 的 **`upsertArchive`** 中 `department = COALESCE(NULLIF(excluded.department,''), t_ledger_archive.department)` ＝ **`excluded` 优先 → "新值非空即覆盖"**；而 `docs/08 §4.9(a)` 要求它是**"名称快照" → write-once**、`§4.9-b` 更把它列为**"必须改 write-once 的两个 UPSERT"之一**。★ **`#46`（Batch A-5）只改了 instance 侧**（`repo_instance.go` 已为保留式）**、ledger 侧没跟着改** → 且**它从未被任何 R 项覆盖**（`R17` 的现值指向只写 `repo_instance.go` 的 `upsertInstance`）⇒ **属"差集单向"造成的漏登记**（定案 #64） | ✅ **已闭合（`cc753c4`）**：该行**已改保留式** `department = COALESCE(NULLIF(t_ledger_archive.department,''), excluded.department)`（提交自述「`08 §4.9-b` 漏改半边」）。★ 另**登记同类候选（不下结论）**：同文件 `amount_cents = COALESCE(excluded.amount_cents, t_ledger_archive.amount_cents)` **无条件覆盖**，而 instance 侧有 **D4**（`WHEN excluded.amount_cents > 0`，决策 #39）→ **两端口径不一致**，判定交 `engineer-glm` |
+| **R29** | 后端 | ★★★ **回调「解析字段名」与官方报文不匹配（修复前回调恒 400）** | `internal/httpapi/handlers_approval.go` 的 **`extCallbackBody`** 主读 `biz_no`/`open_id`/`instance_code`/`action_name`，而官方发 `action_type`/**`user_id`**/**`approval_code`**/**`instance_id`**，**且官方【不发】顶层 `biz_no`**；且 `biz_no` 的回传载体 `task_list[].action_context` **推侧从未写入** ⇒ 回调**必然 400**（**用户观感＝"点了同意没反应"**）。★ 注意：**回调"到达被拒"完全可观测**（http 日志逐条带 `trace_id`）——**不是静默族**，问题在**字段映射**（`docs/16 §1 G-1/G-2`） | ✅ **已闭合** —— `extCallbackBody` **按官方 12 字段重写**（旧字段**兼容读**，窗口＝一个发布版本）＋ `ExternalTask` 加 `action_context`（`biz_no` **三级读法**）；第 2 批 **`d94580f`**（`docs/16 §2-A/B`；`06 §R` **B52/B53**）。★ 仍待联调实测 **`V-1`**（飞书是否原样回传 `action_context`）—— **不得写成已验** |
 
-### 5.1 `R01–R28` 闭合状态台账（2026-09-27 实测）
+### 5.1 `R01–R29` 闭合状态台账（2026-09-27 实测；V1.15 回调链路收口轮补 `R29`）
 
 > 把上表从「审计清单」变为「**可追踪的闭合台账**」：每条给**当前状态** + **证据（`文件:行` / commit）** + **证据状态**（`已提交（commit）` / `工作区未提交` / `未纳入 git`）。★ **不留空白、不写"部分完成"**——写清是**哪一半**或**待谁**。（`HEAD` ＝ `875b9e4`。）
 > ★ **为何要"证据状态"列**：**「已处置」但证据未入库 ＝ 不可复现的处置** —— 别人 clone 出来看不到那行代码，就无法核对处置是否真的存在（与"结论无位点"是同一件事的第三种变体）。
@@ -213,10 +213,10 @@
 | **R08** | ⏳ **待**（`event_type` 分派未实现） | `internal/worker/pool.go` **无** `event_type` 分派 | —（待实现） |
 | **R09** | ⏳ **待 T03-T04 装配** | `cmd/jxapproval/bootstrap.go` 的**装配点**（审计时点「不装配 `flow`/`approval`/`number`」；**审计时点 `875b9e4`** —— ★ 现值指向：`#54` 已装配） | **工作区未提交**（`bootstrap.go` 为 ` M`） |
 | **R10** | ✅ **已处置** | `internal/flow/service.go` 的 **`flow.Submit`**（S7 提交前校验定义） | **已提交（`34c95df2`）** |
-| **R11** | 契约**已闭合**；**实现待 T04** | `05-API §3.13`（V2.1）；无 `handlers_approval.go`/`approve`/`reject` 路由 | **工作区未提交**（`05-API` 为 ` M`） |
+| **R11** | ✅ **已闭合** | `05-API §3.13`（V2.1）＋ ★ **实现已落地**：`internal/httpapi/router.go` 的 **`api.POST("/approval/:biz_no/approve", d.handleApprovalApprove)`** / **`.../reject`**（T04 完成，本次复核确认路由在位） | **已提交**（路由与 handler 随相关批次入库；`router.go` 已 tracked） |
 | **R12** | ⏳ **待 T05** | `web/src/views/Instances.vue`/`InstanceDetail.vue` 未改 | —（待实现） |
 | **R13** | ⏳ **待 PM（`#34`）** | `03-TestCase` 改造在途 | —（待实现） |
-| **R14** | 契约**已定**；**实现待 T04** | `05-API §3.14`；`router.go` 的 **`/api` 组 `requireSession` 中间件**（审计时点**无回调路由**，须 `/api` 组**外**；**审计时点 `875b9e4`**；★ 现值指向：回调路由**已加**，`#54`） | **工作区未提交**（`05-API` 为 ` M`） |
+| **R14** | ✅ **已闭合** | `05-API §3.14`；★ **实现已落地**：`internal/httpapi/router.go` 的 **`e.POST("/approval/external/callback", d.handleExternalApprovalCallback, d.callbackBodyLog)`** —— 注册在 **`/api` 组之外**（**未挂 `requireSession`**），并**只挂回调一条路由**的 `callbackBodyLog` 留痕中间件（本次复核确认路由在位、且**不在会话中间件链上**） | **已提交**（路由随相关批次入库） |
 | **R15** | ⏳ **待 T05** | `web/src/styles.css` `@media` 计数＝**0** | —（待实现） |
 | **R16** | ⏳ **待 PM（`#26`）收口** | `01-PRD` V1.9 已改若干位点、未逐条核 | **工作区未提交**（`01-PRD` 为 ` M`） |
 | **R17** | ✅ **已处置** | `internal/store/repo_instance.go` 的 **`upsertInstance`** 中 write-once（`COALESCE(NULLIF(t_instance.X,''),excluded.X)`） | **已提交（`83eddb9`）** |
@@ -226,16 +226,17 @@
 | **R21** | ⏳ **待**（夹具改造） | 夹具经 `finalize` 的改造随测试轮 | —（待实现） |
 | **R22** | ✅ **已闭合** | ★ **正则已修**（`scripts/audit_silent.py` 的 **`name_re`** ＝ `UpsertArchive(?:Tx)?\(\|UpsertOps(?:Tx)?\(`，`c940603`）；**双向实证**：旧正则 `False` / 新正则 `True`，**临时清空白名单后 `internal/flow/finalize.go` 的 **`UpsertArchiveTx(...)` 调用**如实报红** → 真实写入点已可被门禁触达、白名单是唯一抑制项；★ `308cb5c` 再收紧（`C8a` 排除定义行 + 白名单 3→2，见 `R25`） | **已提交（`c940603` / `308cb5c`）** |
 | **R23** | ✅ **已处置** | `internal/sync/reconcile.go`（**`Run` 不再 `ingest`**）+ `bootstrap` 的 **`Reconciler` 不装配点**；★ **路由已退役（`410 Gone`）** | **已提交（`d9d52d6` / `c940603`）** |
-| **R24** | ✅ **处置已定** | §4.1 / §4.2 裁定；审批对账唯一入口 ＝ `POST /internal/approval/check`；★ **路由退役已落地**（`410 Gone`，`c940603`） | **未纳入 git**（`docs/11` 未提交；★ 代码侧 `410` **已提交**） |
+| **R24** | ✅ **已闭合** | §4.1 / §4.2 裁定；审批对账唯一入口 ＝ `POST /internal/approval/check`；★ **路由退役已落地**（`410 Gone`，`c940603`） | **已提交**（代码侧 `410` 已提交；`docs/11` 已随 `6666e65` 入库） |
 | **R25** | ✅ **已闭合** | 修正则（`scripts/audit_silent.py` 的 **`decl_re = ^\s*func\b`** 排除**定义行**）+ **双向实证**（def 行 `True→False` / call 行 `True→True`）+ ★ **清空白名单跑全仓暴露恰好 3 个真实写入调用** → 白名单 **3→2**（`308cb5c`） | **已提交（`308cb5c`）** |
 | **R26** | ✅ **已处置** | `C1` 补 `ALTER` 解析（`scripts/audit_silent.py` 的 `parse_columns`）；覆盖面 **269 → 284（+15）**、可逐一点名、核实 15 列**全部有写入者**（`908208f`） | **已提交（`908208f`）** |
 | **R27** | ✅ **已处置（如实登记）** | `C8b` 夹具命名约定收窄一事**写入门禁注释**（不补名字清单）；备选判据「按目标表」**实测否掉**（本项目无裸 `INSERT INTO t_ledger_*`）（`908208f`） | **已提交（`908208f`）** |
 | **R28** | ✅ **已闭合** | `internal/store/repo_ledger.go` 的 **`upsertArchive`** 中 `department` **已改保留式**（`COALESCE(NULLIF(t_ledger_archive.department,''), excluded.department)`）—— 与 instance 侧（`repo_instance.go`）对齐，补上 `08 §4.9-b`「两个 UPSERT」的**漏改半边**。★ 漏登记成因＝`#46` 只改 instance 侧、ledger 侧**未被任何 R 项覆盖**（**差集单向**，定案 #64） | **已提交（`cc753c4`）** |
+| **R29** | ✅ **已闭合**（★ 仍待联调实测 `V-1`） | `internal/httpapi/handlers_approval.go` 的 **`extCallbackBody`** **按官方 12 字段重写**（`action_type`/`user_id`/`approval_code`/`instance_id`/`action_context`/`task_id`/`message_id`/… ；旧字段**兼容读**，窗口＝一个发布版本）；★ `ExternalTask` **加 `action_context`** → `biz_no` **三级读法**（`action_context` JSON 主 → `instance_id` 反解 → 顶层兜底并告警）；★★ **前提：推侧** `task_list[].action_context` **已补写** `{"biz_no":…,"task_id":…}`（否则回调侧无源可读）。★ 修复前回调**恒 400**（用户观感＝"点了同意没反应"） | **已提交（`d94580f`）**；见 `docs/16 §2-A/B`、`06 §R` **B52/B53** |
 
-> **统计**：✅ **已处置 14**（`R05`/`R07`/`R10`/`R17`/`R18`/`R19`/`R20`/`R22`/`R23`/`R24`/`R25`/`R26`/`R27`/`R28`）· ⚠️ **半闭合 0**（`R22` 已闭合）· 一半（接管侧/契约就绪）**6**（`R01`~`R04` 接管侧 + `R11`/`R14` 契约）· 待（T03/T04/T05/Batch C/PM）其余。★ **无一条"静默未处理"**。
+> **统计**：✅ **已处置 17**（`R05`/`R07`/`R10`/`R11`/`R14`/`R17`/`R18`/`R19`/`R20`/`R22`/`R23`/`R24`/`R25`/`R26`/`R27`/`R28`/`R29`）· ⚠️ **半闭合 0**（`R22` 已闭合）· 一半（接管侧）**4**（`R01`~`R04` 接管侧）· 待（T03/T04/T05/Batch C/PM）其余。★ **无一条"静默未处理"**。★★ **本轮回调链路收口（V1.15）新增 `R11`/`R14` 由「契约就绪」翻为 ✅ 已闭合**（路由实证在位）+ **新增 `R29`**（回调解析字段名缺口）。
 > ★ **门禁 `C8a` 白名单 3 → 2（`308cb5c`）**：把 `allowed` **与** `allowed_prefix` **同时清空、跑全仓** → 暴露**恰好 3 个真实写入调用**（`internal/flow/finalize.go` 的 **`UpsertArchiveTx(...)`** / `internal/httpapi/handlers_biz.go` 的 **`UpsertOps(...)`** / `internal/worker/ingest.go` 的 **`UpsertArchiveTx(...)`**）；据此判定 `internal/store/repo_ledger.go` 该条**纯冗余**（**只有函数定义、无调用**）→ **删除**。现白名单 ＝ `allowed` 精确 **2**（`worker/ingest.go` / `httpapi/handlers_biz.go`）+ `allowed_prefix` **1**（`internal/flow/`）；★ **原则：白名单越长，越接近门禁失效**。
 > ★★ **丢失风险敞口（本台账指标）**：**修前 ＝ 4**（`R07`/`R19`/`R23` 工作区 + `R24` 未纳入 git）→ **Batch B/B-2 后 ＝ 1**（`R07`/`R19`/`R23` 三条证据由"工作区"转"已提交"）→ ★★ **Batch B-4 后 ＝ 0！**（`docs/11` **全量入库 `6666e65`** —— 实测 `git ls-files --error-unmatch docs/11-…` **命中**、`git log -1 -- docs/11` → `6666e65`；`R24` 的证据＝`docs/11 §4.1/§4.2` **裁定文本本身**，随文档入库而闭合）。★ **Batch B-3（`308cb5c`）**：`scripts/audit_silent.py` 已入库、`R25` 证据已提交 → 不增；★ **Batch B-4（`908208f`）**：`R26`/`R27` 证据**已提交**、`docs/11` 本身亦已入库 → 不增。
-> ★★ **里程碑：已处置 14 条（`R05`/`R07`/`R10`/`R17`/`R18`/`R19`/`R20`/`R22`/`R23`/`R24`/`R25`/`R26`/`R27`/`R28`）的处置证据全部在 git —— 敞口 ＝ 0**。「**已处置但证据未入库 ＝ 不可复现的处置**」这一长期缺口**已消除**（★ 与本批 `docs/11`/`docs/13` 的提交一并成立）。
+> ★★ **里程碑：Batch B-4 时已处置 14 条（`R05`/`R07`/`R10`/`R17`/`R18`/`R19`/`R20`/`R22`/`R23`/`R24`/`R25`/`R26`/`R27`/`R28`）的处置证据全部在 git —— 敞口 ＝ 0**（★ 回调收口轮后为 **17** 条，见上「统计」行）。「**已处置但证据未入库 ＝ 不可复现的处置**」这一长期缺口**已消除**（★ 与本批 `docs/11`/`docs/13` 的提交一并成立）。
 
 ### 5.2 设计 ↔ 实现一致性核对（以 `HEAD 875b9e4` + 工作区为对象；**只读**）
 
@@ -415,6 +416,7 @@ graph TD
 | V1.12 | 2026-09-27 | 执行 **`#72` 全量符号化**（`11` 剩余 80 处 ① 引用，定案 #74）：★ **前提偏差被实测顶回** —— `§1/§2/§5` 正文实为**审计时点（`HEAD 875b9e4`）快照**，多个被引符号**已退役 / 已变**（`SubscribeAll` 已不存在 / `pool` 的 `fetch_detail` 他迁为 `inbox.JobTypeFetchDetail` / `NewReconciler` 的 `ingestor` 形参已删 / `reconcile.go` 的 `Ingest` 已退役 / `repo_instance` 旧 `COALESCE` 正是 `R17` 修法）。故按 **三栏**：**①-a**（现值 ∧ 符号在）→ **符号化**；**①-b**（审计时点快照）→ 标 **「（审计时点 `875b9e4`）」＋保留原符号名＋附"现值指向"**（指向 §5.1 状态或明写"已退役、无现状对应"）；**②**（§10 变更记录）→ 保留＋标「（当时行号）」。★ 文首新增**时点口径**（§1–§9 为审计时点快照、现状以 §5.1 台账为准）。★ 顺带按你要求**给全库扫描补口径**（见 `#72` 报告）。 | 架构师（Bob） |
 | V1.13 | 2026-09-27 | 执行 `#74` **批量 B**：★ **新增 `R28`**（`t_ledger_archive.department` 快照被静默改写 · **write-once 缺口**）至 §5 + §5.1（**含「证据状态」列**）。★★ **为何此前从未登记**：`#46`（Batch A-5）**只改了 instance 侧**（`repo_instance.go`），**ledger 侧未被任何 R 项覆盖**（`R17` 的现值指向只写 `upsertInstance`）⇒ 属**差集单向**的**漏登记**（定案 **#64**）。★ 实测判定：`repo_ledger.go` 该行**现已为保留式** → **✅ 已闭合**，证据 **`cc753c4`**（提交自述「`08 §4.9-b` 漏改半边」）。★ 另**登记同类候选（不下结论）**：同文件 `amount_cents` **无条件覆盖**，而 instance 侧有 **D4**（`WHEN excluded.amount_cents > 0`）→ **两端口径不一致**，判定交 `engineer-glm`。 | 架构师（Bob） |
 | V1.14 | 2026-09-27 | 依 team-lead **分级核查**裁定，修正**同一断言**的**最后一处现值位点**（**路由判定表**）：`POST /approval/external/callback` 一行由「须公网 **HTTPS**」改为「须公网**入站**可达（★ **HTTPS 属我方选择、非平台要求**，见 `04a §17.0`）」。★ 起因＝`04a §17.0`（官方《三方快捷审批回调》/《创建三方审批定义》**两页均无协议 / 端口要求**；「必须 HTTPS」实属**事件订阅 Webhook**，我方事件走**长连接 `larkws`、不需公网 URL**）。★ 同批修正另见：`04a` **V2.6** · `01a` **V1.16** · `02-UseCase` **V1.4** · `14` **V1.2** · `09` **V1.3**。★ **不改任何 R 编号、不改任何代码**。 | 架构师（Bob） |
+| V1.15 | 2026-09-27 | **回调链路修复文档收口轮**（代码已落地，本批只写回 `.md`、**不改代码 / 不提交**）：① **§5 新增 `R29`**（回调「解析字段名」与官方报文不匹配 → 修复前回调**恒 400**；`extCallbackBody` 按官方 12 字段重写 + `action_context` 三级读法；修复 `d94580f`）；② **§5.1 台账**：新增 `R29` 行 + **`R11`/`R14` 由「契约就绪」翻为 ✅ 已闭合**（`router.go` 路由实证在位，回调路由在 `/api` 组外、未挂 `requireSession`）→ **统计 14 → 17**、一半 6 → 4；③ §5.1 标题 `R01–R28` → **`R01–R29`**。★ **不改任何历史 R 编号、不改任何代码**。★ 同批收口见：`05-API` **V2.11** · `04a` **V2.7** · `01a` **V1.17** · `09` **V1.6** · `16` **V1.1** · `07` **V2.2** · `14` **V1.4** · `06` **V1.11** · `reference/README`。 | 产品经理（Alice） |
 
 ---
 
