@@ -75,9 +75,10 @@ onMounted(load)
             <td>{{ it.task_order != null ? it.task_order : '-' }}</td>
             <td>
               <router-link
+                class="link-btn"
                 :to="`/approval/${encodeURIComponent(it.biz_no)}?task_id=${encodeURIComponent(it.task_id || '')}`"
               >
-                <button class="primary">办理</button>
+                办理
               </router-link>
             </td>
           </tr>

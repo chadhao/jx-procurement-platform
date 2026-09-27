@@ -42,8 +42,12 @@ onMounted(load)
     <div class="panel">
       <div class="toolbar">
         <router-link to="/instances">← 返回列表</router-link>
-        <router-link v-if="inst && inst.biz_no" :to="`/approval/${encodeURIComponent(inst.biz_no)}`">
-          <button class="primary">进入审批操作台</button>
+        <router-link
+          v-if="inst && inst.biz_no"
+          class="link-btn"
+          :to="`/approval/${encodeURIComponent(inst.biz_no)}`"
+        >
+          进入审批操作台
         </router-link>
       </div>
       <div v-if="err" class="error">{{ err }}</div>

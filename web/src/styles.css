@@ -180,6 +180,21 @@ button.danger {
   cursor: pointer;
 }
 
+/* 以链接呈现的按钮（router-link 渲染为 <a>，不宜包裹 <button>：交互内容不可嵌套）。 */
+.link-btn {
+  display: inline-block;
+  padding: 6px 10px;
+  border: 1px solid var(--primary);
+  border-radius: 6px;
+  background: var(--primary);
+  color: #fff;
+  cursor: pointer;
+}
+
+.link-btn:hover {
+  opacity: 0.92;
+}
+
 button:disabled {
   opacity: 0.5;
   cursor: not-allowed;
