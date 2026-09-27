@@ -179,8 +179,13 @@ func (g *Ingestor) Ingest(ctx context.Context, det *feishu.InstanceDetail, sourc
 		}
 
 		// 台账存档：仅当 doc_type→ledger_type 已配置时写入（未配置不写，避免虚构口径）。
+		//
+		// ★ 一对多（B47 修复）：一个 doc_type 可对应**多个**台账 —— `PR` 同时落
+		//   `L02`（采购需求与审批台账）与 `L03`（采购经办登记台账）。原先只取第一个
+		//   会让 `L03` **永远没有行**，而看板「需求提出人任经办人的笔数」读 `L03`
+		//   → 恒为 0，且 **0 恰好是该指标的期望值**（错得看不出来）。
 		if strings.TrimSpace(det.BizNo) != "" && g.maps != nil {
-			if lt, ok := g.maps.LedgerTypeFor(docType); ok {
+			for _, lt := range g.maps.LedgerTypesFor(docType) {
 				if err := g.db.UpsertArchiveTx(ctx, tx, &store.LedgerArchive{
 					LedgerType:      lt,
 					BizNo:           det.BizNo,

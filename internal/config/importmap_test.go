@@ -74,7 +74,9 @@ func TestImportValidateRejects(t *testing.T) {
 		{"ledger_type 指向未启用台账", func(p *ImportPayload) { p.LedgerType[0].Value = "L12" }, "本期不启用"},
 		{"ledger_type 指向主数据台账", func(p *ImportPayload) { p.LedgerType[0].Value = "L08" }, "主数据"},
 		{"ledger_type 指向汇总台账", func(p *ImportPayload) { p.LedgerType[0].Value = "L10" }, "只读汇总"},
-		{"ledger_type 重复", func(p *ImportPayload) { p.LedgerType[1].Key = p.LedgerType[0].Key }, "ledger_type 重复"},
+		// ★ 一对多（B47）：同一 doc_type 配**不同**台账是合法的（PR → L02 + L03），
+		//   只有 (doc_type, ledger_type) **完全相同**才拒。
+		{"ledger_type 完全相同重复", func(p *ImportPayload) { p.LedgerType[1] = p.LedgerType[0] }, "ledger_type 重复"},
 		{"threshold 非数字", func(p *ImportPayload) { p.Threshold[0].Value = "一千" }, "必须是数字或"},
 		{"threshold 区间倒置", func(p *ImportPayload) { p.Threshold[1].Value = "1000-800" }, "必须是数字或"},
 		{"threshold key 空", func(p *ImportPayload) { p.Threshold[0].Key = " " }, "key 不能为空"},
@@ -249,12 +251,15 @@ func TestImportMappingsReadback(t *testing.T) {
 		t.Fatalf("未配置字段不应命中")
 	}
 
-	// ③ doc_type → 台账类型
-	if lt, ok := maps.LedgerTypeFor("CT"); !ok || lt != "L09" {
-		t.Fatalf("ledger_type 反查失败: %q %v", lt, ok)
+	// ③ doc_type → 台账类型（★ 一对多：B47）
+	if lts := maps.LedgerTypesFor("CT"); len(lts) != 1 || lts[0] != "L09" {
+		t.Fatalf("ledger_type 反查失败: %v", lts)
 	}
-	if _, ok := maps.LedgerTypeFor("QC"); ok {
-		t.Fatalf("未配置 doc_type 不应返回台账类型")
+	if lts := maps.LedgerTypesFor("QC"); len(lts) != 0 {
+		t.Fatalf("未配置 doc_type 不应返回台账类型，实际 %v", lts)
+	}
+	if n := maps.LedgerMappingCount(); n != 2 {
+		t.Fatalf("台账映射条数 = %d，期望 2", n)
 	}
 
 	// ④ 阈值（元 → 分）
@@ -342,3 +347,214 @@ func TestPerInstanceLedgerWhitelist(t *testing.T) {
 
 // 让 store 包在本文件有显式引用（避免仅经 storetest 间接依赖时被 goimports 误删）。
 var _ = store.Migrate
+
+// ---------- C3：登记了「无消费端」的 biz_field 必须**可见** ----------
+
+// TestC3ReservedAndRemovedBizFieldsAreSurfaced 三档 biz_field 必须能被区分并**报出**。
+//
+// 背景（2026-09-27 静默审计 C3）：登记为透传但**无任何读取者**的字段，
+// 被模板映射后值会落 ext_json 却无人消费 —— 典型的"配了却不生效"。
+// 处置分两档：`Reserved`（口径先行，可见提示）与 `Removed`（规范位置本就不在模板）。
+func TestC3ReservedAndRemovedBizFieldsAreSurfaced(t *testing.T) {
+	// ① 预留档：仍属"已知字段"（不报拼写错），但要有**专门**提示
+	if !IsKnownBizField("quote_refs") {
+		t.Error("quote_refs 已登记为预留，应属已知字段（否则会被当成拼写错误）")
+	}
+	if !IsReservedBizField("quote_refs") {
+		t.Error("quote_refs 应被识别为预留字段")
+	}
+
+	// ② 移除档：**不再**属已知字段 → 会落进「不参与规范列抽取」提示（可见）
+	for _, name := range []string{"payment_ref", "actual_arrival_date"} {
+		if IsKnownBizField(name) {
+			t.Errorf("%s 已确认不该由模板映射，不应再是「已知字段」", name)
+		}
+		if RemovedBizFieldReason(name) == "" {
+			t.Errorf("%s 缺少成因说明（提示会变成无意义的「未知字段」）", name)
+		}
+	}
+
+	// ③ 正常透传字段：不得被误归入任一新档
+	for _, name := range []string{"contract_no", "related_biz_no", "inspection_result"} {
+		if IsReservedBizField(name) {
+			t.Errorf("%s 有真实消费端，不该被判为预留", name)
+		}
+		if RemovedBizFieldReason(name) != "" {
+			t.Errorf("%s 有真实消费端，不该被判为已移除", name)
+		}
+	}
+
+	// ④ 载荷级：三档各自被挑出，互不混淆
+	p := &ImportPayload{FieldID: []ImportFieldID{
+		{DocType: "SS", FieldID: "w1", BizField: "quote_refs"},
+		{DocType: "BA", FieldID: "w2", BizField: "payment_ref"},
+		{DocType: "GR", FieldID: "w3", BizField: "actual_arrival_date"},
+		{DocType: "CT", FieldID: "w4", BizField: "contract_no"},
+		{DocType: "CT", FieldID: "w5", BizField: "amout"}, // 真拼写错误
+	}}
+	if got := p.ReservedUsedBizFields(); len(got) != 1 || got[0] != "quote_refs" {
+		t.Errorf("预留字段挑选错误: %v", got)
+	}
+	got := p.RemovedUsedBizFields()
+	if len(got) != 2 {
+		t.Errorf("已移除字段挑选错误: %v", got)
+	}
+	// ★ 关键：`payment_ref` / `actual_arrival_date` **必须**出现在「不参与抽取」提示里
+	//   （那是它们唯一能被看见的地方），而 `quote_refs` **不应**出现（它有自己的提示）。
+	unknown := p.NonExtractableBizFields()
+	for _, want := range []string{"payment_ref", "actual_arrival_date", "amout"} {
+		if !inList(want, unknown) {
+			t.Errorf("%s 应出现在「不参与规范列抽取」提示中，实际 %v", want, unknown)
+		}
+	}
+	if inList("quote_refs", unknown) {
+		t.Errorf("quote_refs 有专门提示，不该混进「不参与抽取」列表: %v", unknown)
+	}
+	if inList("contract_no", unknown) {
+		t.Errorf("contract_no 有真实消费端，不该出现在提示里: %v", unknown)
+	}
+}
+
+// ---------- B47：doc_type → ledger_type 一对多 ----------
+
+// TestValidateAllowsLedgerOneToMany 同一 doc_type 配**多个不同**台账必须放行。
+//
+// ★ 这是 B47 的核心口径：工具表要求 `PR` 同时产生「采购需求与审批台账 L02」与
+// 「采购经办登记台账 L03」两条记录。旧校验按 doc_type 唯一，会把第二条判为「重复」。
+func TestValidateAllowsLedgerOneToMany(t *testing.T) {
+	p := &ImportPayload{
+		ApprovalCode: []ImportApprovalCode{{Code: "CODE-PR", DocType: "PR"}},
+		LedgerType:   []ImportKV{{Key: "PR", Value: "L02"}, {Key: "PR", Value: "L03"}},
+	}
+	if err := p.Validate(); err != nil {
+		t.Fatalf("同一 doc_type 配两个台账应放行，实际被拒: %v", err)
+	}
+}
+
+// TestImportLedgerOneToManyRoundTrip 一对多映射导入后必须**两条都在**，且可被读回。
+func TestImportLedgerOneToManyRoundTrip(t *testing.T) {
+	ctx := context.Background()
+	db := storetest.NewDB(t)
+
+	p := &ImportPayload{
+		ApprovalCode: []ImportApprovalCode{{Code: "CODE-PR", DocType: "PR"}},
+		LedgerType: []ImportKV{
+			{Key: "PR", Value: "L02"},
+			{Key: "PR", Value: "L03"},
+		},
+	}
+	res, err := ImportMappings(ctx, db, p)
+	if err != nil {
+		t.Fatalf("导入失败: %v", err)
+	}
+	if res.LedgerType != 2 {
+		t.Fatalf("导入计数 = %d，期望 2", res.LedgerType)
+	}
+
+	maps, err := LoadMaps(ctx, db)
+	if err != nil {
+		t.Fatalf("装载映射失败: %v", err)
+	}
+	lts := maps.LedgerTypesFor("PR")
+	if len(lts) != 2 {
+		t.Fatalf("PR 的台账 = %v，期望 2 条（L02 + L03）", lts)
+	}
+	if !inList("L02", lts) || !inList("L03", lts) {
+		t.Fatalf("PR 的台账 = %v，期望同时含 L02 与 L03", lts)
+	}
+	// ★ 顺带钉住「台账映射条数」的计数口径：按 doc_type 计数会低报（1 ≠ 2）。
+	if n := maps.LedgerMappingCount(); n != 2 {
+		t.Fatalf("台账映射条数 = %d，期望 2（按 doc_type 计数会低报）", n)
+	}
+}
+
+// TestImportNoStaleRowAfterValueChange 是本轮**最重要的回归断言**。
+//
+// 把 `map_value` 纳入唯一键后，「改 value」从「覆盖」变成「新增一行」。若不先清空，
+// 旧行会残留 → 同一 doc_type 同时写两个台账（而配置文件里只写了一个）。
+// 这条用例专门钉住「改 value 之后旧值必须消失」。
+func TestImportNoStaleRowAfterValueChange(t *testing.T) {
+	ctx := context.Background()
+	db := storetest.NewDB(t)
+
+	// 第一次：BA → L01
+	p1 := &ImportPayload{
+		ApprovalCode: []ImportApprovalCode{{Code: "CODE-BA", DocType: "BA"}},
+		LedgerType:   []ImportKV{{Key: "BA", Value: "L01"}},
+	}
+	if _, err := ImportMappings(ctx, db, p1); err != nil {
+		t.Fatalf("首次导入失败: %v", err)
+	}
+
+	// 第二次：BA → L02（改 value）
+	p2 := &ImportPayload{
+		ApprovalCode: []ImportApprovalCode{{Code: "CODE-BA", DocType: "BA"}},
+		LedgerType:   []ImportKV{{Key: "BA", Value: "L02"}},
+	}
+	if _, err := ImportMappings(ctx, db, p2); err != nil {
+		t.Fatalf("二次导入失败: %v", err)
+	}
+
+	maps, err := LoadMaps(ctx, db)
+	if err != nil {
+		t.Fatalf("装载映射失败: %v", err)
+	}
+	lts := maps.LedgerTypesFor("BA")
+	if len(lts) != 1 || lts[0] != "L02" {
+		t.Fatalf("改 value 后 BA 的台账 = %v，期望仅 [L02]（旧值 L01 必须被清掉，否则会同时写两个台账）", lts)
+	}
+	// 表内行数必须恒等于载荷规模（1 approval + 1 ledger = 2），不得因残留而 +1。
+	if n := storetest.Count(t, db, `SELECT COUNT(*) FROM t_config_mapping`); n != 2 {
+		t.Fatalf("表内行数 = %d，期望 2（残留旧行说明全量替换失效）", n)
+	}
+}
+
+// TestImportSameValueRepeatedIsIdempotent 同一文件重复导入必须幂等（行数不增）。
+func TestImportSameValueRepeatedIsIdempotent(t *testing.T) {
+	ctx := context.Background()
+	db := storetest.NewDB(t)
+
+	p := fullSample()
+	if _, err := ImportMappings(ctx, db, p); err != nil {
+		t.Fatalf("首次导入失败: %v", err)
+	}
+	first := storetest.Count(t, db, `SELECT COUNT(*) FROM t_config_mapping`)
+	if _, err := ImportMappings(ctx, db, p); err != nil {
+		t.Fatalf("重复导入失败: %v", err)
+	}
+	again := storetest.Count(t, db, `SELECT COUNT(*) FROM t_config_mapping`)
+	if first != again {
+		t.Fatalf("重复导入后行数 %d → %d，不幂等", first, again)
+	}
+}
+
+// TestImportReportsEmptyKinds 载荷中为空的映射类必须被**报出**而非静默跳过。
+//
+// ★ 全量替换只作用于「载荷中出现的类」；某类为空时不动它 —— 这个决定必须是
+// **可见的**，否则「以为清了其实没清」又是一次静默。
+func TestImportReportsEmptyKinds(t *testing.T) {
+	ctx := context.Background()
+	db := storetest.NewDB(t)
+
+	p := &ImportPayload{
+		ApprovalCode: []ImportApprovalCode{{Code: "CODE-PR", DocType: "PR"}},
+		LedgerType:   []ImportKV{{Key: "PR", Value: "L02"}},
+	}
+	res, err := ImportMappings(ctx, db, p)
+	if err != nil {
+		t.Fatalf("导入失败: %v", err)
+	}
+	for _, want := range []string{"field_id", "threshold", "ledger_field"} {
+		if !inList(want, res.EmptyKinds) {
+			t.Errorf("空映射类 %s 未被报出，实际 %v", want, res.EmptyKinds)
+		}
+	}
+	if inList("approval_code", res.EmptyKinds) || inList("ledger_type", res.EmptyKinds) {
+		t.Errorf("非空的映射类不应出现在 EmptyKinds 中，实际 %v", res.EmptyKinds)
+	}
+	for _, want := range []string{"approval_code", "ledger_type"} {
+		if !inList(want, res.ReplacedKinds) {
+			t.Errorf("映射类 %s 应被记为已替换，实际 %v", want, res.ReplacedKinds)
+		}
+	}
+}

@@ -2,6 +2,7 @@ package config
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -107,6 +108,14 @@ type ImportResult struct {
 	LedgerType   int
 	Threshold    int
 	LedgerField  int
+
+	// ReplacedKinds 本次被**全量替换**（先清空再写入）的映射类；
+	// EmptyKinds 在载荷中为空、因而**未被替换**（保留表中既有）的映射类。
+	//
+	// ★ 为什么要暴露：全量替换是「配置以文件为准」的唯一正确实现（见 ImportMappings 注释），
+	//   但若某个类在文件中是空的，静默不动它同样是隐患 —— 调用方必须把 EmptyKinds 打出来。
+	ReplacedKinds []string
+	EmptyKinds    []string
 }
 
 // Total 返回导入条目总数。
@@ -211,9 +220,11 @@ func (p *ImportPayload) Validate() error {
 			return fmt.Errorf("ledger_type[%d]（%s → %s）：%s，不能作为单据的落账目标；"+
 				"可落账的键为 %s", i, e.Key, e.Value, hint, strings.Join(PerInstanceLedgerTypes, "/"))
 		}
-		k := "lt\x00" + strings.TrimSpace(e.Key)
+		// ★ 唯一性键为 (doc_type, ledger_type) —— 一对多（B47）：
+		//   同一 doc_type 允许多个台账（如 PR → L02 + L03），但同一对不允许重复。
+		k := "lt\x00" + strings.TrimSpace(e.Key) + "\x00" + strings.TrimSpace(e.Value)
 		if seen[k] {
-			return fmt.Errorf("ledger_type 重复：%s", e.Key)
+			return fmt.Errorf("ledger_type 重复：(doc_type=%q, ledger_type=%q)", e.Key, e.Value)
 		}
 		seen[k] = true
 	}
@@ -331,74 +342,128 @@ func LoadImportFile(path string) (*ImportPayload, error) {
 	return p, nil
 }
 
-// ImportMappings 幂等写入四类映射；任一条写入失败即返回错误（已写入的条目保持，重跑可覆盖修正）。
+// ImportMappings 导入五类映射。
+//
+// ★ 语义：**全量替换「本载荷中出现的映射类」** —— 该类在表内先清空、再按载荷写入，
+// 保证「表中内容 == 文件内容」。整个导入在**一个事务**内完成，任一步失败即整体回滚。
+//
+//   - **为什么必须全量替换**：migration 0006 把 `map_value` 纳入唯一键（为支持
+//     「`doc_type` → 多个台账」，B47 修复），于是**改一个 value 会变成「新增一行」
+//     而不是「覆盖」**。若不清空，旧行会残留 → 同一 `doc_type` 同时写两个台账、
+//     同一阈值键出现两个值（`loadSimpleMap` 由后写者覆盖前者，行为随行序变化）
+//     —— 全是「不报错但结果错」的静默缺陷。
+//   - 某类在载荷中**为空**（`[]` 或缺失）时**不替换**该类，并计入 `EmptyKinds`
+//     由调用方提示，避免「导入半份文件把配置清空」。
 func ImportMappings(ctx context.Context, db *store.DB, p *ImportPayload) (ImportResult, error) {
 	var res ImportResult
 	if err := p.Validate(); err != nil {
 		return res, err
 	}
 
-	for _, e := range p.ApprovalCode {
-		row := store.ConfigMappingRow{
-			MapKind: "approval_code", MapKey: strings.TrimSpace(e.Code),
-			MapValue: strings.TrimSpace(e.DocType), DocType: strings.TrimSpace(e.DocType),
-			Remark: defaultRemark(e.Remark, "飞书审批模板 approval_code → 单据类型"),
+	kinds := []struct {
+		kind  string
+		count int
+	}{
+		{"approval_code", len(p.ApprovalCode)},
+		{"field_id", len(p.FieldID)},
+		{"ledger_type", len(p.LedgerType)},
+		{"threshold", len(p.Threshold)},
+	}
+	for _, k := range kinds {
+		if k.count == 0 {
+			res.EmptyKinds = append(res.EmptyKinds, k.kind)
 		}
-		if err := db.UpsertConfigMapping(ctx, row); err != nil {
-			return res, fmt.Errorf("写 approval_code(%s) 失败: %w", e.Code, err)
-		}
-		res.ApprovalCode++
+	}
+	if len(p.LedgerField) == 0 {
+		res.EmptyKinds = append(res.EmptyKinds, "ledger_field")
 	}
 
-	for _, e := range p.FieldID {
-		biz := strings.TrimSpace(e.BizField)
-		row := store.ConfigMappingRow{
-			MapKind: "field_id", MapKey: strings.TrimSpace(e.FieldID),
-			MapValue: biz, DocType: strings.TrimSpace(e.DocType),
-			Remark: defaultRemark(strings.TrimSpace(e.FieldName), "表单控件 field_id → 业务字段名"),
+	err := db.WithTx(ctx, func(tx *sql.Tx) error {
+		// ① 清空「载荷中出现」的映射类 —— 全量替换的第一步。
+		//    没有这一步，「改 value」会残留旧行（见函数头注释）。
+		for _, k := range kinds {
+			if k.count == 0 {
+				continue
+			}
+			if _, err := db.DeleteConfigMappingsKindTx(ctx, tx, k.kind); err != nil {
+				return fmt.Errorf("清理 %s 失败: %w", k.kind, err)
+			}
+			res.ReplacedKinds = append(res.ReplacedKinds, k.kind)
 		}
-		if err := db.UpsertConfigMapping(ctx, row); err != nil {
-			return res, fmt.Errorf("写 field_id(%s) 失败: %w", e.FieldID, err)
+		if len(p.LedgerField) > 0 {
+			if _, err := db.DeleteLedgerFieldDefsKindTx(ctx, tx); err != nil {
+				return fmt.Errorf("清理 ledger_field 失败: %w", err)
+			}
+			res.ReplacedKinds = append(res.ReplacedKinds, "ledger_field")
 		}
-		res.FieldID++
-	}
 
-	for _, e := range p.LedgerType {
-		row := store.ConfigMappingRow{
-			MapKind: "ledger_type", MapKey: strings.TrimSpace(e.Key),
-			MapValue: strings.TrimSpace(e.Value),
-			Remark:   defaultRemark(e.Remark, "doc_type → 台账类型语义键（L01..L12）"),
+		// ② 按载荷写入
+		for _, e := range p.ApprovalCode {
+			row := store.ConfigMappingRow{
+				MapKind: "approval_code", MapKey: strings.TrimSpace(e.Code),
+				MapValue: strings.TrimSpace(e.DocType), DocType: strings.TrimSpace(e.DocType),
+				Remark: defaultRemark(e.Remark, "飞书审批模板 approval_code → 单据类型"),
+			}
+			if err := db.UpsertConfigMappingTx(ctx, tx, row); err != nil {
+				return fmt.Errorf("写 approval_code(%s) 失败: %w", e.Code, err)
+			}
+			res.ApprovalCode++
 		}
-		if err := db.UpsertConfigMapping(ctx, row); err != nil {
-			return res, fmt.Errorf("写 ledger_type(%s) 失败: %w", e.Key, err)
-		}
-		res.LedgerType++
-	}
 
-	for _, e := range p.Threshold {
-		row := store.ConfigMappingRow{
-			MapKind: "threshold", MapKey: strings.TrimSpace(e.Key),
-			MapValue: strings.TrimSpace(e.Value),
-			Remark:   defaultRemark(e.Remark, "阈值（单位：元）"),
+		for _, e := range p.FieldID {
+			biz := strings.TrimSpace(e.BizField)
+			row := store.ConfigMappingRow{
+				MapKind: "field_id", MapKey: strings.TrimSpace(e.FieldID),
+				MapValue: biz, DocType: strings.TrimSpace(e.DocType),
+				Remark: defaultRemark(strings.TrimSpace(e.FieldName), "表单控件 field_id → 业务字段名"),
+			}
+			if err := db.UpsertConfigMappingTx(ctx, tx, row); err != nil {
+				return fmt.Errorf("写 field_id(%s) 失败: %w", e.FieldID, err)
+			}
+			res.FieldID++
 		}
-		if err := db.UpsertConfigMapping(ctx, row); err != nil {
-			return res, fmt.Errorf("写 threshold(%s) 失败: %w", e.Key, err)
-		}
-		res.Threshold++
-	}
 
-	// 台账字段定义：不走 t_config_mapping，直接落 t_ledger_field_def
-	// （它被写接口用作 fields 键名白名单、被 SensitiveFields 用作列级权限兜底）。
-	for _, e := range p.LedgerField {
-		def := store.LedgerFieldDef{
-			LedgerType:  strings.TrimSpace(e.LedgerType),
-			FieldKey:    strings.TrimSpace(e.FieldKey),
-			IsSensitive: e.IsSensitive,
+		for _, e := range p.LedgerType {
+			row := store.ConfigMappingRow{
+				MapKind: "ledger_type", MapKey: strings.TrimSpace(e.Key),
+				MapValue: strings.TrimSpace(e.Value),
+				Remark:   defaultRemark(e.Remark, "doc_type → 台账类型语义键（L01..L12）"),
+			}
+			if err := db.UpsertConfigMappingTx(ctx, tx, row); err != nil {
+				return fmt.Errorf("写 ledger_type(%s) 失败: %w", e.Key, err)
+			}
+			res.LedgerType++
 		}
-		if err := db.UpsertLedgerFieldDef(ctx, def); err != nil {
-			return res, fmt.Errorf("写 ledger_field(%s/%s) 失败: %w", def.LedgerType, def.FieldKey, err)
+
+		for _, e := range p.Threshold {
+			row := store.ConfigMappingRow{
+				MapKind: "threshold", MapKey: strings.TrimSpace(e.Key),
+				MapValue: strings.TrimSpace(e.Value),
+				Remark:   defaultRemark(e.Remark, "阈值（单位：元）"),
+			}
+			if err := db.UpsertConfigMappingTx(ctx, tx, row); err != nil {
+				return fmt.Errorf("写 threshold(%s) 失败: %w", e.Key, err)
+			}
+			res.Threshold++
 		}
-		res.LedgerField++
+
+		// 台账字段定义：不走 t_config_mapping，直接落 t_ledger_field_def
+		// （它被写接口用作 fields 键名白名单、被 SensitiveFields 用作列级权限兜底）。
+		for _, e := range p.LedgerField {
+			def := store.LedgerFieldDef{
+				LedgerType:  strings.TrimSpace(e.LedgerType),
+				FieldKey:    strings.TrimSpace(e.FieldKey),
+				IsSensitive: e.IsSensitive,
+			}
+			if err := db.UpsertLedgerFieldDefTx(ctx, tx, def); err != nil {
+				return fmt.Errorf("写 ledger_field(%s/%s) 失败: %w", def.LedgerType, def.FieldKey, err)
+			}
+			res.LedgerField++
+		}
+		return nil
+	})
+	if err != nil {
+		return res, err
 	}
 	return res, nil
 }

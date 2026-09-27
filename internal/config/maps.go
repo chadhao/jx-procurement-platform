@@ -13,8 +13,10 @@ import (
 type Maps struct {
 	Approval *ApprovalMap
 	Field    *FieldMap
-	// Ledger：doc_type → 台账类型语义键（L01..L12）。★ 该映射口径属 Q14/Q6 待定，未配置则不写台账。
-	Ledger map[string]string
+	// Ledger：doc_type → 台账类型语义键（L01..L12），**一对多**（B47 修复）。
+	// ★ 例：`PR` 同时落 `L02`（采购需求与审批台账）与 `L03`（采购经办登记台账）。
+	// 未配置 → 空切片（不写台账，避免虚构口径）。
+	Ledger map[string][]string
 	// Thresholds：阈值项（如 split_supplier_month=1000、spot_check_range=800-1000），单位元。
 	Thresholds map[string]string
 }
@@ -29,7 +31,7 @@ func LoadMaps(ctx context.Context, db *store.DB) (*Maps, error) {
 	if err != nil {
 		return nil, err
 	}
-	ledger, err := loadSimpleMap(ctx, db, "ledger_type")
+	ledger, err := loadLedgerMap(ctx, db)
 	if err != nil {
 		return nil, err
 	}
@@ -40,7 +42,7 @@ func LoadMaps(ctx context.Context, db *store.DB) (*Maps, error) {
 	return &Maps{Approval: approval, Field: field, Ledger: ledger, Thresholds: thresholds}, nil
 }
 
-// loadSimpleMap 装载 map_key → map_value 的简单映射。
+// loadSimpleMap 装载 map_key → map_value 的简单映射（单值语义）。
 func loadSimpleMap(ctx context.Context, db *store.DB, kind string) (map[string]string, error) {
 	rows, err := db.ListConfigMappings(ctx, kind)
 	if err != nil {
@@ -57,13 +59,56 @@ func loadSimpleMap(ctx context.Context, db *store.DB, kind string) (map[string]s
 	return out, nil
 }
 
-// LedgerTypeFor 返回 doc_type 对应的台账类型；未配置返回 false（则不写台账，避免虚构口径）。
-func (m *Maps) LedgerTypeFor(docType string) (string, bool) {
-	if m == nil || m.Ledger == nil {
-		return "", false
+// loadLedgerMap 装载 doc_type → []台账类型（**一对多**）。
+//
+// ★ 为什么与 loadSimpleMap 分开（B47 的根因就在这）：台账映射天然是一对多
+// （一张单据可同时产生「需求与审批台账」与「经办登记台账」两条记录）。
+// 用单值 map 装载会让**同一个 doc_type 的前一条被后一条覆盖**，且两条都在
+// 配置文件里、校验也过 —— 典型的「配了却不生效且不报错」。
+func loadLedgerMap(ctx context.Context, db *store.DB) (map[string][]string, error) {
+	rows, err := db.ListConfigMappings(ctx, "ledger_type")
+	if err != nil {
+		return nil, err
 	}
-	v, ok := m.Ledger[strings.TrimSpace(docType)]
-	return v, ok && v != ""
+	out := make(map[string][]string, len(rows))
+	for _, r := range rows {
+		key := strings.TrimSpace(r.MapKey)
+		val := strings.TrimSpace(r.MapValue)
+		if key == "" || val == "" {
+			continue
+		}
+		// 去重但保序（同一 (doc_type, ledger_type) 由 DB 唯一索引 + 导入校验双重保证，
+		// 此处仅防御历史脏数据）。
+		if !inList(val, out[key]) {
+			out[key] = append(out[key], val)
+		}
+	}
+	return out, nil
+}
+
+// LedgerTypesFor 返回 doc_type 对应的**全部**台账类型（一对多；B47）。
+// 未配置返回 nil（调用方据此**不写台账**，避免虚构口径）。
+//
+// ★ 刻意**不提供**单值版本 `LedgerTypeFor`：单值 API 会把「一对多」的真实语义
+// 压回一对一，是本次缺陷的温床（调用方写 `lt, ok := ...` 就默认只有一个）。
+func (m *Maps) LedgerTypesFor(docType string) []string {
+	if m == nil || m.Ledger == nil {
+		return nil
+	}
+	return m.Ledger[strings.TrimSpace(docType)]
+}
+
+// LedgerMappingCount 返回已配置的 (doc_type → 台账) 映射**条数**（非 doc_type 个数），
+// 供启动日志与自检使用 —— 一对多下按 doc_type 计数会低报。
+func (m *Maps) LedgerMappingCount() int {
+	if m == nil {
+		return 0
+	}
+	n := 0
+	for _, v := range m.Ledger {
+		n += len(v)
+	}
+	return n
 }
 
 // ThresholdCents 解析单值阈值（单位元）为分。示例：split_supplier_month="1000" → 100000。

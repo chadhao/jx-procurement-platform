@@ -74,14 +74,42 @@ var PassthroughBizFields = map[string]bool{
 	BizFieldRemark:           true,
 	"acceptors":              true,
 	"assigned_open_id":       true,
-	"quote_refs":             true,
 	"invoice_count":          true,
 	"handover_date":          true,
-	"payment_ref":            true,
 	"inspection_item":        true,
 	"inspection_standard":    true,
 	"delivery_date":          true,
-	"actual_arrival_date":    true,
+}
+
+// ReservedBizFields 已登记、但**当前没有任何消费端**的透传字段。
+//
+// ★ 为什么单独一类（2026-09-27 静默审计 C3 的处置）：这类名字既不是拼写错误、
+// 也不是"不参与抽取"，而是**口径先行、功能后到**。若混在 PassthroughBizFields 里，
+// 操作员把模板控件映射到它 → 值落进 ext_json → **却无人读取**，静默失效。
+// 故单列一档，导入时给**专门的非阻断提示**（与 `ConsumedThresholdKeys` 的"假配置"
+// 提示同一思路），让"配了但没生效"这件事**可见**。
+//
+// 移出本表 = 该字段已有消费端；移入本表 = 消费端被移除。
+var ReservedBizFields = map[string]bool{
+	// 询比价依据引用（询价单/比价单号）。将来做"报价依据可追溯"时启用。
+	"quote_refs": true,
+}
+
+// RemovedBizFields 曾经登记、**已确认不该由模板映射**的名字（保留说明供排查）。
+//
+// ★ 这两个不是"暂时没用"，而是**规范位置本来就不在模板**：
+//   - `payment_ref`（L01 付款凭据号）→ 按 Q14 定稿它属**台账运营表可写字段**
+//     （`t_ledger_field_def` 已为 L01 登记「付款凭据号」），应在台账页登记，
+//     映射到模板只会写进**只读的存档 ext_json**，反而拿不到。
+//   - `actual_arrival_date`（实际到货）→ L11/看板的「实际到货」由
+//     **GR 的业务日期派生**（键名 `actual_arrival`，见 `handlers_ledger_derived.go`），
+//     不是模板字段；映射它同样不会生效。
+//
+// 移除登记后，若有人仍映射这两个名字，导入会打「不参与规范列抽取」提示（可见），
+// 而不是静默落库。
+var RemovedBizFields = map[string]string{
+	"payment_ref":         "属 L01 台账**运营表**可写字段（在台账页登记），不由模板映射",
+	"actual_arrival_date": "「实际到货」由 GR 业务日期派生（键名 actual_arrival），不由模板映射",
 }
 
 // IsExtractableBizField 判断某 biz_field 是否参与规范列抽取。
@@ -89,10 +117,20 @@ func IsExtractableBizField(name string) bool {
 	return ExtractableBizFields[strings.TrimSpace(name)]
 }
 
-// IsKnownBizField 判断某 biz_field 是否已被登记（抽取列 或 透传 ext_json）。
+// IsKnownBizField 判断某 biz_field 是否已被登记（抽取列 / 透传 ext_json / 预留）。
 func IsKnownBizField(name string) bool {
 	n := strings.TrimSpace(name)
-	return ExtractableBizFields[n] || PassthroughBizFields[n]
+	return ExtractableBizFields[n] || PassthroughBizFields[n] || ReservedBizFields[n]
+}
+
+// IsReservedBizField 判断某 biz_field 是否为「已登记但当前无消费端」。
+func IsReservedBizField(name string) bool {
+	return ReservedBizFields[strings.TrimSpace(name)]
+}
+
+// RemovedBizFieldReason 返回「已移除登记」的字段的成因说明（非本表则返回空串）。
+func RemovedBizFieldReason(name string) string {
+	return RemovedBizFields[strings.TrimSpace(name)]
 }
 
 // ExtractableBizFieldNames 返回全部可抽取的 biz_field 名（升序，供提示与文档同步）。
@@ -126,6 +164,34 @@ func (p *ImportPayload) NonExtractableBizFields() []string {
 	for _, e := range p.FieldID {
 		name := strings.TrimSpace(e.BizField)
 		if name == "" || seen[name] || IsKnownBizField(name) {
+			continue
+		}
+		seen[name] = true
+		out = append(out, name)
+	}
+	return out
+}
+
+// ReservedUsedBizFields 返回载荷中使用的「已登记但无消费端」字段（去重、保序）。
+func (p *ImportPayload) ReservedUsedBizFields() []string {
+	return p.pickBizFields(IsReservedBizField)
+}
+
+// RemovedUsedBizFields 返回载荷中使用的「已确认为不该由模板映射」的字段（去重、保序）。
+func (p *ImportPayload) RemovedUsedBizFields() []string {
+	return p.pickBizFields(func(n string) bool { return RemovedBizFieldReason(n) != "" })
+}
+
+// pickBizFields 按谓词挑选载荷里出现过的 biz_field（去重、保序）。
+func (p *ImportPayload) pickBizFields(pred func(string) bool) []string {
+	if p == nil {
+		return nil
+	}
+	seen := map[string]bool{}
+	var out []string
+	for _, e := range p.FieldID {
+		name := strings.TrimSpace(e.BizField)
+		if name == "" || seen[name] || !pred(name) {
 			continue
 		}
 		seen[name] = true

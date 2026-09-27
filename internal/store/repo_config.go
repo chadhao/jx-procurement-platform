@@ -31,15 +31,44 @@ FROM t_config_mapping WHERE map_kind = ? ORDER BY map_key`, kind)
 	return out, rows.Err()
 }
 
-// UpsertConfigMapping 写入/更新一条配置映射。
+// UpsertConfigMapping 写入/更新一条配置映射（独立连接）。
 func (d *DB) UpsertConfigMapping(ctx context.Context, r ConfigMappingRow) error {
-	_, err := d.ExecContext(ctx, `
+	return upsertConfigMapping(ctx, d, r)
+}
+
+// UpsertConfigMappingTx 事务内写入/更新一条配置映射。
+func (d *DB) UpsertConfigMappingTx(ctx context.Context, tx *sql.Tx, r ConfigMappingRow) error {
+	return upsertConfigMapping(ctx, tx, r)
+}
+
+// upsertConfigMapping 冲突目标含 `map_value`（migration 0006，B47 修复）：使 `ledger_type`
+// 这类「doc_type → 台账类型」具备**一对多**语义（`PR` 同时落 `L02` 与 `L03`）。
+// 其余映射类的唯一性由 `config.Validate()` 在应用层保证（导入是唯一写入口）。
+//
+// ★ 副作用必须记住：`map_value` 进唯一键后，**改 value 不再是覆盖而是新增一行**。
+//
+//	因此导入侧必须「先按映射类清空再写入」（见 `DeleteConfigMappingsKindTx`），
+//	否则旧行残留会让同一 doc_type 同时写两个台账 —— 又一个静默缺陷。
+func upsertConfigMapping(ctx context.Context, q execer, r ConfigMappingRow) error {
+	_, err := q.ExecContext(ctx, `
 INSERT INTO t_config_mapping (map_kind, map_key, map_value, doc_type, remark, updated_at)
 VALUES (?,?,?,?,?,?)
-ON CONFLICT(map_kind, map_key, COALESCE(doc_type,'')) DO UPDATE SET
-  map_value = excluded.map_value, remark = excluded.remark, updated_at = excluded.updated_at`,
+ON CONFLICT(map_kind, map_key, COALESCE(doc_type,''), map_value) DO UPDATE SET
+  remark = excluded.remark, updated_at = excluded.updated_at`,
 		r.MapKind, r.MapKey, r.MapValue, nullStr(r.DocType), nullStr(r.Remark), fmtTime(timeNow().UTC()))
 	return err
+}
+
+// DeleteConfigMappingsKindTx 清空某一映射类的全部行，返回删除条数。
+//
+// 供「导入 = 全量替换」使用：某映射类在配置文件中出现时，表内该类先清空再写入，
+// 保证**表中内容恒等于文件内容**（无残留旧 value）。
+func (d *DB) DeleteConfigMappingsKindTx(ctx context.Context, tx *sql.Tx, kind string) (int64, error) {
+	res, err := tx.ExecContext(ctx, `DELETE FROM t_config_mapping WHERE map_kind = ?`, kind)
+	if err != nil {
+		return 0, err
+	}
+	return res.RowsAffected()
 }
 
 // ---------- 订阅状态 ----------

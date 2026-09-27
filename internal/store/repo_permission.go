@@ -163,8 +163,18 @@ func scanPermissionRule(s interface {
 // ---------- 台账字段定义（M4） ----------
 
 // UpsertLedgerFieldDef 写入/更新台账字段定义。
+// UpsertLedgerFieldDef 写入/更新台账字段定义（独立连接）。
 func (d *DB) UpsertLedgerFieldDef(ctx context.Context, f LedgerFieldDef) error {
-	_, err := d.ExecContext(ctx, `
+	return upsertLedgerFieldDef(ctx, d, f)
+}
+
+// UpsertLedgerFieldDefTx 事务内写入/更新台账字段定义。
+func (d *DB) UpsertLedgerFieldDefTx(ctx context.Context, tx *sql.Tx, f LedgerFieldDef) error {
+	return upsertLedgerFieldDef(ctx, tx, f)
+}
+
+func upsertLedgerFieldDef(ctx context.Context, q execer, f LedgerFieldDef) error {
+	_, err := q.ExecContext(ctx, `
 INSERT INTO t_ledger_field_def (ledger_type, field_key, field_label, is_formula, formula_kind, is_sensitive)
 VALUES (?,?,?,?,?,?)
 ON CONFLICT(ledger_type, field_key) DO UPDATE SET
@@ -172,6 +182,19 @@ ON CONFLICT(ledger_type, field_key) DO UPDATE SET
   formula_kind = excluded.formula_kind, is_sensitive = excluded.is_sensitive`,
 		f.LedgerType, f.FieldKey, nullStr(f.FieldLabel), boolToInt(f.IsFormula), nullStr(f.FormulaKind), boolToInt(f.IsSensitive))
 	return err
+}
+
+// DeleteLedgerFieldDefsKindTx 清空全部台账字段定义，返回删除条数。
+//
+// 供「导入 = 全量替换」使用（与 `DeleteConfigMappingsKindTx` 同理）：
+// `t_ledger_field_def` 的主键是 (ledger_type, field_key)，本身不会残留旧 value；
+// 但**文件里被删掉的字段定义**若不清理，旧白名单会继续放行已废弃的键名。
+func (d *DB) DeleteLedgerFieldDefsKindTx(ctx context.Context, tx *sql.Tx) (int64, error) {
+	res, err := tx.ExecContext(ctx, `DELETE FROM t_ledger_field_def`)
+	if err != nil {
+		return 0, err
+	}
+	return res.RowsAffected()
 }
 
 // LedgerFieldKeys 返回某台账类型**已登记**的字段键集合（无登记时返回空集合，不返回错误）。
