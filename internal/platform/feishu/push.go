@@ -185,6 +185,12 @@ func (p *Pusher) Push(ctx context.Context, bizNo string) (PushResult, error) {
 		return PushResult{}, err
 	}
 	if err := p.client.UpsertExternalInstance(ctx, mode, snap); err != nil {
+		// ★ C6 收口（P3 · 可观测性）：丢弃的是「登记 Failed」这一步的错误 —— 推送错误本身已 `return`
+		//   给调用方（知情），但**记账失败**若静默，推送记录会停在 `Pending`，而 `Pending` 同时意味
+		//   「在途」与「失败但没记上」，监控层分不清。此处补一条 warn 使该分支在**推送层**可观测
+		//   （保留下方 `_ =` 显式丢弃与 `return` 不变；丢弃已登记白名单，见 scripts/audit_silent.py）。
+		p.log.Warn("推送外部实例失败（登记 Failed；若该记账失败则记录会停在 Pending）",
+			"biz_no", bizNo, "push_seq", inst.UpdateTime, "error", err.Error())
 		_ = p.db.MarkPushResult(ctx, bizNo, inst.UpdateTime, store.PushFailed, err.Error())
 		return PushResult{}, err
 	}

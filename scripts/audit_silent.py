@@ -304,12 +304,19 @@ def check_routes():
                 % (method, dn, dn))
 
 # ---------------------------------------------------------------- C6
-# 已判定安全的丢弃点：(路径后缀, 代码片段, 理由)。命中即跳过。
+# 已判定安全的丢弃点：(路径后缀, 代码片段, 判定人/日期/理由)。命中即跳过。
+# ★ 纪律（定案 #54）：**只用于压掉已逐行判过、有意为之的丢弃**；绝不为了"看起来完整"而放宽/扩面。
+#   每条**精确到「完整相对路径 + 精确表达式」**（表达式取整条语句，非松前缀），并在理由里留判定人/日期。
 BENIGN_DISCARDS = [
     ('httpapi/router.go', '_ = c.JSON(', '响应已失败，写错误体不再关心返回值'),
     ('singlelock/lock.go', '_ = writeInfo(', '诊断信息写入失败不影响单实例保证（代码注释已说明）'),
     ('singlelock/lock.go', '_ = err', '显式忽略：见上下文注释'),
     ('dashboard/export.go', '_ = xml.EscapeText(', '写入内存 Buffer 不会失败'),
+    ('internal/platform/feishu/external.go', '_ = json.Unmarshal(data, &out)',
+     '判定 team-lead/2026-09-27：解析失败有入参兜底 firstNonEmpty(out.ApprovalCode, def.ApprovalCode)（同函数下两行），非静默、有意为之'),
+    ('internal/platform/feishu/push.go',
+     '_ = p.db.MarkPushResult(ctx, bizNo, inst.UpdateTime, store.PushFailed, err.Error())',
+     '判定 team-lead/2026-09-27：仅"登记 Failed"这一步被丢弃（推送错误本身已 return 调用方，知情）；已在其前补 warn 使可观测，属 P3 记账级、非数据完整性缺陷'),
 ]
 
 BENIGN_IGNORE = re.compile(r'_ = (?:[\w.]+\.)?(Close|Release|Rollback|Unlock|Sync|Flush|Seek)')
