@@ -100,15 +100,19 @@ func TestReconcileRouteRetiredGone(t *testing.T) {
 func TestApprovalCoreWiredInBootstrap(t *testing.T) {
 	src := readPackageSource(t, "bootstrap.go")
 	required := []string{
-		"internal/flow",              // flow 领域服务
-		"internal/approval",          // 三方审批定义注册表
-		"internal/number",            // 单号装配自检
-		"flow.NewWithConfig",         // 构造 flow.Service
-		"approval.NewRegistry",       // 构造定义注册表
-		"feishu.NewPusher",           // 出方向推送服务
-		"sync.NewApprovalReconciler", // 新审批对账器（T03）
-		"go approvalRec.Run(ctx)",    // 对账循环独立 goroutine
-		"SetCallbackAdvancer",        // 回调异步推进端口
+		"internal/flow",               // flow 领域服务
+		"internal/approval",           // 三方审批定义注册表
+		"internal/number",             // 单号装配自检
+		"flow.NewWithConfig",          // 构造 flow.Service
+		"approval.NewRegistry",        // 构造定义注册表
+		"feishu.NewPusher",            // 出方向推送服务
+		"sync.NewApprovalReconciler",  // 新审批对账器（T03）
+		"go approvalRec.Run(ctx)",     // 对账循环独立 goroutine
+		"SetCallbackAdvancer",         // 回调异步推进端口
+		"feishu.NewCardRefresher",     // 本批：推进成功后卡片主动刷新（实测平台不自动刷）
+		"flowCardRefreshSubscriber",   // 本批：卡片刷新订阅者接线
+		"ListInstancesByApprovalCode", // 本批：check 入参 instances[] 数据源（实测 99992402 修复）
+		"feishu.BuildCheckInstance",   // 本批：check 入参组装（与推送侧同口径）
 	}
 	for _, sym := range required {
 		if !strings.Contains(src, sym) {

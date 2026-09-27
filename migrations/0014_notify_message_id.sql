@@ -1,0 +1,16 @@
+-- 0014_notify_message_id.sql —— t_notify_log 加 message_id 列（审批 Bot 卡片刷新链路，本批）。
+--
+-- ★ 可空、无 NOT NULL、无回填（与 0013 同约定）。
+--
+-- ★ 用途：卡片操作的回调报文【不带】message_id（2026-09-28 实测留痕为空字段）⇒
+--   卡片刷新（POST /open-apis/approval/v1/message/update，body={"message_id","status"}）
+--   的卡片 id 只能由我方在**发通知时**自己记录：
+--   NotifySender.Send（internal/platform/feishu/notify.go）在 message/send 成功后
+--   把回执 data.message_id 写入本列（★ 实测回执形态 {"code":0,"data":{"message_id":"…"}}）。
+--
+-- ★ 仓库教训 R26：「建了列但没有任何写入者」在 ALTER 路径上门禁（C1）发现不了 ——
+--   本列的写入者（NotifySender.Send）与本迁移**必须同批**（已同批落地）。
+--
+-- ★ 幂等：SQLite 的 ALTER TABLE ADD COLUMN 不支持 IF NOT EXISTS；
+--   靠 t_schema_migrations 保证只执行一次（与 0003/0007/0011/0013 同一约定）。
+ALTER TABLE t_notify_log ADD COLUMN message_id TEXT;

@@ -46,6 +46,10 @@ import (
 // 1016 被抄送 / 1021 自定义 / 1028 待办（无发起人）。
 const NotifyTemplateTodo = "1008"
 
+// notifyChannelBot 通知渠道（Bot）。★ feishu 包不反向依赖领域包 flow（本文件头纪律），
+// 字面量与 flow.ChannelBot 对齐（bootstrap 装配处编译期断言保证 flow.Sender 形态一致）。
+const notifyChannelBot = "feishu_bot"
+
 // NotifySender 通知发送器：内调 `POST /open-apis/approval/v1/message/send`。
 //
 // 方法集与 `flow.Sender` 形态一致（bootstrap 装配处编译期断言）。
@@ -174,6 +178,24 @@ func (s *NotifySender) Send(ctx context.Context, bizNo, targetOpenID, event stri
 		if uerr := json.Unmarshal(data, &out); uerr != nil {
 			s.log.Warn("message/send 已成功但回执解析失败（不影响发送成功判定）",
 				"biz_no", bizNo, "target", target, "error", uerr.Error())
+		}
+	}
+	// ★★ 本批新增（0014 列写入者，R26 教训：列必须有真实写入者）：
+	//   把回执 data.message_id 落 t_notify_log.message_id。卡片操作的回调报文
+	//   【不带】message_id（2026-09-28 实测留痕为空字段）⇒ 卡片刷新（message/update）
+	//   只能靠本列定位卡片（CardRefresher.Refresh 读取）。
+	// ★ 写不进去要**可见告警**、绝不静默，但不推翻发送成功判定（消息已发出）：
+	//   该行将没有 message_id，后续卡片刷新对此跳过（记 info）。
+	switch mid := strings.TrimSpace(out.MessageID); {
+	case mid == "":
+		s.log.Warn("message/send 已成功但回执无 message_id（该卡片将无法被刷新，请核查回执形态）",
+			"biz_no", bizNo, "target", target, "event", event)
+	default:
+		if err := s.db.UpdateNotifyMessageID(ctx, bizNo, target, event, notifyChannelBot, mid); err != nil {
+			s.log.Warn("message_id 写入 t_notify_log 失败（消息已发出，不影响发送成功判定；"+
+				"但该行卡片将无法被刷新）",
+				"biz_no", bizNo, "target", target, "event", event,
+				"message_id", mid, "error", err.Error())
 		}
 	}
 	s.log.Info("待办通知已发送",

@@ -216,6 +216,15 @@ func run(version string) error {
 	//   的方法集与 flow.Sender 的编译期一致性由该赋值保证（feishu 包不反向依赖 flow）。
 	flowSvc.Subscribe(flow.NewNotifier(db, notifySender, logger))
 	flowSvc.Subscribe(&flowPushSubscriber{pusher: pusher, log: logger})
+	// ★ 本批核心（2026-09-28 实测定稿）：审批 Bot 卡片「推进成功后主动刷新」。
+	//   实测：回调处理成功（accepted=true、状态机推进）后平台**并未自动刷新卡片**
+	//   （卡片仍带「同意/拒绝」两键）⇒ 不依赖平台自动更新，订阅 TASK_APPROVED /
+	//   TASK_REJECTED 事件主动调 message/update（body={"message_id","status"}，实测 code=0）。
+	//   ★ 失败只记日志（emit 已隔离订阅者错误/panic），**绝不影响回调的 200**（#69 落盘即 200）；
+	//   ★ message_id 由 NotifySender.Send 发送时落 t_notify_log（0014 列），查不到 ⇒ 跳过不报错。
+	flowSvc.Subscribe(&flowCardRefreshSubscriber{
+		refresher: feishu.NewCardRefresher(db, messageClient, logger),
+	})
 
 	// 回调异步推进端口：`flow.HandleCallback` 同步路径只落 op_log + 调此端口。
 	// ★ 本批以**同步适配器**落地（真正"worker 消费 op_log"的异步队列另排期；见本批报告）。
@@ -231,9 +240,24 @@ func run(version string) error {
 	})
 
 	// 新审批对账器（T03）：独立于 ingest、不复用旧 Reconciler；对 check 的 diff 判方向后重推。
+	// ★ 本批修复（2026-09-28 实测 99992402 "instances is required"）：check 入参必须带
+	//   instances[]（每项 update_time + tasks[]），数据源＝本地 t_instance / t_flow_task，
+	//   字段表示与推送侧一致（feishu.BuildCheckInstance 统一组装）。
 	approvalRec := sync.NewApprovalReconciler(db, sync.ExtSyncCheckerFunc(
 		func(ctx context.Context, code string) ([]sync.RemoteInstanceState, error) {
-			sts, err := checkClient.CheckExternalInstances(ctx, code)
+			insts, err := db.ListInstancesByApprovalCode(ctx, code)
+			if err != nil {
+				return nil, err
+			}
+			checks := make([]feishu.ExternalCheckInstance, 0, len(insts))
+			for i := range insts {
+				tasks, err := db.ListFlowTasks(ctx, insts[i].BizNo)
+				if err != nil {
+					return nil, err
+				}
+				checks = append(checks, feishu.BuildCheckInstance(&insts[i], tasks))
+			}
+			sts, err := checkClient.CheckExternalInstances(ctx, code, checks)
 			if err != nil {
 				return nil, err
 			}
@@ -430,6 +454,31 @@ func approvalRepairLoop(ctx context.Context, svc *flow.Service, feedback *feishu
 		case <-ticker.C:
 			runOnce()
 		}
+	}
+}
+
+// flowCardRefreshSubscriber 流程事件订阅者：审批推进成功后**主动刷新**飞书待办卡片
+// （internal/platform/feishu.CardRefresher；2026-09-28 实测平台不自动刷新卡片）。
+//
+// ★ 触发点＝flow 状态机推进成功（act 事务提交后 emit）——覆盖回调推进 / 修复循环重驱动 /
+// 页面操作三条路径，恰为「回调处理成功且推进成功」（docs/16 本批定案）。
+// ★ status 与审批终态一致（实测 "APPROVED" 成功）：TASK_APPROVED → APPROVED、
+// TASK_REJECTED → REJECTED；其余事件（提交/转交/回退/撤回等）不刷卡片。
+// ★ 失败只记日志（CardRefresher 内部吞错 + emit 隔离），绝不影响回调的 200（#69）。
+type flowCardRefreshSubscriber struct {
+	refresher *feishu.CardRefresher
+}
+
+// OnFlowEvent 实现 flow.Subscriber（仅两任务终态事件触发刷新，其余忽略）。
+func (s *flowCardRefreshSubscriber) OnFlowEvent(ctx context.Context, ev flow.FlowEvent) {
+	if s == nil || s.refresher == nil {
+		return
+	}
+	switch ev.Type {
+	case flow.EventTaskApproved:
+		s.refresher.Refresh(ctx, ev.BizNo, ev.TaskID, "APPROVED")
+	case flow.EventTaskRejected:
+		s.refresher.Refresh(ctx, ev.BizNo, ev.TaskID, "REJECTED")
 	}
 }
 

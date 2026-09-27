@@ -181,6 +181,28 @@ func (d *DB) ListInstances(ctx context.Context, f InstanceFilter) ([]Instance, i
 	return out, total, rows.Err()
 }
 
+// ListInstancesByApprovalCode 列出某 approval_code 的**全部**实例（按 id 升序；无分页上限）。
+//
+// ★ 用途：对账（external_instances/check）入参组装 —— check 是**全量比对**语义，
+//
+//	不得沿用 ListInstances 的 50/200 分页默认（那会**静默漏实例**，对账变成抽签）。
+func (d *DB) ListInstancesByApprovalCode(ctx context.Context, approvalCode string) ([]Instance, error) {
+	rows, err := d.QueryContext(ctx, instanceSelectSQL+` WHERE approval_code = ? ORDER BY id`, approvalCode)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+	var out []Instance
+	for rows.Next() {
+		inst, err := scanInstance(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, *inst)
+	}
+	return out, rows.Err()
+}
+
 // ExistingCodes 返回指定 approval_code 已入库的 instance_code 集合（对账求差用）。
 func (d *DB) ExistingCodes(ctx context.Context, approvalCode string) (map[string]bool, error) {
 	var (

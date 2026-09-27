@@ -6,7 +6,7 @@
 | 版本 | V1.1（2026-09-27，架构师 Bob 出稿；★ **V1.1 由产品经理补「落地状态」回填**） |
 | 状态 | ★ **首稿为「仅设计」；现 A–F 与批次均已实现（见 §2 / §3 的「落地状态」）**；★ **本文仍不改任何代码、不 commit**。本批仅**回填事实**（提交号），**不新增设计** |
 | 落地批次（4 批，提交号） | 第 1 批＝**C + D**（`5fe1671`）· 第 2 批＝**A + B + E + `0013`**（`d94580f`）· 第 3 批＝**F + 通知 Sender**（`36df709`）· 第 4 批＝**「新待办产生」通知接线**（`c6e26d7`，现行 HEAD） |
-| 仍待联调实测（**不得写成已验**） | `V-1`（`action_context` 原样回传）· `V-2`（`message/update` 请求体）· `V-3`（`contact/v3` 按 `user_id` 查 `open_id` 端点 / scope）· `V-4`（`approval_code` 双 code 池归属）；★ 落点＝`docs/09` §2（阶段一，`V-1`~`V-4`） |
+| 仍待联调实测（**不得写成已验**） | `V-1`（`action_context` 原样回传）· `V-3`（`contact/v3` 按 `user_id` 查 `open_id` 端点 / scope）· `V-4`（`approval_code` 双 code 池归属）；★ **`V-2` 已实测定稿（2026-09-28）**：`message/update` 请求体＝`{"message_id","status"}`（见 §7 V-2 行）；★ 落点＝`docs/09` §2（阶段一） |
 | 输入 | `docs/05-API.md` §3.14（含「实测缺口清单 6 条」）· `docs/04a-Architecture-Increment-V2.md` §3/§4/§17 · `docs/reference/README.md` 实测台账（2026-09-27）· 实现：`internal/httpapi/handlers_approval.go` · `internal/flow/callback.go` · `internal/platform/feishu/push.go` · `internal/platform/feishu/external.go` · `internal/approval/defregistry.go` · `cmd/jxapproval/bootstrap.go` · `migrations/0007_approval_core.sql` |
 | 读者 | 工程师（按 §3 修复）、PM（按 §4 同步文档）、QA（按 §6 测试） |
 
@@ -144,7 +144,7 @@
 
 ### F. 失败路径的用户反馈（对应 G-6）
 
-> ★ **落地状态**：✅ **已实现**（第 3 批 **`36df709`**）—— 新增 `internal/platform/feishu/message.go`（`UpdateApprovalMessage` → `POST /open-apis/approval/v1/message/update`；★ **`message_id` 为空不发请求**）＋ `RepairCardFeedback`；修复循环对**最终失败**行据此更新卡片。★ **`V-2`（`message/update` 请求体字段）仍待联调实测** —— 字段结构定稿前**不得写成结论**。
+> ★ **落地状态**：✅ **已实现**（第 3 批 **`36df709`**）—— 新增 `internal/platform/feishu/message.go`（`UpdateApprovalMessage` → `POST /open-apis/approval/v1/message/update`；★ **`message_id` 为空不发请求**）＋ `RepairCardFeedback`；修复循环对**最终失败**行据此更新卡片。★ **`V-2`（`message/update` 请求体字段）已实测定稿（2026-09-28）**：请求体＝`{"message_id":"<id>","status":"<status>"}`（只传 `message_id` ⇒ `60001 no Status error`；`status` 取值与审批状态一致，实测 `"APPROVED"` 成功）。★ **本批追加（推进成功路径）**：实测回调处理成功后平台**未自动刷新**卡片（仍带「同意/拒绝」两键），且卡片操作回调报文**不带** `message_id` ⇒ 新增 `CardRefresher`（推进成功后按 `t_notify_log.message_id`（`0014` 列）主动调 `message/update` 刷成终态）；`RepairCardFeedback` 的「失败态」标注**暂缓调用**（失败态 `status` 取值未实测，不臆造）。
 
 | 情形 | 用户可见行为 | 我方动作 |
 |---|---|---|
@@ -265,7 +265,7 @@ curl -s -X POST http://127.0.0.1:5001/approval/external/callback \
 | # | 未定项 | 影响 | 验证方法 |
 |---|---|---|---|
 | V-1 | ★★ **飞书是否原样回传 `action_context`**（官方文档如此表述，**未实测**） | B 方案的前提；若不回传/改写，`biz_no` 只剩 `instance_id` 反解一条兜底链 | 联调：推实例带 `action_context` → 在飞书点同意 → 看回调日志 body（E 项留痕正是为此） |
-| V-2 | **「更新审批 Bot 消息」`POST /open-apis/approval/v1/message/update` 的请求体字段**（接口名已核＝官方 API 清单页；字段结构未核实） | F-③ 的实现定稿 | 联调：对实测发出的 `message/send`（`data.message_id` 已有）调 update，按响应报错逐字段校准 |
+| V-2 | ✅ **已实测定稿（2026-09-28）**：`POST /open-apis/approval/v1/message/update` 请求体＝**`{"message_id":"<id>","status":"<status>"}`** —— 只传 `message_id` ⇒ `60001 "no Status error"`（HTTP 仍 200）；加 `status` ⇒ `{"code":0,"data":{"message_id":…},"success"}`；`status` 取值与审批状态一致（实测 `"APPROVED"` 成功）。★ 「失败态」`status` 取值仍未实测（`RepairCardFeedback` 暂缓调用、Error 告警，不臆造） | 已消解主项；实现＝`HTTPClient.UpdateApprovalMessage` ＋ `CardRefresher`（推进成功路径） | 真机已验（成功形态）；「失败态」取值留待联调补验 |
 | V-3 | **按 `user_id` 查 open_id 的端点与 scope**（本方案写 `GET /open-apis/contact/v3/users/{user_id}?user_id_type=user_id`，按官方《通讯录》文档；该形态未实测） | A-3 转换策略 | `reference/README.md` 已证 `contact/v3` 可用且 scope 候选已知 ⇒ 联调直接试；失败则按 `99991672` 附带的官方申请链接补 scope |
 | V-4 | ★★ **`approval_code` 双池归属**：① `POST external_approvals` 响应回填值属自定义池还是真实池；② 回调报文里的 `approval_code` 属哪个池 | C 的落库归位与回调校验宽严档；若处理错 ⇒ 推实例 `1390002`（静默失败族） | 联调：按 `reference/README.md` 双池实测法（自定义 code 建定义 → 看响应 → 用两个值分别推实例）；回调侧看留痕 body 里的实际值 |
 | V-5 | `enable_quick_operate` 定义级开关与 `action_configs` 明细的配合语义（`reference/README.md` 已标「按待实测记录」；`docs/09` `QV2-A32`） | 定义装载时是否必须显式置 true（否则两键不存在，回调无从谈起） | `docs/09` 既定联调项；C 装载入参应**显式设 true**（实测可生效），不赌默认值 |

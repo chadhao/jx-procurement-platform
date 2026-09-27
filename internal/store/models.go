@@ -387,4 +387,8 @@ type NotifyLog struct {
 	LastError    string
 	SentAt       *time.Time
 	CreatedAt    time.Time
+	// ★ 0014 增列（可空、无回填）：message/send 成功回执的 data.message_id，
+	//   由 NotifySender.Send 写入。卡片操作的回调报文【不带】message_id（2026-09-28
+	//   实测留痕为空字段）⇒ 卡片刷新（message/update）只能靠本列定位卡片。
+	MessageID string
 }

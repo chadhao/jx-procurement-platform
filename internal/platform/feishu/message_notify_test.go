@@ -14,18 +14,20 @@ import (
 	"time"
 
 	"github.com/chadhao/jx-procurement-platform/internal/flow"
-	"github.com/chadhao/jx-procurement-platform/internal/observ"
 	"github.com/chadhao/jx-procurement-platform/internal/store"
 	"github.com/chadhao/jx-procurement-platform/internal/store/storetest"
 )
 
-// message_notify_test.go —— 第 3 批（docs/16 §2-F 关联项）通知发送与卡片更新的单测：
+// message_notify_test.go —— 第 3 批（docs/16 §2-F 关联项）通知发送与卡片更新的单测
+//（本批按 2026-09-28 实测结论更新：message/update body 定稿、message_id 落 t_notify_log）：
 //
 //	① message/send 成功路径：断言请求体 **四 URL 齐全**、texts 为 **map 形态**、template_id=1008；
 //	② message/send `code != 0`（HTTP 200 + {"code":60001,…}）⇒ **必须判为失败**，
 //	   t_notify_log 记 FAILED + last_error，**不得当成功**；
 //	③ 通知两阶段：EXPECTED → SENT（成功）/ FAILED（失败）状态流转；
-//	④ UpdateApprovalMessage / RepairCardFeedback：message_id 为空 ⇒ **不发请求**（Fake 计数为 0）。
+//	⑤ message/send 成功 ⇒ 回执 message_id 落 t_notify_log（0014 列；失败 ⇒ 不落）；
+//	④ UpdateApprovalMessage（实测定稿 body={"message_id","status"}）/ RepairCardFeedback
+//	  （失败态标注暂缓，0 请求）：message_id 为空 ⇒ **不发请求**（Fake 计数为 0）。
 
 var notifyAt = time.Date(2026, 9, 27, 10, 0, 0, 0, time.UTC)
 
@@ -216,75 +218,83 @@ func TestRepairCardFeedbackSkipsEmptyMessageID(t *testing.T) {
 	}
 }
 
-// TestRepairCardFeedbackMarksOnce 卡片反馈：非空 message_id 调 update；
-// 同 (biz_no, task_id, round) 只成功标注一次（防 30s 循环重复刷卡片）。
-func TestRepairCardFeedbackMarksOnce(t *testing.T) {
+// TestRepairCardFeedbackSuspendsUpdate 失败态标注**暂缓调用**（2026-09-28 实测定稿）：
+// message/update 实测 body={"message_id","status"}，原 {"message_id","content"} 候选体
+// 在真机必 60001（缺 status），且「失败态」status 取值未实测（标终态会伪造审批结果）
+// ⇒ 不发任何请求（0 次），可见告警取代必败调用。
+func TestRepairCardFeedbackSuspendsUpdate(t *testing.T) {
 	fake := NewFakeMessageClient()
 	fb := NewRepairCardFeedback(fake, slog.Default())
 
+	// 非空 message_id 也不得再发请求（旧实现会发 {"message_id","content"} → 真机必败）。
 	fb.OnRepairFailure(context.Background(), "PR-1", "t-1", 1, "om_1", context.Canceled)
-	fb.OnRepairFailure(context.Background(), "PR-1", "t-1", 1, "om_1", context.Canceled)
-	if got := fake.UpdateCount(); got != 1 {
-		t.Fatalf("同 key 应只标注一次，UpdateCount = %d, 期望 1", got)
-	}
-	ups := fake.Updates()
-	if ups[0].MessageID != "om_1" {
-		t.Errorf("message_id = %q, 期望 om_1（用落盘的 t_flow_op_log.message_id）", ups[0].MessageID)
-	}
-	if ups[0].Body["message_id"] != "om_1" || ups[0].Body["content"] == "" {
-		t.Errorf("候选请求体不完整: %#v（字段结构待 V-2 实测校准）", ups[0].Body)
-	}
-	// 不同 round 视为新事件，允许再次标注（回退重审后是新的卡片交互轮次）。
 	fb.OnRepairFailure(context.Background(), "PR-1", "t-1", 2, "om_2", context.Canceled)
-	if got := fake.UpdateCount(); got != 2 {
-		t.Fatalf("不同 round 应再标注，UpdateCount = %d, 期望 2", got)
+	if got := fake.UpdateCount(); got != 0 {
+		t.Fatalf("失败态标注已暂缓，不得发请求；UpdateCount = %d, 期望 0", got)
 	}
 }
 
-// TestRepairCardFeedbackUpdateFailureNoRollback update 失败 ⇒ 只记日志不 panic、
-// 不标记 done（下一轮修复循环重试标注），不影响调用方（修复循环）。
-func TestRepairCardFeedbackUpdateFailureNoRollback(t *testing.T) {
-	attempts := 0
-	succeed := false
-	fake := NewFakeMessageClient()
-	fake.UpdateFn = func(context.Context, string, map[string]any) error {
-		attempts++
-		if !succeed {
-			return context.DeadlineExceeded
-		}
-		return nil
-	}
-	fb := NewRepairCardFeedback(fake, observ.NewLogger("error", nil))
+// TestNotifySenderRecordsMessageID message/send 成功 ⇒ 回执 data.message_id 落
+// t_notify_log.message_id（0014 列写入者；卡片操作的回调不带 message_id，
+// 卡片刷新只能靠本列定位卡片）。
+func TestNotifySenderRecordsMessageID(t *testing.T) {
+	f := newFakeFeishuServer(t, 0, "success")
+	db := storetest.NewDB(t)
+	bizNo := seedNotifyInstance(t, db)
+	sender := NewNotifySender(db, newTestHTTPClient(t, f), "https://jx.example.com", nil)
 
-	fb.OnRepairFailure(context.Background(), "PR-1", "t-1", 1, "om_1", context.Canceled)
-	if attempts != 1 {
-		t.Fatalf("失败后应已尝试一次，attempts = %d", attempts)
+	emitTransferredNotify(t, db, sender, bizNo)
+
+	rows, err := db.ListNotify(context.Background(), bizNo)
+	if err != nil || len(rows) != 1 {
+		t.Fatalf("通知行 = %+v, err=%v, 期望恰 1 行", rows, err)
 	}
-	// ★ 失败不标记 done ⇒ 下一轮（成功后）重试标注，同 key 的防重只在成功后生效。
-	succeed = true
-	fb.OnRepairFailure(context.Background(), "PR-1", "t-1", 1, "om_1", context.Canceled)
-	if attempts != 2 {
-		t.Fatalf("失败不应标记 done（下一轮须重试），attempts = %d, 期望 2", attempts)
-	}
-	fb.OnRepairFailure(context.Background(), "PR-1", "t-1", 1, "om_1", context.Canceled)
-	if attempts != 2 {
-		t.Fatalf("成功后才防重（同 key 不再标注），attempts = %d, 期望 2", attempts)
+	if rows[0].MessageID != "om_fake_1" {
+		t.Fatalf("t_notify_log.message_id = %q, 期望回执值 om_fake_1", rows[0].MessageID)
 	}
 }
 
-// TestHTTPClientUpdateApprovalMessage 端口实现：路径正确；空 message_id 不发请求。
+// TestNotifySenderFailureLeavesMessageIDEmpty 发送失败（code!=0）⇒ message_id 不落
+// （没有成功发出的消息，无卡可刷；状态仍为 FAILED，漏发可检出）。
+func TestNotifySenderFailureLeavesMessageIDEmpty(t *testing.T) {
+	f := newFakeFeishuServer(t, 60001, "60001 actionUrls incomplete error")
+	db := storetest.NewDB(t)
+	bizNo := seedNotifyInstance(t, db)
+	sender := NewNotifySender(db, newTestHTTPClient(t, f), "https://jx.example.com", nil)
+
+	emitTransferredNotify(t, db, sender, bizNo)
+
+	rows, err := db.ListNotify(context.Background(), bizNo)
+	if err != nil || len(rows) != 1 {
+		t.Fatalf("通知行 = %+v, err=%v, 期望恰 1 行", rows, err)
+	}
+	if rows[0].MessageID != "" {
+		t.Fatalf("失败行 message_id 应为空，实际 %q", rows[0].MessageID)
+	}
+	if rows[0].Status != store.NotifyFailed {
+		t.Fatalf("状态 = %s, 期望 FAILED", rows[0].Status)
+	}
+}
+
+// TestHTTPClientUpdateApprovalMessage 端口实现（2026-09-28 实测定稿）：
+// 路径正确；请求体**恰为** {"message_id":…,"status":…} 两键；空 message_id / 空 status
+// 均报错且 0 次请求（缺 status 真机必 60001，不发必败请求）。
 func TestHTTPClientUpdateApprovalMessage(t *testing.T) {
 	var mu sync.Mutex
 	updates := 0
+	var rawBody string
 	mux := http.NewServeMux()
 	mux.HandleFunc("/open-apis/auth/v3/tenant_access_token/internal", func(w http.ResponseWriter, _ *http.Request) {
 		_, _ = io.WriteString(w, `{"code":0,"msg":"ok","tenant_access_token":"t-test","expire":7200}`)
 	})
-	mux.HandleFunc("/open-apis/approval/v1/message/update", func(w http.ResponseWriter, _ *http.Request) {
+	mux.HandleFunc("/open-apis/approval/v1/message/update", func(w http.ResponseWriter, r *http.Request) {
+		b, _ := io.ReadAll(r.Body)
 		mu.Lock()
 		updates++
+		rawBody = string(b)
 		mu.Unlock()
-		_, _ = io.WriteString(w, `{"code":0,"msg":"success","data":{}}`)
+		// ★ 实测成功形态：{"code":0,"data":{"message_id":…},"success"}。
+		_, _ = io.WriteString(w, `{"code":0,"msg":"success","data":{"message_id":"om_1"},"success":true}`)
 	})
 	srv := httptest.NewServer(mux)
 	defer srv.Close()
@@ -294,21 +304,37 @@ func TestHTTPClientUpdateApprovalMessage(t *testing.T) {
 	c.tokens.baseURL = srv.URL
 
 	// ★ 空 message_id ⇒ 报错且不发请求（无卡可更新）。
-	if err := c.UpdateApprovalMessage(context.Background(), "  ", map[string]any{}); err == nil {
+	if err := c.UpdateApprovalMessage(context.Background(), "  ", "APPROVED"); err == nil {
 		t.Fatalf("空 message_id 应报错")
+	}
+	// ★ 空 status ⇒ 报错且不发请求（实测缺 status ⇒ 60001 no Status error）。
+	if err := c.UpdateApprovalMessage(context.Background(), "om_1", "  "); err == nil {
+		t.Fatalf("空 status 应报错（不发必败请求）")
 	}
 	mu.Lock()
 	n := updates
 	mu.Unlock()
 	if n != 0 {
-		t.Fatalf("空 message_id 不得发请求，实际 %d 次", n)
+		t.Fatalf("空入参不得发请求，实际 %d 次", n)
 	}
-	if err := c.UpdateApprovalMessage(context.Background(), "om_1", map[string]any{"message_id": "om_1"}); err != nil {
+
+	if err := c.UpdateApprovalMessage(context.Background(), "om_1", "APPROVED"); err != nil {
 		t.Fatalf("正常更新不应报错: %v", err)
 	}
 	mu.Lock()
 	defer mu.Unlock()
 	if updates != 1 {
 		t.Errorf("update 调用次数 = %d, 期望 1", updates)
+	}
+	// ★★ 断言实际发出的 body **恰为** {"message_id":…,"status":…}（实测契约，多键/缺键均错）。
+	var body map[string]any
+	if err := json.Unmarshal([]byte(rawBody), &body); err != nil {
+		t.Fatalf("解析请求体失败: %v（body=%s）", err, rawBody)
+	}
+	if len(body) != 2 {
+		t.Errorf("请求体键数 = %d, 期望恰 2（message_id+status）: %s", len(body), rawBody)
+	}
+	if body["message_id"] != "om_1" || body["status"] != "APPROVED" {
+		t.Errorf("请求体 = %s, 期望 {\"message_id\":\"om_1\",\"status\":\"APPROVED\"}", rawBody)
 	}
 }

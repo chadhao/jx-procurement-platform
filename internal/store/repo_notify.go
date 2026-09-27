@@ -24,7 +24,7 @@ const (
 
 const notifySelectSQL = `
 SELECT id, biz_no, target_open_id, channel, event, status, COALESCE(attempts,0),
-       COALESCE(last_error,''), COALESCE(sent_at,''), created_at
+       COALESCE(last_error,''), COALESCE(sent_at,''), created_at, COALESCE(message_id,'')
 FROM t_notify_log`
 
 // EnsureNotifyExpected 幂等登记一条「应有通知」（key＝biz_no+target+event+channel）。
@@ -100,6 +100,65 @@ WHERE biz_no = ? AND target_open_id = ? AND event = ? AND channel = ?`,
 	return nil
 }
 
+// UpdateNotifyMessageID 回填通知的飞书 message_id（0014 新列；按 biz_no+target+event+channel）。
+//
+// ★ 用途：NotifySender.Send 在 message/send 成功后把回执 data.message_id 落盘 ——
+//
+//	卡片操作的回调报文不带 message_id（2026-09-28 实测），卡片刷新（message/update）
+//	只能靠本列定位卡片。
+//
+// ★ 与 UpdateNotifyStatus（flow.Notifier 回填 SENT/FAILED）互不覆盖：本方法**只写
+//
+//	message_id 列**，不触碰 status/attempts/sent_at —— 两阶段机制不受影响。
+//
+// ★ message_id 为空 ⇒ 显式报错（空值写入无意义且掩盖缺陷，不静默）；
+//
+//	命中 0 行（通知行不存在）⇒ ErrNotFound（调用方据此告警，可见失败）。
+func (d *DB) UpdateNotifyMessageID(ctx context.Context, bizNo, target, event, channel, messageID string) error {
+	mid := strings.TrimSpace(messageID)
+	if mid == "" {
+		return fmt.Errorf("store: 回填通知 message_id 失败: message_id 不能为空")
+	}
+	res, err := d.ExecContext(ctx, `
+UPDATE t_notify_log SET message_id = ?
+WHERE biz_no = ? AND target_open_id = ? AND event = ? AND channel = ?`,
+		mid, bizNo, target, event, channel)
+	if err != nil {
+		return fmt.Errorf("store: 回填通知 message_id 失败: %w", err)
+	}
+	if n, err := res.RowsAffected(); err == nil && n == 0 {
+		return fmt.Errorf("store: 回填通知 message_id 失败: %w", ErrNotFound)
+	}
+	return nil
+}
+
+// LatestNotifyMessageID 取某 (biz_no, target_open_id) 在指定渠道下、事件键前缀匹配的
+// **最近一条**通知行的 message_id（0014 新列；无行或列为空 ⇒ 返回空串、不报错）。
+//
+// ★ 用途：审批推进成功后刷新卡片（CardRefresher）——由 (biz_no, 审批人) 定位当初的
+//
+//	「待办通知」卡片（event 前缀＝`TASK_ACTIVATED`，与 flow.activationEventKey 同源口径）。
+//
+// ★ 「无行 / 无 message_id」属**正常态**（并非每张卡片都经由我方 message/send 发出，
+//
+//	例如手工推的调试卷）⇒ 返回空串由调用方跳过，不算错误。
+func (d *DB) LatestNotifyMessageID(ctx context.Context, bizNo, target, channel, eventPrefix string) (string, error) {
+	var mid string
+	err := d.QueryRowContext(ctx, `
+SELECT COALESCE(message_id,'') FROM t_notify_log
+WHERE biz_no = ? AND target_open_id = ? AND channel = ? AND event LIKE ? || '%'
+ORDER BY id DESC LIMIT 1`,
+		bizNo, target, channel, strings.TrimSpace(eventPrefix)).Scan(&mid)
+	switch {
+	case err == nil:
+		return mid, nil
+	case errors.Is(err, sql.ErrNoRows):
+		return "", nil
+	default:
+		return "", fmt.Errorf("store: 查询通知 message_id 失败: %w", err)
+	}
+}
+
 // ListNotify 列出某业务单号的全部通知（按 id 升序）。
 func (d *DB) ListNotify(ctx context.Context, bizNo string) ([]NotifyLog, error) {
 	rows, err := d.QueryContext(ctx, notifySelectSQL+` WHERE biz_no = ? ORDER BY id`, bizNo)
@@ -138,7 +197,7 @@ func collectNotify(rows *sql.Rows) ([]NotifyLog, error) {
 			created string
 		)
 		if err := rows.Scan(&n.ID, &n.BizNo, &n.TargetOpenID, &n.Channel, &n.Event, &n.Status,
-			&n.Attempts, &n.LastError, &sent, &created); err != nil {
+			&n.Attempts, &n.LastError, &sent, &created, &n.MessageID); err != nil {
 			return nil, err
 		}
 		n.SentAt = parseTimePtr(sent)
