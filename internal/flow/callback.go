@@ -68,7 +68,8 @@ func (s *Service) SetCallbackAdvancer(fn Advancer) { s.advancer = fn }
 //
 // ★ 顺序即纪律（定案 #62）：**准入（authorization）必须先于 `recordCallback`（占幂等键）**。
 //   - ① `verifyCallbackToken`：报文**真实性**（共享密钥，可见地拒绝）；
-//   - ② `admitCallback`：**授权**——`operator==assignee` ∧ 任务归属 ∧ `instance_code` 一致；
+//   - ② `admitCallback`：**授权**——`operator==assignee` ∧ 任务归属 ∧ `instance_code` 一致
+//     ∧ `release_state != HELD`（抢跑可见拒绝、不占键）；
 //   - ③ `recordCallback`：**只有已通过准入者**才落 op_log / 占键；
 //   - ④ `advancer`：异步推进（`act` 内**保留**同款鉴权作纵深防御）。
 func (s *Service) HandleCallback(ctx context.Context, req CallbackRequest) (CallbackResult, error) {
@@ -143,6 +144,13 @@ func (s *Service) verifyCallbackToken(ctx context.Context, bizNo, token string) 
 	}
 	def, err := s.db.GetApprovalDef(ctx, inst.ApprovalCode)
 	if err != nil {
+		if errors.Is(err, store.ErrNotFound) {
+			// ★ 定义缺失（独立复核缺口 2）：`store.ErrNotFound` 必须升格为**领域哨兵**
+			//   `ErrDefinitionMissing`（handler 已枚举映射 → 409），否则被包装成普通 error
+			//   ⇒ 不命中任何哨兵 ⇒ 落 500/50000——500 会让飞书**无限重试**且掩盖真实原因。
+			//   定义缺失是**服务端配置问题**，但不属「未分类故障」→ 可见拒绝（409）。
+			return fmt.Errorf("%w: 回调审批定义 %s 未注册（服务端配置问题）", ErrDefinitionMissing, inst.ApprovalCode)
+		}
 		return fmt.Errorf("flow: 回调定位审批定义失败: %w", err)
 	}
 	want := strings.TrimSpace(def.CallbackToken)
@@ -155,12 +163,16 @@ func (s *Service) verifyCallbackToken(ctx context.Context, bizNo, token string) 
 
 // admitCallback 回调**准入**（authorization）：在**占幂等键之前**判定该回调是否有权推进。
 //
-// 三项校验（任一不过即**可见地拒绝**，且**不**落 op_log）：
+// 四项校验（任一不过即**可见地拒绝**，且**不**落 op_log）：
 //   - (c) 报文 `instance_code` 与 `biz_no` 解析结果**一致**（防**串单**：把 A 单的 instance_id 配到 B 单）；
 //   - 任务存在且**归属**该 `biz_no`（防用 A 单的 `task_id` 推 B 单）；
 //   - `operator == assignee`（**同意/拒绝须本人**；用户第二轮口径 ⑥ 逐字：
 //     「加签是会签；代理人可以转交或者退回，但是需要通知这个审批单内已经审批通过的所有人。」
-//     → 代理人只能「转交 / 退回」，**不得代签**）。
+//     → 代理人只能「转交 / 退回」，**不得代签**）；
+//   - `release_state != HELD`（★ 独立复核缺口 1，#62 残留半边）：HELD＝顺序会签**尚未轮到**，
+//     抢跑回调必须**可见拒绝**（与页面路径 `act` 的 409 ErrTaskHeld 口径一致）。
+//     若放行，抢跑回调会落盘**占键** → 该任务真正释放后、本人真实回调被判 Duplicate=true
+//     ⇒ 不即时推进（只能靠修复循环兜底）。
 //
 // ★ 返回已定位的任务（含 `Round`）：调用方 `recordCallback` 需要把 round 写进幂等键（0011），
 //
@@ -196,6 +208,13 @@ func (s *Service) admitCallback(ctx context.Context, req CallbackRequest, op str
 	if task.AssigneeOpenID != operator {
 		return nil, fmt.Errorf("%w: %s 非任务 %s 的审批人，不可执行 %s（同意/拒绝须本人；准入失败不占幂等键）",
 			ErrNotAssignee, operator, req.TaskID, op)
+	}
+
+	// (d) ★ release_state 准入（#62 残留半边）：HELD＝顺序会签「尚未轮到」→ 可见拒绝、不占键。
+	//     ★ 本校验仍在 `recordCallback`（占幂等键）**之前**——准入先于占键的顺序纪律不变。
+	//     与 `act` 同形（错误包装一致），保证回调路径与页面路径**同一错误语义**（同 → 409）。
+	if task.ReleaseState == ReleaseHeld {
+		return nil, fmt.Errorf("%w: 任务 %s（节点 %s）", ErrTaskHeld, req.TaskID, task.NodeID)
 	}
 	return task, nil
 }
