@@ -20,6 +20,7 @@ import (
 	"github.com/chadhao/jx-procurement-platform/internal/inbox"
 	"github.com/chadhao/jx-procurement-platform/internal/objectstore"
 	"github.com/chadhao/jx-procurement-platform/internal/observ"
+	"github.com/chadhao/jx-procurement-platform/internal/orgsync"
 	"github.com/chadhao/jx-procurement-platform/internal/permission"
 	"github.com/chadhao/jx-procurement-platform/internal/platform/feishu"
 	"github.com/chadhao/jx-procurement-platform/internal/store"
@@ -58,6 +59,9 @@ type Deps struct {
 	//（租户内域），我方全库统存 open_id ⇒ 必须转换后再进准入鉴权。为 nil 时回调若带
 	// user_id 将 503 可见失败（绝不静默放行、更不得拿 user_id 冒充 open_id——假 403 红线）。
 	Contact feishu.ContactClient
+	// OrgSync 通讯录镜像全量同步运行器（docs/08 实施批次一）。
+	// POST /internal/org/sync 手动触发入口；为 nil 时该端点返回 503 可见失败。
+	OrgSync *orgsync.Runner
 	// Objects 附件对象存储（主存）。为 nil 时**不缓存、直接转发**（降级，不是静默丢功能）。
 	Objects objectstore.Store
 }
@@ -86,6 +90,8 @@ func NewRouter(d Deps) *echo.Echo {
 	// ★ 审批对账唯一入口（R24）：对 external_instances/check 的 diff 判方向后重推。
 	//   与旧 `/internal/sync/reconcile`（410 Gone）是**两个不同职能**，不重复。
 	internal.POST("/internal/approval/check", d.handleApprovalCheck)
+	// ★ 通讯录镜像全量同步（docs/08 实施批次一）：手动触发入口（无视新鲜度阈值）。
+	internal.POST("/internal/org/sync", d.handleOrgSync)
 	internal.POST("/internal/events/:id/replay", d.handleReplay)
 	// ★ 开发模式注入端点：仅当 DEV_MODE=true 时注册（无凭据时的端到端验证路径）。
 	if d.Env != nil && d.Env.IsDev() {

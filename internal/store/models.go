@@ -136,6 +136,87 @@ type SubscribeState struct {
 	UpdatedAt     time.Time
 }
 
+// ---------- 通讯录镜像（migration 0012；docs/08 §4.2） ----------
+//
+// ★★ 镜像 ≠ 权限（docs/08 §4.10）：以下模型只承载「人事目录」属性，
+// 不含任何准入/角色列；与 t_user_role 物理分离、无外键。软删（IsDeleted）只置标记，
+// 永不物理删除；软删行仍参与历史名称解析（解析查询不得过滤 is_deleted，docs/08 C-E）。
+
+// OrgDepartment 部门镜像行。权威 ID＝OpenDepartmentID（od-，系统生成不可编辑）；
+// DepartmentID 为可变自定义 ID（桥接键），每次全量刷新。
+type OrgDepartment struct {
+	OpenDepartmentID       string // 根部门 = "0"
+	DepartmentID           string
+	ParentOpenDepartmentID string
+	Name                   string
+	NamePath               string // 全路径（A/B/C，本地派生）
+	IsDeleted              bool
+	RawJSON                string
+	FirstSeenAt            time.Time
+	LastSeenAt             time.Time
+	UpdatedAt              time.Time
+	Source                 string // full / manual / event
+}
+
+// OrgUser 人员镜像行。
+type OrgUser struct {
+	OpenID              string
+	UnionID             string
+	UserID              string
+	Name                string
+	EmployeeStatus      string // 归一在职态：在职/离职/冻结/未激活/未入职
+	IsResigned          bool
+	IsExited            bool
+	IsFrozen            bool
+	IsActivated         bool
+	IsUnjoin            bool
+	PrimaryDepartmentID string
+	DepartmentIDs       []string
+	IsDeleted           bool
+	RawJSON             string
+	FirstSeenAt         time.Time
+	LastSeenAt          time.Time
+	UpdatedAt           time.Time
+	Source              string
+}
+
+// OrgSyncState 通讯录同步状态（单行表 t_org_sync_state）。
+type OrgSyncState struct {
+	LastFullAttemptAt time.Time
+	LastFullSuccessAt time.Time // 失败不推进（N6）
+	LastFullError     string
+	LastFullDeptCount int
+	LastFullUserCount int
+	LastEventAt       time.Time
+	UpdatedAt         time.Time
+}
+
+// OrgSyncRun 全量运行流水行（追加式，供差异报告可见）。
+type OrgSyncRun struct {
+	ID              int64
+	RunAt           time.Time
+	Trigger         string // startup / weekly / manual
+	Result          string // ok / failed
+	DeptAdded       int
+	DeptUpdated     int
+	DeptSoftDeleted int
+	UserAdded       int
+	UserUpdated     int
+	UserSoftDeleted int
+	FieldGapsJSON   string
+	Error           string
+	DurationMS      int64
+}
+
+// OrgUserView 人员目录展示视图（/api/org/users 与办理人展示兜底用）：
+// 镜像提供姓名/部门（全员覆盖），角色仍来自 t_user_role（镜像 ≠ 权限）。
+type OrgUserView struct {
+	OpenID     string
+	Name       string
+	Role       string // 未配角色者＝空串
+	Department string // 主部门名称（镜像解析；根部门/无部门＝空串）
+}
+
 // UserRole 用户角色映射行（M5）。
 type UserRole struct {
 	ID         int64

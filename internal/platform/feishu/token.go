@@ -26,6 +26,15 @@ type tokenManager struct {
 
 const refreshAhead = 8 * time.Minute // 提前 8 分钟刷新（建议 5–10 分钟）
 
+// TenantAccessToken 导出 tenant_access_token 获取（复用进程级 token 管理器）。
+//
+// ★ 用途：内部组件（如 orgsync 通讯录全量拉取）与业务接口共用同一 token 缓存，
+// 避免各自独立取 token 造成浪费/互顶。token 端点属鉴权基础设施，不计业务配额。
+// 失败时返回错误（调用方必须可见处理，不得缓存空 token）。
+func (c *HTTPClient) TenantAccessToken(ctx context.Context) (string, error) {
+	return c.tokens.get(ctx)
+}
+
 // get 返回有效 token；缓存过期前提前刷新，并发调用互相不顶掉（单实例串行化）。
 func (t *tokenManager) get(ctx context.Context) (string, error) {
 	t.mu.Lock()

@@ -31,6 +31,7 @@ import (
 	"github.com/chadhao/jx-procurement-platform/internal/number"
 	"github.com/chadhao/jx-procurement-platform/internal/objectstore"
 	"github.com/chadhao/jx-procurement-platform/internal/observ"
+	"github.com/chadhao/jx-procurement-platform/internal/orgsync"
 	"github.com/chadhao/jx-procurement-platform/internal/permission"
 	"github.com/chadhao/jx-procurement-platform/internal/platform/feishu"
 	"github.com/chadhao/jx-procurement-platform/internal/seed"
@@ -159,6 +160,19 @@ func run(version string) error {
 	contact := feishu.ContactClient(feishuHTTP)
 	inboxSvc := inbox.NewService(db, metrics, logger)
 	longconn := feishu.NewLongConn(env.AppID, env.AppSecret, inboxSvc, logger)
+
+	// ---- ⑤′ 通讯录镜像全量同步（docs/08 实施批次一）----
+	// ★ 与业务侧共享同一 tenant_access_token 缓存（feishu.TenantAccessToken）；
+	//   token 未配置凭据时拉取会**可见失败**（不静默、不伪造数据），手动端点可重试。
+	//   触发：启动异步 RunIfStale（超 JX_ORG_SYNC_STALE_HOURS 阈值才拉，不阻塞启动、
+	//   不进就绪门禁）+ POST /internal/org/sync 手动强制。
+	orgFetcher := orgsync.NewFeishuFetcher(feishuHTTP, feishu.DefaultBaseURL, logger)
+	orgRunner := orgsync.NewRunner(orgFetcher, db, metrics, health, logger,
+		time.Duration(env.OrgSyncStaleHours)*time.Hour)
+	if env.AppID == "" || env.AppSecret == "" {
+		logger.Warn("★ 未配置飞书凭据：通讯录镜像不会同步（/api/org/* 将为空清单）——" +
+			"配置 JX_APP_ID/JX_APP_SECRET 后以 POST /internal/org/sync 手动触发")
+	}
 
 	// ---- ⑥ worker + ingestor ----
 	ingestor := worker.NewIngestor(db, maps, logger)
@@ -340,6 +354,7 @@ func run(version string) error {
 		Version:            version,
 		Feishu:             client,
 		Contact:            contact,
+		OrgSync:            orgRunner,
 		Objects:            attachStore,
 	})
 	if env.IsDev() {
@@ -356,6 +371,16 @@ func run(version string) error {
 
 	// ★ 审批对账循环（T03）：独立 goroutine；未配置外部 check 端口时该方法自行告警并空跑退出。
 	go approvalRec.Run(ctx)
+
+	// ★ 通讯录镜像启动全量（docs/08 §4.5）：**异步**——不阻塞启动、失败不进就绪门禁；
+	//   距上次成功同步超阈值（JX_ORG_SYNC_STALE_HOURS，默认 24h）才拉。
+	go func() {
+		if err := orgRunner.RunIfStale(ctx); err != nil {
+			// 失败已在 Runner 内落 failed 流水/状态/计数/健康段；此处只补一条进程级告警。
+			logger.Error("启动通讯录全量同步失败（不影响就绪；可用 POST /internal/org/sync 重试）",
+				"error", err.Error())
+		}
+	}()
 
 	// ★ 派生式修复循环（#69 ②）：独立 goroutine；兜底「已落盘、未推进」的回调
 	//   （#69 ① 落盘即 200 后，推进失败不再由 HTTP 重试驱动，见 internal/flow/repair.go）。

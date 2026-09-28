@@ -62,6 +62,10 @@ type Env struct {
 	RunEnv            string // JX_ENV: prod / test
 	DevMode           bool   // DEV_MODE
 	ReconcileInterval time.Duration
+	// OrgSyncStaleHours 通讯录启动全量的新鲜度阈值（JX_ORG_SYNC_STALE_HOURS，默认 24）。
+	// ★ docs/08 §4.5：距上次**成功**同步超阈值才拉（避免每次重启打一波）；
+	//   启动全量为异步执行，失败不阻塞启动、不进就绪门禁。
+	OrgSyncStaleHours int
 }
 
 // LoadEnv 从环境变量加载配置并填充默认值。
@@ -73,6 +77,11 @@ func LoadEnv() (*Env, error) {
 	intervalHours := getenvInt("JX_RECONCILE_INTERVAL_HOURS", 24)
 	if intervalHours <= 0 {
 		intervalHours = 24
+	}
+
+	orgSyncStaleHours := getenvInt("JX_ORG_SYNC_STALE_HOURS", 24)
+	if orgSyncStaleHours <= 0 {
+		orgSyncStaleHours = 24
 	}
 
 	return &Env{
@@ -103,6 +112,7 @@ func LoadEnv() (*Env, error) {
 		RunEnv:              getenv("JX_ENV", "prod"),
 		DevMode:             getenvBool("DEV_MODE", false),
 		ReconcileInterval:   time.Duration(intervalHours) * time.Hour,
+		OrgSyncStaleHours:   orgSyncStaleHours,
 	}, nil
 }
 

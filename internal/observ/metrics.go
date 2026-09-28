@@ -14,6 +14,7 @@ type Metrics struct {
 	feishuAPICallsTotal   int64
 	deadletterTotal       int64
 	workerQueueDepth      int64
+	orgSyncFailureTotal   int64
 }
 
 // NewMetrics 构造指标集。
@@ -43,6 +44,9 @@ func (m *Metrics) IncDeadletter() { atomic.AddInt64(&m.deadletterTotal, 1) }
 // SetWorkerQueueDepth 设置 worker 队列积压（瞬时值）。
 func (m *Metrics) SetWorkerQueueDepth(n int64) { atomic.StoreInt64(&m.workerQueueDepth, n) }
 
+// IncOrgSyncFailure 通讯录同步失败计数 +1（静默防护 N5：失败必须可见，docs/08 §4.11-B）。
+func (m *Metrics) IncOrgSyncFailure() { atomic.AddInt64(&m.orgSyncFailureTotal, 1) }
+
 // Snapshot 返回当前指标只读快照。
 func (m *Metrics) Snapshot() MetricsSnapshot {
 	return MetricsSnapshot{
@@ -54,6 +58,7 @@ func (m *Metrics) Snapshot() MetricsSnapshot {
 		FeishuAPICallsTotal:   atomic.LoadInt64(&m.feishuAPICallsTotal),
 		DeadletterTotal:       atomic.LoadInt64(&m.deadletterTotal),
 		WorkerQueueDepth:      atomic.LoadInt64(&m.workerQueueDepth),
+		OrgSyncFailureTotal:   atomic.LoadInt64(&m.orgSyncFailureTotal),
 	}
 }
 
@@ -67,4 +72,5 @@ type MetricsSnapshot struct {
 	FeishuAPICallsTotal   int64 `json:"feishu_api_calls_total"`
 	DeadletterTotal       int64 `json:"deadletter_total"`
 	WorkerQueueDepth      int64 `json:"worker_queue_depth"`
+	OrgSyncFailureTotal   int64 `json:"org_sync_failure_total"`
 }

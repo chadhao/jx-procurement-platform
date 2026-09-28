@@ -17,6 +17,15 @@ type CheckSnapshot struct {
 	ApprovalDefs bool `json:"approval_defs"`
 }
 
+// OrgSyncSnapshot 通讯录镜像同步状态（docs/08 §4.5：/healthz 的 org_sync 段，
+// **非就绪门禁**——外部依赖故障不得放大成本地宕机）。
+type OrgSyncSnapshot struct {
+	LastFullSuccessAt string `json:"last_full_success_at"`
+	LastFullError     string `json:"last_full_error"`
+	DeptCount         int    `json:"dept_count"`
+	UserCount         int    `json:"user_count"`
+}
+
 // Health 聚合启动自检与运行期状态，供 /healthz 与 /readyz 使用。
 type Health struct {
 	mu             sync.RWMutex
@@ -28,6 +37,7 @@ type Health struct {
 	subscribeFail  []string // 订阅失败的 approval_code 列表
 	startedAt      time.Time
 	version        string
+	orgSync        OrgSyncSnapshot
 }
 
 // NewHealth 构造健康聚合器；version 为构建版本号。
@@ -69,6 +79,20 @@ func (h *Health) SetApprovalDefs(ok bool) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	h.approvalDefs = ok
+}
+
+// SetOrgSync 写入通讯录同步快照（观测位；**不参与 Ready()**，docs/08 §4.5）。
+func (h *Health) SetOrgSync(s OrgSyncSnapshot) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.orgSync = s
+}
+
+// OrgSync 读取通讯录同步快照。
+func (h *Health) OrgSync() OrgSyncSnapshot {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	return h.orgSync
 }
 
 // Checks 返回自检快照（四项就绪位 + 定义装载位）。

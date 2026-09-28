@@ -145,8 +145,10 @@ func TestQAMigrationFreshAndIdempotent(t *testing.T) {
 	//   0010 t_instance.ext_json 非规范字段、
 	//   0011 t_flow_op_log.round ＋ 回调幂等键入 round、
 	//   0013 回调链路修复（t_flow_op_log.message_id ＋ t_approval_def.feishu_code，docs/16 §5）、
-	//   0014 t_notify_log.message_id（卡片刷新链路；写入者＝NotifySender.Send，R26 同批）。
-	const wantMigrations = 13
+	//   0014 t_notify_log.message_id（卡片刷新链路；写入者＝NotifySender.Send，R26 同批）、
+	//   0012 通讯录镜像（t_org_department/t_org_user/t_org_sync_state/t_org_sync_run，docs/08 实施批次一；
+	//   ★ 0012 依 docs/08 §4.2 编号裁定留空占用，文件名升序执行顺序与其余迁移无交互）。
+	const wantMigrations = 14
 	if total != wantMigrations {
 		t.Errorf("迁移版本总数 = %d, 期望 %d（重复执行不得重复登记）", total, wantMigrations)
 	}

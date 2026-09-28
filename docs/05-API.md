@@ -7,7 +7,7 @@
 | 项 | 内容 |
 |---|---|
 | 文档名称 | 采购与费用审批平台（自建侧）· 接口设计 |
-| 版本 | **V2.15**（+ 2026-09-28：**审批操作台体验三改 + 组织查询接口** —— ① §3.13 任务列表（`GET /api/approval/tasks` 与 `GET /api/approval/{biz_no}` 的 `tasks[]`）新增 **`assignee_name` / `assignee_department`**（数据源 `t_user_role`，批量查询防 N+1；查不到 ⇒ 留空，绝不把 `open_id` 塞进 `name`）；② **新增 §3.15 `GET /api/org/users` / `GET /api/org/departments`**（会话域；数据源＝**`t_user_role` 已配置角色者、非飞书通讯录全量**；支持 `?department=`/`?q=`；空表 ⇒ 空数组不报错）；③ 前端配套：办理人列显示「人名（部门）」、四操作改「部门 + 姓名筛选器」点选（提交字段仍为 `target`）、无本人可办任务时「审批操作」面板整体不渲染。含 V2.14（+ 2026-09-28：**免登登录成功后回跳原目标页（含开放重定向防护）** —— ① `GET /api/auth/authorize-url` 新增可选参数 `?redirect=<站内相对路径>`：仅接受单个 `/` 开头的站内路径（拒绝 `//`、`/\`、`http(s)://`、任意 `://`、反斜杠、控制字符、超长 >512），不合法 ⇒ **丢弃并记 warn**（不报错、回落 `/`）；合法目标与 `state` 一并绑定存入 HttpOnly Cookie `jx_oauth_redirect`（URL 编码、10 分钟 TTL）；★ **不拼进 `redirect_uri`**（飞书只认白名单地址，加参数可能不被放行）。② `GET /auth/feishu/callback` 登录成功后 302 回跳该目标（取不到/被篡改 ⇒ 回落 `/`；★ 读取侧**再次**过白名单 —— 纵深防御）；`error=access_denied` ⇒ 仍 `/login?error=denied` 且保留目标 Cookie（重试可沿用）；`DEV_MODE ?open_id=` 直连支持 `?redirect=`（同样过白名单）。③ 前端路由守卫跳授权页携带 `to.fullPath`；登录页透传 `?redirect=`。含 V2.13（+ 2026-09-28：**飞书免登（授权登录）链路补全** —— ① 新增 **`GET /api/auth/authorize-url`**（公开，下发官方授权页 URL ＋ `crypto/rand` 随机 `state` 存 HttpOnly Cookie）；② `GET /auth/feishu/callback` 补 **`state` 真校验**（Cookie 常量时间比对，不一致 400 拒绝）与 **`error=access_denied` 友好分支**（302 → `/login?error=denied`，不 500）；③ 后端 `ExchangeCode` 按官方《获取 user_access_token（v2）》补齐 **`client_id` / `client_secret` / `redirect_uri`**（此前缺凭据必失败）＋ `code != 0` / `error` 非空判失败）。含 V2.12（**回调链路端到端联调收口** —— ① §6.1 飞书接口契约表**新增「字段类型」「值语义 / 必填」两列**（`node_name` 须 `@i18n@` key、`message_id` 官方 **int64** 且读写不对称、`start_time`/`end_time`/`update_time` 为**毫秒字符串**、实例级＋task 级**两层各有独立必填**、本接口 `i18n_resources.texts` 是**数组**）；② §6.1 补 `message/update` **请求体**（`V-2` 已实测定稿＝`{"message_id","status"}`）与**「卡片需单独刷新」机制**（★ 平台**不自动刷新**卡片 ⇒ 我方处理成功后**主动**调 `message/update`）；③ §3.14 末注的 `V-1~V-4` **由「待实测」翻为「已定论」**（逐条给结论）；④ §6 主表「更新审批 Bot 消息」行由「请求体待实测 `V-2`」改为「`V-2` 已定稿」。含 V2.11 §3.14 缺口清单 6 条翻面 ＋ §6 计数 5→6 ＋ 幂等键 4 列；另 V2.10 §3.9 `defs/sync` ＋ V2.9 §3.14 官方字段校准 ＋ V2.8 §6 计数 4→5 ＋ V2.7 §6.1 出方向契约 ＋ V2.6 §3.8 入参校正） |
+| 版本 | **V2.16**（+ 2026-09-28：**§3.15 组织查询数据源切换至通讯录镜像**（docs/08 实施批次一）—— 数据源由 `t_user_role` 改为 **`t_org_user` / `t_org_department`**（`internal/orgsync` 全量同步）；人员/部门**与飞书一致、覆盖全员**（含未配角色者，`role` 来自 `t_user_role` JOIN、未配者空串）；查询参数/响应字段/排序/空表语义不变；新增内部端点 **`POST /internal/org/sync`**；办理人展示两级兜底（`t_user_role` → 镜像）。含 V2.15（+ 2026-09-28：**审批操作台体验三改 + 组织查询接口** —— ① §3.13 任务列表（`GET /api/approval/tasks` 与 `GET /api/approval/{biz_no}` 的 `tasks[]`）新增 **`assignee_name` / `assignee_department`**（数据源 `t_user_role`，批量查询防 N+1；查不到 ⇒ 留空，绝不把 `open_id` 塞进 `name`）；② **新增 §3.15 `GET /api/org/users` / `GET /api/org/departments`**（会话域；数据源＝**`t_user_role` 已配置角色者、非飞书通讯录全量**；支持 `?department=`/`?q=`；空表 ⇒ 空数组不报错）；③ 前端配套：办理人列显示「人名（部门）」、四操作改「部门 + 姓名筛选器」点选（提交字段仍为 `target`）、无本人可办任务时「审批操作」面板整体不渲染。含 V2.14（+ 2026-09-28：**免登登录成功后回跳原目标页（含开放重定向防护）** —— ① `GET /api/auth/authorize-url` 新增可选参数 `?redirect=<站内相对路径>`：仅接受单个 `/` 开头的站内路径（拒绝 `//`、`/\`、`http(s)://`、任意 `://`、反斜杠、控制字符、超长 >512），不合法 ⇒ **丢弃并记 warn**（不报错、回落 `/`）；合法目标与 `state` 一并绑定存入 HttpOnly Cookie `jx_oauth_redirect`（URL 编码、10 分钟 TTL）；★ **不拼进 `redirect_uri`**（飞书只认白名单地址，加参数可能不被放行）。② `GET /auth/feishu/callback` 登录成功后 302 回跳该目标（取不到/被篡改 ⇒ 回落 `/`；★ 读取侧**再次**过白名单 —— 纵深防御）；`error=access_denied` ⇒ 仍 `/login?error=denied` 且保留目标 Cookie（重试可沿用）；`DEV_MODE ?open_id=` 直连支持 `?redirect=`（同样过白名单）。③ 前端路由守卫跳授权页携带 `to.fullPath`；登录页透传 `?redirect=`。含 V2.13（+ 2026-09-28：**飞书免登（授权登录）链路补全** —— ① 新增 **`GET /api/auth/authorize-url`**（公开，下发官方授权页 URL ＋ `crypto/rand` 随机 `state` 存 HttpOnly Cookie）；② `GET /auth/feishu/callback` 补 **`state` 真校验**（Cookie 常量时间比对，不一致 400 拒绝）与 **`error=access_denied` 友好分支**（302 → `/login?error=denied`，不 500）；③ 后端 `ExchangeCode` 按官方《获取 user_access_token（v2）》补齐 **`client_id` / `client_secret` / `redirect_uri`**（此前缺凭据必失败）＋ `code != 0` / `error` 非空判失败）。含 V2.12（**回调链路端到端联调收口** —— ① §6.1 飞书接口契约表**新增「字段类型」「值语义 / 必填」两列**（`node_name` 须 `@i18n@` key、`message_id` 官方 **int64** 且读写不对称、`start_time`/`end_time`/`update_time` 为**毫秒字符串**、实例级＋task 级**两层各有独立必填**、本接口 `i18n_resources.texts` 是**数组**）；② §6.1 补 `message/update` **请求体**（`V-2` 已实测定稿＝`{"message_id","status"}`）与**「卡片需单独刷新」机制**（★ 平台**不自动刷新**卡片 ⇒ 我方处理成功后**主动**调 `message/update`）；③ §3.14 末注的 `V-1~V-4` **由「待实测」翻为「已定论」**（逐条给结论）；④ §6 主表「更新审批 Bot 消息」行由「请求体待实测 `V-2`」改为「`V-2` 已定稿」。含 V2.11 §3.14 缺口清单 6 条翻面 ＋ §6 计数 5→6 ＋ 幂等键 4 列；另 V2.10 §3.9 `defs/sync` ＋ V2.9 §3.14 官方字段校准 ＋ V2.8 §6 计数 4→5 ＋ V2.7 §6.1 出方向契约 ＋ V2.6 §3.8 入参校正） |
 | 日期 | 2026-09-26 |
 | 上游文档 | `01-PRD.md`、`02-UseCase.md`、`03-TestCase.md`、`04-Architecture.md` |
 | 语言纪律 | 简体中文 |
@@ -384,10 +384,21 @@ sequenceDiagram
 |---|---|
 | 用途 | 存活探针：进程存活 + 启动自检四项快照（**回调面连通 / 长连接 / DB 可写 / 单实例**） |
 | 权限要求 | 管理凭据或内网 |
-| 响应字段 | `{alive:true, checks:{callback, longconn, db_writable, single_instance}, version}` |
+| 响应字段 | `{alive:true, checks:{callback, longconn, db_writable, single_instance}, version, org_sync:{last_full_success_at, last_full_error, dept_count, user_count}}` |
 | 关联 FR | FR-M8-02、FR-M0-05 |
 
-> ★ **转向 ③（B-2）**：原「**订阅**」自检项**作废**（审批事件订阅 F1 取消），改为「**回调面连通**」（`04a §17.5`）；`t_subscribe_state` 已弃用（`04 §3.1` / `11 §3 R11`）。
+> ★ **转向 ③（B-2）**：原「**订阅**」自检项**作废**（审批事件订阅 F1 取消），改为「**回调面连通**」（`04a §17.5`）；`t_subscribe_state` 已弃用（`04 §3.1` / `11 §3 R11`）。★ **V2.16**：新增 `org_sync` 观测段（通讯录镜像同步状态；**非就绪门禁**，docs/08 §4.5）。
+
+#### `POST /internal/org/sync` ★ **V2.16 新增（通讯录全量手动触发）**
+
+| 项 | 内容 |
+|---|---|
+| 用途 | 手动触发**通讯录镜像全量同步**（无视 `JX_ORG_SYNC_STALE_HOURS` 阈值强制拉取；docs/08 实施批次一） |
+| 权限要求 | 管理凭据（`X-Internal-Token`，与其他 `/internal/*` 同域） |
+| 请求体 | 无 |
+| 响应字段 | `{trigger:"manual", dept_total, user_total, dept_added, dept_updated, dept_soft_deleted, user_added, user_updated, user_soft_deleted, duration_ms}` |
+| 错误码 | 50000（同步失败，含飞书侧错误明细；**不静默**）、50300（Runner 未装配） |
+| 关联 | docs/08 §4.5 / §4.11-B（N5 失败可见）；运行流水落 `t_org_sync_run` |
 
 #### `GET /readyz`
 
@@ -762,9 +773,11 @@ sequenceDiagram
 
 > ★ **用途**：审批操作台「转交 / 加签」的**办理人选择器**数据源（此前要求手填 `open_id`，用户实测反馈改为筛选器直选）。两者均挂 **`api` 组（`requireSession` 会话域）**：未登录 ⇒ **401/40100**。
 >
-> ★★ **数据源边界（务必如实理解，不是通讯录）**：数据源为 **`t_user_role`（＝已在系统内配置角色的人员）**，**不是**飞书全量通讯录 —— 组织架构同步 / 镜像属另一工程，本期未做。这与业务语义一致：**转交 / 加签的目标必须是有权限的审批人**，把单据转给系统里没角色的人是无效的。故 `t_user_role` 只有 1 条，接口就返回 1 条 —— **不造假数据、不回落飞书通讯录实时拉取**。加人入口＝**系统管理 `POST /api/admin/users`**（§3.9，仅系统管理员）。
+> ★★ **数据源边界（2026-09-28 起，V2.16）**：数据源切换为**飞书通讯录镜像**（`t_org_user` / `t_org_department`，由 `internal/orgsync` 全量同步维护，docs/08 实施批次一）——人员与部门**与飞书一致、覆盖全员**（**含尚未配置系统角色者**；用户口径「人员与部门的信息来源＝飞书，本系统不人工维护人员和部门信息」）。`role` 字段仍来自 `t_user_role`（LEFT JOIN 只读借用）：**镜像 ≠ 杉限**（docs/08 §4.10），未配角色者 `role`＝空串。**是否过滤「未配角色者」＝不过滤**（转交/加签可能需要指向尚未配角色的人员；离职/删除者 `is_deleted=1`，不出现）。查询参数、响应字段名、排序与空表语义**与切换前完全一致**（前端无需改）。
 >
-> ★ **空表语义**：列表为空 ⇒ 返回**空数组**（HTTP 200、`code=0`），**不报错**；前端给「暂无可选人员」提示。
+> ★ **空表语义**：镜像为空（尚未同步）⇒ 返回**空数组**（HTTP 200、`code=0`），**不报错**；前端给「暂无可选人员」提示。
+>
+> ★ **镜像维护入口**：启动异步全量（`JX_ORG_SYNC_STALE_HOURS` 阈值门控）＋ **`POST /internal/org/sync`**（内部端点，`X-Internal-Token`；无视阈值强制全量，返回差异报告）。
 
 #### `GET /api/org/users`
 
@@ -773,8 +786,8 @@ sequenceDiagram
 | 用途 | 可选人员清单（转交 / 加签目标选择器） |
 | 鉴权 | 免登会话（`requireSession`） |
 | 查询参数 | `department`（可选，精确匹配部门）；`q`（可选，按 `name` **模糊**匹配）。均可组合 |
-| 数据源 | `t_user_role`（**仅 `active=1` 启用者**：停用者已不是有效审批人，不进选择器） |
-| 响应 | `items[]`：`open_id` · `name` · `role` · `department`；稳定排序＝部门 → 姓名 → `open_id` |
+| 数据源 | **通讯录镜像 `t_org_user`（`is_deleted=0` 在用者，全员覆盖）**；`role` 来自 `t_user_role` LEFT JOIN（未配角色者＝空串） |
+| 响应 | `items[]`：`open_id` · `name` · `role` · `department`（主部门名，镜像解析）；稳定排序＝部门 → 姓名 → `open_id` |
 | 错误码 | 40100、50000 |
 
 #### `GET /api/org/departments`
@@ -783,7 +796,7 @@ sequenceDiagram
 |---|---|
 | 用途 | 部门清单（选择器的「部门下拉」级联筛选源） |
 | 鉴权 | 免登会话（`requireSession`） |
-| 数据源 | `t_user_role.department` **非空去重**（空串 / 纯空白不进清单）、稳定排序（字典序） |
+| 数据源 | **通讯录镜像 `t_org_department`（`is_deleted=0`）名称非空去重**、稳定排序（字典序） |
 | 响应 | `items[]`：字符串数组 |
 | 错误码 | 40100、50000 |
 
@@ -1049,6 +1062,7 @@ sequenceDiagram
 
 | 版本 | 日期 | 变更 | 作者 |
 |---|---|---|---|
+| V2.16 | 2026-09-28 | **§3.15 组织查询数据源切换至通讯录镜像（docs/08 实施批次一）**：① **数据源由 `t_user_role` 切换为 `t_org_user` / `t_org_department`**（`internal/orgsync` 全量同步维护；迁移 `0012_org_directory.sql`）——人员/部门**与飞书一致、覆盖全员（含未配角色者）**；`role` 仍来自 `t_user_role` LEFT JOIN（未配角色者＝空串；**镜像 ≠ 权限**，docs/08 §4.10）；**未配角色者不过滤**（裁定与理由见交付报告）；离职/删除者（`is_deleted=1`）不出现。② **查询参数 / 响应字段名 / 排序 / 空表语义全部不变**（前端无需改）。③ **新增 §3.8 内部端点 `POST /internal/org/sync`**（`X-Internal-Token`；手动触发通讯录全量，返回差异报告）；启动异步全量（`JX_ORG_SYNC_STALE_HOURS` 阈值门控，默认 24h）。④ **办理人展示两级兜底**：`t_user_role` 查不到者回落镜像 `MapOrgUsersByOpenIDs`（**不过滤 is_deleted**，docs/08 C-E 历史解析口径）——办理人显示不再依赖人工先配角色。 | 工程师（Alex） |
 | V2.15 | 2026-09-28 | **审批操作台体验三改 + 组织查询接口（用户实测反馈驱动）**：① **§3.13 任务列表新增 `assignee_name` / `assignee_department`**（解「绿框」：办理人列此前被迫显示裸 `open_id`）—— `GET /api/approval/tasks` 与 `GET /api/approval/{biz_no}` 的 `tasks[]` 同批补齐；数据源＝**`t_user_role`**（新增批量仓储 `MapUserRolesByOpenIDs`，一次 IN 查询防 N+1）；**查不到 ⇒ 字段留空**（前端回落 `-`），**绝不把 `open_id` 塞进 `name`**；不改既有字段名/语义。② **新增 §3.15 组织查询**（解「红框」的前置）—— `GET /api/org/users`（仅启用者；`?department=` 精确 / `?q=` 姓名模糊；稳定排序＝部门→姓名→open_id）与 `GET /api/org/departments`（非空去重、字典序）；挂 `api` 组（未登录 ⇒ 401）；★★ **数据源边界如实写明：`t_user_role`（已配置角色者），非飞书通讯录全量** —— 转交/加签目标必须是有权限的审批人；空表 ⇒ 空数组不报错；加人入口＝§3.9 `POST /api/admin/users`。③ **前端配套（`ApprovalConsole.vue`）**：办理人列显示「人名（部门）」（任一缺失回落：有名无部门 → 只显示名；都无 → `-`；**绝不显示裸 `open_id`**）；四操作「办理人 open_id」文本框**替换为筛选器**（部门下拉 + 姓名搜索 + 可滚动点选清单，选中展示「人名（部门）」，可清除重选；**提交字段保持 `target` 不改契约**，另附既有展示字段 `target_name`；未选中时「执行」按钮禁用）；「审批操作」面板显示条件 `v-if="detail"` → **`v-if="detail && actionable"`**（复用页内既有判据，无本人可办任务时**整体不渲染**）。④ **测试**：新增 5 用例（users 形态/active 过滤/两参数筛选 · departments 去重+稳定排序 · 空表 ⇒ 空数组 · 未登录 ⇒ 401 · 任务列表携带姓名/部门且无映射者留空不塞 open_id）。 | 工程师（Alex） |
 | V2.14 | 2026-09-28 | **免登登录成功后回跳原目标页（含开放重定向防护）**：① **§3.1 `GET /api/auth/authorize-url` 新增可选参数 `?redirect=<站内相对路径>`** —— ★ **开放重定向防护（安全红线）**：仅接受单个 `/` 开头的站内路径（拒绝 `//`、`/\` 开头的协议相对路径、`http(s)://` 及任意 `://`、反斜杠、控制字符、长度 >512）；不合法 ⇒ **丢弃并记 warn（不报错、不 500）**；合法目标与 `state` 一并绑定存入 HttpOnly Cookie `jx_oauth_redirect`（`url.QueryEscape` 编码、10 分钟 TTL、与 state 同 Secure/SameSite 口径）；★ **不拼进 `redirect_uri`**（飞书侧只认白名单地址，加参数可能不被放行）；未传参数 ⇒ 保留既有 Cookie（授权被拒后重试可沿用原目标）。② **`GET /auth/feishu/callback` 登录成功后 302 回跳原目标页**（原为固定 `302 → /`，用户点推送卡片进详情页却落首页的真实反馈缺口）—— 目标取自回跳 Cookie，取不到/非法 ⇒ 回落 `/`；★ **纵深防御：读取侧再次过白名单校验**（Cookie 被篡改也只回落 `/`），目标用毕即清；`error=access_denied` ⇒ 仍 `/login?error=denied` 且保留目标 Cookie；★ `DEV_MODE ?open_id=` 直连路径支持 `?redirect=`（同样过白名单）。③ **前端**：路由守卫跳授权页携带 `to.fullPath`（防重入逻辑不变；目标页跳转由后端 302 完成、前端不二次跳转避免双跳）；登录页透传 `?redirect=`（含 DEV 直连入口）。④ **测试**：新增 7 个用例（回跳端到端 / 开放重定向 9 形态拒绝 / 无参数回落 / 篡改 Cookie 回落 / 编码损坏回落 / access_denied 保留 / DEV 直连回跳）。 | 工程师（Alex） |
 | V2.13 | 2026-09-28 | **飞书免登（授权登录）链路补全**：① **新增 §3.1 `GET /api/auth/authorize-url`**（公开路由，挂 root `e` 不进 `requireSession`）—— 生成 `crypto/rand` 16 字节随机 `state`（存 HttpOnly Cookie `jx_oauth_state`，10 分钟，用毕即清）→ 按官方《获取授权码》拼装 `accounts.feishu.cn/open-apis/authen/v1/authorize`（`client_id` / `response_type=code` / `redirect_uri` URL 编码 / `state`）→ 返回 `authorize_url`；未配置 `JX_APP_ID` / 回调地址 / 回调地址含 `#` ⇒ **可见 400**（新配置键 `JX_OAUTH_REDIRECT_URI`，缺省 `JX_CALLBACK_DOMAIN` + 回调路径）。② **`GET /auth/feishu/callback` 补 state 真校验与拒绝分支** —— state 与下发 Cookie 常量时间比对，不一致 ⇒ 400（官方要求「务必校验 state 前后一致」防 CSRF）；`error=access_denied` ⇒ 友好 302 `/login?error=denied`（不 500）；★ `DEV_MODE` 的 `?open_id=` 直连路径不受影响。③ **后端 `ExchangeCode` 按官方《获取 user_access_token（v2）》补齐 `client_id` / `client_secret` / `redirect_uri`**（此前仅 `grant_type`+`code`，缺凭据必失败）；响应 `code != 0` / `error` 非空判失败并带 `error_description`；open_id 经 `/authen/v1/user_info` 另取；★ v2 已被官方标为历史版本，v3 平迁列为 TODO。④ 前端：路由守卫无会话自动发起免登（防重入，失败落 `/login` 可见报错）+ 登录页新增「用飞书账号登录」。 | 工程师（Alex） |

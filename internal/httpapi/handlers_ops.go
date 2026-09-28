@@ -21,13 +21,16 @@ import (
 //	授权仅限本文件。
 const codeGone = 41000
 
-// handleHealthz 存活探针 + 启动自检四项快照。
+// handleHealthz 存活探针 + 启动自检四项快照 + 通讯录同步观测段（org_sync，非门禁）。
 func (d Deps) handleHealthz(c echo.Context) error {
 	return ok(c, map[string]any{
 		"alive":      true,
 		"version":    d.Version,
 		"started_at": d.Health.StartedAt().Format(time.RFC3339),
 		"checks":     d.Health.Checks(),
+		// ★ 通讯录镜像同步状态（docs/08 §4.5）：只观测、**不参与** /readyz 门禁——
+		//   外部依赖（飞书）故障不得放大成本地宕机。
+		"org_sync": d.Health.OrgSync(),
 	})
 }
 
