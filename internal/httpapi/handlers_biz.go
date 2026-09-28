@@ -30,6 +30,10 @@ import (
 // ★ error=access_denied 分支：用户在授权页拒绝授权时官方回调
 //
 //	`<redirect_uri>?error=access_denied&state=<原值>`，友好跳登录页（不 500）。
+//
+// ★ 登录后回跳原目标页：authorize-url 把 ?redirect= 存入 HttpOnly Cookie
+// （jx_oauth_redirect），成功建会话后取出并 302 过去；取不到 ⇒ 回落 /。
+// DEV_MODE 直连路径无 Cookie 时额外接受 ?redirect=（本地验证用），同样过白名单。
 func (d Deps) handleFeishuCallback(c echo.Context) error {
 	ctx := c.Request().Context()
 	code := c.QueryParam("code")
@@ -76,7 +80,39 @@ func (d Deps) handleFeishuCallback(c echo.Context) error {
 	value := d.Auth.Establish(ident.OpenID)
 	setSessionCookie(c, value, d.Env, int((8 * time.Hour).Seconds()))
 	d.audit(ctx, &store.AuditLogRow{ActorOpenID: ident.OpenID, ActorRole: ur.Role, Action: "login", Resource: "auth", Result: "allow"})
-	return c.Redirect(http.StatusFound, "/")
+	return c.Redirect(http.StatusFound, d.postLoginTarget(c))
+}
+
+// postLoginTarget 取「登录后回跳目标」（仅在会话建立成功后调用，取毕即清 Cookie）。
+//
+// 目标来源（按优先级）：
+//  1. authorize-url 存入的 HttpOnly Cookie（jx_oauth_redirect，与 state 同批下发、
+//     同一登录事务绑定 —— 首选）；
+//  2. DEV_MODE 直连路径（?open_id=）无该 Cookie，额外接受 ?redirect= 查询参数
+//     （仅本地验证用）。
+//
+// ★ 开放重定向防护（纵深防御）：取出的值**再次**过 sanitizeInternalRedirect 白名单
+// 校验（写入侧已校验过一次；Cookie 可能被客户端篡改，取出后必须再验一次），
+// 任一来源不合法 ⇒ 一律回落 /，绝不外跳。
+func (d Deps) postLoginTarget(c echo.Context) string {
+	target, ok := sanitizeInternalRedirect(readOAuthRedirectCookie(c))
+	clearOAuthRedirectCookie(c, d.Env)
+	if ok {
+		return target
+	}
+	// Cookie 无效/不存在：DEV_MODE 直连路径兜底接受 ?redirect=（同样过白名单）。
+	devOpenID := c.QueryParam("open_id")
+	if d.Auth.DevMode() && strings.TrimSpace(devOpenID) != "" {
+		if t, ok2 := sanitizeInternalRedirect(c.QueryParam("redirect")); ok2 {
+			return t
+		}
+	}
+	return "/"
+}
+
+// clearOAuthRedirectCookie 用毕即清（防陈旧目标跨会话复用；未用到的 10 分钟自然过期）。
+func clearOAuthRedirectCookie(c echo.Context, env *config.Env) {
+	setOAuthRedirectCookie(c, "", env)
 }
 
 // handleLogout 注销会话。

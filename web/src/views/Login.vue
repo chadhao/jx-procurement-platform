@@ -23,12 +23,21 @@ if (route.query.error) {
   err.value = ERROR_TEXT[route.query.error] || `登录失败：${route.query.error}`
 }
 
+// 登录页可选回跳目标：仅当 URL 带 ?redirect=（如深链 /login?redirect=/approval/PR-1）
+// 时透传给 authorize-url（后端绑定 state Cookie、登录成功后 302 回跳）；
+// 未带 ⇒ 不传，后端无目标时回落 /。★ 仅字符串形态，防 vue-router 的数组值。
+function redirectTarget() {
+  const q = route.query.redirect
+  const v = Array.isArray(q) ? q[0] : q
+  return typeof v === 'string' && v ? v : ''
+}
+
 /** 发起飞书免登：取授权页 URL 后整页跳转。 */
 async function feishuLogin() {
   err.value = ''
   busy.value = true
   try {
-    const data = await fetchAuthorizeUrl()
+    const data = await fetchAuthorizeUrl(redirectTarget() || undefined)
     if (!data || !data.authorize_url) throw new Error('authorize_url 为空')
     // 清防重入标记：用户主动重试时允许再次整页跳转。
     sessionStorage.removeItem('jx_sso_attempted')
@@ -47,8 +56,11 @@ function gotoDevLogin() {
     return
   }
   busy.value = true
-  // 开发模式下后端允许 ?open_id= 直接免登（见 httpapi.handleFeishuCallback）
-  window.location.href = `/auth/feishu/callback?state=devlogi&open_id=${encodeURIComponent(id)}`
+  // 开发模式下后端允许 ?open_id= 直接免登（见 httpapi.handleFeishuCallback）；
+  // 带 ?redirect= 时同样支持登录后回跳（后端 DEV 直连路径接受该参数）。
+  const target = redirectTarget()
+  const extra = target ? `&redirect=${encodeURIComponent(target)}` : ''
+  window.location.href = `/auth/feishu/callback?state=devlogi&open_id=${encodeURIComponent(id)}${extra}`
 }
 
 async function probe() {

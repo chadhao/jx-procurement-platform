@@ -272,3 +272,219 @@ func TestCallbackDevOpenIDDirectRegression(t *testing.T) {
 		t.Error("DEV 直连未建立会话 Cookie")
 	}
 }
+
+// ---------- 登录后回跳原目标页（★ 含开放重定向防护用例） ----------
+
+// upsertTestRole 写一条映射角色（回跳链路要建会话必须先有角色映射）。
+func upsertTestRole(t *testing.T, db *store.DB, openID string) {
+	t.Helper()
+	if err := db.UpsertUserRole(context.Background(),
+		store.UserRole{OpenID: openID, Role: "申请人", Active: true}); err != nil {
+		t.Fatalf("写入用户角色失败: %v", err)
+	}
+}
+
+// callbackWithCookies 带指定 Cookie 回调并返回响应。
+func callbackWithCookies(e *echo.Echo, query string, cookies ...*http.Cookie) *httptest.ResponseRecorder {
+	req := httptest.NewRequest(http.MethodGet, "/auth/feishu/callback"+query, nil)
+	for _, ck := range cookies {
+		req.AddCookie(ck)
+	}
+	rec := httptest.NewRecorder()
+	e.ServeHTTP(rec, req)
+	return rec
+}
+
+// TestAuthorizeURLWithRedirectThenCallback 端到端：authorize-url?redirect=/approval/PR-1
+// ⇒ 目标写入 HttpOnly Cookie ⇒ 回调成功后 302 到 /approval/PR-1（登录后回到原目标页）。
+func TestAuthorizeURLWithRedirectThenCallback(t *testing.T) {
+	e, _, db := newAuthTestApp(t, &config.Env{
+		AppID:            "cli_x",
+		OAuthRedirectURI: testRedirectURI,
+	}, fakeOAuth{ident: feishu.FeishuIdentity{OpenID: "ou_x"}})
+	upsertTestRole(t, db, "ou_x")
+
+	rec, env := doRequest(e, http.MethodGet,
+		"/api/auth/authorize-url?redirect="+url.QueryEscape("/approval/PR-1"), "", "")
+	if rec.Code != http.StatusOK || env.Code != codeOK {
+		t.Fatalf("authorize-url: http=%d code=%d body=%s", rec.Code, env.Code, rec.Body.String())
+	}
+	state := cookieValue(t, rec, oauthStateCookie)
+	if state == "" {
+		t.Fatal("未下发 state Cookie")
+	}
+	// 回跳目标写入 HttpOnly Cookie（URL 编码存储），与 state 同批下发。
+	raw := cookieValue(t, rec, oauthRedirectCookie)
+	if raw == "" {
+		t.Fatal("未下发回跳目标 Cookie")
+	}
+	if got, err := url.QueryUnescape(raw); err != nil || got != "/approval/PR-1" {
+		t.Errorf("回跳目标 Cookie = %q（解码 %q, err=%v）, 期望 /approval/PR-1", raw, got, err)
+	}
+
+	// 回调：state 匹配 ⇒ 302 到原目标页（不再是固定 /）。
+	rec2 := callbackWithCookies(e, "?code=c1&state="+state,
+		&http.Cookie{Name: oauthStateCookie, Value: state},
+		&http.Cookie{Name: oauthRedirectCookie, Value: raw})
+	if rec2.Code != http.StatusFound {
+		t.Fatalf("回调应 302, 实际 %d body=%s", rec2.Code, rec2.Body.String())
+	}
+	if loc := rec2.Header().Get("Location"); loc != "/approval/PR-1" {
+		t.Errorf("Location = %q, 期望 /approval/PR-1", loc)
+	}
+	if cookieValue(t, rec2, access.CookieName) == "" {
+		t.Error("成功回调未建立会话 Cookie")
+	}
+	if got := cookieValue(t, rec2, oauthRedirectCookie); got != "" {
+		t.Errorf("回跳目标 Cookie 应已清除（用毕即清）, 实际 %q", got)
+	}
+}
+
+// TestAuthorizeURLRejectsOpenRedirect ★ 开放重定向防护（安全红线）：
+// authorize-url 收到非法目标 ⇒ 不 500、目标不落 Cookie（丢弃、回调回落 /）；
+// 回调 302 Location 一律是 /（站内），绝不外跳。
+// 用例覆盖：协议相对路径 //、反斜杠变体 /\、绝对 URL http(s)://、不以 / 开头、
+// 任意位置 scheme、自定义 scheme、超长。
+func TestAuthorizeURLRejectsOpenRedirect(t *testing.T) {
+	e, _, db := newAuthTestApp(t, &config.Env{
+		AppID:            "cli_x",
+		OAuthRedirectURI: testRedirectURI,
+	}, fakeOAuth{ident: feishu.FeishuIdentity{OpenID: "ou_x"}})
+	upsertTestRole(t, db, "ou_x")
+
+	cases := []string{
+		"//evil.com",              // 协议相对路径（浏览器按 host=evil.com 解析）
+		"https://evil.com",        // 绝对 URL
+		"http://x",                // 绝对 URL（http）
+		`/\evil.com`,              // 反斜杠变体（部分客户端把 \ 当 / 归一）
+		`/..\evil.com`,            // 反斜杠夹杂
+		"approval/PR-1",           // 不以 / 开头
+		"/x?next=http://evil.com", // 任意位置出现 scheme
+		"javascript:alert(1)",     // 自定义 scheme
+		strings.Repeat("/a", 600), // 超长（> 512）
+	}
+	for _, raw := range cases {
+		q := url.QueryEscape(raw)
+		rec, env := doRequest(e, http.MethodGet, "/api/auth/authorize-url?redirect="+q, "", "")
+		if rec.Code != http.StatusOK || env.Code != codeOK {
+			t.Errorf("redirect=%q: 应 200 放行（丢弃参数而非报错）, 实际 http=%d body=%s",
+				raw, rec.Code, rec.Body.String())
+			continue
+		}
+		if got := cookieValue(t, rec, oauthRedirectCookie); got != "" {
+			t.Errorf("redirect=%q: 非法目标不应写入 Cookie, 实际 %q", raw, got)
+		}
+		// 回调（带合法 state）⇒ 302 回落 /，不 500、不外跳。
+		state := cookieValue(t, rec, oauthStateCookie)
+		rec2 := callbackWithCookies(e, "?code=c1&state="+state,
+			&http.Cookie{Name: oauthStateCookie, Value: state})
+		if rec2.Code != http.StatusFound {
+			t.Errorf("redirect=%q: 回调应 302, 实际 %d", raw, rec2.Code)
+			continue
+		}
+		if loc := rec2.Header().Get("Location"); loc != "/" {
+			t.Errorf("redirect=%q: Location = %q, 期望回落 /", raw, loc)
+		}
+	}
+}
+
+// TestAuthorizeURLWithoutRedirectFallsBackRoot 无 redirect 参数 ⇒ 回调 302 回落 /
+// （回归：既有行为不变；同时验证陈旧/被篡改的回跳 Cookie 也只会回落站内）。
+func TestAuthorizeURLWithoutRedirectFallsBackRoot(t *testing.T) {
+	e, _, db := newAuthTestApp(t, &config.Env{
+		AppID:            "cli_x",
+		OAuthRedirectURI: testRedirectURI,
+	}, fakeOAuth{ident: feishu.FeishuIdentity{OpenID: "ou_x"}})
+	upsertTestRole(t, db, "ou_x")
+
+	rec, _ := doRequest(e, http.MethodGet, "/api/auth/authorize-url", "", "")
+	state := cookieValue(t, rec, oauthStateCookie)
+
+	// ① 全程无 redirect ⇒ /。
+	rec2 := callbackWithCookies(e, "?code=c1&state="+state,
+		&http.Cookie{Name: oauthStateCookie, Value: state})
+	if rec2.Code != http.StatusFound || rec2.Header().Get("Location") != "/" {
+		t.Errorf("无 redirect 应 302 → /, 实际 %d Location=%q",
+			rec2.Code, rec2.Header().Get("Location"))
+	}
+
+	// ② 回跳 Cookie 被篡改为外站地址 ⇒ 回落 /（纵深防御：读取侧再校验一次）。
+	rec3, _ := doRequest(e, http.MethodGet, "/api/auth/authorize-url", "", "")
+	state3 := cookieValue(t, rec3, oauthStateCookie)
+	rec4 := callbackWithCookies(e, "?code=c1&state="+state3,
+		&http.Cookie{Name: oauthStateCookie, Value: state3},
+		&http.Cookie{Name: oauthRedirectCookie, Value: url.QueryEscape("https://evil.com")})
+	if rec4.Code != http.StatusFound || rec4.Header().Get("Location") != "/" {
+		t.Errorf("被篡改的回跳 Cookie 应回落 /, 实际 %d Location=%q",
+			rec4.Code, rec4.Header().Get("Location"))
+	}
+}
+
+// TestAuthorizeURLInvalidRedirectCookieReadSide 回调侧对**编码损坏 / 含反斜杠**的
+// 回跳 Cookie 值也只回落 /（不 500）。
+func TestAuthorizeURLInvalidRedirectCookieReadSide(t *testing.T) {
+	e, _, db := newAuthTestApp(t, &config.Env{
+		AppID:            "cli_x",
+		OAuthRedirectURI: testRedirectURI,
+	}, fakeOAuth{ident: feishu.FeishuIdentity{OpenID: "ou_x"}})
+	upsertTestRole(t, db, "ou_x")
+
+	for _, bad := range []string{"%zz-not-escaped", url.QueryEscape(`/\evil.com`)} {
+		rec, _ := doRequest(e, http.MethodGet, "/api/auth/authorize-url", "", "")
+		state := cookieValue(t, rec, oauthStateCookie)
+		rec2 := callbackWithCookies(e, "?code=c1&state="+state,
+			&http.Cookie{Name: oauthStateCookie, Value: state},
+			&http.Cookie{Name: oauthRedirectCookie, Value: bad})
+		if rec2.Code != http.StatusFound || rec2.Header().Get("Location") != "/" {
+			t.Errorf("bad=%q: 应回落 /, 实际 %d Location=%q",
+				bad, rec2.Code, rec2.Header().Get("Location"))
+		}
+	}
+}
+
+// TestCallbackAccessDeniedKeepsRedirectCookie 授权被拒 ⇒ 仍 302 /login?error=denied，
+// 且回跳目标 Cookie 保留（登录页重试可沿用原目标；TTL 10 分钟自然过期兜底）。
+func TestCallbackAccessDeniedKeepsRedirectCookie(t *testing.T) {
+	e, _, _ := newAuthTestApp(t, &config.Env{AppID: "cli_x"}, nil)
+
+	rec := callbackWithCookies(e, "?error=access_denied&state=abc",
+		&http.Cookie{Name: oauthRedirectCookie, Value: url.QueryEscape("/approval/PR-1")})
+	if rec.Code != http.StatusFound {
+		t.Fatalf("access_denied 应 302, 实际 %d", rec.Code)
+	}
+	if loc := rec.Header().Get("Location"); loc != "/login?error=denied" {
+		t.Errorf("Location = %q, 期望 /login?error=denied", loc)
+	}
+}
+
+// TestCallbackDevOpenIDWithRedirect DEV_MODE 直连路径支持 ?redirect= 回跳；
+// 非法目标仍回落 /（开放重定向防护对 DEV 路径同样生效）。
+func TestCallbackDevOpenIDWithRedirect(t *testing.T) {
+	e, _, db := newAuthTestApp(t, &config.Env{DevMode: true}, nil)
+	upsertTestRole(t, db, "ou_dev_001")
+
+	// ① 合法目标 ⇒ 302 到目标页并建会话。
+	rec := httptest.NewRecorder()
+	e.ServeHTTP(rec, httptest.NewRequest(http.MethodGet,
+		"/auth/feishu/callback?state=devlogi&open_id=ou_dev_001&redirect="+
+			url.QueryEscape("/approval/PR-1"), nil))
+	if rec.Code != http.StatusFound {
+		t.Fatalf("DEV 直连应 302, 实际 %d body=%s", rec.Code, rec.Body.String())
+	}
+	if loc := rec.Header().Get("Location"); loc != "/approval/PR-1" {
+		t.Errorf("Location = %q, 期望 /approval/PR-1", loc)
+	}
+	if cookieValue(t, rec, access.CookieName) == "" {
+		t.Error("DEV 直连未建立会话 Cookie")
+	}
+
+	// ② 非法目标 ⇒ 回落 /，不 500。
+	rec2 := httptest.NewRecorder()
+	e.ServeHTTP(rec2, httptest.NewRequest(http.MethodGet,
+		"/auth/feishu/callback?state=devlogi&open_id=ou_dev_001&redirect="+
+			url.QueryEscape("//evil.com"), nil))
+	if rec2.Code != http.StatusFound || rec2.Header().Get("Location") != "/" {
+		t.Errorf("DEV 直连非法 redirect 应回落 /, 实际 %d Location=%q",
+			rec2.Code, rec2.Header().Get("Location"))
+	}
+}

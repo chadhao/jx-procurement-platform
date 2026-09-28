@@ -7,7 +7,7 @@
 | 项 | 内容 |
 |---|---|
 | 文档名称 | 采购与费用审批平台（自建侧）· 接口设计 |
-| 版本 | **V2.13**（+ 2026-09-28：**飞书免登（授权登录）链路补全** —— ① 新增 **`GET /api/auth/authorize-url`**（公开，下发官方授权页 URL ＋ `crypto/rand` 随机 `state` 存 HttpOnly Cookie）；② `GET /auth/feishu/callback` 补 **`state` 真校验**（Cookie 常量时间比对，不一致 400 拒绝）与 **`error=access_denied` 友好分支**（302 → `/login?error=denied`，不 500）；③ 后端 `ExchangeCode` 按官方《获取 user_access_token（v2）》补齐 **`client_id` / `client_secret` / `redirect_uri`**（此前缺凭据必失败）＋ `code != 0` / `error` 非空判失败）。含 V2.12（**回调链路端到端联调收口** —— ① §6.1 飞书接口契约表**新增「字段类型」「值语义 / 必填」两列**（`node_name` 须 `@i18n@` key、`message_id` 官方 **int64** 且读写不对称、`start_time`/`end_time`/`update_time` 为**毫秒字符串**、实例级＋task 级**两层各有独立必填**、本接口 `i18n_resources.texts` 是**数组**）；② §6.1 补 `message/update` **请求体**（`V-2` 已实测定稿＝`{"message_id","status"}`）与**「卡片需单独刷新」机制**（★ 平台**不自动刷新**卡片 ⇒ 我方处理成功后**主动**调 `message/update`）；③ §3.14 末注的 `V-1~V-4` **由「待实测」翻为「已定论」**（逐条给结论）；④ §6 主表「更新审批 Bot 消息」行由「请求体待实测 `V-2`」改为「`V-2` 已定稿」。含 V2.11 §3.14 缺口清单 6 条翻面 ＋ §6 计数 5→6 ＋ 幂等键 4 列；另 V2.10 §3.9 `defs/sync` ＋ V2.9 §3.14 官方字段校准 ＋ V2.8 §6 计数 4→5 ＋ V2.7 §6.1 出方向契约 ＋ V2.6 §3.8 入参校正） |
+| 版本 | **V2.14**（+ 2026-09-28：**免登登录成功后回跳原目标页（含开放重定向防护）** —— ① `GET /api/auth/authorize-url` 新增可选参数 `?redirect=<站内相对路径>`：仅接受单个 `/` 开头的站内路径（拒绝 `//`、`/\`、`http(s)://`、任意 `://`、反斜杠、控制字符、超长 >512），不合法 ⇒ **丢弃并记 warn**（不报错、回落 `/`）；合法目标与 `state` 一并绑定存入 HttpOnly Cookie `jx_oauth_redirect`（URL 编码、10 分钟 TTL）；★ **不拼进 `redirect_uri`**（飞书只认白名单地址，加参数可能不被放行）。② `GET /auth/feishu/callback` 登录成功后 302 回跳该目标（取不到/被篡改 ⇒ 回落 `/`；★ 读取侧**再次**过白名单 —— 纵深防御）；`error=access_denied` ⇒ 仍 `/login?error=denied` 且保留目标 Cookie（重试可沿用）；`DEV_MODE ?open_id=` 直连支持 `?redirect=`（同样过白名单）。③ 前端路由守卫跳授权页携带 `to.fullPath`；登录页透传 `?redirect=`。含 V2.13（+ 2026-09-28：**飞书免登（授权登录）链路补全** —— ① 新增 **`GET /api/auth/authorize-url`**（公开，下发官方授权页 URL ＋ `crypto/rand` 随机 `state` 存 HttpOnly Cookie）；② `GET /auth/feishu/callback` 补 **`state` 真校验**（Cookie 常量时间比对，不一致 400 拒绝）与 **`error=access_denied` 友好分支**（302 → `/login?error=denied`，不 500）；③ 后端 `ExchangeCode` 按官方《获取 user_access_token（v2）》补齐 **`client_id` / `client_secret` / `redirect_uri`**（此前缺凭据必失败）＋ `code != 0` / `error` 非空判失败）。含 V2.12（**回调链路端到端联调收口** —— ① §6.1 飞书接口契约表**新增「字段类型」「值语义 / 必填」两列**（`node_name` 须 `@i18n@` key、`message_id` 官方 **int64** 且读写不对称、`start_time`/`end_time`/`update_time` 为**毫秒字符串**、实例级＋task 级**两层各有独立必填**、本接口 `i18n_resources.texts` 是**数组**）；② §6.1 补 `message/update` **请求体**（`V-2` 已实测定稿＝`{"message_id","status"}`）与**「卡片需单独刷新」机制**（★ 平台**不自动刷新**卡片 ⇒ 我方处理成功后**主动**调 `message/update`）；③ §3.14 末注的 `V-1~V-4` **由「待实测」翻为「已定论」**（逐条给结论）；④ §6 主表「更新审批 Bot 消息」行由「请求体待实测 `V-2`」改为「`V-2` 已定稿」。含 V2.11 §3.14 缺口清单 6 条翻面 ＋ §6 计数 5→6 ＋ 幂等键 4 列；另 V2.10 §3.9 `defs/sync` ＋ V2.9 §3.14 官方字段校准 ＋ V2.8 §6 计数 4→5 ＋ V2.7 §6.1 出方向契约 ＋ V2.6 §3.8 入参校正） |
 | 日期 | 2026-09-26 |
 | 上游文档 | `01-PRD.md`、`02-UseCase.md`、`03-TestCase.md`、`04-Architecture.md` |
 | 语言纪律 | 简体中文 |
@@ -24,8 +24,9 @@ sequenceDiagram
   participant S as 自建系统（Echo）
   participant F as 飞书开放平台
   U->>S: 访问受保护页面（无有效会话，前端路由守卫触发）
-  U->>S: GET /api/auth/authorize-url（公开）
+  U->>S: GET /api/auth/authorize-url（公开，?redirect=<站内相对路径> 可选）
   S-->>U: {"authorize_url": "https://accounts.feishu.cn/..."} ＋ state Cookie（HttpOnly）
+  Note over S: ★ 回跳目标过白名单校验后与 state 一并绑定<br/>存 HttpOnly Cookie jx_oauth_redirect（URL 编码，10 分钟）
   U->>F: 整页跳转授权页（client_id / response_type=code / redirect_uri / state）
   U->>F: 完成授权（拒绝 ⇒ 回调 ?error=access_denied）
   F-->>U: 浏览器回调 302 到自建 /auth/feishu/callback?code=...&state=...
@@ -36,7 +37,7 @@ sequenceDiagram
   S->>S: 查 t_user_role：open_id → 角色
   alt 已映射角色
     S->>S: 建立会话（Cookie/Session）
-    S-->>U: 302 进入业务页
+    S-->>U: 302 回跳原目标页（jx_oauth_redirect；取不到/非法 ⇒ 回落 /；★ 读取侧再过白名单防开放重定向）
   else 未映射（A2）
     S-->>U: 拒绝进入业务页，仅提示"未配置角色，请联系系统管理员"
   end
@@ -125,7 +126,7 @@ sequenceDiagram
 |---|---|
 | 用途 | 下发飞书免登**授权页 URL**：生成随机 `state`（`crypto/rand` 16 字节，存 HttpOnly Cookie `jx_oauth_state`，10 分钟）→ 按官方拼装 `https://accounts.feishu.cn/open-apis/authen/v1/authorize?client_id=…&response_type=code&redirect_uri=<URL编码>&state=…`；前端（路由守卫 / 登录页）据此整页跳转 |
 | 权限要求 | **公开**（★ 挂 root `e`，不进 `requireSession` 组 —— 未登录时也要能拿到，否则死循环） |
-| 请求参数 | 无 |
+| 请求参数 | Query：`redirect`（可选，**登录后回跳目标**）—— ★ **开放重定向防护（安全红线）**：仅接受**站内相对路径**（单个 `/` 开头；拒绝 `//`、`/\` 开头的协议相对路径、`http(s)://` 及任意 `://`、反斜杠 `\`、控制字符、长度 >512）；**不合法 ⇒ 丢弃并记 warn（不报错），回调回落 `/`**。合法目标与 `state` 一并绑定存入 HttpOnly Cookie `jx_oauth_redirect`（URL 编码存储、10 分钟 TTL、与 state 同 Secure/SameSite 口径）。★ **不拼进 `redirect_uri`**（飞书侧只认白名单地址，加参数可能不被放行）；未传参数 ⇒ 保留既有 Cookie（授权被拒后于登录页重试可沿用原目标，TTL 自然过期兜底） |
 | 响应字段 | `authorize_url`（完整授权页 URL） |
 | 配置 | `redirect_uri` 取 `JX_OAUTH_REDIRECT_URI`，未配置缺省 `JX_CALLBACK_DOMAIN + "/auth/feishu/callback"`；须与开放平台【安全设置】重定向 URL 白名单一致、不得含 `#` |
 | 错误码 | 40000（未配置 `JX_APP_ID` / 回调地址未配置 / 回调地址含 `#` —— **可见报错，不静默编造**）、50000 |
@@ -137,8 +138,8 @@ sequenceDiagram
 |---|---|
 | 用途 | 飞书免登回调；用 `code` 换取身份并建立会话 |
 | 权限要求 | 公开（免登入口） |
-| 请求参数 | Query：`code`（必填，`DEV_MODE` + `open_id` 直连除外）、`state`（必填；★ **真校验**：与 `authorize-url` 下发并存入 HttpOnly Cookie 的值做常量时间比对，不一致 ⇒ 400 拒绝，Cookie 用毕即清防重放）、`error`（官方失败回调 `error=access_denied` ⇒ 友好 302 `/login?error=denied`，不 500） |
-| 响应 | `302` 重定向到目标业务页（成功）或登录错误页（失败/拒绝授权）；失败不建立会话 |
+| 请求参数 | Query：`code`（必填，`DEV_MODE` + `open_id` 直连除外）、`state`（必填；★ **真校验**：与 `authorize-url` 下发并存入 HttpOnly Cookie 的值做常量时间比对，不一致 ⇒ 400 拒绝，Cookie 用毕即清防重放）、`error`（官方失败回调 `error=access_denied` ⇒ 友好 302 `/login?error=denied`，不 500，且**保留**回跳目标 Cookie 供重试沿用）、`redirect`（仅 `DEV_MODE` 直连路径接受：无目标 Cookie 时作回跳目标，★ 同样过站内白名单校验） |
+| 响应 | `302` 重定向到**原目标页**（`authorize-url` 绑定于 HttpOnly Cookie `jx_oauth_redirect` 的站内相对路径；取不到 / 非法 ⇒ 回落 `/`；★ **纵深防御**：读取侧**再次**过白名单校验，Cookie 被篡改也只回落 `/`，绝不外跳；目标用毕即清）；失败/拒绝授权不建立会话、302 登录错误页 |
 | 错误码 | 40000（缺 code/state、state 不一致）、40101（未映射角色） |
 | 关联 FR | FR-M0-10 |
 
@@ -1014,6 +1015,7 @@ sequenceDiagram
 
 | 版本 | 日期 | 变更 | 作者 |
 |---|---|---|---|
+| V2.14 | 2026-09-28 | **免登登录成功后回跳原目标页（含开放重定向防护）**：① **§3.1 `GET /api/auth/authorize-url` 新增可选参数 `?redirect=<站内相对路径>`** —— ★ **开放重定向防护（安全红线）**：仅接受单个 `/` 开头的站内路径（拒绝 `//`、`/\` 开头的协议相对路径、`http(s)://` 及任意 `://`、反斜杠、控制字符、长度 >512）；不合法 ⇒ **丢弃并记 warn（不报错、不 500）**；合法目标与 `state` 一并绑定存入 HttpOnly Cookie `jx_oauth_redirect`（`url.QueryEscape` 编码、10 分钟 TTL、与 state 同 Secure/SameSite 口径）；★ **不拼进 `redirect_uri`**（飞书侧只认白名单地址，加参数可能不被放行）；未传参数 ⇒ 保留既有 Cookie（授权被拒后重试可沿用原目标）。② **`GET /auth/feishu/callback` 登录成功后 302 回跳原目标页**（原为固定 `302 → /`，用户点推送卡片进详情页却落首页的真实反馈缺口）—— 目标取自回跳 Cookie，取不到/非法 ⇒ 回落 `/`；★ **纵深防御：读取侧再次过白名单校验**（Cookie 被篡改也只回落 `/`），目标用毕即清；`error=access_denied` ⇒ 仍 `/login?error=denied` 且保留目标 Cookie；★ `DEV_MODE ?open_id=` 直连路径支持 `?redirect=`（同样过白名单）。③ **前端**：路由守卫跳授权页携带 `to.fullPath`（防重入逻辑不变；目标页跳转由后端 302 完成、前端不二次跳转避免双跳）；登录页透传 `?redirect=`（含 DEV 直连入口）。④ **测试**：新增 7 个用例（回跳端到端 / 开放重定向 9 形态拒绝 / 无参数回落 / 篡改 Cookie 回落 / 编码损坏回落 / access_denied 保留 / DEV 直连回跳）。 | 工程师（Alex） |
 | V2.13 | 2026-09-28 | **飞书免登（授权登录）链路补全**：① **新增 §3.1 `GET /api/auth/authorize-url`**（公开路由，挂 root `e` 不进 `requireSession`）—— 生成 `crypto/rand` 16 字节随机 `state`（存 HttpOnly Cookie `jx_oauth_state`，10 分钟，用毕即清）→ 按官方《获取授权码》拼装 `accounts.feishu.cn/open-apis/authen/v1/authorize`（`client_id` / `response_type=code` / `redirect_uri` URL 编码 / `state`）→ 返回 `authorize_url`；未配置 `JX_APP_ID` / 回调地址 / 回调地址含 `#` ⇒ **可见 400**（新配置键 `JX_OAUTH_REDIRECT_URI`，缺省 `JX_CALLBACK_DOMAIN` + 回调路径）。② **`GET /auth/feishu/callback` 补 state 真校验与拒绝分支** —— state 与下发 Cookie 常量时间比对，不一致 ⇒ 400（官方要求「务必校验 state 前后一致」防 CSRF）；`error=access_denied` ⇒ 友好 302 `/login?error=denied`（不 500）；★ `DEV_MODE` 的 `?open_id=` 直连路径不受影响。③ **后端 `ExchangeCode` 按官方《获取 user_access_token（v2）》补齐 `client_id` / `client_secret` / `redirect_uri`**（此前仅 `grant_type`+`code`，缺凭据必失败）；响应 `code != 0` / `error` 非空判失败并带 `error_description`；open_id 经 `/authen/v1/user_info` 另取；★ v2 已被官方标为历史版本，v3 平迁列为 TODO。④ 前端：路由守卫无会话自动发起免登（防重入，失败落 `/login` 可见报错）+ 登录页新增「用飞书账号登录」。 | 工程师（Alex） |
 | V2.12 | 2026-09-28 | **回调链路端到端联调收口（纯文档，事实＝已实测）**：① ★ **§6.1 飞书接口契约表新增「字段类型」「值语义 / 必填」两列** —— 拦截「字段名对、但类型 / 值语义错 ⇒ 整包被拒」一族：`task_list[].node_name` **必须传 `@i18n@` key**（非实际文案）且**文案须配对于 `i18n_resources.texts`**；`message_id` **官方 `int64`** 且**读写不对称**（`external_instances` 侧按 int64 收、`message/update` 侧发字符串）；`start_time`/`end_time`/`update_time` 为**毫秒字符串**；**实例级与 task 级两层各有独立必填**；**本接口 `i18n_resources.texts` 是数组**（与 `message/send` 的 map **相反**）。② ★ **§6.1 补 `message/update` 请求体**（`V-2` 实测定稿＝`{"message_id":"<id>","status":"<status>"}`）与**「卡片需单独刷新」机制**（★★ **卡片与「审批应用内状态」是两处、分开更新；平台【不自动刷新】卡片** ⇒ 我方处理成功后**主动**调 `message/update`，`956f3c8`）。③ ★ **§3.14 末注 `V-1`~`V-4` 由「待实测」翻为「已定论」**（逐条给结论：`action_context` 原样回传 / `message/update` 请求体 / scope `contact:user.employee_id:readonly` / 推实例须用真实 code），并记**端到端闭环已达成**（对账**零差异**）。④ **§6 主表「更新审批 Bot 消息」行**由「请求体待实测 `V-2`」改「`V-2` 已定稿」。 | 产品经理（Alice） |
 | V2.11 | 2026-09-27 | **回调链路修复的文档收口（纯文档，事实＝已落地代码）**：① ★★ **§3.14「实测缺口清单」由「待修复」翻面为「6 条全部已闭合」** —— 新增「★ 状态（提交）」列（逐条附提交号：第 1 批 `5fe1671` / 第 2 批 `d94580f` / 第 3 批 `36df709` / 第 4 批 `c6e26d7`），**原文一字不删（史实留痕，对齐 `#73`）**；并显式区分「已闭合的本方缺陷」与「仍待联调实测的平台行为 `V-1`~`V-4`」。② **§3.13 推送行补硬要求** —— 每个 `RELEASED` 任务的 `task_list[].action_context` 必须设为含 `biz_no` 的 JSON 字符串（官方回调不发顶层 `biz_no`，本字段是 `biz_no` 回传的唯一载体）。③ **§6 计数 5 → 6** 并补「更新审批 Bot 消息」`POST /open-apis/approval/v1/message/update` 条目（§6 主表 ＋ §6.1；用途＝回调失败反馈、`message_id` 空则不发、**请求体字段待实测 `V-2`**）。④ ★ **幂等键口径统一为 4 列** —— §3.13 / §3.14 的「3 元组 `(biz_no,task_id,op_type)`」全部改为「**4 列 `(biz_no,task_id,op_type,round)`**」，与实现 `migrations/0011_flow_op_log_round.sql`（`round` 用于回退重激活后区分同一 `task_id` 的两次审批）一致。 | 产品经理（Alice） |

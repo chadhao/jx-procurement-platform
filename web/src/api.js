@@ -63,8 +63,10 @@ export function isAuthError(err) {
 /** 当前登录身份与可见范围摘要。 */
 export const fetchMe = () => api.get('/api/me')
 
-/** 飞书免登授权页 URL（公开端点；返回 { authorize_url }，含官方参数与防 CSRF state）。 */
-export const fetchAuthorizeUrl = () => api.get('/api/auth/authorize-url')
+/** 飞书免登授权页 URL（公开端点；返回 { authorize_url }，含官方参数与防 CSRF state）。
+ *  redirect：可选站内相对路径，后端绑定到 state Cookie，登录成功后 302 回跳该页。 */
+export const fetchAuthorizeUrl = (redirect) =>
+  api.get('/api/auth/authorize-url', redirect ? { redirect } : undefined)
 
 /** 实例列表（分页）。 */
 export const fetchInstances = (params) => api.get('/api/instances', params)

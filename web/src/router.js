@@ -58,8 +58,11 @@ router.beforeEach(async (to) => {
   }
 
   // 未登录 ⇒ 自动发起飞书免登：拿授权 URL 后整页跳转（replace，避免历史栈回退到受保护页）。
+  // ★ 携带当前目标路径（to.fullPath）：后端绑定到 state Cookie，登录成功后 302 回跳
+  //   原页面（如推送卡片要去的 /approval/<biz_no> 详情页）。目标页跳转由后端完成，
+  //   前端不再二次跳转（避免双跳/闪烁）。
   try {
-    const data = await fetchAuthorizeUrl()
+    const data = await fetchAuthorizeUrl(to.fullPath)
     if (!data || !data.authorize_url) throw new Error('authorize_url 为空')
     sessionStorage.setItem(SSO_ATTEMPT_KEY, '1')
     window.location.replace(data.authorize_url)
