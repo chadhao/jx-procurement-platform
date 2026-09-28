@@ -160,11 +160,15 @@ func (w *Worker) loop(ctx context.Context) {
 	}
 }
 
-// ProcessDueOnce 处理当前全部到期作业，返回处理条数（供测试同步驱动）。
+// ProcessDueOnce 认领并处理当前全部到期作业，返回处理条数（供测试同步驱动）。
+//
+// ★★ 必须走 `ClaimDueJobs`（CAS 认领），**不得**用裸 `DueJobs` ——
+// 后者不改变行状态，N 个 worker 协程会拿到同一批作业并各自完整执行一遍
+// （P1 缺陷，真机实测：1 条事件被打出 3 条落库日志；复盘见 store.ClaimDueJobs 头注）。
 func (w *Worker) ProcessDueOnce(ctx context.Context) (int, error) {
 	total := 0
 	for {
-		jobs, err := w.db.DueJobs(ctx, w.now(), w.batchSize)
+		jobs, err := w.db.ClaimDueJobs(ctx, w.now(), w.batchSize)
 		if err != nil {
 			return total, err
 		}
@@ -187,6 +191,10 @@ func (w *Worker) ProcessDueOnce(ctx context.Context) (int, error) {
 }
 
 // processJob 处理单个作业：按 job_type 分派 → 幂等落库 → 标记完成；失败进入重试/死信。
+//
+// ★ 入参 `job` 已由 `ClaimDueJobs` CAS 认领（DB 中 state 已是 RUNNING）——本函数内的
+// RUNNING 标记属**幂等重申**（同值写入，且不触碰 attempts），保留是为了让本函数
+// 单独被调用时也自洽；真正的互斥责任在认领层，不在本函数。
 func (w *Worker) processJob(ctx context.Context, job store.WorkerJob) error {
 	// 置为处理中。
 	if err := w.db.WithTx(ctx, func(tx *sql.Tx) error {

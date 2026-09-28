@@ -132,7 +132,11 @@ VALUES (?,?, 'QUEUED', 0, ?, ?)`, inboxID, jobType, fmtTime(now), fmtTime(now))
 	return n > 0, nil
 }
 
-// DueJobs 取出到期的 QUEUED 作业（按入队顺序）。
+// DueJobs 取出到期的 QUEUED 作业（按入队顺序）。**只读、不认领**。
+//
+// ★★ 调度路径**禁止**直接使用本函数 —— 它不改变行状态，多个协程会拿到同一批行。
+// 调度必须用 `ClaimDueJobs`（CAS 认领，见其头注的 P1 缺陷复盘）。
+// 本函数保留给「只读观测 / 测试断言 / 排查」用途。
 func (d *DB) DueJobs(ctx context.Context, now time.Time, limit int) ([]WorkerJob, error) {
 	if limit <= 0 {
 		limit = 20
@@ -156,6 +160,88 @@ ORDER BY id LIMIT ?`, fmtTime(now), limit)
 		out = append(out, *j)
 	}
 	return out, rows.Err()
+}
+
+// ClaimDueJobs **原子认领**到期作业：把 `QUEUED` 以 CAS 改为 `RUNNING`，
+// **只返回本次真正认领到的作业**（被别的协程抢先的候选行直接跳过）。
+//
+// ★★ 为什么必须 CAS —— 本函数存在的唯一理由（P1 缺陷修复，2026-09-28 真机实测发现）：
+//
+//	旧实现 `ProcessDueOnce` 直接 `DueJobs`（裸 SELECT）→ `processJob` → 其间才 `MarkJob(RUNNING)`。
+//	`SELECT` 与 `UPDATE` 是**两条独立语句、两个独立事务**，连接在两者之间被归还连接池
+//	⇒ **4 个 worker 协程可依次 SELECT 到同一行**（都还是 QUEUED），随后各自完整执行一遍。
+//	★ 真机铁证：一条 `contact.user.updated_v3` 事件（`t_event_inbox` 仅 1 行、
+//	  `t_worker_job` 仅 1 行、`attempts=1`）却打出 **3 条**「人员已增量落库」日志，
+//	  时间戳相差 300µs / 37ms ⇒ 3 个协程赛跑，重复执行。
+//	★ `SetMaxOpenConns(1)` **不能**防这个竞态：单连接保证的是「语句不并行」，
+//	  不是「SELECT 与后续 UPDATE 同事务」——两条语句之间连接照样被别的协程用。
+//
+// ★ 语义约定（与既有 `attempts` 口径一致）：
+//   - 认领**不改 `attempts`**（`attempts` 仍表示「已消耗的处理次数」，由 `MarkJob` 在
+//     成功/失败时 `+1`）——避免与既有退避/死信阈值判定冲突。
+//   - `state` 改 `RUNNING` 后，本行对后续任何 `ClaimDueJobs` 都不可见 ⇒ 天然互斥。
+//   - 认领后若进程崩溃，该行会**卡在 RUNNING**；由 `ResetJobForReplay`（人工重放）
+//     与对账兜底处置（当前单实例 + 极短处理路径，风险窗口可忽略）。
+func (d *DB) ClaimDueJobs(ctx context.Context, now time.Time, limit int) ([]WorkerJob, error) {
+	if limit <= 0 {
+		limit = 20
+	}
+	// ① 取候选（**只是候选**：多协程可能同时看到同一批 id，②步的 CAS 才是裁决点）。
+	cand, err := d.QueryContext(ctx, `
+SELECT id FROM t_worker_job
+WHERE state = 'QUEUED' AND (next_run_at IS NULL OR next_run_at <= ?)
+ORDER BY id LIMIT ?`, fmtTime(now), limit)
+	if err != nil {
+		return nil, err
+	}
+	var ids []int64
+	for cand.Next() {
+		var id int64
+		if err := cand.Scan(&id); err != nil {
+			_ = cand.Close()
+			return nil, err
+		}
+		ids = append(ids, id)
+	}
+	if err := cand.Err(); err != nil {
+		_ = cand.Close()
+		return nil, err
+	}
+	_ = cand.Close() // ★ 必须先关游标再发 UPDATE，否则单连接下自锁
+
+	// ② 逐条 CAS 认领：`WHERE state='QUEUED'` 是裁决点，`RowsAffected==1` 才算抢到。
+	//    ★ 条件里重复 `next_run_at` 判定：候选与认领之间作业可能已被改期（防御式）。
+	var out []WorkerJob
+	for _, id := range ids {
+		res, err := d.ExecContext(ctx, `
+UPDATE t_worker_job SET state = 'RUNNING', updated_at = ?
+WHERE id = ? AND state = 'QUEUED' AND (next_run_at IS NULL OR next_run_at <= ?)`,
+			fmtTime(timeNow().UTC()), id, fmtTime(now))
+		if err != nil {
+			return nil, fmt.Errorf("store: 认领作业失败: %w", err)
+		}
+		n, err := res.RowsAffected()
+		if err != nil {
+			return nil, err
+		}
+		if n != 1 {
+			continue // 已被别的协程抢走（或已改期/改状态）——静默跳过即正确行为
+		}
+		j, err := d.JobByID(ctx, id)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, *j)
+	}
+	return out, nil
+}
+
+// JobByID 按 id 读取作业行（认领后回读，取 CAS 之后的最新态）。
+func (d *DB) JobByID(ctx context.Context, id int64) (*WorkerJob, error) {
+	row := d.QueryRowContext(ctx, `
+SELECT id, inbox_id, job_type, state, attempts, COALESCE(next_run_at,''), COALESCE(last_error,''), created_at, updated_at
+FROM t_worker_job WHERE id = ?`, id)
+	return scanJob(row)
 }
 
 // MarkJob 更新作业状态、尝试次数、下次运行时刻与错误信息。
