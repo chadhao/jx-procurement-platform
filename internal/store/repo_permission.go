@@ -83,6 +83,83 @@ SELECT id, open_id, COALESCE(name,''), role, COALESCE(department,''), COALESCE(e
 	return out, rows.Err()
 }
 
+// MapUserRolesByOpenIDs 批量读取多个 open_id 的角色映射（**含已停用**：本方法只服务
+// 「展示用」场景——历史任务办理人姓名/部门不因停用而消失；鉴权仍走 GetUserRole）。
+//
+// ★ 批量语义（避免 N+1）：调用方把一批任务的所有 assignee open_id 一次传入，
+// 本方法单条 IN 查询取回；查不到的 open_id **不在返回 map 中**——调用方按
+// 「字段留空」处理，**不得**把 open_id 塞进 name（前端回落 `-`）。
+func (d *DB) MapUserRolesByOpenIDs(ctx context.Context, openIDs []string) (map[string]UserRole, error) {
+	out := make(map[string]UserRole, len(openIDs))
+	// 去重 + 去空：防拼接出畸形 IN 列表，也压缩查询规模。
+	uniq := make([]string, 0, len(openIDs))
+	seen := make(map[string]bool, len(openIDs))
+	for _, id := range openIDs {
+		id = strings.TrimSpace(id)
+		if id == "" || seen[id] {
+			continue
+		}
+		seen[id] = true
+		uniq = append(uniq, id)
+	}
+	if len(uniq) == 0 {
+		return out, nil
+	}
+	placeholders := strings.TrimRight(strings.Repeat("?,", len(uniq)), ",")
+	args := make([]any, len(uniq))
+	for i, id := range uniq {
+		args[i] = id
+	}
+	rows, err := d.QueryContext(ctx, `
+SELECT id, open_id, COALESCE(name,''), role, COALESCE(department,''), COALESCE(extra_depts,'[]'),
+       active, updated_at
+FROM t_user_role WHERE open_id IN (`+placeholders+`)`, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+	for rows.Next() {
+		var (
+			r       UserRole
+			extra   string
+			active  int
+			updated string
+		)
+		if err := rows.Scan(&r.ID, &r.OpenID, &r.Name, &r.Role, &r.Department, &extra, &active, &updated); err != nil {
+			return nil, err
+		}
+		r.ExtraDepts = unmarshalStrings(extra)
+		r.Active = active == 1
+		r.UpdatedAt = parseTime(updated)
+		out[r.OpenID] = r
+	}
+	return out, rows.Err()
+}
+
+// ListDistinctDepartments 返回 `t_user_role.department` 的**非空去重**清单（稳定排序＝字典序）。
+//
+// ★ 数据源边界：部门清单同样来自**角色表**（＝已配置角色者的部门），**不是**飞书
+// 通讯录组织架构 —— 同 handlers_org.go 的边界说明。表为空 ⇒ 返回空切片（不报错）。
+func (d *DB) ListDistinctDepartments(ctx context.Context) ([]string, error) {
+	rows, err := d.QueryContext(ctx, `
+SELECT DISTINCT department FROM t_user_role
+WHERE department IS NOT NULL AND TRIM(department) <> ''
+ORDER BY department`)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+	out := []string{}
+	for rows.Next() {
+		var dept string
+		if err := rows.Scan(&dept); err != nil {
+			return nil, err
+		}
+		out = append(out, strings.TrimSpace(dept))
+	}
+	return out, rows.Err()
+}
+
 // ---------- 权限规则（配置驱动，M5） ----------
 
 // GetPermissionRule 读取 (resource, role) 权限规则；不存在返回 ErrNotFound。

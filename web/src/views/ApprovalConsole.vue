@@ -6,7 +6,7 @@
 //   · 四操作：转交 / 加签 / 回退 / 撤回（飞书侧无这些按钮，全在我方页面完成）。
 // ★ 加签（＝顺序会签）的「前置 / 后置」由**操作人当场选**（`timing ∈ {AFTER, BEFORE}`，
 //   缺省 `AFTER`）—— 用户裁定，见 internal/flow/ops.go AddSignTiming / 01a §4.3。
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import {
   fetchApproval,
@@ -16,6 +16,8 @@ import {
   addsignTask,
   rollbackTask,
   cancelInstance,
+  fetchOrgUsers,
+  fetchOrgDepartments,
 } from '../api'
 import { session } from '../store'
 import { statusClass, statusLabel, fmtTime, opTypeLabel } from '../utils'
@@ -52,6 +54,18 @@ const ops = computed(() => (detail.value && detail.value.ops) || [])
 const meOpenId = computed(() => (session.me && session.me.open_id) || '')
 
 const selectedTask = computed(() => tasks.value.find((t) => String(t.task_id) === String(selectedTaskId.value)) || null)
+
+// ---- 办理人展示（解绿框）----
+// ★ 后端已补 `assignee_name` / `assignee_department`（数据源 t_user_role）。
+//   展示形态＝「人名（部门）」；任一缺失的回落：有名无部门 → 只显示名；都无 → `-`。
+//   ★★ 绝不回落显示裸 open_id（用户明确反馈不要看到 ou_xxx）。
+function assigneeText(t) {
+  const name = String(t.assignee_name || '').trim()
+  const dept = String(t.assignee_department || '').trim()
+  if (name && dept) return `${name}（${dept}）`
+  if (name) return name
+  return '-'
+}
 
 // 「本人可办」的任务：PENDING 且（无 assignee 信息 或 assignee = 我）
 function isMine(t) {
@@ -101,7 +115,68 @@ function resetOp() {
   op.reason = ''
   op.timing = 'AFTER'
   op.target_node_id = ''
+  opQuery.value = ''
 }
+
+// ---- 办理人选择器（解红框：不再手填 open_id，改为「部门筛选 + 姓名搜索 + 点选」）----
+// ★ 数据源：GET /api/org/users 与 GET /api/org/departments（t_user_role＝已配置角色者，
+//   非飞书通讯录全量 —— 转交/加签目标必须是有权限的审批人）。
+// ★ 提交给后端的字段名保持 `target`（契约不变），另附既有展示字段 `target_name`。
+const orgUsers = ref([]) // 全量可选人员（一次拉取，前端本地过滤）
+const orgDepts = ref([]) // 部门清单（去重、稳定排序）
+const orgLoading = ref(false)
+const orgLoaded = ref(false)
+const opDept = ref('') // 部门筛选（''＝全部部门）
+const opQuery = ref('') // 姓名关键字（前端本地过滤）
+
+async function ensureOrgData() {
+  if (orgLoaded.value || orgLoading.value) return
+  orgLoading.value = true
+  try {
+    const [users, depts] = await Promise.all([fetchOrgUsers(), fetchOrgDepartments()])
+    orgUsers.value = (users && users.items) || []
+    orgDepts.value = (depts && depts.items) || []
+    orgLoaded.value = true
+  } catch (e) {
+    err.value = e.message || String(e)
+  } finally {
+    orgLoading.value = false
+  }
+}
+
+// 切到「转交 / 加签」时才拉人员/部门清单（懒加载：无操作需求的访问不多打接口）。
+watch(
+  () => op.type,
+  (v) => {
+    if (v === 'transfer' || v === 'addsign') ensureOrgData()
+  },
+)
+
+const filteredUsers = computed(() => {
+  const dept = opDept.value.trim()
+  const q = opQuery.value.trim()
+  return orgUsers.value.filter((u) => {
+    if (dept && String(u.department || '') !== dept) return false
+    if (q && !String(u.name || '').includes(q)) return false
+    return true
+  })
+})
+
+const selectedUser = computed(
+  () => orgUsers.value.find((u) => u.open_id === op.target_open_id) || null,
+)
+
+function pickUser(u) {
+  op.target_open_id = u.open_id
+}
+
+function clearTarget() {
+  op.target_open_id = ''
+  opQuery.value = ''
+}
+
+// 转交 / 加签需要目标人；回退 / 撤回不需要。
+const needsTarget = computed(() => op.type === 'transfer' || op.type === 'addsign')
 
 function requireTask() {
   if (!selectedTaskId.value) {
@@ -145,9 +220,20 @@ function doOp() {
     return
   }
   if (!requireTask()) return
+  // ★ 目标人必选（防提交空 target）：未选中时「执行」按钮本已禁用，这里双保险。
+  if (needsTarget.value && !op.target_open_id) {
+    err.value = '请选择办理人（支持按部门 / 姓名筛选）'
+    return
+  }
   // ★ 字段名对齐已实现的后端 handler（internal/httpapi/handlers_approval.go
-  //   `approvalActionBody`）：目标 open_id ＝ `target`、回退目标节点 ＝ `target_node`。
-  const base = { task_id: selectedTaskId.value, reason: op.reason }
+  //   `approvalActionBody`）：目标 open_id ＝ `target`、目标姓名（展示）＝ `target_name`、
+  //   回退目标节点 ＝ `target_node`。
+  const targetUser = selectedUser.value
+  const base = {
+    task_id: selectedTaskId.value,
+    reason: op.reason,
+    target_name: targetUser ? targetUser.name || '' : undefined,
+  }
   if (op.type === 'transfer') {
     run(() => transferTask(bizNo, { ...base, target: op.target_open_id }), '已转交')
   } else if (op.type === 'addsign') {
@@ -223,7 +309,7 @@ onMounted(load)
                 />
               </td>
               <td>{{ t.node_name || t.node_id || '-' }}</td>
-              <td>{{ t.assignee_name || t.assignee_open_id || t.assignee || '-' }}</td>
+              <td>{{ assigneeText(t) }}</td>
               <td><span class="tag" :class="statusClass(t.status)">{{ statusLabel(t.status) }}</span></td>
               <td>{{ t.release_state || '-' }}</td>
               <td>{{ t.task_order != null ? t.task_order : '-' }}</td>
@@ -234,7 +320,8 @@ onMounted(load)
       <p class="muted">★ 任一非终态实例恰 1 个可办理任务（顺序会签不变量）。请先在「节点」前选中要办理的任务。</p>
     </div>
 
-    <div v-if="detail" class="panel">
+    <!-- ★ 黄框（用户实测反馈）：无「本人可办理任务」时本面板整体不渲染（复用既有 actionable 判据） -->
+    <div v-if="detail && actionable" class="panel">
       <h2>审批操作</h2>
 
       <div class="toolbar">
@@ -257,10 +344,41 @@ onMounted(load)
         </select>
       </div>
 
+      <!-- ★ 红框改造（用户实测反馈）：不再手填 open_id —— 部门下拉 + 姓名搜索 + 点选；
+           数据源＝GET /api/org/users、GET /api/org/departments（t_user_role，非通讯录全量） -->
       <template v-if="op.type && op.type !== 'cancel'">
         <div class="inline-form">
-          <label>办理人 open_id</label>
-          <input v-model="op.target_open_id" placeholder="ou_xxx（转交 / 加签的目标）" />
+          <label>部门</label>
+          <select v-model="opDept">
+            <option value="">全部部门</option>
+            <option v-for="dp in orgDepts" :key="dp" :value="dp">{{ dp }}</option>
+          </select>
+        </div>
+        <div class="inline-form">
+          <label>办理人</label>
+          <input v-model="opQuery" placeholder="输入姓名关键字搜索" />
+        </div>
+        <div v-if="selectedUser" class="inline-form">
+          <label>已选办理人</label>
+          <span class="tag ok" style="display: inline-block">
+            {{ selectedUser.name || '(未命名)' }}（{{ selectedUser.department || '-' }}）
+          </span>
+          <button type="button" @click="clearTarget">清除重选</button>
+        </div>
+        <div class="user-pick-list">
+          <div v-if="orgLoading" class="empty">人员清单加载中…</div>
+          <div v-else-if="!orgUsers.length" class="empty">暂无可选人员（系统内尚未配置角色）</div>
+          <div v-else-if="!filteredUsers.length" class="empty">无匹配人员，请调整部门或关键字</div>
+          <ul v-else class="user-pick">
+            <li
+              v-for="u in filteredUsers"
+              :key="u.open_id"
+              :class="{ picked: u.open_id === op.target_open_id }"
+              @click="pickUser(u)"
+            >
+              {{ u.name || '(未命名)' }}（{{ u.department || '-' }}）· {{ u.role || '-' }}
+            </li>
+          </ul>
         </div>
       </template>
 
@@ -281,7 +399,14 @@ onMounted(load)
       <div v-if="op.type" class="inline-form">
         <label>原因</label>
         <input v-model="op.reason" placeholder="原因（建议必填）" @keyup.enter="doOp" />
-        <button class="primary" :disabled="busy" @click="doOp">执行</button>
+        <!-- ★ 转交 / 加签须先选中办理人（防提交空 target）；回退 / 撤回无此要求 -->
+        <button
+          class="primary"
+          :disabled="busy || (needsTarget && !op.target_open_id)"
+          @click="doOp"
+        >
+          执行
+        </button>
       </div>
     </div>
 
@@ -306,3 +431,34 @@ onMounted(load)
     </div>
   </div>
 </template>
+
+<style scoped>
+/* 办理人选择器（解红框）：可滚动点选列表，避免人数增多后 <select> 平铺不可用 */
+.user-pick-list {
+  max-height: 220px;
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  margin: 8px 0;
+}
+.user-pick {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.user-pick li {
+  padding: 6px 12px;
+  cursor: pointer;
+  border-bottom: 1px solid var(--border);
+}
+.user-pick li:last-child {
+  border-bottom: none;
+}
+.user-pick li:hover {
+  background: var(--bg, #f5f7fa);
+}
+.user-pick li.picked {
+  background: var(--ok-bg, #e8f7ee);
+  font-weight: 600;
+}
+</style>

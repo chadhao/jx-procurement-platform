@@ -113,6 +113,15 @@ export const patchAdminUser = (openId, payload) =>
 /** 注销。 */
 export const logout = () => api.post('/auth/logout')
 
+// ---- 组织查询（转交/加签目标选择器数据源；★ 数据源＝t_user_role 已配置角色者，
+//      非飞书通讯录全量，见 docs/05-API.md §3.15）----
+
+/** 可选人员清单（仅启用中的角色映射；支持 { department, q } 筛选）。 */
+export const fetchOrgUsers = (params) => api.get('/api/org/users', params)
+
+/** 部门清单（t_user_role.department 去重、稳定排序）。 */
+export const fetchOrgDepartments = () => api.get('/api/org/departments')
+
 // ---- 看板（M5，FR-M5-01~08）----
 // 说明：以下为新增导出，未改动上方任何既有导出（request / api / isAuthError / fetch* / save* 等）。
 // 看板只读；数据由服务端按角色施加行级过滤 + 列级投影后返回，前端不传任何权限参数。

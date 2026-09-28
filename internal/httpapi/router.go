@@ -123,6 +123,11 @@ func NewRouter(d Deps) *echo.Echo {
 	api.PATCH("/ledger/:table/:id", d.handleLedgerPatch)
 	api.GET("/audit/logs", d.handleAuditLogs)
 
+	// ---- 组织查询（转交/加签目标选择器数据源；★ 数据源＝t_user_role 已配置角色者，
+	//      **非飞书通讯录全量**，边界说明见 handlers_org.go / docs/05-API §3.15）----
+	api.GET("/org/users", d.handleOrgUsers)
+	api.GET("/org/departments", d.handleOrgDepartments)
+
 	// ---- 审批流转（架构转向 ③；T04b；docs/05-API §3.13）----
 	//	★ 页面两键与入站回调**走同一状态机出口**（flow），不得两套语义（docs/11 R11）。
 	//	★ 路径参数 `:biz_no` ＝**业务单号**（非 instance_id）。

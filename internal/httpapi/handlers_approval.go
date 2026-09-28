@@ -419,6 +419,9 @@ func (d Deps) handleApprovalTasks(c echo.Context) error {
 	if err != nil {
 		return fail(c, http.StatusInternalServerError, codeInternal, err.Error())
 	}
+	// ★ 解绿框（用户实测反馈 2026-09-28）：待办条目补 `assignee_name` / `assignee_department`
+	//   （数据源 t_user_role，批量查询防 N+1；查不到 ⇒ 留空，绝不塞 open_id）。
+	roleMap := map[string]store.UserRole{}
 	items := make([]map[string]any, 0)
 	for _, inst := range instances {
 		tasks, err := d.DB.ListFlowTasks(ctx, inst.BizNo)
@@ -432,10 +435,21 @@ func (d Deps) handleApprovalTasks(c echo.Context) error {
 			if t.Status != flow.TaskPending || t.ReleaseState != flow.ReleaseReleased {
 				continue
 			}
+			if len(roleMap) == 0 {
+				rm, err := d.DB.MapUserRolesByOpenIDs(ctx, []string{idn.OpenID})
+				if err != nil {
+					return fail(c, http.StatusInternalServerError, codeInternal, err.Error())
+				}
+				roleMap = rm
+			}
 			item := map[string]any{
 				"biz_no": inst.BizNo, "doc_type": inst.DocType, "node_name": t.NodeName,
 				"task_id": t.TaskID, "task_order": t.TaskOrder,
 				"applicant": inst.ApplicantOpenID, "status": inst.Status,
+			}
+			if r, ok := roleMap[t.AssigneeOpenID]; ok {
+				item["assignee_name"] = r.Name
+				item["assignee_department"] = r.Department
 			}
 			if inst.AmountCents != nil {
 				item["amount_cents"] = *inst.AmountCents
@@ -554,6 +568,9 @@ func (d Deps) handleApprovalInstance(c echo.Context) error {
 	if err != nil {
 		return fail(c, http.StatusInternalServerError, codeInternal, err.Error())
 	}
+	// ★ 解绿框（用户实测反馈 2026-09-28）：任务列表补 `assignee_name` / `assignee_department`
+	//   （数据源 t_user_role，**一次批量 IN 查询**防 N+1；查不到 ⇒ 留空，绝不塞 open_id）。
+	roleMap := d.assigneeRoleViews(ctx, tasks)
 	return ok(c, map[string]any{
 		"biz_no":        inst.BizNo,
 		"instance_code": inst.InstanceCode,
@@ -564,7 +581,7 @@ func (d Deps) handleApprovalInstance(c echo.Context) error {
 		"amount_cents":  inst.AmountCents,
 		"created_at":    inst.CreatedAt,
 		"updated_at":    inst.UpdatedAt,
-		"tasks":         approvalTaskViews(tasks),
+		"tasks":         approvalTaskViews(tasks, roleMap),
 		"ops":           approvalOpViews(ops),
 	})
 }
@@ -585,12 +602,22 @@ func approvalVisibleTo(idn permission.Identity, inst *store.Instance, tasks []st
 	return false
 }
 
-func approvalTaskViews(tasks []store.FlowTask) []map[string]any {
+// approvalTaskViews 任务列表视图。
+//
+// ★ 新增 `assignee_name` / `assignee_department`（解绿框）：取自 roleMap（t_user_role
+// 批量查询结果）；**查不到 ⇒ 键留空字符串**（前端回落 `-`），**绝不**把 open_id 塞进
+// name —— 契约见 docs/05-API §3.13。
+func approvalTaskViews(tasks []store.FlowTask, roleMap map[string]store.UserRole) []map[string]any {
 	out := make([]map[string]any, 0, len(tasks))
 	for _, t := range tasks {
+		name, dept := "", ""
+		if r, ok := roleMap[t.AssigneeOpenID]; ok {
+			name, dept = r.Name, r.Department
+		}
 		out = append(out, map[string]any{
 			"task_id": t.TaskID, "node_id": t.NodeID, "node_name": t.NodeName,
 			"task_order": t.TaskOrder, "round": t.Round, "assignee": t.AssigneeOpenID,
+			"assignee_name": name, "assignee_department": dept,
 			"status": t.Status, "release_state": t.ReleaseState,
 		})
 	}
