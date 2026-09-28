@@ -5,6 +5,7 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import * as echarts from 'echarts'
 import { fetchDashboard, dashboardExportUrl } from '../api'
+import { chartLabel } from '../chartLabels'
 
 const DASHBOARDS = [
   { id: 13, key: 'budget', label: '预算执行' },
@@ -123,6 +124,7 @@ function buildOption(ch, series, values) {
     series: [
       {
         type: ch.type === 'line' ? 'line' : 'bar',
+        name: chartLabel(ch.key), // tooltip 中显示中文图表名
         data: values.map((v) => v || 0),
         smooth: ch.type === 'line',
         barMaxWidth: 40,
@@ -218,7 +220,8 @@ onBeforeUnmount(() => {
 
       <!-- 图表序列 -->
       <div v-for="ch in charts" :key="ch.key" class="panel">
-        <h2>{{ ch.key }}</h2>
+        <!-- ★ 标题用中文映射（chartLabels.js）；裸 key 只留在 title 便于排查漏配。 -->
+        <h2 :title="ch.key">{{ chartLabel(ch.key) }}</h2>
         <div v-if="chartEmpty[ch.key]" class="empty">无可用数值（金额列无权限或暂无数据）</div>
         <div v-show="!chartEmpty[ch.key]" :ref="(el) => setChartRef(ch.key, el)" class="chart"></div>
       </div>

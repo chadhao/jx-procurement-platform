@@ -73,7 +73,7 @@ async function probe() {
 <template>
   <div class="login-wrap">
     <div class="login-card">
-      <h1>江熙 · 采购与费用审批平台</h1>
+      <h1>江熙新材审批系统</h1>
       <p>请使用飞书账号登录（open_id → 角色映射后放行）</p>
 
       <div class="toolbar" style="justify-content: center">

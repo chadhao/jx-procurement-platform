@@ -16,7 +16,7 @@ var distFS embed.FS
 // placeholderHTML 前端未构建时的占位页。
 const placeholderHTML = `<!DOCTYPE html>
 <html lang="zh-CN">
-<head><meta charset="utf-8"><title>JX 采购与费用审批平台</title></head>
+<head><meta charset="utf-8"><title>江熙新材审批系统</title></head>
 <body style="font-family:-apple-system,Segoe UI,Roboto,sans-serif;padding:2rem;">
 <h1>前端未构建</h1>
 <p>尚未检测到前端构建产物。请运行 <code>scripts/build.sh</code>（含 <code>npm run build</code>）

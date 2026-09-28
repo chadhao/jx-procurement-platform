@@ -67,7 +67,7 @@ const navItems = computed(() => {
   </div>
   <div v-else class="layout">
     <aside class="sidebar">
-      <div class="brand">江熙 · 采购与费用审批</div>
+      <div class="brand">江熙新材审批系统</div>
       <router-link
         v-for="item in navItems"
         :key="item.to"

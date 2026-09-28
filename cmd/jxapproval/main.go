@@ -22,7 +22,7 @@ import (
 // version 构建版本号（可由 -ldflags 注入）。
 var version = "0.3.4-s3"
 
-const usage = `JX 采购与费用审批平台（自建侧）
+const usage = `江熙新材审批系统（自建侧）
 
 用法:
   jxapproval serve                       启动服务（默认）
