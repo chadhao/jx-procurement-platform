@@ -66,6 +66,11 @@ type Env struct {
 	// ★ docs/08 §4.5：距上次**成功**同步超阈值才拉（避免每次重启打一波）；
 	//   启动全量为异步执行，失败不阻塞启动、不进就绪门禁。
 	OrgSyncStaleHours int
+	// OrgReconcileHours 通讯录定期对账阈值（JX_ORG_RECONCILE_HOURS，默认 168＝每周）。
+	// ★ docs/08 §4.7 批次二：距上次**成功**全量超该阈值 ⇒ RunFull(trigger="reconcile")；
+	//   对账＝以飞书为准（软删我方多出的、补齐我方缺失的），兜底事件丢投/漏处理漂移。
+	//   消费端：orgsync.Runner.RunReconcileLoop。
+	OrgReconcileHours int
 }
 
 // LoadEnv 从环境变量加载配置并填充默认值。
@@ -82,6 +87,11 @@ func LoadEnv() (*Env, error) {
 	orgSyncStaleHours := getenvInt("JX_ORG_SYNC_STALE_HOURS", 24)
 	if orgSyncStaleHours <= 0 {
 		orgSyncStaleHours = 24
+	}
+
+	orgReconcileHours := getenvInt("JX_ORG_RECONCILE_HOURS", 168)
+	if orgReconcileHours <= 0 {
+		orgReconcileHours = 168
 	}
 
 	return &Env{
@@ -113,6 +123,7 @@ func LoadEnv() (*Env, error) {
 		DevMode:             getenvBool("DEV_MODE", false),
 		ReconcileInterval:   time.Duration(intervalHours) * time.Hour,
 		OrgSyncStaleHours:   orgSyncStaleHours,
+		OrgReconcileHours:   orgReconcileHours,
 	}, nil
 }
 

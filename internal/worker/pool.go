@@ -36,14 +36,20 @@ const (
 	defaultBatchSize    = 20
 )
 
-// Worker 是异步处理池：取 PENDING 作业 → 拉详情 → 幂等落库 → 标记完成；
+// Worker 是异步处理池：取 PENDING 作业 → 按作业类型分派 → 幂等落库 → 标记完成；
 // 失败走指数退避重试，达上限转死信，支持人工重放（M3 / FR-M3-03 / FR-M3-07 / TC-30）。
+//
+// ★ 批次二（docs/08 §4.6-c）：processJob 按 job_type 分派——
+//   - fetch_detail（审批事件，既有路径一字不改）：拉实例详情 → ingest；
+//   - org_sync（通讯录事件）：交 OrgEventHandler.HandleContactEvent 增量落镜像，
+//     **不经**审批 ingest 链、**不要求** instance_code。
 type Worker struct {
-	db       *store.DB
-	client   feishu.Client
-	ingestor *Ingestor
-	m        *observ.Metrics
-	log      *slog.Logger
+	db        *store.DB
+	client    feishu.Client
+	ingestor  *Ingestor
+	orgEvents OrgEventHandler
+	m         *observ.Metrics
+	log       *slog.Logger
 
 	now          func() time.Time
 	backoff      func(attempt int) time.Duration
@@ -108,6 +114,22 @@ func (w *Worker) WithBatchSize(n int) *Worker {
 	return w
 }
 
+// OrgEventHandler 通讯录事件处理端口（批次二；生产＝*orgsync.EventHandler）。
+// 定义在 worker 侧避免 worker→orgsync 编译依赖（orgsync 不反向依赖 worker）。
+type OrgEventHandler interface {
+	// HandleContactEvent 处理一条通讯录变更事件（2.0 信封原始报文）。
+	HandleContactEvent(ctx context.Context, payload []byte) error
+}
+
+// WithOrgEventHandler 注入通讯录事件处理器（bootstrap 装配；未注入时 org_sync
+// 作业将可见失败入死信——绝不静默丢弃）。
+func (w *Worker) WithOrgEventHandler(h OrgEventHandler) *Worker {
+	if h != nil {
+		w.orgEvents = h
+	}
+	return w
+}
+
 // Start 启动 n 个工作协程，直到 ctx 取消。启动即调度一次，随后按 pollInterval 轮询。
 func (w *Worker) Start(ctx context.Context, n int) {
 	if n <= 0 {
@@ -164,7 +186,7 @@ func (w *Worker) ProcessDueOnce(ctx context.Context) (int, error) {
 	return total, nil
 }
 
-// processJob 处理单个作业：拉详情 → 幂等落库 → 标记完成；失败进入重试/死信。
+// processJob 处理单个作业：按 job_type 分派 → 幂等落库 → 标记完成；失败进入重试/死信。
 func (w *Worker) processJob(ctx context.Context, job store.WorkerJob) error {
 	// 置为处理中。
 	if err := w.db.WithTx(ctx, func(tx *sql.Tx) error {
@@ -179,6 +201,12 @@ func (w *Worker) processJob(ctx context.Context, job store.WorkerJob) error {
 	ib, err := w.db.GetInbox(ctx, job.InboxID)
 	if err != nil {
 		return w.handleFailure(ctx, job, nil, fmt.Errorf("读取收件箱失败: %w", err))
+	}
+
+	// ★ 批次二：org_sync 分支（通讯录事件）——先于 instance_code 判定
+	//（通讯录事件没有 instance_code，docs/08 §4.6-b）。
+	if job.JobType == inbox.JobTypeOrgSync {
+		return w.processOrgSyncJob(ctx, job, ib)
 	}
 
 	instanceCode := strings.TrimSpace(ib.InstanceCode)
@@ -202,6 +230,24 @@ func (w *Worker) processJob(ctx context.Context, job store.WorkerJob) error {
 		return w.handleFailure(ctx, job, ib, err)
 	}
 
+	now := w.now()
+	return w.db.WithTx(ctx, func(tx *sql.Tx) error {
+		if err := w.db.MarkJob(ctx, tx, job.ID, jobStateDone, job.Attempts+1, nil, ""); err != nil {
+			return err
+		}
+		return w.db.MarkInbox(ctx, tx, job.InboxID, inboxDone, job.Attempts+1, "", &now)
+	})
+}
+
+// processOrgSyncJob 处理通讯录事件作业：交 OrgEventHandler 增量落镜像 → 标记完成。
+// 失败 ⇒ 与 fetch_detail 同一套退避重试 / 死信（失败可见，绝不静默丢事件）。
+func (w *Worker) processOrgSyncJob(ctx context.Context, job store.WorkerJob, ib *store.InboxRow) error {
+	if w.orgEvents == nil {
+		return w.handleFailure(ctx, job, ib, errors.New("通讯录事件处理器未装配（WithOrgEventHandler）"))
+	}
+	if err := w.orgEvents.HandleContactEvent(ctx, []byte(ib.Payload)); err != nil {
+		return w.handleFailure(ctx, job, ib, err)
+	}
 	now := w.now()
 	return w.db.WithTx(ctx, func(tx *sql.Tx) error {
 		if err := w.db.MarkJob(ctx, tx, job.ID, jobStateDone, job.Attempts+1, nil, ""); err != nil {

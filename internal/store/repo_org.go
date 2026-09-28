@@ -250,6 +250,119 @@ func (d *DB) SoftDeleteOrgUsersExcept(ctx context.Context, seen map[string]bool,
 	return d.softDeleteByIDs(ctx, "t_org_user", "open_id", stale, now)
 }
 
+// GetOrgDepartment 按权威主键读取单个部门镜像（含软删行；事件增量回填 first_seen_at 用）。
+// 无行返回 ErrNotFound。
+func (d *DB) GetOrgDepartment(ctx context.Context, openDepartmentID string) (*OrgDepartment, error) {
+	row := d.QueryRowContext(ctx, `
+SELECT open_department_id, department_id, parent_open_department_id, name, name_path,
+       is_deleted, raw_json, first_seen_at, last_seen_at, updated_at, source
+FROM t_org_department WHERE open_department_id = ?`, openDepartmentID)
+	g, err := scanOrgDepartment(row)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, ErrNotFound
+		}
+		return nil, err
+	}
+	return &g, nil
+}
+
+// SoftDeleteOrgDepartment 把单个部门置软删（事件 contact.department.deleted_v3 路径）。
+//
+// ★ 口径（docs/08 §4.8 批次二）：**只软删部门本身**，不级联——其下人员归属由后续
+// user 事件 / 定期对账修正，避免级联误删。行已软删 ⇒ 幂等返回 (false, nil)。
+// 永不物理删除。返回本次是否新软删。
+func (d *DB) SoftDeleteOrgDepartment(ctx context.Context, openDepartmentID string, now time.Time) (bool, error) {
+	res, err := d.ExecContext(ctx,
+		`UPDATE t_org_department SET is_deleted = 1, updated_at = ? WHERE open_department_id = ? AND is_deleted = 0`,
+		fmtTime(now), openDepartmentID)
+	if err != nil {
+		return false, fmt.Errorf("store: 软删部门 %s 失败: %w", openDepartmentID, err)
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return false, err
+	}
+	return n > 0, nil
+}
+
+// SoftDeleteOrgUser 把单个人员置软删（事件 contact.user.deleted_v3 路径；语义同部门版）。
+func (d *DB) SoftDeleteOrgUser(ctx context.Context, openID string, now time.Time) (bool, error) {
+	res, err := d.ExecContext(ctx,
+		`UPDATE t_org_user SET is_deleted = 1, updated_at = ? WHERE open_id = ? AND is_deleted = 0`,
+		fmtTime(now), openID)
+	if err != nil {
+		return false, fmt.Errorf("store: 软删人员 %s 失败: %w", openID, err)
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return false, err
+	}
+	return n > 0, nil
+}
+
+// GetOrgUser 按 open_id 读取单个人员镜像（含软删行）。无行返回 ErrNotFound。
+func (d *DB) GetOrgUser(ctx context.Context, openID string) (*OrgUser, error) {
+	row := d.QueryRowContext(ctx, `
+SELECT open_id, union_id, user_id, name, employee_status,
+       is_resigned, is_exited, is_frozen, is_activated, is_unjoin,
+       primary_department_id, department_ids, is_deleted, raw_json,
+       first_seen_at, last_seen_at, updated_at, source
+FROM t_org_user WHERE open_id = ?`, openID)
+	u, err := scanOrgUser(row)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, ErrNotFound
+		}
+		return nil, err
+	}
+	return &u, nil
+}
+
+// GetLatestOrgSyncRun 读取最近一条运行流水（供 /healthz 的 org_sync 段展示
+// 「最近对账结果」）。无行返回 ErrNotFound。
+func (d *DB) GetLatestOrgSyncRun(ctx context.Context) (*OrgSyncRun, error) {
+	row := d.QueryRowContext(ctx, `
+SELECT id, run_at, trigger, result, dept_added, dept_updated, dept_soft_deleted,
+       user_added, user_updated, user_soft_deleted, field_gaps_json, error, duration_ms
+FROM t_org_sync_run ORDER BY id DESC LIMIT 1`)
+	var (
+		r                     OrgSyncRun
+		attempt, gaps, errStr string
+	)
+	if err := row.Scan(&r.ID, &attempt, &r.Trigger, &r.Result,
+		&r.DeptAdded, &r.DeptUpdated, &r.DeptSoftDeleted,
+		&r.UserAdded, &r.UserUpdated, &r.UserSoftDeleted,
+		&gaps, &errStr, &r.DurationMS); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, ErrNotFound
+		}
+		return nil, err
+	}
+	r.RunAt = parseTime(attempt)
+	r.FieldGapsJSON = gaps
+	r.Error = errStr
+	return &r, nil
+}
+
+// TouchOrgSyncEventAt 只推进 last_event_at（事件增量处理成功的时刻）。
+//
+// ★ 为什么不用 Get+Save 组合：事件 worker 池 4 并发，与全量同步可能交错，
+// Get+Save 会整行覆盖互相踩字段；本方法单语句只动两列（INSERT 兜底首行，
+// ON CONFLICT 只更新 last_event_at/updated_at，其余列保持既有值不动）。
+func (d *DB) TouchOrgSyncEventAt(ctx context.Context, now time.Time) error {
+	_, err := d.ExecContext(ctx, `
+INSERT INTO t_org_sync_state (id, last_event_at, updated_at) VALUES (1, ?, ?)
+ON CONFLICT(id) DO UPDATE SET
+  last_event_at = excluded.last_event_at,
+  updated_at = excluded.updated_at`,
+		fmtTime(now), fmtTime(now))
+	if err != nil {
+		return fmt.Errorf("store: 推进 last_event_at 失败: %w", err)
+	}
+	return nil
+}
+
 // ---------- 目录查询（/api/org/* 数据源；过滤 is_deleted=0） ----------
 
 // ListOrgDepartmentNames 返回镜像中**在用**部门的名称清单（非空、去重、字典序）。

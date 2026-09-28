@@ -19,11 +19,19 @@ type CheckSnapshot struct {
 
 // OrgSyncSnapshot 通讯录镜像同步状态（docs/08 §4.5：/healthz 的 org_sync 段，
 // **非就绪门禁**——外部依赖故障不得放大成本地宕机）。
+//
+// ★ 批次二扩展：LastEventAt＝上次增量事件处理成功时刻（t_org_sync_state.last_event_at）；
+// LastRun*＝最近一条 t_org_sync_run 流水（含对账 trigger=reconcile 的结果）。
 type OrgSyncSnapshot struct {
 	LastFullSuccessAt string `json:"last_full_success_at"`
 	LastFullError     string `json:"last_full_error"`
 	DeptCount         int    `json:"dept_count"`
 	UserCount         int    `json:"user_count"`
+	LastEventAt       string `json:"last_event_at"` // 增量事件最后处理时刻（零值＝尚未处理过事件）
+	LastRunAt         string `json:"last_run_at"`   // 最近一次运行（全量/对账）时刻
+	LastRunTrigger    string `json:"last_run_trigger"`
+	LastRunResult     string `json:"last_run_result"` // ok / failed
+	LastRunError      string `json:"last_run_error"`
 }
 
 // Health 聚合启动自检与运行期状态，供 /healthz 与 /readyz 使用。

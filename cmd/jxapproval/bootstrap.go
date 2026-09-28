@@ -58,8 +58,9 @@ const (
 // ★ ③ 口径（N10 / F1）：**审批事件不再订阅** —— 审批核心已迁至我方，我方是唯一状态源；
 //
 //	再订阅飞书审批事件会与旧链一起把已推进的终态覆盖回 PENDING（R18/R23）。
-//	通讯录（部门/人员）事件的订阅在 docs/08 批次接入，故当前**显式为空集**：
-//	这是刻意的空，不是遗漏。守卫测试会断言此集合不含任何审批事件键。
+//	通讯录（部门/人员）事件的订阅**不走本清单**（本清单是 approval_code 订阅接口的
+//	目标），而是长连接 `internal/platform/feishu/longconn.go` 的 `sinkEventTypes`
+//	（批次二已接入 6 个 `*_v3` 事件）。守卫测试会断言此集合不含任何审批事件键。
 var subscribeTargetCodes = []string{}
 
 // run 完成依赖装配与生命周期管理。
@@ -173,10 +174,18 @@ func run(version string) error {
 		logger.Warn("★ 未配置飞书凭据：通讯录镜像不会同步（/api/org/* 将为空清单）——" +
 			"配置 JX_APP_ID/JX_APP_SECRET 后以 POST /internal/org/sync 手动触发")
 	}
+	// ★ 批次二（docs/08 §4.6/§4.7）：通讯录事件增量 + 定期对账兜底。
+	//   事件增量：长连接把 contact.* 事件交 inbox（幂等落盘 + 分流 org_sync 作业），
+	//   worker 消费时经 EventHandler 增量落镜像（与审批事件链完全隔离）。
+	//   定期对账：距上次成功全量超 JX_ORG_RECONCILE_HOURS（默认 168h=每周）⇒
+	//   RunFull(trigger="reconcile")，以飞书为准自愈漂移；手动入口复用 POST /internal/org/sync。
+	orgEvents := orgsync.NewEventHandler(db, orgFetcher, metrics, health, logger)
+	orgReconcileAfter := time.Duration(env.OrgReconcileHours) * time.Hour
 
 	// ---- ⑥ worker + ingestor ----
 	ingestor := worker.NewIngestor(db, maps, logger)
-	wk := worker.NewWorker(db, client, ingestor, metrics, logger)
+	wk := worker.NewWorker(db, client, ingestor, metrics, logger).
+		WithOrgEventHandler(orgEvents) // ★ 批次二：org_sync 作业 → 通讯录事件增量落镜像
 
 	// ---- ⑥′ 审批核心上电（架构转向 ③ · T03b/T04b）----
 	//
@@ -293,7 +302,7 @@ func run(version string) error {
 	//   本批次**不**装配 flow/approval/number（另行排期）。
 	subscriber := sync.NewSubscriber(db, client, maps, metrics, logger)
 
-	// ---- ⑧ 启动自检第 1 项：订阅（显式空集；通讯录事件待 docs/08 接入）----
+	// ---- ⑧ 启动自检第 1 项：订阅（显式空集；通讯录事件走长连接 sinkEventTypes，批次二已接入）----
 	_, failed := subscriber.Subscribe(ctx, subscribeTargetCodes)
 	if env.AppID == "" || env.AppSecret == "" {
 		logger.Warn("未配置飞书凭据，订阅结果为预期失败（开发模式）；配置凭据后须重订阅")
@@ -381,6 +390,10 @@ func run(version string) error {
 				"error", err.Error())
 		}
 	}()
+
+	// ★ 通讯录定期对账循环（docs/08 §4.7 批次二）：独立 goroutine；每小时检查一次，
+	//   距上次成功全量超 JX_ORG_RECONCILE_HOURS（默认 168h）才跑——兜底事件丢投漂移。
+	go orgRunner.RunReconcileLoop(ctx, orgReconcileAfter, time.Hour)
 
 	// ★ 派生式修复循环（#69 ②）：独立 goroutine；兜底「已落盘、未推进」的回调
 	//   （#69 ① 落盘即 200 后，推进失败不再由 HTTP 重试驱动，见 internal/flow/repair.go）。

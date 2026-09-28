@@ -35,11 +35,21 @@ var retiredApprovalEventTypes = []string{
 
 // sinkEventTypes 当前**交给 EventSink 处理**的事件类型。
 //
-// ★ ③ 下审批事件**不在其中**（见 retiredApprovalEventTypes）；通讯录（部门/人员）事件
+// ★ ③ 下审批事件**不在其中**（见 retiredApprovalEventTypes）。
 //
-//	待 docs/08 批次接入，故当前**显式为空**——这是刻意的空，不是遗漏。
-//	守卫测试 `SinkRoutedEventTypes()` 会断言审批事件键不在交给 sink 的集合里。
-var sinkEventTypes = []string{}
+// ★ docs/08 批次二（事件增量）已接入：6 个通讯录（部门/人员）变更事件**复用同一长连接**，
+// 由 inbox 按 event_type 分流到 orgsync 增量落库（绝不混入审批事件处理链——
+// 审批键仍全部在 retiredApprovalEventTypes 的 no-op 名单里，见上方守卫注释）。
+// 事件名经官方文档核对（2026-09-28，见 docs/reference/README.md）：
+// 6 类均支持「使用长连接接收事件」。
+var sinkEventTypes = []string{
+	"contact.department.created_v3",
+	"contact.department.updated_v3",
+	"contact.department.deleted_v3",
+	"contact.user.created_v3",
+	"contact.user.updated_v3",
+	"contact.user.deleted_v3",
+}
 
 // SinkRoutedEventTypes 返回当前交给 EventSink 处理的事件类型（副本，供守卫测试断言）。
 func SinkRoutedEventTypes() []string {
@@ -88,7 +98,7 @@ func (l *LongConn) Run(ctx context.Context) error {
 		})
 	}
 
-	// ② 仍需我方处理的事件（③ 下审批事件不在其中；通讯录事件待 docs/08 接入）。
+	// ② 仍需我方处理的事件（③ 下审批事件不在其中；通讯录事件已接入，交 inbox 分流 orgsync）。
 	for _, et := range sinkEventTypes {
 		eventType := et
 		d.OnCustomizedEvent(eventType, func(ctx context.Context, req *larkevent.EventReq) error {

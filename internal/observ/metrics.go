@@ -15,6 +15,9 @@ type Metrics struct {
 	deadletterTotal       int64
 	workerQueueDepth      int64
 	orgSyncFailureTotal   int64
+	orgEventAppliedTotal  int64
+	orgEventGapTotal      int64
+	orgEventUnknownTotal  int64
 }
 
 // NewMetrics 构造指标集。
@@ -47,6 +50,16 @@ func (m *Metrics) SetWorkerQueueDepth(n int64) { atomic.StoreInt64(&m.workerQueu
 // IncOrgSyncFailure 通讯录同步失败计数 +1（静默防护 N5：失败必须可见，docs/08 §4.11-B）。
 func (m *Metrics) IncOrgSyncFailure() { atomic.AddInt64(&m.orgSyncFailureTotal, 1) }
 
+// IncOrgEventApplied 通讯录事件成功应用（upsert/软删）计数 +1（批次二：事件增量）。
+func (m *Metrics) IncOrgEventApplied() { atomic.AddInt64(&m.orgEventAppliedTotal, 1) }
+
+// IncOrgEventGap 通讯录事件字段缺口计数 +1（字段权限未开 ⇒ 事件体/回源详情字段为空；
+// 静默防护 C 族：缺口必须可见，不静默落空值）。
+func (m *Metrics) IncOrgEventGap() { atomic.AddInt64(&m.orgEventGapTotal, 1) }
+
+// IncOrgEventUnknown 未识别的通讯录事件类型计数 +1（可见、不静默丢弃）。
+func (m *Metrics) IncOrgEventUnknown() { atomic.AddInt64(&m.orgEventUnknownTotal, 1) }
+
 // Snapshot 返回当前指标只读快照。
 func (m *Metrics) Snapshot() MetricsSnapshot {
 	return MetricsSnapshot{
@@ -59,6 +72,9 @@ func (m *Metrics) Snapshot() MetricsSnapshot {
 		DeadletterTotal:       atomic.LoadInt64(&m.deadletterTotal),
 		WorkerQueueDepth:      atomic.LoadInt64(&m.workerQueueDepth),
 		OrgSyncFailureTotal:   atomic.LoadInt64(&m.orgSyncFailureTotal),
+		OrgEventAppliedTotal:  atomic.LoadInt64(&m.orgEventAppliedTotal),
+		OrgEventGapTotal:      atomic.LoadInt64(&m.orgEventGapTotal),
+		OrgEventUnknownTotal:  atomic.LoadInt64(&m.orgEventUnknownTotal),
 	}
 }
 
@@ -73,4 +89,9 @@ type MetricsSnapshot struct {
 	DeadletterTotal       int64 `json:"deadletter_total"`
 	WorkerQueueDepth      int64 `json:"worker_queue_depth"`
 	OrgSyncFailureTotal   int64 `json:"org_sync_failure_total"`
+	// 批次二（事件增量 + 对账）：org_event_* 为通讯录事件处理计数；
+	// org_sync_failure_total 含全量/对账/事件处理失败（worker 侧）。
+	OrgEventAppliedTotal int64 `json:"org_event_applied_total"`
+	OrgEventGapTotal     int64 `json:"org_event_gap_total"`
+	OrgEventUnknownTotal int64 `json:"org_event_unknown_total"`
 }
