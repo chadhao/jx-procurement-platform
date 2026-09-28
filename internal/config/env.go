@@ -47,6 +47,12 @@ type Env struct {
 	// ★ 消费端：`POST /api/admin/approval/defs/sync` 组装定义的 `action_callback_url`
 	//   （＝ `<domain>/approval/external/callback`）。
 	CallbackDomain string // JX_CALLBACK_DOMAIN
+	// OAuthRedirectURI 飞书免登（授权登录）回调地址（JX_OAUTH_REDIRECT_URI，可选）。
+	// ★ 消费端：`GET /api/auth/authorize-url` 组装官方授权页 URL 的 `redirect_uri` 参数，
+	//   且**必须与飞书开放平台【安全设置】的重定向 URL 白名单逐字一致**（含 scheme/域名/路径），
+	//   不得包含 `#`（官方：fragment 会被拼到回调末尾，SPA 取不到 code）。
+	// 未配置时缺省取 `JX_CALLBACK_DOMAIN + "/auth/feishu/callback"`（见 FeishuRedirectURI）。
+	OAuthRedirectURI string // JX_OAUTH_REDIRECT_URI
 	// ActionCallbackToken 三方审批定义下发的**回调校验 token**（敏感，docs/04 §6.4）。
 	// ★ 一处配置、两侧一致：注册定义时随 `DefInput.CallbackToken` 下发飞书
 	//   （external.action_callback_token），本地落 `t_approval_def.callback_token` 同值
@@ -79,6 +85,7 @@ func LoadEnv() (*Env, error) {
 		SessionKey:          getenv("JX_SESSION_KEY", ""),
 		InternalToken:       getenv("JX_INTERNAL_TOKEN", ""),
 		CallbackDomain:      getenv("JX_CALLBACK_DOMAIN", ""),
+		OAuthRedirectURI:    getenv("JX_OAUTH_REDIRECT_URI", ""),
 		ActionCallbackToken: getenv("JX_ACTION_CALLBACK_TOKEN", ""),
 		LockPath:            lockPath,
 		S3Endpoint:          getenv("JX_S3_ENDPOINT", ""),
@@ -101,6 +108,19 @@ func LoadEnv() (*Env, error) {
 
 // IsDev 是否开发模式（决定是否注册 /internal/dev/inject-event）。
 func (e *Env) IsDev() bool { return e.DevMode }
+
+// FeishuRedirectURI 返回飞书免登回调地址：JX_OAUTH_REDIRECT_URI 优先，
+// 否则缺省 JX_CALLBACK_DOMAIN + "/auth/feishu/callback"（去尾部斜杠后拼接）。
+// 两者皆未配置 ⇒ 返回空串，调用方（authorize-url 端点）必须**可见报错**，不得静默编造。
+func (e *Env) FeishuRedirectURI() string {
+	if v := strings.TrimSpace(e.OAuthRedirectURI); v != "" {
+		return v
+	}
+	if d := strings.TrimSpace(e.CallbackDomain); d != "" {
+		return strings.TrimRight(d, "/") + "/auth/feishu/callback"
+	}
+	return ""
+}
 
 // IsTest 是否测试环境（test 开启可控时间窗，架构 §4.5）。
 func (e *Env) IsTest() bool { return strings.EqualFold(e.RunEnv, "test") }

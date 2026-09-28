@@ -93,6 +93,9 @@ func NewRouter(d Deps) *echo.Echo {
 	}
 
 	// ---- 免登（公开）----
+	// ★ GET /api/auth/authorize-url 挂 root `e`（公开）：未登录时前端守卫/登录页
+	//   就要拿授权 URL，若进 api 组会被 requireSession 挡住（40100）死循环。
+	e.GET("/api/auth/authorize-url", d.handleFeishuAuthorizeURL)
 	e.GET("/auth/feishu/callback", d.handleFeishuCallback)
 	e.POST("/auth/logout", d.handleLogout)
 

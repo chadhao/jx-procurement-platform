@@ -22,17 +22,42 @@ import (
 
 // handleFeishuCallback 飞书免登回调；未映射角色的 open_id 拒绝进入业务页（TC-32）。
 // 开发模式（DEV_MODE=true）允许以 ?open_id= 直接建立会话，用于无凭据的端到端验证。
+//
+// ★ state 真校验：官方《获取授权码》要求「务必校验 state 前后一致」—— 下发时存于
+//
+//	HttpOnly Cookie（jx_oauth_state，见 handlers_auth.go），回调时比对，不一致 ⇒ 400 拒绝。
+//
+// ★ error=access_denied 分支：用户在授权页拒绝授权时官方回调
+//
+//	`<redirect_uri>?error=access_denied&state=<原值>`，友好跳登录页（不 500）。
 func (d Deps) handleFeishuCallback(c echo.Context) error {
 	ctx := c.Request().Context()
 	code := c.QueryParam("code")
 	state := c.QueryParam("state")
 	devOpenID := c.QueryParam("open_id")
 
+	// ★ 用户拒绝授权（官方失败回调形态）：友好提示，不当免登失败 500。
+	if strings.TrimSpace(c.QueryParam("error")) != "" {
+		return c.Redirect(http.StatusFound, "/login?error=denied")
+	}
+
+	// ★ DEV_MODE 的 ?open_id= 直连路径保持原语义（现有测试与 Login.vue 开发入口依赖）。
+	devDirect := d.Auth.DevMode() && strings.TrimSpace(devOpenID) != ""
+
 	if strings.TrimSpace(state) == "" {
 		return fail(c, http.StatusBadRequest, codeBadRequest, "缺少 state（防 CSRF）")
 	}
-	if strings.TrimSpace(code) == "" && !(d.Auth.DevMode() && strings.TrimSpace(devOpenID) != "") {
-		return fail(c, http.StatusBadRequest, codeBadRequest, "缺少 code")
+	if !devDirect {
+		// ★ state 前后一致性真校验：须与 authorize-url 下发并存入 Cookie 的值一致。
+		sent := readOAuthStateCookie(c)
+		clearOAuthStateCookie(c, d.Env) // 一次性：用毕即清，防重放
+		if sent == "" || !oauthStateMatch(state, sent) {
+			return fail(c, http.StatusBadRequest, codeBadRequest,
+				"state 校验失败（防 CSRF），请重新发起登录")
+		}
+		if strings.TrimSpace(code) == "" {
+			return fail(c, http.StatusBadRequest, codeBadRequest, "缺少 code")
+		}
 	}
 
 	ident, err := d.Auth.Exchange(ctx, code, devOpenID)

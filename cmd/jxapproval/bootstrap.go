@@ -294,7 +294,9 @@ func run(version string) error {
 	sessions := access.NewStore(env.SessionKey, sessionTTL)
 	var oauth feishu.OAuthExchange
 	if env.AppID != "" && env.AppSecret != "" {
-		oauth = feishu.NewOAuthClient(logger)
+		// ★ 免登凭据/回调地址从配置注入（官方 token 请求体必填 client_id / client_secret，
+		//   redirect_uri 与授权时一致）；redirect_uri 缺省＝JX_CALLBACK_DOMAIN + 回调路径。
+		oauth = feishu.NewOAuthClient(env.AppID, env.AppSecret, env.FeishuRedirectURI(), logger)
 	}
 	auth := access.NewAuthenticator(db, sessions, oauth, env.IsDev(), logger)
 

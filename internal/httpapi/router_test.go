@@ -49,6 +49,7 @@ var expectRoutes = []string{
 	"GET /readyz",
 	"POST /internal/sync/subscribe",
 	"POST /internal/sync/reconcile",
+	"GET /api/auth/authorize-url", // 免登授权页 URL 下发（公开路由，本批新增）
 	"GET /auth/feishu/callback",
 	"POST /auth/logout",
 }
