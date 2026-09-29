@@ -19,7 +19,8 @@ scripts/check_collab.py —— `COLLAB.md`（双 Agent 协商台账）结构门�
       因待议区当时为空，一直没露馅。⇒ v3 改为**按章节标题关键词判定规则**，对重编号免疫。
 
 校验项（对应 `COLLAB.md` 附录 B）：
-  B1  议题 ID 唯一且递增（`^N-\\d{3}$`）
+  B1  议题 ID 唯一且递增（`^N-\\d{3}$`）—— v4 起为三则：全局唯一 ＋ 编号连续
+      无跳号（1..max）＋ 各章节内文档序递增；不再要求跨章节文档序递增（N-009）
   B2  状态仅限枚举：OPEN / WK-DONE / MIMO-DONE / AGREED / ESCALATED
   B3  类型仅限枚举：需求澄清 / 接口契约 / 技术方案 / 冲突 / 阻塞
   B4  字段齐备（**按章节种类**区分）：
@@ -155,18 +156,43 @@ def check(path: str) -> int:
     blocks = section_blocks(lines, heads, sec_of, section_heads)
     problems = []
 
-    # ---- B1：ID 唯一且递增（跨章节） ----
-    seen, prev = {}, 0
+    # ---- B1：ID 唯一、全集连续（1..max 无跳号）、各章节内文档序递增 ----
+    # ★ 2026-09-29 mimo 修（议题 N-009）：原实现要求「跨章节文档序递增」，
+    #   与附录 A 模板结构（§4 待议在 §5 已决议之前）不可兼得 —— 只要两区
+    #   同时存在议题就必然误红；且会把「老议题移回待议区重开」误判为回退。
+    #   改为三则（对齐附录 B 原文「唯一且递增、无跳号回退」）：
+    #     ① 全局唯一（保留）；② 编号 = 1..max 连续（新增，原实现漏检跳号）；
+    #     ③ 各章节内文档序严格递增（保留「回退」检测）。
+    #   ★ 探针自证（N-009）：重复 ID / 跳号 / 区内回退 ⇒ 逐条抓出；
+    #     「§4 N-003 + §5 N-001 N-002」双区结构 ⇒ 通过（旧门禁必然误红）。
+    seen, nums = {}, []
     for iid, _t, start, _e, _s in blocks:
         lineno = start + 1
         if iid in seen:
             problems.append(f"[B1] COLLAB.md:{lineno} 议题 ID 重复：{iid}（首次出现在第 {seen[iid]} 行）")
         else:
             seen[iid] = lineno
-        num = int(iid[2:])
-        if num <= prev:
-            problems.append(f"[B1] COLLAB.md:{lineno} 议题 ID 未递增：{iid}（上一个为 N-{prev:03d}）")
-        prev = max(prev, num)
+            nums.append(int(iid[2:]))
+    if nums:
+        missing = sorted(set(range(1, max(nums) + 1)) - set(nums))
+        if missing:
+            problems.append(
+                "[B1] 议题 ID 跳号：缺 "
+                + "、".join(f"N-{m:03d}" for m in missing)
+                + f"（现有最大 N-{max(nums):03d}）"
+            )
+        per_sec = {}
+        for iid, _t, start, _e, sec in blocks:
+            per_sec.setdefault(sec, []).append((int(iid[2:]), start + 1))
+        for sec, items in per_sec.items():
+            prev_n, prev_ln = None, None
+            for n, ln in items:
+                if prev_n is not None and n <= prev_n:
+                    problems.append(
+                        f"[B1] COLLAB.md:{ln} 议题 ID 未递增：N-{n:03d}"
+                        f"（本章节上一条为 N-{prev_n:03d}，第 {prev_ln} 行）"
+                    )
+                prev_n, prev_ln = n, ln
 
     # ---- 逐议题 ----
     for iid, _title, start, end, kind in blocks:
