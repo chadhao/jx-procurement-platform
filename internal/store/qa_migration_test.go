@@ -149,7 +149,8 @@ func TestQAMigrationFreshAndIdempotent(t *testing.T) {
 	//   0012 通讯录镜像（t_org_department/t_org_user/t_org_sync_state/t_org_sync_run，docs/08 实施批次一；
 	//   ★ 0012 依 docs/08 §4.2 编号裁定留空占用，文件名升序执行顺序与其余迁移无交互）。
 	//   0015 审批提交幂等键唯一索引（M4/d9，action='approval_submit_idem'，照 0002 款式）。
-	const wantMigrations = 15
+	//   0016 附件暂存表 t_attachment_staging（M6/D4：提交前上传 → 事务内绑定）。
+	const wantMigrations = 16
 	if total != wantMigrations {
 		t.Errorf("迁移版本总数 = %d, 期望 %d（重复执行不得重复登记）", total, wantMigrations)
 	}

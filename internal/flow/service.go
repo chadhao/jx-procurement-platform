@@ -137,6 +137,9 @@ type SubmitInput struct {
 	//   服务端生成（客户端字段无法伪造 —— 合并在 applyBizFields **之后**，服务端值必胜），
 	//   落 ext_json.org_verify；回源失败＝告警放行，标记 ok:false。
 	OrgVerify map[string]any
+	// StagingIDs 提交前上传的暂存附件 id（M6 / D4）：提交事务内绑定迁入 t_attachment；
+	// 任一不可绑定（非本人/已绑定/过期）⇒ 整体回滚（绝不静默丢附件）。
+	StagingIDs []string
 }
 
 // Service 审批领域服务。
@@ -285,6 +288,16 @@ func (s *Service) Submit(ctx context.Context, in SubmitInput) (string, error) {
 				FileName:     ref.FileName,
 				SizeBytes:    ref.Size,
 			}); err != nil {
+				return err
+			}
+		}
+		// ★ 暂存附件绑定（M6/D4）：owner/未绑定/未过期三项 guard 在 SQL 内，
+		//   0 行 ⇒ 不可绑定 ⇒ 整体回滚（附件不静默丢失，提交可见失败）。
+		for _, sid := range in.StagingIDs {
+			if strings.TrimSpace(sid) == "" {
+				continue
+			}
+			if _, err := s.db.BindStagingTx(ctx, tx, sid, in.ApplicantOpenID, inst.InstanceCode, bizNo); err != nil {
 				return err
 			}
 		}

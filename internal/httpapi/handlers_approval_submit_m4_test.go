@@ -19,8 +19,10 @@ import (
 	"github.com/chadhao/jx-procurement-platform/internal/chain"
 	"github.com/chadhao/jx-procurement-platform/internal/config"
 	"github.com/chadhao/jx-procurement-platform/internal/flow"
+	"github.com/chadhao/jx-procurement-platform/internal/objectstore"
 	"github.com/chadhao/jx-procurement-platform/internal/observ"
 	"github.com/chadhao/jx-procurement-platform/internal/permission"
+	"github.com/chadhao/jx-procurement-platform/internal/seed"
 	"github.com/chadhao/jx-procurement-platform/internal/specload"
 	"github.com/chadhao/jx-procurement-platform/internal/store"
 	"github.com/chadhao/jx-procurement-platform/internal/store/storetest"
@@ -35,8 +37,17 @@ func newSubmitM4App(t *testing.T, withRoles bool) (*echo.Echo, *store.DB, *acces
 
 func newSubmitM4AppV(t *testing.T, withRoles bool, verifier OrgVerifier) (*echo.Echo, *store.DB, *access.Authenticator) {
 	t.Helper()
+	return newSubmitM4AppObj(t, withRoles, verifier, nil)
+}
+
+func newSubmitM4AppObj(t *testing.T, withRoles bool, verifier OrgVerifier, objects objectstore.Store) (*echo.Echo, *store.DB, *access.Authenticator) {
+	t.Helper()
 	ctx := context.Background()
 	db := storetest.NewDB(t)
+	// Q3 默认权限口径（与生产 bootstrap ②′ 一致；缺它则 api:instances 默认拒绝 → 403）
+	if _, err := seed.SeedQ3Defaults(ctx, db); err != nil {
+		t.Fatal(err)
+	}
 
 	// approval_code → doc_type 映射（code↔doc_type 校验的数据源）
 	if err := db.UpsertConfigMapping(ctx, store.ConfigMappingRow{
@@ -93,7 +104,7 @@ func newSubmitM4AppV(t *testing.T, withRoles bool, verifier OrgVerifier) (*echo.
 		Env: env, DB: db, Log: observ.NewLogger("error", io.Discard),
 		Metrics: metrics, Health: observ.NewHealth("test"),
 		Perm: perm, Auth: auth, Maps: maps, Version: "test",
-		Flow: flowSvc, Spec: bundle, Chain: chainSvc, OrgVerifier: verifier,
+		Flow: flowSvc, Spec: bundle, Chain: chainSvc, OrgVerifier: verifier, Objects: objects,
 	})
 	return e, db, auth
 }

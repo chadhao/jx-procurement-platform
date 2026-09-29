@@ -489,9 +489,11 @@ type approvalSubmitBody struct {
 	UsageCategoryL2 string `json:"usage_category_l2"`
 	// PaymentMethodInput 费用线按支付方式二分（enums#route_resolution）：
 	//   personal_advance / corporate_direct。
-	PaymentMethodInput string           `json:"payment_method_input"`
-	Fields             map[string]any   `json:"fields"` // 已映射表单字段（键＝规范 biz_field）
-	Nodes              []approvalNodeIn `json:"nodes"`  // ★ 仅用于检测并拒绝（d5）
+	PaymentMethodInput string         `json:"payment_method_input"`
+	Fields             map[string]any `json:"fields"` // 已映射表单字段（键＝规范 biz_field）
+	// AttachmentIDs 提交前上传的暂存附件 id（M6）：提交事务内绑定，任一不可绑定整体回滚。
+	AttachmentIDs []string         `json:"attachment_ids"`
+	Nodes         []approvalNodeIn `json:"nodes"` // ★ 仅用于检测并拒绝（d5）
 }
 
 type approvalNodeIn struct {
@@ -600,6 +602,7 @@ func (d Deps) handleApprovalSubmit(c echo.Context) error {
 		IdemKey:         idemKey,
 		IdemPayloadHash: idemHash,
 		OrgVerify:       orgVerify,
+		StagingIDs:      body.AttachmentIDs,
 	})
 	switch {
 	case errors.Is(err, flow.ErrIdemReplay):
@@ -1016,7 +1019,8 @@ func (d Deps) approvalError(c echo.Context, err error) error {
 	case errors.Is(err, flow.ErrIllegalTransition), errors.Is(err, flow.ErrTaskHeld),
 		errors.Is(err, flow.ErrNodeNotReached):
 		return fail(c, http.StatusConflict, codeApprovalConflict, err.Error())
-	case errors.Is(err, flow.ErrInvalidSubmit), errors.Is(err, flow.ErrInvalidToken):
+	case errors.Is(err, flow.ErrInvalidSubmit), errors.Is(err, flow.ErrInvalidToken),
+		errors.Is(err, store.ErrStagingNotBindable):
 		return fail(c, http.StatusBadRequest, codeBadRequest, err.Error())
 	default:
 		return fail(c, http.StatusInternalServerError, codeInternal, err.Error())

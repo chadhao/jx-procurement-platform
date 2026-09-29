@@ -154,6 +154,9 @@ func NewRouter(d Deps) *echo.Echo {
 	// ---- 审批流转（架构转向 ③；T04b；docs/05-API §3.13）----
 	//	★ 页面两键与入站回调**走同一状态机出口**（flow），不得两套语义（docs/11 R11）。
 	//	★ 路径参数 `:biz_no` ＝**业务单号**（非 instance_id）。
+	// 附件暂存（M6）：静态段先注册（Echo 静态优先，避免被 :biz_no 遮蔽）。
+	api.POST("/approval/attachments", d.handleApprovalAttachmentUpload)
+	api.GET("/approval/attachments/:file_id", d.handleApprovalAttachmentStagingRead)
 	// 提交：生成编号 + 建实例 + 首推飞书（薄壳，语义在 flow.Submit；docs/05-API §3.13）。
 	api.POST("/approval/submit", d.handleApprovalSubmit)
 	api.POST("/approval/:biz_no/approve", d.handleApprovalApprove)
