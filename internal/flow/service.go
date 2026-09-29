@@ -255,7 +255,10 @@ func (s *Service) Submit(ctx context.Context, in SubmitInput) (string, error) {
 		if len(in.OrgVerify) > 0 {
 			ext := map[string]any{}
 			if extJSON != "" && extJSON != "{}" {
-				_ = json.Unmarshal([]byte(extJSON), &ext) // 解析失败不致命：以空表重建
+				if uErr := json.Unmarshal([]byte(extJSON), &ext); uErr != nil {
+					// 旧 ext_json 非法：以空表重建（org_verify 仍须落，不静默丢标记）。
+					ext = map[string]any{}
+				}
 			}
 			ext["org_verify"] = in.OrgVerify
 			if b, mErr := json.Marshal(ext); mErr == nil {

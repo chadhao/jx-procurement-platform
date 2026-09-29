@@ -295,7 +295,13 @@ func validThresholdValue(v string) bool {
 //
 // ★ 为什么必须登记：不在本表中的阈值键写进库后**不会改变任何行为**——这是「**假配置**」：
 // 运维以为把 `purchase_tier` 设成 `1000-5000` 就实现了分档，实际代码从未读它。
-// 与决策 #10（`api:petty-cash` 不入权限矩阵，避免"矩阵可配、处理器更严"的假配置）同一类问题。
+// 与决策 #10（`api:petty-cash` 不入权限矩阵，避免"矩阵可配、处理器更严"）同一类问题。
+//
+// ★★ 分档权威源声明（M8 / N-008 定案）：**采档分档的唯一权威源是
+//
+//	`spec/chain.json#thresholds.purchase.bands`**（经 `internal/specload` 内嵌加载，
+//	`internal/chain.TierOf` 消费）—— `purchase_tier` 阈值键为**历史口径登记**，
+//	代码不读、也**不应**再有消费端（避免同一阈值双源漂移）。导入时仍会就"未消费"给出提示。
 //
 // 新增阈值键时**必须同时有消费端**（否则等于重现 docs/06 §J.2 的 P0-C：配了、没人读）。
 var ConsumedThresholdKeys = map[string]bool{

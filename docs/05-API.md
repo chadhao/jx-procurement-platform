@@ -626,13 +626,45 @@ sequenceDiagram
 
 | 项 | 内容 |
 |---|---|
-| 用途 | 我方提交：**生成编号** + 建实例 + **首推飞书**（`04a §3`） |
+| 用途 | 我方提交：**服务端算链** → 表单结构化校验 → **生成编号** + 建实例 + **首推飞书**（`04a §3`）；★ M4 契约收敛 |
 | 鉴权 | 免登会话（申请人本人） |
-| 请求体 | `doc_type` · 表单字段 · `department` / `contact`（默认带出镜像，★ 提交时**实时回源校验一次**，D6） |
-| 响应 | `{ biz_no, instance_id, status }` |
-| 幂等 | `Idempotency-Key`；★ **业务单号唯一**（`UNIQUE(biz_no)`，重复 → `40900`） |
-| 错误码 | 40000、40100、40900、**40901**（定义缺失，`S7`：提交前校验 `t_approval_def` 存在） |
-| 关联 FR | FR-M2-01、FR-M9-11、FR-M9-17 |
+| 请求体 | `doc_type` · `approval_code`（↔ doc_type 双向一致校验）· `amount_cents` · `usage_category_l1/l2` · `payment_method_input` · `fields{}` · `attachment_ids[]?` · `department?`；★ **`nodes` 字段一律拒绝**（非空 → `40000`，链由服务端按 `spec/chain.json` 计算，d5） |
+| 服务端校验 | 分档/路线（`chain.Service`，与 `/preview` 共算 D5）· 算不到人 → **阻断**（`40000` + `error_detail.unresolved_roles[]`，N-018 过渡）· `spec/forms` 提交期必填/条件必填（结构化子集，N-17）· **金额 > 0**（FR-M9-03）· `approval_code↔doc_type`（M2-05） |
+| 回源标记 | **实时回源一次**（2s 超时、失败告警放行，FR-M9-17/D6）→ `ext_json.org_verify`（服务端权威，客户端伪造无效） |
+| 响应 | `{ biz_no, instance_id, status }`；幂等重放附 `idempotent_replay: true` |
+| 幂等 | `Idempotency-Key` 三态：首次 `200` / 同键同载荷 → `200` 复用首次 `biz_no` / 同键异载荷 → `40900`（事务内占位 + 指纹，迁移 `0015`）；★ **业务单号唯一**兜底 |
+| 附件 | `attachment_ids`＝提交前 `POST /api/approval/attachments` 的暂存 id；事务内绑定，任一不可绑定（非本人/已绑定/过期）⇒ 整体回滚 `40000` |
+| 错误码 | 40000、40100、40101、40900、**40901**（定义缺失，`S7`：提交前校验 `t_approval_def` 存在） |
+| 关联 FR | FR-M2-01、FR-M9-02/03/11/17 |
+
+#### `GET /api/approval/meta`（发起页元数据 · M3）
+
+| 项 | 内容 |
+|---|---|
+| 用途 | 下发表单 schema（`spec/forms/*.json` 内嵌）→ 前端 meta 驱动渲染；**后端权威、前端不持业务口径**（D1/N-008） |
+| 鉴权 | 免登会话（普通会话，非 admin） |
+| 响应 | `spec_version`（N-008③ 聚合版本）· `doc_types_available[]` · `forms[]`（sections/fields/checks）· **`approval_codes{doc_type→code}`**（提交必填，前端不猜码值）· `enums`（`spec/enums.json` 全文）· `bands`（采三档，仅展示；计算仍在后端） |
+| 关联 | FR-M9-03、D1 |
+
+#### `POST /api/approval/preview`（分档/链预览 · M7）
+
+| 项 | 内容 |
+|---|---|
+| 用途 | 分档 + 流程线 + 审批链 + 审批人**预览**；★ 与 submit **共算同一入口**（D5），前端不本地算分档、**不产生飞书 API 调用** |
+| 请求体 | `doc_type` · `amount_cents?` · `usage_category_l1?` · `payment_method_input?` · `department?`（缺省取会话部门） |
+| 响应 | `spec_version` · `tier` · `route{id,label,env_count,payment}` · `nodes[]`（全流程，含非审批环节；审批节点附 `approvers[]` 与 `resolved`）· `unresolved_roles[]`（**非空 ⇒ 提交将被阻断**，R-g 预暴露） |
+| 错误码 | 40000（档位/分类/支付方式非法，如 PR <1000 引导走 BA —— N-012 过渡） |
+| 关联 | FR-M9-02、D5 |
+
+#### `POST /api/approval/attachments` 与 `GET /api/approval/attachments/{file_id}`（附件暂存 · M6）
+
+| 项 | 内容 |
+|---|---|
+| 用途 | 上传 → **暂存**（`t_attachment_staging` + objectstore `staging/{open_id}/{fid}`）；提交时经 `attachment_ids` **事务内绑定**进 `t_attachment`（D4；`instance_code NOT NULL` 决定必须两段式） |
+| 鉴权 | 免登会话；读取＝**owner-only 且未绑定**（他人/已绑定/过期 → `40400`，不泄漏存在性） |
+| 上传 | `multipart/form-data` 字段 `file`；上限 **20 MiB**；响应 `{ file_id, file_name, size_bytes }`；惰性清理 7 天未绑定过期件 |
+| 绑定 | 随 submit `attachment_ids[]`；guard＝owner ∧ 未绑定 ∧ 未过期（SQL 内），0 行 ⇒ 提交整体失败 |
+| 关联 | FR-M0-09（我方页面上传半边）、FR-M9-03 |
 
 #### `POST /api/approval/{biz_no}/approve` 与 `/reject`
 
@@ -663,7 +695,11 @@ sequenceDiagram
 
 | 方法 | 全路径 | 请求字段 | 响应字段 |
 |---|---|---|---|
-| POST | `/api/approval/submit` | `doc_type`·表单·`department`/`contact` | `biz_no`·`instance_id`·`status` |
+| POST | `/api/approval/submit` | `doc_type`·`approval_code`·表单·`attachment_ids?`（★ **不收 `nodes`**） | `biz_no`·`instance_id`·`status`·`idempotent_replay?` |
+| GET | `/api/approval/meta` | —（会话） | `spec_version`·`forms[]`·`approval_codes{}`·`enums`·`bands`（M3） |
+| POST | `/api/approval/preview` | `doc_type`·`amount_cents?`·`usage_category_l1?`·`payment_method_input?` | `tier`·`route`·`nodes[]`·`unresolved_roles[]`（M7） |
+| POST | `/api/approval/attachments` | multipart `file` | `file_id`·`file_name`·`size_bytes`（M6） |
+| GET | `/api/approval/attachments/{file_id}` | —（会话 + owner-only 未绑定） | 附件字节（M6） |
 | POST | `/api/approval/{biz_no}/approve` | `task_id`·`opinion?`·`attachments?` | `biz_no`·`node_id`·`status` |
 | POST | `/api/approval/{biz_no}/reject` | `task_id`·`opinion?`·`attachments?` | `biz_no`·`node_id`·`status` |
 | POST | `/api/approval/{biz_no}/transfer` | `task_id`·`assignee`·`reason?` | `biz_no`·`node_id`·`status` |
