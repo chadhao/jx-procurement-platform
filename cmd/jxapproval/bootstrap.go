@@ -22,6 +22,7 @@ import (
 	"syscall"
 	"time"
 
+	specfs "github.com/chadhao/jx-procurement-platform"
 	"github.com/chadhao/jx-procurement-platform/internal/access"
 	"github.com/chadhao/jx-procurement-platform/internal/approval"
 	"github.com/chadhao/jx-procurement-platform/internal/config"
@@ -36,6 +37,7 @@ import (
 	"github.com/chadhao/jx-procurement-platform/internal/platform/feishu"
 	"github.com/chadhao/jx-procurement-platform/internal/seed"
 	"github.com/chadhao/jx-procurement-platform/internal/singlelock"
+	"github.com/chadhao/jx-procurement-platform/internal/specload"
 	"github.com/chadhao/jx-procurement-platform/internal/store"
 	"github.com/chadhao/jx-procurement-platform/internal/sync"
 	"github.com/chadhao/jx-procurement-platform/internal/webui"
@@ -87,6 +89,17 @@ func run(version string) error {
 	defer func() { _ = lock.Release() }()
 	health.SetSingleInstance(true)
 	logger.Info("单实例锁已获取", "lock_path", env.LockPath)
+
+	// ---- ①′ 机读规格装载（N-008：spec 内嵌进二进制，加载即 S1–S12 断言，失败拒启）----
+	// ★ spec 是构建产物的一部分：改 spec = 重新构建；运行期零读盘、无热更新。
+	//   判据来源＝scripts/check_spec.py 文档串（N-011 checks.yaml 交付前的降级方案）。
+	specBundle, err := specload.Load(specfs.FS)
+	if err != nil {
+		logger.Error("spec/ 机读规格校验失败，拒绝启动", "error", err.Error())
+		return fmt.Errorf("spec 加载失败: %w", err)
+	}
+	logger.Info("spec/ 机读规格已装载", "spec_version", specBundle.SpecVersion,
+		"forms", len(specBundle.Forms), "routes", len(specBundle.Chain.Routes))
 
 	// ---- ② 打开数据库 + 迁移 ----
 	db, err := store.Open(env.DBPath)
