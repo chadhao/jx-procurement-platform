@@ -21,7 +21,7 @@ scripts/check_collab.py —— `COLLAB.md`（双 Agent 协商台账）结构门�
 校验项（对应 `COLLAB.md` 附录 B）：
   B1  议题 ID 唯一且递增（`^N-\\d{3}$`）—— v4 起为三则：全局唯一 ＋ 编号连续
       无跳号（1..max）＋ 各章节内文档序递增；不再要求跨章节文档序递增（N-009）
-  B2  状态仅限枚举：OPEN / WK-DONE / MIMO-DONE / AGREED / ESCALATED
+  B2  状态仅限枚举：OPEN / WK-DONE / MIMO-DONE / AGREED / ESCALATED / WITHDRAWN
   B3  类型仅限枚举：需求澄清 / 接口契约 / 技术方案 / 冲突 / 阻塞
   B4  字段齐备（**按章节种类**区分）：
         待议   → 提出方 / 类型 / 责任域 / 背景 / 我方立场 / 建议方案 / 制度影响面 / 状态 / 最后更新
@@ -59,7 +59,11 @@ KIND_REQUIRED = {
 }
 KIND_LABEL = {"pending": "待议", "agreed": "已决议", "escalated": "已上交"}
 
-VALID_STATUS = {"OPEN", "WK-DONE", "MIMO-DONE", "AGREED", "ESCALATED"}
+# ★ WITHDRAWN（作废）由 N-010 引入：议题合法退役的出口（删条目会跳号 ⇒ 门禁红）。
+#   语义＝「已确认不再需要处理」，条目保留供追溯；只允许出现在「待议」区
+#   （作废议题留在原位、不改章节归属，以免破坏「区内递增」判据）。
+#   配套规则改动（附录 B B2 枚举）由 WorkBuddy 随后补，顺序＝mimo 门禁先行。
+VALID_STATUS = {"OPEN", "WK-DONE", "MIMO-DONE", "AGREED", "ESCALATED", "WITHDRAWN"}
 VALID_TYPE = {"需求澄清", "接口契约", "技术方案", "冲突", "阻塞"}
 
 ABS_TIME_RE = re.compile(r"\d{4}-\d{2}-\d{2}(\s+\d{2}:\d{2})?")
