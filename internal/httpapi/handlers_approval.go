@@ -914,11 +914,13 @@ func (d Deps) handleAdminApprovalDefsSync(c echo.Context) error {
 	// EnableQuickOperate / SupportPC / SupportMobile / AllowBatchOperate / SupportBatchRead
 	// 显式 true、EnableMarkReaded 显式 false——**不赌平台默认值**（docs/16 V-5）。
 	callbackURL := strings.TrimRight(strings.TrimSpace(d.Env.CallbackDomain), "/") + "/approval/external/callback"
-	// 发起页指向我方根路径（基线读回形态：http://office.hunanyichu.com:5500/）。
-	createLink := strings.TrimRight(strings.TrimSpace(d.Env.CallbackDomain), "/") + "/"
+	// 发起页指向我方**按单据类型的发起页**（M7/W8：/submit/{doc_type}，历史根路径 "/" 已修正）。
+	// ★ 存量修正＝重跑本端点（upsert 对非空 incoming 即覆盖，见 repo_approval_def.go COALESCE 注释）。
+	createLinkBase := strings.TrimRight(strings.TrimSpace(d.Env.CallbackDomain), "/")
 	inputs := make([]approval.DefInput, 0, len(rows))
 	for _, r := range rows {
 		dt := strings.TrimSpace(r.MapValue)
+		createLink := createLinkBase + "/submit/" + dt
 		inputs = append(inputs, approval.DefInput{
 			DocType:            dt,
 			ApprovalCode:       strings.TrimSpace(r.MapKey),

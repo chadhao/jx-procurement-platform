@@ -157,6 +157,8 @@ func NewRouter(d Deps) *echo.Echo {
 	// 附件暂存（M6）：静态段先注册（Echo 静态优先，避免被 :biz_no 遮蔽）。
 	api.POST("/approval/attachments", d.handleApprovalAttachmentUpload)
 	api.GET("/approval/attachments/:file_id", d.handleApprovalAttachmentStagingRead)
+	// 分档/链预览（M7/D5：与 submit 共算，前端不本地算分档）。
+	api.POST("/approval/preview", d.handleApprovalPreview)
 	// 提交：生成编号 + 建实例 + 首推飞书（薄壳，语义在 flow.Submit；docs/05-API §3.13）。
 	api.POST("/approval/submit", d.handleApprovalSubmit)
 	api.POST("/approval/:biz_no/approve", d.handleApprovalApprove)

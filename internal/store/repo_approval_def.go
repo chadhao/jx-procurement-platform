@@ -22,6 +22,13 @@ func (d *DB) UpsertApprovalDefTx(ctx context.Context, tx *sql.Tx, def *ApprovalD
 	return upsertApprovalDef(ctx, tx, def)
 }
 
+// upsertApprovalDef 幂等写入三方审批定义。
+//
+// ★ COALESCE 语义澄清（M7/W8 核对）：`COALESCE(NULLIF(excluded.x,”), old)` 的含义是
+//
+//	**incoming 非空即覆盖、空则保留旧值** —— 因此「存量 create_link 错值」的修正通道
+//	就是**重跑 defs/sync 传入新值**（handler 侧已改为 /submit/{doc_type}），
+//	无需改 upsert、也无需数据迁移；此处保留 COALESCE 只为防「空值误清」。
 func upsertApprovalDef(ctx context.Context, q execer, def *ApprovalDef) error {
 	if def == nil || def.ApprovalCode == "" || def.DocType == "" {
 		return fmt.Errorf("store: 写入审批定义失败: approval_code/doc_type 不能为空")

@@ -220,8 +220,8 @@ func TestAdminApprovalDefsSyncOK(t *testing.T) {
 	if extDef.EnableMarkReaded {
 		t.Fatalf("enable_mark_readed 应显式为 false")
 	}
-	// 发起页指向回调域名根（对齐真机读回基线：http://office.hunanyichu.com:5500/）。
-	if extDef.CreateLinkPC != defsSyncDomain+"/" || extDef.CreateLinkMobile != defsSyncDomain+"/" {
-		t.Fatalf("create_link_pc/mobile = %q / %q, 期望 %s", extDef.CreateLinkPC, extDef.CreateLinkMobile, defsSyncDomain+"/")
+	// 发起页指向我方**按单据类型发起页**（M7/W8；历史根路径 "/" 已修正）。
+	if extDef.CreateLinkPC != defsSyncDomain+"/submit/BA" || extDef.CreateLinkMobile != defsSyncDomain+"/submit/BA" {
+		t.Fatalf("create_link_pc/mobile = %q / %q, 期望 %s", extDef.CreateLinkPC, extDef.CreateLinkMobile, defsSyncDomain+"/submit/BA")
 	}
 }
