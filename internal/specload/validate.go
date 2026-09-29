@@ -305,6 +305,15 @@ func validate(files map[string][]byte) []string {
 		}
 	}
 
+	// ---- F1–F4：forms 自洽（M3；enum_ref 引用 enums.json 顶层键）----
+	enumsKeys := map[string]bool{}
+	if em, ok := decoded["spec/enums.json"].(map[string]any); ok {
+		for k := range em {
+			enumsKeys[k] = true
+		}
+	}
+	problems = append(problems, validateForms(files, decoded, enumsKeys)...)
+
 	return problems
 }
 
@@ -317,6 +326,15 @@ func asMap(v any) map[string]any {
 		return m
 	}
 	return map[string]any{}
+}
+
+func sortedKeys(m map[string][]byte) []string {
+	out := make([]string, 0, len(m))
+	for k := range m {
+		out = append(out, k)
+	}
+	sort.Strings(out)
+	return out
 }
 
 func asStringSlice(v any) []string {

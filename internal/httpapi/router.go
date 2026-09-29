@@ -23,6 +23,7 @@ import (
 	"github.com/chadhao/jx-procurement-platform/internal/orgsync"
 	"github.com/chadhao/jx-procurement-platform/internal/permission"
 	"github.com/chadhao/jx-procurement-platform/internal/platform/feishu"
+	"github.com/chadhao/jx-procurement-platform/internal/specload"
 	"github.com/chadhao/jx-procurement-platform/internal/store"
 	jsync "github.com/chadhao/jx-procurement-platform/internal/sync"
 	"github.com/chadhao/jx-procurement-platform/internal/worker"
@@ -64,6 +65,9 @@ type Deps struct {
 	OrgSync *orgsync.Runner
 	// Objects 附件对象存储（主存）。为 nil 时**不缓存、直接转发**（降级，不是静默丢功能）。
 	Objects objectstore.Store
+	// Spec 内嵌机读规格（specload.Bundle；启动即 S1–S12 校验，见 M1）。
+	// 消费方：GET /approval/meta（M3 下发表单 schema）、submit 提交校验（M4）。
+	Spec *specload.Bundle
 }
 
 // NewRouter 装配 Echo 路由与中间件。
@@ -147,7 +151,8 @@ func NewRouter(d Deps) *echo.Echo {
 	api.POST("/approval/:biz_no/rollback", d.handleApprovalRollback)
 	api.POST("/approval/:biz_no/cancel", d.handleApprovalCancel)
 	// 我的待办（★ 命名已定 ＝ `/tasks`，非 `/todo`）+ 定义清单（管理员）+ 单实例详情。
-	//	★ 静态段（`tasks`/`defs`）先注册、参数段（`:biz_no`）后注册（Echo 静态优先，避免遮蔽）。
+	//	★ 静态段（`tasks`/`defs`/`meta`）先注册、参数段（`:biz_no`）后注册（Echo 静态优先，避免遮蔽）。
+	api.GET("/approval/meta", d.handleApprovalMeta)
 	api.GET("/approval/tasks", d.handleApprovalTasks)
 	api.GET("/approval/defs", d.handleApprovalDefs)
 	api.GET("/approval/:biz_no", d.handleApprovalInstance)

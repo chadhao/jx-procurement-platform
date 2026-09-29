@@ -1,0 +1,48 @@
+package httpapi
+
+// GET /api/approval/meta —— 发起页表单元数据（D1 / N-008③ 定案）：
+//   表单 schema **后端权威**（spec/forms/*.json 内嵌加载），前端 meta 驱动渲染；
+//   响应必含 spec_version，供前后端与运维核对「线上跑的是哪一版契约」。
+//
+// 鉴权＝普通会话（挂 api 组，requireSession）——区别 admin-only 的 GET /approval/defs。
+// 分档/链的**计算不在 meta**：预览走 POST /api/approval/preview（M7，与提交共算，D5）。
+
+import (
+	"encoding/json"
+	"net/http"
+	"sort"
+
+	"github.com/labstack/echo/v4"
+
+	"github.com/chadhao/jx-procurement-platform/internal/specload"
+)
+
+type approvalMetaResponse struct {
+	SpecVersion       string             `json:"spec_version"`
+	DocTypesAvailable []string           `json:"doc_types_available"`
+	Forms             []specload.FormDoc `json:"forms"`
+	Enums             json.RawMessage    `json:"enums"`
+	Bands             []specload.Band    `json:"bands"`
+}
+
+func (d *Deps) handleApprovalMeta(c echo.Context) error {
+	if d.Spec == nil {
+		return fail(c, http.StatusServiceUnavailable, codeNotReady, "机读规格未装配")
+	}
+	docTypes := make([]string, 0, len(d.Spec.Forms))
+	for dt := range d.Spec.Forms {
+		docTypes = append(docTypes, dt)
+	}
+	sort.Strings(docTypes) // BA, PR, SA …（前端稳定渲染顺序）
+	forms := make([]specload.FormDoc, 0, len(docTypes))
+	for _, dt := range docTypes {
+		forms = append(forms, d.Spec.Forms[dt])
+	}
+	return ok(c, approvalMetaResponse{
+		SpecVersion:       d.Spec.SpecVersion,
+		DocTypesAvailable: docTypes,
+		Forms:             forms,
+		Enums:             d.Spec.Enums.Raw,
+		Bands:             d.Spec.Chain.Thresholds.Purchase.Bands,
+	})
+}
