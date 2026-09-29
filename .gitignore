@@ -54,3 +54,8 @@ desktop.ini
 
 # ---- 一次性补丁脚本（不入库）----
 _patch_*.py
+
+# ---- 探针运行期产物（脚本自建自用，**不入库**）----
+# 备份目录每次跑都全量重建；毒化副本跑完即删。入库只会造成"两份 spec"的漂移源。
+scripts/_probe_spec_backup/
+scripts/_probe_poisoned_check_spec.py

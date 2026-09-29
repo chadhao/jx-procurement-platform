@@ -16,6 +16,17 @@ scripts/check_spec.py —— `spec/` 机读规格门禁（**清单执行器**）
  · 探针：删流程线 / `ledger` 指向 `L10` / `route` 悬空 / 档位重叠 ⇒ 逐条报出；
  · 新增 S10/S11/S12 三条**跨文件**校验后，探针：`PR` 的 ledger 去掉 `L03`
    ⇒ **S12 拦下** —— 这正是 `R-02`「L03 恒空」静默缺陷的执行守卫。
+ · ★ **2026-09-29 第 5 例（判据 ID 挂错名字）**：新增 `S5c/S6b` 后跑「探针自证」，
+   断言「报错里含 `S5c`」**失败** —— 但门禁其实**已拦下**，只是报成了 `[S8/S11]`。
+   根因：`pattern_absent` 等原语把判据 ID **硬编码**；同一原语被多条判据复用后必然串名。
+   **定性：这比"不报错"更坏 —— 报错本身在误导排查方向。**
+   ⇒ 改为执行器注入 `args["__cid__"]`，并加 `_self_audit_cid_literals()` 自审（禁止回潮）。
+ · ★ 探针同时提供**缺口存在性反证**：把新判据从清单摘掉后，同样篡改必须**静默放行**
+   （`S5c`↔`L10` / `S6b`↔悬空档位路由）—— 只有「有它即拦」＋「无它即漏」两者齐备，
+   才能证明缺口真实存在且是该判据关掉的。见 `scripts/_probe_s5c_s6bc.py`。
+ · ★ **引擎能力是两侧共同契约**：本次一度给 `ref_exists` 加了 `split` 参数（为校验
+   `route_by_condition` 管道串），**Go 侧加载 spec 时直接 panic** —— 单侧扩展引擎会立刻
+   把"清单唯一真相"变成"清单说的与 Go 做的不是一回事"。⇒ 已撤，改由 **N-021** 双方同时引入。
 
 用法：python scripts/check_spec.py [checks.json 路径]
 退出码：0 = 全部 must-green 通过；1 = 有违规；2 = 清单/目录不可用
@@ -114,78 +125,97 @@ def _dict_keys(n):
 #   后者会被展开成 3 个 dict 而非 1 个 list）⇒ **判据一条都没跑，却报 OK**。
 #   ⇒ 现为**所有 collect 型原语**加 `min_hits`（默认 1）：**选中数不足即报错**。
 #   ★ 这条加固的意义与「S9 递归扫描」「B1 三则」同源：**不许把"声明写错"静默成"通过"**。
-def _hits_guard(kind, collect, values, args):
+#
+# ★★ 2026-09-29 再加固（**探针逼出的第 5 例：判据 ID 挂错名字**）：
+#   原实现把判据 ID **硬编码在每个原语里**（如 `pattern_absent` 一律打印 `[S8/S11]`）。
+#   一旦同一原语被**多条判据**复用（现已有 S1–S12 共 16 条复用在 8 个原语上），
+#   就会**报出别人的名字** —— 例：`S5c` 拦下了违规，报错却写 `[S8/S11]`；
+#   排查者照着错误 ID 去查，必然被带偏。**这比"不报错"更坏：报错本身是误导。**
+#   ⇒ 执行器把真实 `cid` 注入 `args["__cid__"]`，**所有原语一律取它作前缀**。
+#     任何新原语**不得再自持 ID 字面量**。
+def _cid(args):
+    """取执行器注入的真实判据 ID（缺失即说明执行路径不对，显式暴露而不是静默）。"""
+    return args.get("__cid__") or "?"
+
+
+def _hits_guard(cid, collect, values, args):
     mn = args.get("min_hits", 1)
     if len(values) < mn:
         return ["[%s] `%s` 仅命中 %d 处（要求 ≥%d）—— **疑似清单声明有误**，不是「通过」"
-                % (kind, collect, len(values), mn)]
+                % (cid, collect, len(values), mn)]
     return []
 
 
 def prim_json_parse(args):
-    probs, files = [], expand(args["file"])
+    cid, probs, files = _cid(args), [], expand(args["file"])
     if not files:
-        probs.append("[S1] glob `%s` 未匹配到任何文件（规格为空？）" % args["file"])
+        probs.append("[%s] glob `%s` 未匹配到任何文件（规格为空？）" % (cid, args["file"]))
     for f in files:
         try:
             load_json(f)
         except json.JSONDecodeError as e:
-            probs.append("[S1] %s JSON 语法错误：%s" % (rel(f), e))
+            probs.append("[%s] %s JSON 语法错误：%s" % (cid, rel(f), e))
         except Exception as e:
-            probs.append("[S1] %s 读取失败：%s" % (rel(f), e))
+            probs.append("[%s] %s 读取失败：%s" % (cid, rel(f), e))
     return probs
 
 
 def prim_required_keys(args):
-    probs = []
+    cid, probs = _cid(args), []
     for f in expand(args["file"]):
         nodes = sel(load_json(f), toks(args.get("scope", "")))
         if not nodes:
-            probs.append("[S2] %s scope `%s` 未命中节点" % (rel(f), args.get("scope", "")))
+            probs.append("[%s] %s scope `%s` 未命中节点" % (cid, rel(f), args.get("scope", "")))
         for nd in nodes:
             ks = _dict_keys(nd)
             if ks is None:
-                probs.append("[S2] %s scope `%s` 不是对象" % (rel(f), args.get("scope", "")))
+                probs.append("[%s] %s scope `%s` 不是对象" % (cid, rel(f), args.get("scope", "")))
                 continue
             for k in args["keys"]:
                 if k not in ks:
-                    probs.append("[S2] %s 缺顶层键「%s」" % (rel(f), k))
+                    probs.append("[%s] %s 缺顶层键「%s」" % (cid, rel(f), k))
     return probs
 
 
 def prim_coverage(args):
-    probs, req = [], set(args["required"])
+    cid, probs, req = _cid(args), [], set(args["required"])
     for f in expand(args["file"]):
         nodes = sel(load_json(f), toks(args["dict_path"]))
-        probs += _hits_guard("S3/S4/S9", args["dict_path"], nodes, args)
+        probs += _hits_guard(cid, args["dict_path"], nodes, args)
         for nd in nodes:
             ks = _dict_keys(nd)
             if ks is None:
-                probs.append("[S3/S4/S9] %s `%s` 不是对象" % (rel(f), args["dict_path"]))
+                probs.append("[%s] %s `%s` 不是对象" % (cid, rel(f), args["dict_path"]))
                 continue
             miss = sorted(req - ks)
             if miss:
-                probs.append("[S3/S4/S9] %s `%s` 缺：%s" % (rel(f), args["dict_path"], ", ".join(miss)))
+                probs.append("[%s] %s `%s` 缺：%s" % (cid, rel(f), args["dict_path"], ", ".join(miss)))
             if not args.get("allow_extra", True):
                 extra = sorted(ks - req)
                 if extra:
-                    probs.append("[S3/S4/S9] %s `%s` 有多余项：%s" % (rel(f), args["dict_path"], ", ".join(extra)))
+                    probs.append("[%s] %s `%s` 有多余项：%s" % (cid, rel(f), args["dict_path"], ", ".join(extra)))
     return probs
 
 
 def prim_enum_subset(args):
-    probs, allowed = [], set(args["allowed"])
+    cid, probs, allowed = _cid(args), [], set(args["allowed"])
     for f in expand(args["file"]):
         vals = sel(load_json(f), toks(args["collect"]))
-        probs += _hits_guard("S5", args["collect"], vals, args)
+        probs += _hits_guard(cid, args["collect"], vals, args)
         for v in vals:
             if isinstance(v, str) and v not in allowed:
-                probs.append("[S5] %s `%s` 取值非法：%r（允许 %s）"
-                             % (rel(f), args["collect"], v, "/".join(sorted(allowed))))
+                probs.append("[%s] %s `%s` 取值非法：%r（允许 %s）"
+                             % (cid, rel(f), args["collect"], v, "/".join(sorted(allowed))))
     return probs
 
 
 def prim_ref_exists(args):
+    # ★ 2026-09-29 议题 N-021 待办：`route_by_condition` 形如 `"a | b | c"` 的**管道串**，
+    #   需要 `split` 参数才能逐段校验。★ **本轮刻意不落** —— 引擎能力是**两侧共同契约**
+    #   （Go 侧 `ref_exists` 无此参数、manifest 里一出现即 panic），单侧实现＝制造"清单说的
+    #   和 Go 做的不是一回事"。⇒ 由 N-021 双方同时引入（Python 与 Go 各一次，很小）。
+    #   ★ 反面做法已排除：用负向正则把允许集硬编码进 `pattern_absent` ⇒ 第二份真相，不可维护。
+    cid = _cid(args)
     target = set(args.get("extra_allowed") or [])
     for tf in expand(args["target_file"]):
         for nd in sel(load_json(tf), toks(args["target_dict"])):
@@ -195,24 +225,24 @@ def prim_ref_exists(args):
     probs = []
     for f in expand(args["file"]):
         vals = sel(load_json(f), toks(args["collect"]))
-        probs += _hits_guard("S6/S10", args["collect"], vals, args)
+        probs += _hits_guard(cid, args["collect"], vals, args)
         for v in vals:
             if isinstance(v, str) and v not in target:
-                probs.append("[S6/S10] %s `%s` 指向不存在的目标：%s" % (rel(f), args["collect"], v))
+                probs.append("[%s] %s `%s` 指向不存在的目标：%s" % (cid, rel(f), args["collect"], v))
     return probs
 
 
 def prim_range_contiguous(args):
-    probs = []
+    cid, probs = _cid(args), []
     for f in expand(args["file"]):
         arrs = sel(load_json(f), toks(args["collect"]))
-        probs += _hits_guard("S7", args["collect"], arrs, args)
+        probs += _hits_guard(cid, args["collect"], arrs, args)
         for arr in arrs:
             if not isinstance(arr, list):
                 # ★ 不再静默跳过：这几乎必然是 collect 声明写错（如误加了 [*]）
-                probs.append("[S7] %s `%s` 选中的不是数组（而是 %s）—— "
+                probs.append("[%s] %s `%s` 选中的不是数组（而是 %s）—— "
                              "**疑似 collect 声明有误**（`[*]` 会展开元素；此处应指向数组本身）"
-                             % (rel(f), args["collect"], type(arr).__name__))
+                             % (cid, rel(f), args["collect"], type(arr).__name__))
                 continue
             prev = None
             for i, b in enumerate(arr):
@@ -221,33 +251,34 @@ def prim_range_contiguous(args):
                 lo, hi = b.get(args["lower_key"]), b.get(args["upper_key"])
                 if i == 0:
                     if lo is not None:
-                        probs.append("[S7] %s 首项 lower 应为 null，实为 %r" % (rel(f), lo))
+                        probs.append("[%s] %s 首项 lower 应为 null，实为 %r" % (cid, rel(f), lo))
                 elif lo != prev + 1:
-                    probs.append("[S7] %s 档位不连续/有重叠：lower=%r，上一档 upper=%r（应 %r）"
-                                 % (rel(f), lo, prev, prev + 1))
+                    probs.append("[%s] %s 档位不连续/有重叠：lower=%r，上一档 upper=%r（应 %r）"
+                                 % (cid, rel(f), lo, prev, prev + 1))
                 prev = hi if hi is not None else float("inf")
             if arr and isinstance(arr[-1], dict) and arr[-1].get(args["upper_key"]) is not None:
-                probs.append("[S7] %s 末项 upper 应为 null，实为 %r" % (rel(f), arr[-1].get(args["upper_key"])))
+                probs.append("[%s] %s 末项 upper 应为 null，实为 %r" % (cid, rel(f), arr[-1].get(args["upper_key"])))
     return probs
 
 
 def prim_pattern_absent(args):
-    probs, pats = [], [re.compile(p) for p in args["forbidden_regex"]]
+    cid, probs = _cid(args), []
+    pats = [re.compile(p) for p in args["forbidden_regex"]]
     for f in expand(args["file"]):
         vals = sel(load_json(f), toks(args["collect"]))
-        probs += _hits_guard("S8/S11", args["collect"], vals, args)
+        probs += _hits_guard(cid, args["collect"], vals, args)
         for v in vals:
             for s in _all_strings(v):
                 for p in pats:
                     if p.search(s):
-                        probs.append("[S8/S11] %s `%s` 出现禁止模式 /%s/：%r"
-                                     % (rel(f), args["collect"], p.pattern, s))
+                        probs.append("[%s] %s `%s` 出现禁止模式 /%s/：%r"
+                                     % (cid, rel(f), args["collect"], p.pattern, s))
                         break
     return probs
 
 
 def prim_cross_equal_by_key(args):
-    right = {}
+    cid, right = _cid(args), {}
     for tf in expand(args["right_file"]):
         for nd in sel(load_json(tf), toks(args["right_dict"])):
             if isinstance(nd, dict):
@@ -263,12 +294,12 @@ def prim_cross_equal_by_key(args):
         compared += 1
         left = sorted(d.get(args["left_value"]) or [])
         if left != right[key]:
-            probs.append("[S12] %s 的 %s=%s 与 %s.%s[%s]=%s **不一致**"
-                         % (rel(f), args["left_value"], left,
+            probs.append("[%s] %s 的 %s=%s 与 %s.%s[%s]=%s **不一致**"
+                         % (cid, rel(f), args["left_value"], left,
                             rel(expand(args["right_file"])[0]), args["right_dict"], key, right[key]))
     if compared < args.get("min_hits", 1):
-        probs.append("[S12] 仅比对到 %d 个单据（要求 ≥%d）—— 疑似左右两侧 key 对不上"
-                     % (compared, args.get("min_hits", 1)))
+        probs.append("[%s] 仅比对到 %d 个单据（要求 ≥%d）—— 疑似左右两侧 key 对不上"
+                     % (cid, compared, args.get("min_hits", 1)))
     return probs
 
 
@@ -285,6 +316,51 @@ PRIMITIVES = {
 
 
 # ---------------------------------------------------------------- 主流程
+def _self_audit_cid_literals():
+    """
+    ★ 源码自审（第 5 例缺陷的**回归守卫**）：本文件**代码里的字符串**不得再出现硬编码的判据 ID
+      字面量（形如 "方括号 + S 编号 + 空格" 开头的那种消息前缀）。判据 ID 必须动态取自执行器
+      注入的 `args["__cid__"]`，否则同一原语被多条判据复用时，又会**报出别人的名字**。
+
+    实现要点：用 `tokenize` 剥掉注释，再用 `ast` 收集**docstring 的行区间**并排除 ——
+      本文件自身的说明性 docstring 里**必然要举例**，不能因此误红（否则守卫会被迫"删例子"）。
+    """
+    import ast
+    import tokenize
+
+    src = open(os.path.abspath(__file__), "r", encoding="utf-8").read()
+
+    # 收集 docstring 占用的行区间
+    doc_lines = set()
+    try:
+        tree = ast.parse(src)
+    except SyntaxError as e:
+        return ["[META] check_spec.py 自身语法错误，无法自审：%s" % e]
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.Module, ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef)):
+            body = getattr(node, "body", None)
+            if body and isinstance(body[0], ast.Expr) and isinstance(body[0].value, ast.Constant) \
+                    and isinstance(body[0].value.value, str):
+                d = body[0].value
+                for ln in range(d.lineno, getattr(d, "end_lineno", d.lineno) + 1):
+                    doc_lines.add(ln)
+
+    bad = []
+    with open(os.path.abspath(__file__), "rb") as fh:
+        for tok in tokenize.tokenize(fh.readline):
+            if tok.type != tokenize.STRING:
+                continue
+            if tok.start[0] in doc_lines:
+                continue                      # docstring 允许举例
+            if re.search(r"\[S\d", tok.string):
+                bad.append("第 %d 行字符串字面量含判据 ID：%s"
+                           % (tok.start[0], tok.string.strip()[:60]))
+    if bad:
+        return ["[META] check_spec.py 内出现**硬编码判据 ID**（应用 `_cid(args)` 动态取）：\n    "
+                + "\n    ".join(bad)]
+    return []
+
+
 def check(cl_path):
     if not os.path.isfile(cl_path):
         print("FAIL [%s] 找不到判据清单：%s" % (NAME, cl_path))
@@ -308,14 +384,27 @@ def check(cl_path):
     if not checks:
         problems.append("[META] 清单里没有任何 checks（判据为空？）")
 
+    # ★ 判据 ID 自身必须可辨识（否则报错全是 `[?]`，等于没有定位信息）
+    ids = [c.get("id") for c in checks]
+    if any(not i for i in ids):
+        problems.append("[META] 存在**空 id** 的判据（报错时将无法定位）")
+    dups = sorted({i for i in ids if ids.count(i) > 1})
+    if dups:
+        problems.append("[META] 判据 **id 重复**：%s（报错无法区分是哪条）" % ", ".join(dups))
+
+    # ★ 源码自审：判据 ID 不得硬编码
+    problems += _self_audit_cid_literals()
+
     ran = 0
     for c in checks:
         cid, prim = c.get("id", "?"), c.get("primitive")
         fn = PRIMITIVES.get(prim)
         if fn is None:
             continue
+        args = dict(c.get("args") or {})
+        args["__cid__"] = cid           # ★ 注入真实判据 ID（原语一律用它做前缀）
         try:
-            ps = fn(c.get("args") or {})
+            ps = fn(args)
         except Exception as e:
             ps = ["[%s] 执行原语 %s 时异常：%s" % (cid, prim, e)]
         ran += 1
@@ -328,10 +417,10 @@ def check(cl_path):
             print("  " + p)
         return 1
 
-    ids = " ".join(c.get("id", "?") for c in checks)
+    ids_s = " ".join(c.get("id", "?") for c in checks)
     nfiles = len(glob.glob(abs_path("spec/**/*.json"), recursive=True))
     print("OK [%s] spec/ 机读规格校验通过（清单 %s · %d 条判据 [%s] · %d 个 JSON · %d 个原语引擎）"
-          % (NAME, rel(cl_path), ran, ids, nfiles, len(PRIMITIVES)))
+          % (NAME, rel(cl_path), ran, ids_s, nfiles, len(PRIMITIVES)))
     return 0
 
 

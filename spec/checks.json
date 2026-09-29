@@ -1,5 +1,5 @@
 {
-  "version": "1.2",
+  "version": "1.4",
   "generated_by": "WorkBuddy",
   "date": "2026-09-29",
   "scope": "spec/",
@@ -211,6 +211,20 @@
       }
     },
     {
+      "id": "S5c",
+      "severity": "must-green",
+      "desc": "★ chain.json 侧的全部 ledger（doc_chains.* / routes.*.nodes[*]）也不得指向 L08/L10/L11/L12 —— N-020 补：原 S5a 只做「⊆ L01–L12」、S11 只扫 ledger-mapping ⇒ **两侧都放行**，而 spec/README §4 原文要求「不得指向」",
+      "primitive": "pattern_absent",
+      "args": {
+        "file": "spec/chain.json",
+        "collect": "**.ledger",
+        "forbidden_regex": [
+          "^(L08|L10|L11|L12)$"
+        ],
+        "min_hits": 1
+      }
+    },
+    {
       "id": "S6",
       "severity": "must-green",
       "desc": "route 的取值必须存在于 routes（合同统一两级另列，允许）",
@@ -218,6 +232,22 @@
       "args": {
         "file": "spec/chain.json",
         "collect": "**.route",
+        "target_file": "spec/chain.json",
+        "target_dict": "routes",
+        "extra_allowed": [
+          "contract_two_level"
+        ],
+        "min_hits": 1
+      }
+    },
+    {
+      "id": "S6b",
+      "severity": "must-green",
+      "desc": "★ doc_chains.*.route_by_tier.* 的取值必须存在于 routes（N-020 补：原 S6 的 collect 仅 `**.route`，此项悬空会静默通过）",
+      "primitive": "ref_exists",
+      "args": {
+        "file": "spec/chain.json",
+        "collect": "**.route_by_tier.*",
         "target_file": "spec/chain.json",
         "target_dict": "routes",
         "extra_allowed": [
@@ -325,9 +355,20 @@
   "consumer_obligations": {
     "python_side": "`scripts/check_spec.py` 是**清单执行器**：不自持判据，只实现 `primitives` 引擎并逐条执行 `checks`。",
     "go_side": "mimo 的 spec 加载器实现同一组原语的 Go 版、读同一份 `checks.json`。★ **原语语义以本文件 `desc` 裁决**；不一致即两侧漂移，必要时开议题。",
-    "on_adding_a_check": "★ 新增判据＝**在本文件加一条** ＋ 若需新原语则在 `primitives` 声明并在两侧实现。**不得只在某一侧硬编码。**"
+    "on_adding_a_check": "★ 新增判据＝**在本文件加一条** ＋ 若需新原语则在 `primitives` 声明并在两侧实现。**不得只在某一侧硬编码。**",
+    "on_emitting_a_violation": "★★ **两侧引擎在报违规时，必须把「当前判据的真实 `id`」写进消息前缀** —— 例如 `[S5c] …`，**不得硬编码某个 ID 字面量、也不得写原语名**。★ 理由（实测事故）：同一原语会被**多条判据**复用（现 16 条判据复用 8 个原语），一旦硬编码，`S5c` 报出来的会是 `[S8/S11]` —— **排查者照错误 ID 去查，必然被带偏；这比『不报错』更坏**。Python 侧实现＝执行器注入 `args[\"__cid__\"]` ＋ `_self_audit_cid_literals()` 源码自审（禁止回潮）；Go 侧请同口径实现。"
   },
   "change_log": [
+    {
+      "version": "1.4",
+      "date": "2026-09-29",
+      "change": "★ **新增消费端义务 `on_emitting_a_violation`（两侧引擎同口径）**：报违规时消息前缀必须是**当前判据的真实 `id`**，不得硬编码 ID 字面量、也不得写原语名。★ 依据＝探针自证时撞出的**第 5 例门禁自身缺陷**：`S5c` 拦下了违规、报错却写 `[S8/S11]`（`prim_pattern_absent` 把 ID 写死）。Python 侧实现＝执行器注入 `args[\"__cid__\"]` ＋ `_self_audit_cid_literals()` 源码自审；★ **Go 侧经查已符合**（其报错即 `[S6c] …`，用的是真实 id），本条为把既成好做法**写成义务**防回潮。★ 判据条数不变。"
+    },
+    {
+      "version": "1.3",
+      "date": "2026-09-29",
+      "change": "★ **按 N-020 补判据覆盖缺口**：新增 **S5c**（chain 侧禁落账目标 L08/L10/L11/L12 —— 原 S5a 只做「⊆ L01–L12」、S11 只扫 ledger-mapping ⇒ 两侧都放行，与 spec/README §4 原文冲突）· 新增 **S6b**（`route_by_tier.*` 引用悬空此前无判据）。★ 缺口由 mimo 提出、探针实证，WorkBuddy 独立复现后修复，并以**缺口存在性反证**验证（摘掉该判据即静默放行）。★ **N-020 缺口② 的 `route_by_condition` 部分本轮未落**：其值形如 `\"a | b | c\"` 管道串，须给 `ref_exists` 增 `split` 参数；而**引擎能力是两侧共同契约**（Go 侧无此参数、加了会 panic）⇒ 已拆为 **N-021** 交双方协商，见该议题。"
+    },
     {
       "version": "1.2",
       "date": "2026-09-29",
