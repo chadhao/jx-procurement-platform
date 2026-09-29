@@ -377,16 +377,17 @@ func run(version string) error {
 	}
 
 	router := httpapi.NewRouter(httpapi.Deps{
-		Env:        env,
-		DB:         db,
-		Log:        logger,
-		Metrics:    metrics,
-		Health:     health,
-		Inbox:      inboxSvc,
-		Worker:     wk,
-		Subscriber: subscriber,
-		Spec:       specBundle,
-		Chain:      chainSvc,
+		Env:         env,
+		DB:          db,
+		Log:         logger,
+		Metrics:     metrics,
+		Health:      health,
+		Inbox:       inboxSvc,
+		Worker:      wk,
+		Subscriber:  subscriber,
+		Spec:        specBundle,
+		Chain:       chainSvc,
+		OrgVerifier: orgFetcher,
 		// ★ Reconciler 不再装配（R23 退役）：Deps.Reconciler 保持零值 nil。
 		//   /internal/sync/reconcile 路由属旧路径，其退役/改造随 httpapi 一并排期。
 		// ★ 审批核心（转向 ③）：页面两键 / 四操作 / 待办 / 入站回调 / 对账。

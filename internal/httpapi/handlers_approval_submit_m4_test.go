@@ -27,8 +27,13 @@ import (
 )
 
 // newSubmitM4App 装配 submit 测试路由：配置映射 + 定义 + 会话 + Spec/Chain 全就位。
-// withRoles=false 时不配任何角色（制造「链算不到人」）。
+// withRoles=false 时不配审批人角色（制造「链算不到人」）；verifier 为 nil ⇒ OrgVerifier 未装配。
 func newSubmitM4App(t *testing.T, withRoles bool) (*echo.Echo, *store.DB, *access.Authenticator) {
+	t.Helper()
+	return newSubmitM4AppV(t, withRoles, nil)
+}
+
+func newSubmitM4AppV(t *testing.T, withRoles bool, verifier OrgVerifier) (*echo.Echo, *store.DB, *access.Authenticator) {
 	t.Helper()
 	ctx := context.Background()
 	db := storetest.NewDB(t)
@@ -88,7 +93,7 @@ func newSubmitM4App(t *testing.T, withRoles bool) (*echo.Echo, *store.DB, *acces
 		Env: env, DB: db, Log: observ.NewLogger("error", io.Discard),
 		Metrics: metrics, Health: observ.NewHealth("test"),
 		Perm: perm, Auth: auth, Maps: maps, Version: "test",
-		Flow: flowSvc, Spec: bundle, Chain: chainSvc,
+		Flow: flowSvc, Spec: bundle, Chain: chainSvc, OrgVerifier: verifier,
 	})
 	return e, db, auth
 }

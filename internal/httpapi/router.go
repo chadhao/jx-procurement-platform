@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"context"
 	"crypto/subtle"
 	"errors"
 	"log/slog"
@@ -72,6 +73,14 @@ type Deps struct {
 	// Chain 分档/审批链计算（FR-M9-02；chain.json 唯一权威源）。
 	// submit 服务端算链（d5：调用方 nodes 一律拒绝）；preview 端点（M7）复用同一实例。
 	Chain *chain.Service
+	// OrgVerifier 提交实时回源端口（FR-M9-17 / M5；消费方定义，实现＝orgsync.FeishuFetcher
+	// 的 contact/v3 单人接口）。为 nil 时回源跳过并落 not_assembled 标记（可见，不静默）。
+	OrgVerifier OrgVerifier
+}
+
+// OrgVerifier 按 open_id 实时回源飞书通讯录单人（FR-M9-17）。
+type OrgVerifier interface {
+	GetUser(ctx context.Context, openID string) (*store.OrgUser, error)
 }
 
 // NewRouter 装配 Echo 路由与中间件。

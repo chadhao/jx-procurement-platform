@@ -133,6 +133,10 @@ type SubmitInput struct {
 	//   两者皆空 ⇒ 不启用。占用冲突由 Submit 返回 ErrIdemReplay/ErrIdemConflict。
 	IdemKey         string
 	IdemPayloadHash string
+	// OrgVerify 提交时实时回源标记（FR-M9-17 / M5）：
+	//   服务端生成（客户端字段无法伪造 —— 合并在 applyBizFields **之后**，服务端值必胜），
+	//   落 ext_json.org_verify；回源失败＝告警放行，标记 ok:false。
+	OrgVerify map[string]any
 }
 
 // Service 审批领域服务。
@@ -242,6 +246,18 @@ func (s *Service) Submit(ctx context.Context, in SubmitInput) (string, error) {
 		extJSON, err := applyBizFields(inst, in.BizFields)
 		if err != nil {
 			return err
+		}
+		// ★ 回源标记服务端合并（M5）：置于 applyBizFields 之后 ⇒ 客户端伪造的
+		//   ext_json.org_verify 一律被服务端权威值覆盖。
+		if len(in.OrgVerify) > 0 {
+			ext := map[string]any{}
+			if extJSON != "" && extJSON != "{}" {
+				_ = json.Unmarshal([]byte(extJSON), &ext) // 解析失败不致命：以空表重建
+			}
+			ext["org_verify"] = in.OrgVerify
+			if b, mErr := json.Marshal(ext); mErr == nil {
+				extJSON = string(b)
+			}
 		}
 		inst.ExtJSON = extJSON
 		// ★ 单笔金额必须 > 0（决策 #39 / FR-M9-03）：0/负金额**拒绝提交**（M4 起由

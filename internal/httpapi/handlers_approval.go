@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -8,6 +9,7 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/labstack/echo/v4"
 
@@ -580,6 +582,9 @@ func (d Deps) handleApprovalSubmit(c echo.Context) error {
 		}
 	}
 
+	// ---- 提交时实时回源（FR-M9-17 / M5）：同步 2s 超时、失败告警放行、标记落 ext_json ----
+	orgVerify := d.orgVerifyAtSubmit(ctx, idn.OpenID, facts.Department)
+
 	bizNo, err := d.Flow.Submit(ctx, flow.SubmitInput{
 		DocType:         body.DocType,
 		ApprovalCode:    body.ApprovalCode,
@@ -594,6 +599,7 @@ func (d Deps) handleApprovalSubmit(c echo.Context) error {
 		Nodes:           rc.Spec,
 		IdemKey:         idemKey,
 		IdemPayloadHash: idemHash,
+		OrgVerify:       orgVerify,
 	})
 	switch {
 	case errors.Is(err, flow.ErrIdemReplay):
@@ -655,6 +661,47 @@ func mergeProvidedFields(body *approvalSubmitBody, usageL1, usageL2 string) map[
 		provided["purpose_class_l2"] = body.PurposeClassL2
 	}
 	return provided
+}
+
+// orgVerifyAtSubmit 提交时实时回源（FR-M9-17 / M5 / D6 定案）：
+//
+//	同步 2s 超时；成功 ⇒ ok:true + 在职快照（含部门一致性标记，**不阻断**）；
+//	失败/超时 ⇒ ok:false + reason，**告警放行**（绝不因回源失败拦提交）；
+//	verifier 未装配 ⇒ not_assembled（可见，不静默）。
+//
+// 返回标记由 SubmitInput.OrgVerify 合并进 ext_json.org_verify（服务端权威，客户端伪造无效）。
+func (d Deps) orgVerifyAtSubmit(ctx context.Context, openID, submitDept string) map[string]any {
+	m := map[string]any{"at": time.Now().UTC().Format(time.RFC3339)}
+	if d.OrgVerifier == nil {
+		m["ok"] = false
+		m["reason"] = "verifier_not_assembled"
+		d.Log.Warn("提交回源端口未装配（FR-M9-17 标记为 not_assembled）", "open_id", openID)
+		return m
+	}
+	vctx, cancel := context.WithTimeout(ctx, 2*time.Second)
+	defer cancel()
+	u, err := d.OrgVerifier.GetUser(vctx, openID)
+	if err != nil {
+		m["ok"] = false
+		m["reason"] = "live_lookup_failed"
+		// ★ 告警放行：错误详情进日志（可能含 URL/租户细节），不进 ext_json。
+		d.Log.Warn("★ 提交实时回源失败（告警放行，FR-M9-17）", "open_id", openID, "error", err.Error())
+		return m
+	}
+	m["ok"] = true
+	m["employee_status"] = u.EmployeeStatus
+	m["is_resigned"] = u.IsResigned
+	m["is_deleted"] = u.IsDeleted
+	// 部门一致性：镜像部门名可取时比对；不一致只记标记（阻断口径归业务，未裁定不自造）。
+	if u.PrimaryDepartmentID != "" {
+		if dept, dErr := d.DB.GetOrgDepartment(ctx, u.PrimaryDepartmentID); dErr == nil && dept != nil && dept.Name != "" {
+			m["live_department"] = dept.Name
+			if submitDept != "" && dept.Name != submitDept {
+				m["department_mismatch"] = true
+			}
+		}
+	}
+	return m
 }
 
 // handleApprovalInstance 单实例审批详情 + 时间线（§3.13）。
