@@ -93,6 +93,12 @@ green       "go build ./..."          go build ./...
 green       "go vet ./..."            go vet ./...
 green       "go test ./... -count=1"  go test ./... -count=1
 green       "md 表格列数门禁"          "$PY" scripts/check_md_tables.py
+# ★ 2026-09-29 新增：`COLLAB.md`（双 Agent 协商台账）结构门禁。
+#   动因＝用户要求"两个 agent 的协商机制要接门禁机器校验"；★ 该门禁已用**探针法自证**：
+#   故意造 4 类违规（重复/未递增 ID、非法状态、相对时间、缺字段）⇒ 逐条报出；
+#   并借此逼出过自身的 1 处**假绿**（把「待议＝## 1.」编号写死，而文件里实际是 `## 4.`），
+#   已改为按章节标题关键词判定（对重编号免疫）。见 `scripts/check_collab.py` 头注。
+green       "COLLAB 协商台账门禁"        "$PY" scripts/check_collab.py
 green       "净检出可构建门禁"          bash scripts/check_head_buildable.sh
 echo
 echo "[会报既存问题]（不阻塞）"
