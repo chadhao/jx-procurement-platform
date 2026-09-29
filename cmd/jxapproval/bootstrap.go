@@ -25,6 +25,7 @@ import (
 	specfs "github.com/chadhao/jx-procurement-platform"
 	"github.com/chadhao/jx-procurement-platform/internal/access"
 	"github.com/chadhao/jx-procurement-platform/internal/approval"
+	"github.com/chadhao/jx-procurement-platform/internal/chain"
 	"github.com/chadhao/jx-procurement-platform/internal/config"
 	"github.com/chadhao/jx-procurement-platform/internal/flow"
 	"github.com/chadhao/jx-procurement-platform/internal/httpapi"
@@ -158,6 +159,27 @@ func run(version string) error {
 	} else {
 		logger.Info("启动自检：三方审批定义已装载", "def_count", n)
 		health.SetApprovalDefs(true)
+	}
+
+	// ---- ④″ 分档/审批链计算装配（FR-M9-02；spec/chain.json 为唯一权威源）----
+	// 角色候选端口适配：store 本地类型 → chain.RoleSource（装配层函数适配，
+	// 与 flow.Sender/Advancer 同方向纪律：store 不 import 上层包）。
+	chainSvc := &chain.Service{B: specBundle, Roles: chainRoleAdapter{db: db}}
+	// 启动自检（R-g 数据准备度）：合成事实跑一次采一链 —— 只 Warn 不拒启
+	//（角色数据可在管理页后配；缺人须在日志可见，不许静默）。
+	{
+		probeAmt := int64(99999)
+		if rc, err := chainSvc.Compute(ctx, chain.Facts{
+			DocType: chain.DocBA, AmountCents: &probeAmt, UsageCategoryL1: "P01",
+		}); err != nil {
+			logger.Warn("启动自检：分档/链计算烟测失败（不影响启动，提交侧将可见失败）", "error", err.Error())
+		} else if len(rc.Unresolved) > 0 {
+			logger.Warn("★ 启动自检：采一链存在算不到人的角色（请在权限管理页补齐 t_user_role）",
+				"unresolved", len(rc.Unresolved), "spec_version", rc.SpecVersion)
+		} else {
+			logger.Info("启动自检：分档/链计算烟测通过", "approval_nodes", len(rc.Spec),
+				"spec_version", rc.SpecVersion)
+		}
 	}
 
 	// ---- ⑤ 飞书通道适配层 + inbox（长连接 sink）----
@@ -556,4 +578,23 @@ func (p *flowPushSubscriber) OnFlowEvent(ctx context.Context, ev flow.FlowEvent)
 		p.log.Error("流程事件推送失败（审批已落库，推送可重试）",
 			"biz_no", ev.BizNo, "event", string(ev.Type), "error", err.Error())
 	}
+}
+
+// chainRoleAdapter 把 store 的本地候选查询适配为 chain.RoleSource 端口
+// （装配层函数适配 —— store 不 import 上层包，与 flow.Sender/Advancer 同纪律）。
+type chainRoleAdapter struct {
+	db *store.DB
+}
+
+// Candidates 实现 chain.RoleSource。
+func (a chainRoleAdapter) Candidates(ctx context.Context, q chain.RoleQuery) ([]chain.RoleCandidate, error) {
+	rows, err := a.db.ChainRoleCandidates(ctx, q.Role, q.Department, q.MatchDept)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]chain.RoleCandidate, 0, len(rows))
+	for _, r := range rows {
+		out = append(out, chain.RoleCandidate{OpenID: r.OpenID, Name: r.Name})
+	}
+	return out, nil
 }
