@@ -181,10 +181,11 @@ func TestSubmitUnresolvedRolesBlocked(t *testing.T) {
 	e, _, auth := newSubmitM4App(t, false)
 	cookie := auth.Establish("ou_app")
 	code, env := postSubmit(t, e, cookie, baSubmitBody, "")
-	if code != http.StatusBadRequest || env.Code != 40000 {
-		t.Fatalf("缺人应 400/40000，实为 %d/%d（%s）", code, env.Code, env.Message)
+	// ★ N-018 裁定：链缺人用**专用错误码 40010**（≠40000），客户端提示"联系管理员"而非"改表单"。
+	if code != http.StatusBadRequest || env.Code != 40010 {
+		t.Fatalf("缺人应 400/40010，实为 %d/%d（%s）", code, env.Code, env.Message)
 	}
-	// error_detail.unresolved_roles 明细（N-018 过渡口径）
+	// error_detail.unresolved_roles 明细（N-018 响应结构）
 	raw, _ := json.Marshal(env.Data)
 	if !strings.Contains(string(raw), "unresolved_roles") {
 		t.Errorf("响应缺 unresolved_roles 明细：%s", raw)

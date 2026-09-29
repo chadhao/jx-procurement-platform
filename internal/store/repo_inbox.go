@@ -384,3 +384,24 @@ UPDATE t_worker_job SET state = 'QUEUED', attempts = 0, next_run_at = NULL, last
 WHERE inbox_id = ?`, fmtTime(timeNow().UTC()), inboxID)
 	return err
 }
+
+// ReclaimStaleRunning A2：**启动时一次性**把卡在 RUNNING 的作业归还 QUEUED。
+//
+// ★ 为什么只在启动时做（而不是周期性短超时回收）：
+//   - 单实例部署：进程独占库 ⇒ 启动瞬间**不可能存在合法的 RUNNING**
+//     （上一进程崩溃留下的才是 RUNNING）—— 归还语义精确、零误伤；
+//   - 周期性短超时回收是「同一作业被重复执行」的唯一引入途径（长任务被误杀重跑）。
+//     作业本身幂等（inbox 幂等键兜数据），但**不靠幂等当免死金牌**。
+func (d *DB) ReclaimStaleRunning(ctx context.Context) (int64, error) {
+	res, err := d.ExecContext(ctx, `
+UPDATE t_worker_job SET state = 'QUEUED', updated_at = ?
+WHERE state = 'RUNNING'`, fmtTime(timeNow().UTC()))
+	if err != nil {
+		return 0, fmt.Errorf("store: 回收 RUNNING 作业失败: %w", err)
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return 0, fmt.Errorf("store: 读取回收行数失败: %w", err)
+	}
+	return n, nil
+}

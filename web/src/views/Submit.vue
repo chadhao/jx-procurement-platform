@@ -269,17 +269,20 @@ watch(() => [curDocType.value, fields.amount_cents, fields.usage_category_l1, fi
             <template v-for="n in preview.nodes" :key="n.source_node_id + n.seq">
               <span
                 class="node"
-                :class="{ action: !n.is_approval, pending: n.is_approval && !n.resolved }"
+                :class="{ action: !n.is_approval, pending: n.is_approval && !n.resolved, cosign: n.co_sign_count >= 2 }"
                 :title="n.branch_note || ''"
               >
                 <template v-if="n.is_approval">
-                  {{ n.seq }}. {{ n.node_name }}<template v-if="n.approvers.length">
+                  {{ n.seq }}. {{ n.node_name }}<template v-if="n.co_sign_count >= 2">
+                    （{{ n.co_sign_count }} 人会签）</template><template v-else-if="n.approvers.length">
                     （{{ n.approvers.map((a) => a.name).join('、') }}）</template><template v-else>（缺人）</template>
                 </template>
                 <template v-else>· {{ n.node_name }}</template>
               </span>
             </template>
           </div>
+          <!-- N-014：≥3 会签等非阻断告警 -->
+          <div v-for="(w, i) in preview.warnings || []" :key="'w' + i" class="alert warn">{{ w }}</div>
           <div v-if="preview.unresolved_roles.length" class="alert err">
             以下环节算不到审批人，提交将被阻断：{{
               preview.unresolved_roles.map((u) => `${u.node_name}（${u.role}：${u.reason}）`).join('；')
@@ -355,6 +358,15 @@ watch(() => [curDocType.value, fields.amount_cents, fields.usage_category_l1, fi
               class="inp"
               type="number"
             >
+            <!-- 布尔（N-013 is_fixed_asset 等）：★ 不预置初值 —— 必填布尔须显式勾选作答 -->
+            <label v-else-if="f.type === 'boolean'" class="bool-lbl">
+              <input
+                v-model="fields[f.name]"
+                type="checkbox"
+                @change="fields[f.name] = $event.target.checked"
+              >
+              {{ f.rule || '是 / 否（须显式勾选）' }}
+            </label>
             <input
               v-else
               v-model="fields[f.name]"
@@ -404,6 +416,8 @@ watch(() => [curDocType.value, fields.amount_cents, fields.usage_category_l1, fi
 .node { font-size: 12px; background: #fff; border: 1px solid #d0d7de; border-radius: 12px; padding: 2px 8px; }
 .node.action { color: #666; border-style: dashed; }
 .node.pending { border-color: #cf222e; color: #cf222e; }
+.node.cosign { border-color: #bf8700; background: #fff8c5; }
+.bool-lbl { flex: 1; display: flex; gap: 8px; align-items: center; font-size: 14px; color: #57606a; }
 .form .row { display: flex; align-items: center; gap: 10px; margin: 10px 0; }
 .lbl { width: 190px; color: #24292f; font-size: 14px; text-align: right; flex-shrink: 0; }
 .req { color: #cf222e; margin-left: 2px; font-style: normal; }
@@ -418,6 +432,7 @@ watch(() => [curDocType.value, fields.amount_cents, fields.usage_category_l1, fi
 .alert { border-radius: 6px; padding: 8px 12px; margin: 8px 0; font-size: 14px; }
 .alert.err { background: #ffebe9; border: 1px solid #ff818266; color: #a40e26; }
 .alert.ok { background: #dafbe1; border: 1px solid #4ac26b66; color: #116329; }
+.alert.warn { background: #fff8c5; border: 1px solid #d4a72c66; color: #7d4e00; }
 .hint { color: #888; font-size: 12px; }
 .hint.warn { color: #cf222e; }
 .loading { color: #888; padding: 20px 0; }

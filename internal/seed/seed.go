@@ -12,23 +12,16 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/chadhao/jx-procurement-platform/internal/permission"
 	"github.com/chadhao/jx-procurement-platform/internal/store"
 )
 
-// Roles 角色枚举（PRD §4.1；采购岗 / 财务岗 / 出纳已取消，不得出现）。
-var Roles = []string{
-	"申请人", "主管领导", "项目总经理", "副总", "综合运营主管",
-	"采购经办人", "验收人", "集团财务", "集团（审批）", "系统管理员",
-}
-
-// Resources 权限矩阵覆盖的资源枚举。
-// 至少覆盖 ledger:* / dashboard:1..4 / api:instances（API §3.9）；另补 api:audit 供审计页使用。
-var Resources = []string{
-	"ledger:*",
-	"dashboard:1", "dashboard:2", "dashboard:3", "dashboard:4",
-	"api:instances",
-	"api:audit",
-}
+// Roles / Resources —— **权威枚举在 internal/permission**（A4：枚举归权限域）；
+// 本包仅以引用方式持有（播种数据与枚举同源，不复制第二份）。
+var (
+	Roles     = permission.Roles
+	Resources = permission.Resources
+)
 
 // 行范围令牌（架构 §5.2）：6 令牌 + DENY，代码与数据均只用这 7 个值，不接受条件表达式。
 const (

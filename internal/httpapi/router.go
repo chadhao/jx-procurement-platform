@@ -27,7 +27,7 @@ import (
 	"github.com/chadhao/jx-procurement-platform/internal/platform/feishu"
 	"github.com/chadhao/jx-procurement-platform/internal/specload"
 	"github.com/chadhao/jx-procurement-platform/internal/store"
-	jsync "github.com/chadhao/jx-procurement-platform/internal/sync"
+	fsync "github.com/chadhao/jx-procurement-platform/internal/sync"
 	"github.com/chadhao/jx-procurement-platform/internal/worker"
 )
 
@@ -40,8 +40,7 @@ type Deps struct {
 	Health     *observ.Health
 	Inbox      *inbox.Service
 	Worker     *worker.Worker
-	Subscriber *jsync.Subscriber
-	Reconciler *jsync.Reconciler
+	Subscriber *fsync.Subscriber
 	// Flow 审批领域服务（架构转向 ③ 上电，T03b/T04b）：页面两键 / 四操作 / 待办 / 入站回调。
 	// ★ 回调与页面两键**走同一状态机出口**（docs/11 R11），故共用此一个服务实例。
 	Flow *flow.Service
@@ -50,7 +49,7 @@ type Deps struct {
 	// （docs/16 §2-C 通道①，admin 组 + requireSysAdmin）。
 	ApprovalDefs *approval.Registry
 	// ApprovalReconciler 审批对账器（T03）：`POST /internal/approval/check` 唯一入口（R24）。
-	ApprovalReconciler *jsync.ApprovalReconciler
+	ApprovalReconciler *fsync.ApprovalReconciler
 	Perm               *permission.Loader
 	Auth               *access.Authenticator
 	Maps               *config.Maps

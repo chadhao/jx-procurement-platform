@@ -551,6 +551,9 @@ func (d Deps) handleApprovalSubmit(c echo.Context) error {
 		PaymentMethodInput:       body.PaymentMethodInput,
 		Department:               firstNonEmptyStr(body.Department, idn.Department),
 		ApplicantIsOpsSupervisor: idn.Role == "综合运营主管",
+		// N-013：forms/PR.json 已补 is_fixed_asset（申请人勾选）→ tier3_plus 的
+		// "or is_fixed_asset" 分支自本字段接线起可达。
+		IsFixedAsset: boolFromBodyField(body.Fields, "is_fixed_asset"),
 	}
 	rc, err := d.Chain.Compute(ctx, facts)
 	if err != nil {
@@ -559,9 +562,9 @@ func (d Deps) handleApprovalSubmit(c echo.Context) error {
 		}
 		return fail(c, http.StatusInternalServerError, codeInternal, err.Error())
 	}
-	// ---- 算不到人 ⇒ 阻断（FR-M9-02；N-018 过渡：40000 + error_detail 明细）----
+	// ---- 算不到人 ⇒ 阻断（FR-M9-02；N-018 裁定：专用错误码 40010 + unresolved_roles 明细）----
 	if err := rc.EnsureResolvable(); err != nil {
-		return failWithDetail(c, http.StatusBadRequest, codeBadRequest, err.Error(), map[string]any{
+		return failWithDetail(c, http.StatusBadRequest, codeChainUnresolved, err.Error(), map[string]any{
 			"unresolved_roles": rc.Unresolved,
 		})
 	}
@@ -626,6 +629,12 @@ func (d Deps) handleApprovalSubmit(c echo.Context) error {
 		return fail(c, http.StatusInternalServerError, codeInternal, err.Error())
 	}
 	return ok(c, map[string]any{"biz_no": bizNo, "instance_id": inst.InstanceCode, "status": inst.Status})
+}
+
+// boolFromBodyField 从表单字段取布尔值（缺失/非布尔 ⇒ false）。
+func boolFromBodyField(fields map[string]any, key string) bool {
+	b, _ := fields[key].(bool)
+	return b
 }
 
 // isChainInputError chain 计算中「输入驱动」的错误 ⇒ 400；其余（查询失败等）⇒ 500。

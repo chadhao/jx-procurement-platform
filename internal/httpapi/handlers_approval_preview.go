@@ -14,6 +14,7 @@ package httpapi
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"strings"
 
@@ -29,6 +30,8 @@ type previewRequest struct {
 	UsageCategoryL2    string `json:"usage_category_l2"`
 	PaymentMethodInput string `json:"payment_method_input"`
 	Department         string `json:"department"`
+	// IsFixedAsset N-013：PR 固定资产勾选 → tier3_plus "or is_fixed_asset" 分支。
+	IsFixedAsset bool `json:"is_fixed_asset"`
 }
 
 type previewNode struct {
@@ -40,6 +43,8 @@ type previewNode struct {
 	BranchNote   string            `json:"branch_note"`
 	Approvers    []previewApprover `json:"approvers"`
 	Resolved     bool              `json:"resolved"`
+	// CoSignCount 审批人数量（N-014：≥2 ⇒ 全员会签；preview 必须显式标注「N 人会签」）。
+	CoSignCount int `json:"co_sign_count"`
 }
 
 type previewApprover struct {
@@ -53,6 +58,8 @@ type previewResponse struct {
 	Route           previewRoute           `json:"route"`
 	Nodes           []previewNode          `json:"nodes"`
 	UnresolvedRoles []chain.UnresolvedRole `json:"unresolved_roles"`
+	// Warnings 非阻断告警（N-014：会签人数 ≥ warn_threshold 时必须提示，但不拦业务）。
+	Warnings []string `json:"warnings"`
 }
 
 type previewRoute struct {
@@ -85,6 +92,7 @@ func (d Deps) handleApprovalPreview(c echo.Context) error {
 		PaymentMethodInput:       req.PaymentMethodInput,
 		Department:               firstNonEmptyStr(req.Department, idn.Department),
 		ApplicantIsOpsSupervisor: idn.Role == "综合运营主管",
+		IsFixedAsset:             req.IsFixedAsset, // N-013
 	}
 	rc, err := d.Chain.Compute(ctx, facts)
 	if err != nil {
@@ -106,6 +114,13 @@ func (d Deps) handleApprovalPreview(c echo.Context) error {
 		resolvedNodes[n.NodeID] = true
 	}
 	nodes := make([]previewNode, 0, len(rc.Nodes))
+	// N-014：会签告警阈值取 spec（chain.json#roles.supervisor.multi_candidate_policy.warn_threshold；
+	// 缺省 3 —— 与裁定一致，spec 结构化字段为权威）。
+	warnThreshold := 3
+	if mc := d.Spec.Chain.Roles["supervisor"].MultiCandidatePolicy; mc != nil && mc.WarnThreshold > 0 {
+		warnThreshold = mc.WarnThreshold
+	}
+	warnings := []string{}
 	for _, n := range rc.Nodes {
 		pn := previewNode{
 			Seq: n.Seq, SourceNodeID: n.SourceNodeID, NodeName: n.NodeName,
@@ -115,6 +130,18 @@ func (d Deps) handleApprovalPreview(c echo.Context) error {
 		}
 		if pn.Approvers == nil {
 			pn.Approvers = []previewApprover{}
+		}
+		if pn.IsApproval {
+			pn.CoSignCount = len(pn.Approvers)
+			// N-014 硬约束①：≥2 必须显式标注「本节点 N 人会签」（申请人要等几个人）。
+			if pn.CoSignCount >= 2 {
+				pn.BranchNote = joinNotes(pn.BranchNote, fmt.Sprintf("本节点 %d 人会签", pn.CoSignCount))
+			}
+			// N-014 硬约束②：≥warn_threshold 必须告警（**不阻断** —— 可能是配置错，但不拦业务）。
+			if pn.CoSignCount >= warnThreshold {
+				warnings = append(warnings, fmt.Sprintf(
+					"节点「%s」为 %d 人会签（≥%d），请核实角色配置是否正确", pn.NodeName, pn.CoSignCount, warnThreshold))
+			}
 		}
 		nodes = append(nodes, pn)
 	}
@@ -131,5 +158,14 @@ func (d Deps) handleApprovalPreview(c echo.Context) error {
 		},
 		Nodes:           nodes,
 		UnresolvedRoles: unresolved,
+		Warnings:        warnings,
 	})
+}
+
+// joinNotes 拼接分支说明（避免覆盖既有 BranchNote）。
+func joinNotes(a, b string) string {
+	if a == "" {
+		return b
+	}
+	return a + "；" + b
 }

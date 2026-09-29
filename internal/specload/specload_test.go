@@ -145,9 +145,11 @@ func TestValidateProbes(t *testing.T) {
 				delete(asMap(m["doc_chains"]), "PC")
 			})
 		}},
-		{"S5_禁落账目标", "[S5]", func(t *testing.T, f map[string][]byte) {
+		{"S5a_超出台账编号", "[S5a]", func(t *testing.T, f map[string][]byte) {
+			// ★ 清单化后 S5a＝enum_subset(L01..L12)；L10 在集合内（禁落账目标由 S11 管 ledger-mapping
+			//   侧 —— chain 侧禁目标的缺口已开议题 N-020），故用 L13（不存在的编号）触发。
 			mutateJSON(t, f, "spec/chain.json", func(m map[string]any) {
-				asMap(asMap(m["doc_chains"])["RFQ"])["ledger"] = []any{"L10"}
+				asMap(asMap(m["doc_chains"])["RFQ"])["ledger"] = []any{"L13"}
 			})
 		}},
 		{"S6_引用悬空", "[S6]", func(t *testing.T, f map[string][]byte) {
@@ -187,6 +189,25 @@ func TestValidateProbes(t *testing.T) {
 		{"S12_forms与映射不一致", "[S12]", func(t *testing.T, f map[string][]byte) {
 			mutateJSON(t, f, "spec/forms/PR.json", func(m map[string]any) {
 				m["ledger"] = []any{"L02"} // 缺 L03（R-02 守卫：PR 必须同时落 L02+L03）
+			})
+		}},
+		// ---- 清单引擎自身的护栏（N-011 / checks.json V1.2）----
+		{"META_未知原语", "[META]", func(t *testing.T, f map[string][]byte) {
+			mutateJSON(t, f, "spec/checks.json", func(m map[string]any) {
+				checks := m["checks"].([]any)
+				asMap(checks[0])["primitive"] = "no_such_primitive"
+			})
+		}},
+		{"MINHITS_collect声明写错", "min_hits", func(t *testing.T, f map[string][]byte) {
+			// S7 的 collect 指到不存在的路径 ⇒ 命中 0 < min_hits 1 ⇒ 必须报错
+			// （V1.2 教训：声明写错不许静默通过）。
+			mutateJSON(t, f, "spec/checks.json", func(m map[string]any) {
+				for _, c := range m["checks"].([]any) {
+					cm := asMap(c)
+					if cm["id"] == "S7" {
+						asMap(cm["args"])["collect"] = "thresholds.purchase.bands_no_such"
+					}
+				}
 			})
 		}},
 	})

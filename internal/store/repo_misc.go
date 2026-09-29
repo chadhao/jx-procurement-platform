@@ -68,6 +68,11 @@ func (d *DB) ListAudit(ctx context.Context, f AuditFilter) ([]AuditLogRow, int, 
 	if f.Action != "" {
 		where = append(where, "action = ?")
 		args = append(args, f.Action)
+	} else {
+		// A1：幂等簿记（submission_idem / approval_submit_idem）是**技术占位**而非业务操作，
+		// 默认不进审计查询（否则运维在审计页看到一堆"假操作"）；幂等判重走各自 repo 的
+		// 独立 SELECT、不经本方法。★ 显式按 action 过滤时放行（运维排障口）。
+		where = append(where, "action NOT IN ('submission_idem', 'approval_submit_idem')")
 	}
 	if f.Resource != "" {
 		where = append(where, "resource = ?")

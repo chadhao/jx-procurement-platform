@@ -29,6 +29,7 @@ scripts/check_collab.py —— `COLLAB.md`（双 Agent 协商台账）结构门�
         已上交 → 双方方案 / 各自代价
   B5  「已上交」议题必须含「双方方案」与「各自代价」
   B6  「最后更新」/「决议日」须绝对时间（`YYYY-MM-DD[ HH:MM]`），且不得含「昨天 / 刚才」等相对词
+  B7  （N-019）状态＝WITHDRAWN ⇒ **「作废理由」必填非空**（退役必须留下为什么）
   S   结构节存在性；议题必须落在**已登记种类**的章节内
 
 用法：python scripts/check_collab.py [COLLAB.md 路径]
@@ -238,6 +239,13 @@ def check(path: str) -> int:
                 problems.append(
                     f"[B3] COLLAB.md:{lineno} {iid} 类型值非法：「{ty}」"
                     f"（允许：{' / '.join(sorted(VALID_TYPE))}）"
+                )
+            # B7（N-019）：WITHDRAWN 必须携带**作废理由** —— 否则退役成为
+            # 「把不想处理的问题标掉即可」的后门，追加式台账丢失「为什么不用做了」。
+            if st == "WITHDRAWN" and not fields.get("作废理由"):
+                problems.append(
+                    f"[B7] COLLAB.md:{lineno} {iid} 状态=WITHDRAWN 但缺「作废理由」"
+                    f"（N-019：退役必须留下为什么）"
                 )
 
         # B5：「已上交」区必须含双方方案与各自代价

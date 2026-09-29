@@ -301,8 +301,8 @@ func run(version string) error {
 	// ★ 本批修复（2026-09-28 实测 99992402 "instances is required"）：check 入参必须带
 	//   instances[]（每项 update_time + tasks[]），数据源＝本地 t_instance / t_flow_task，
 	//   字段表示与推送侧一致（feishu.BuildCheckInstance 统一组装）。
-	approvalRec := sync.NewApprovalReconciler(db, sync.ExtSyncCheckerFunc(
-		func(ctx context.Context, code string) ([]sync.RemoteInstanceState, error) {
+	approvalRec := fsync.NewApprovalReconciler(db, fsync.ExtSyncCheckerFunc(
+		func(ctx context.Context, code string) ([]fsync.RemoteInstanceState, error) {
 			insts, err := db.ListInstancesByApprovalCode(ctx, code)
 			if err != nil {
 				return nil, err
@@ -319,9 +319,9 @@ func run(version string) error {
 			if err != nil {
 				return nil, err
 			}
-			out := make([]sync.RemoteInstanceState, 0, len(sts))
+			out := make([]fsync.RemoteInstanceState, 0, len(sts))
 			for _, s := range sts {
-				out = append(out, sync.RemoteInstanceState{
+				out = append(out, fsync.RemoteInstanceState{
 					InstanceID: s.InstanceID, UpdateTime: s.UpdateTime, Status: s.Status,
 				})
 			}
@@ -335,7 +335,7 @@ func run(version string) error {
 	// ★ R23 退役：旧「定时对账器 + 调度器」的装配已在此**摘除** —— 只要它还挂着，
 	//   每跑一次就经 reconcile.go 的补拉路径覆盖我方已推进状态（"对账"名义下的隐蔽覆盖）。
 	//   本批次**不**装配 flow/approval/number（另行排期）。
-	subscriber := sync.NewSubscriber(db, client, maps, metrics, logger)
+	subscriber := fsync.NewSubscriber(db, client, maps, metrics, logger)
 
 	// ---- ⑧ 启动自检第 1 项：订阅（显式空集；通讯录事件走长连接 sinkEventTypes，批次二已接入）----
 	_, failed := subscriber.Subscribe(ctx, subscribeTargetCodes)
@@ -406,6 +406,15 @@ func run(version string) error {
 	})
 	if env.IsDev() {
 		logger.Warn("开发模式已开启：已注册 POST /internal/dev/inject-event（仅本地验证用）")
+	}
+
+	// ---- ⑩′ 卡死作业回收（A2）：启动时一次性 RUNNING → QUEUED ----
+	// ★ 单实例 ⇒ 启动瞬间不存在合法 RUNNING（上一进程崩溃残留才是）；归还语义精确零误伤。
+	//   周期性短超时回收是重复执行的唯一引入途径，刻意不做（详见 ReclaimStaleRunning 注释）。
+	if n, err := db.ReclaimStaleRunning(ctx); err != nil {
+		logger.Warn("启动回收卡死作业失败（不阻断启动，人工重放兜底）", "error", err.Error())
+	} else if n > 0 {
+		logger.Info("启动回收卡死作业", "reclaimed", n)
 	}
 
 	// ---- ⑪ 运行：长连接 + worker + HTTP（★ 定时对账已退役，见 ⑦ / R23）----

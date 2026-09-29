@@ -259,3 +259,51 @@ func TestTier3PlusAnchor(t *testing.T) {
 		t.Errorf("tier3_plus 应插 3 节点，实为 %d", len(br.InsertedNodes))
 	}
 }
+
+// TestSpecRulingsAnchor 裁定落 spec 的结构锚定（N-012/N-013/N-014/N-016）：
+// WorkBuddy 已把口径写进 spec —— 本测试保证 spec 结构与实现假设同步漂移即红。
+func TestSpecRulingsAnchor(t *testing.T) {
+	b := loadBundle(t)
+
+	// N-016：supervisor.fallback 结构化（回落 role_name / 阻断语义 / 双匹配键）
+	fb := b.Chain.Roles["supervisor"].Fallback
+	if fb == nil {
+		t.Fatal("chain.json#roles.supervisor.fallback 缺失（N-016 裁定）")
+	}
+	if fb.RoleName != "主管领导" || fb.Unresolved != "block" {
+		t.Errorf("fallback = %+v，应 role_name=主管领导 / unresolved=block", fb)
+	}
+	if len(fb.MatchBy) != 2 {
+		t.Errorf("fallback.match_by = %v，应含 department 与 extra_depts", fb.MatchBy)
+	}
+
+	// N-014：multi_candidate_policy（all_sign + warn_threshold）
+	mc := b.Chain.Roles["supervisor"].MultiCandidatePolicy
+	if mc == nil {
+		t.Fatal("chain.json#roles.supervisor.multi_candidate_policy 缺失（N-014 裁定）")
+	}
+	if !strings.Contains(mc.Rule, "all_sign") {
+		t.Errorf("multi_candidate_policy.rule = %q，应为 all_sign 全员会签", mc.Rule)
+	}
+	if mc.WarnThreshold != 3 {
+		t.Errorf("warn_threshold = %d，应为 3（preview ≥3 告警）", mc.WarnThreshold)
+	}
+
+	// N-013：forms/PR 必须含 is_fixed_asset（布尔、必填、user 来源）
+	pr := b.Forms["PR"]
+	var found bool
+	for _, sec := range pr.Sections {
+		for _, f := range sec.Fields {
+			if f.Name == "is_fixed_asset" {
+				found = true
+				if f.Type != "boolean" || !f.Required || f.Source != "user" {
+					t.Errorf("is_fixed_asset = type:%s required:%v source:%s，应 boolean/必填/user",
+						f.Type, f.Required, f.Source)
+				}
+			}
+		}
+	}
+	if !found {
+		t.Error("forms/PR 缺 is_fixed_asset 字段（N-013 裁定已补）")
+	}
+}

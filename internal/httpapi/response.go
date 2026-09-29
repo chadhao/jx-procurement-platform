@@ -20,18 +20,21 @@ type Envelope struct {
 
 // 错误码（docs/05-API.md §2.1）。
 const (
-	codeOK           = 0
-	codeBadRequest   = 40000
-	codeUnauthorized = 40100
-	codeRoleMapped   = 40101
-	codeForbidden    = 40300
-	codeRowForbidden = 40301
-	codeNotFound     = 40400
-	codeConflict     = 40900
-	codeReadOnly     = 40901
-	codeRateLimited  = 42900
-	codeInternal     = 50000
-	codeNotReady     = 50300
+	codeOK         = 0
+	codeBadRequest = 40000
+	// codeChainUnresolved 审批链解析失败（缺人/配置不完整）—— N-018 裁定的**专用错误码**。
+	// ★ 与 40000 分开的理由（错误归因）：40000 ⇒ 用户改表单；40010 ⇒ 联系系统管理员（改表单没用）。
+	codeChainUnresolved = 40010
+	codeUnauthorized    = 40100
+	codeRoleMapped      = 40101
+	codeForbidden       = 40300
+	codeRowForbidden    = 40301
+	codeNotFound        = 40400
+	codeConflict        = 40900
+	codeReadOnly        = 40901
+	codeRateLimited     = 42900
+	codeInternal        = 50000
+	codeNotReady        = 50300
 )
 
 const (

@@ -7,7 +7,8 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "preview": "vite preview --port 4173"
+    "preview": "vite preview --port 4173",
+    "lint": "eslint src"
   },
   "dependencies": {
     "echarts": "^5.5.1",
@@ -15,7 +16,10 @@
     "vue-router": "^4.4.5"
   },
   "devDependencies": {
+    "@eslint/js": "^10.0.1",
     "@vitejs/plugin-vue": "^5.2.1",
+    "eslint": "^10.11.0",
+    "eslint-plugin-vue": "^10.11.1",
     "vite": "^5.4.11"
   }
 }

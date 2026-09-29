@@ -69,6 +69,25 @@ type RoleDoc struct {
 	IsAlsoSupervisorFor []string `json:"is_also_supervisor_for"`
 	IsSupervisorFor     []string `json:"is_supervisor_for"`
 	DesignatedAt        string   `json:"designated_at"`
+	// Fallback 主管领导回落规则（N-016 裁定后结构化；原散文判据＝漂移面）。
+	Fallback *RoleFallback `json:"fallback"`
+	// MultiCandidatePolicy 同角色多候选处置（N-014 裁定：all_sign 全员会签）。
+	MultiCandidatePolicy *MultiCandidatePolicy `json:"multi_candidate_policy"`
+}
+
+// RoleFallback chain.json#roles.supervisor.fallback（N-016）。
+type RoleFallback struct {
+	MatchBy    []string `json:"match_by"` // ["department","extra_depts"]
+	Source     string   `json:"source"`   // t_user_role
+	RoleName   string   `json:"role_name"`
+	Unresolved string   `json:"unresolved"` // "block" ⇒ 0 候选阻断（FR-M9-02）
+}
+
+// MultiCandidatePolicy 多候选处置（N-014）：warn_threshold 起 preview 必须告警（不阻断）。
+type MultiCandidatePolicy struct {
+	Rule          string `json:"rule"` // "all_sign（全员会签）"
+	WarnThreshold int    `json:"warn_threshold"`
+	Note          string `json:"note"`
 }
 
 type Thresholds struct {

@@ -11,7 +11,6 @@ import (
 	"github.com/labstack/echo/v4"
 
 	"github.com/chadhao/jx-procurement-platform/internal/permission"
-	"github.com/chadhao/jx-procurement-platform/internal/seed"
 	"github.com/chadhao/jx-procurement-platform/internal/store"
 )
 
@@ -80,7 +79,7 @@ func (d Deps) handleAdminPermissionRulesGet(c echo.Context) error {
 	return ok(c, map[string]any{
 		"items":      items,
 		"resources":  resourceOptions,
-		"roles":      seed.Roles,
+		"roles":      permission.Roles,
 		"row_scopes": rowScopeOptions,
 	})
 }
@@ -177,7 +176,7 @@ func (d Deps) handleAdminUsersGet(c echo.Context) error {
 	for _, r := range rows {
 		items = append(items, userRoleMap(r))
 	}
-	return ok(c, map[string]any{"items": items, "roles": seed.Roles})
+	return ok(c, map[string]any{"items": items, "roles": permission.Roles})
 }
 
 // handleAdminUsersPost 新增人员角色映射。
@@ -400,7 +399,7 @@ func validRowScope(scope string) bool {
 }
 
 func validRole(role string) bool {
-	for _, r := range seed.Roles {
+	for _, r := range permission.Roles {
 		if r == role {
 			return true
 		}

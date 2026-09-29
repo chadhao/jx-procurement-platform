@@ -19,7 +19,7 @@ import (
 	"github.com/chadhao/jx-procurement-platform/internal/platform/feishu"
 	"github.com/chadhao/jx-procurement-platform/internal/store"
 	"github.com/chadhao/jx-procurement-platform/internal/store/storetest"
-	jsync "github.com/chadhao/jx-procurement-platform/internal/sync"
+	fsync "github.com/chadhao/jx-procurement-platform/internal/sync"
 	"github.com/chadhao/jx-procurement-platform/internal/worker"
 )
 
@@ -47,8 +47,7 @@ func newTestApp(t *testing.T, status *string) (*echo.Echo, *store.DB, *worker.Wo
 	inboxSvc := inbox.NewService(db, metrics, nil)
 	ingestor := worker.NewIngestor(db, maps, nil)
 	wk := worker.NewWorker(db, client, ingestor, metrics, nil)
-	sub := jsync.NewSubscriber(db, client, maps, metrics, nil)
-	rec := jsync.NewReconciler(db, client, maps, metrics, nil)
+	sub := fsync.NewSubscriber(db, client, maps, metrics, nil)
 	perm := permission.NewLoader(db)
 	sessions := access.NewStore("test-session-key", time.Hour)
 	auth := access.NewAuthenticator(db, sessions, nil, true, nil)
@@ -56,7 +55,7 @@ func newTestApp(t *testing.T, status *string) (*echo.Echo, *store.DB, *worker.Wo
 	e := NewRouter(Deps{
 		Env: env, DB: db, Log: observ.NewLogger("error", io.Discard),
 		Metrics: metrics, Health: observ.NewHealth("test"),
-		Inbox: inboxSvc, Worker: wk, Subscriber: sub, Reconciler: rec,
+		Inbox: inboxSvc, Worker: wk, Subscriber: sub,
 		Perm: perm, Auth: auth, Maps: maps, WebUI: nil, Version: "test",
 	})
 	return e, db, wk, metrics
