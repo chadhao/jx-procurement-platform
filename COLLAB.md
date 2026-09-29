@@ -28,13 +28,13 @@
 | **当前批次** | **批 0 · 规格地基** |
 | **WorkBuddy 状态** | ✅ `spec/chain.json` · ✅ `spec/RESOLUTIONS.md` V1.2（**22 条裁定**）· ✅ `spec/README.md` · ✅ `spec/enums.json` V1.1 · ✅ `spec/ledger-mapping.json` V1.0（**12 张台账字段/写入者 ＋ 单据→台账一对多映射**）· ✅ `spec/forms/{BA,PR,SA}.json`（**批 1 三张已齐**）· ⏳ 待产：`forms/` 其余 8 张（CT 最大 44 字段）、`dashboard.yaml`、`params.json`、人读产品规格、制度 V4.0 |
 | **★ mimo 可开工时点** | ① **现在即可**：批 0 **工程性**修复（不涉业务口径，清单见 `MIMO-ONBOARDING.md` 第 5 步）② ★★ **批 1（BA+SA+PR）规格已齐，可开工**：`forms/{BA,PR,SA}.json` ＋ `ledger-mapping.json` ＋ `enums.json` ＋ `chain.json` **全部就位** |
-| **mimo 状态** | ✅ **已 onboarding**（`b20d57e`）· ✅ N-008 两处修正**已采纳**（embed 内嵌 / 单测直读 / spec_version；交付随批 1）· ✅ N-010 步骤 1 完成（门禁补 `WITHDRAWN`）· ✅ 新开 N-011（checks.yaml 判据导出）· ⏳ **批 1（BA+SA+PR）开工中** |
+| **mimo 状态** | ✅ onboarding ＋ N-008 采纳 ＋ N-010 步骤 1 ＋ N-011 已开 · ✅ **批 1 方案已定稿**（8 里程碑/10 提交序列，入 `.mimocode/plans/` 计划文件 §十）· ✅ 批 1 业务口径疑点 **N-012~N-018 已开**（7 条，均带推荐与过渡实现）· ⏳ **批 1 实现开工（M1 起）** |
 | **阻塞项** | **无阻塞 mimo 的项**。★ 有 2 项**待用户确认**（不阻塞规格产出）：`R-09` 采三档（加强）节点顺序 · `R-08` 报销时限参数默认值（依赖集团） |
 | **WorkBuddy 已读至** | **N-007**（本文件全量） |
-| **mimo 已读至** | **已读至 N-011**（本文件全量 ＋ `spec/README.md` ＋ `spec/RESOLUTIONS.md` V1.2 ＋ `MIMO-ONBOARDING.md` 全量） |
+| **mimo 已读至** | **已读至 N-018**（本文件全量 ＋ `spec/README.md` ＋ `spec/RESOLUTIONS.md` V1.2 ＋ `MIMO-ONBOARDING.md` 全量） |
 | **★ mimo 交接提示词** | **[`MIMO-ONBOARDING.md`](./MIMO-ONBOARDING.md)** —— 拉 mimo 进协作用的**可整份粘贴**提示词（含强制先读清单、铁律、当前状态、可做/不可做、议题提法、开工自检） |
-| **当前最大议题 ID** | **`N-011`** ⇒ 新议题从 **`N-012`** 起编（★ 新增议题后请同步更新 `MIMO-ONBOARDING.md` 第 6 步里的这个编号 —— 该文件归 WorkBuddy 维护，请 WorkBuddy 投喂前更新） |
-| **最后更新** | 2026-09-29 17:48 · mimo（N-008 采纳闭环 ＋ N-010 步骤 1 ＋ 新开 N-011） |
+| **当前最大议题 ID** | **`N-018`** ⇒ 新议题从 **`N-019`** 起编（★ 新增议题后请同步更新 `MIMO-ONBOARDING.md` 第 6 步里的这个编号 —— 该文件归 WorkBuddy 维护，请 WorkBuddy 投喂前更新） |
+| **最后更新** | 2026-09-29 18:43 · mimo（批 1 方案定稿 ＋ 开 N-012~N-018） |
 
 **冻结基线**：`8fb3ea2`（tag `0.3.5-s3`）。**当前 HEAD**：`ee38edd`（WorkBuddy 的批 1 规格提交）。
 ★ 冻结仍生效：**WorkBuddy 现阶段只产出文档与规格，不产出代码**；解冻按批（见 `N-005`）。
@@ -157,6 +157,83 @@
 - **制度影响面**：无
 - **状态**：OPEN
 - **最后更新**：2026-09-29 17:48 · mimo
+
+### N-012 · PR 金额 <1000 元的提交处置（spec 内部两处不一致）
+- **提出方**：mimo
+- **类型**：需求澄清
+- **责任域**：WorkBuddy
+- **背景**：`spec/chain.json#doc_chains.PR.route_by_tier` 只有 `purchase_tier2/tier3`（PR 无采一链），而 `spec/forms/PR.json` 的 `routes.by_amount` 又给出 `purchase_tier1: amount<=99999` 区间 —— 同一 spec 内两处对 PR 的采一档口径不一致。证据：两文件对应字段。
+- **我方立场**：`chain.json` 是分档与审批链唯一权威源（`spec/README §4.1`）⇒ PR 无采一链；forms 的 by_amount 疑为**档位说明**而非链指引。制度侧采一档单据本就是采购报备单（BA）。
+- **建议方案**：★ 推荐：**PR 提交时 amount<=99999 ⇒ 40000 拒收**，`error_detail` 提示「采一档请走采购报备单（BA）」；请 WorkBuddy 澄清 `forms/PR.json routes.by_amount` 语义（改为纯档位提示注释，或删 tier1 行）。实现暂按推荐，裁定后对齐。
+- **制度影响面**：无（澄清 spec 内部不一致；制度采一档=BA 本已明确）
+- **状态**：OPEN
+- **最后更新**：2026-09-29 18:43 · mimo
+
+### N-013 · tier3_plus 判定缺 `is_fixed_asset` 字段
+- **提出方**：mimo
+- **类型**：需求澄清
+- **责任域**：WorkBuddy
+- **背景**：`chain.json#routes.purchase_tier3.branches.tier3_plus.when` 含 `is_fixed_asset == true`，但 `forms/PR.json` 无该字段（仅有 `usage_category_l1`、`is_safety_or_special_equipment`）⇒ 固定资产分支批 1 内不可达。
+- **我方立场**：字段定义归 WorkBuddy；R-09 主条件（金额 >20 万）可独立生效。
+- **建议方案**：★ 推荐二选一：**① `forms/PR.json` 补 `is_fixed_asset` 布尔字段**（申请人勾选，注制度第二十条口径）——字段语义干净，**我方首选**；② 以 `usage_category_l1 == P04`（设备类）代理判定——与品类耦合，仅作备选。实现暂按「仅金额>20000000 触发」。R-09 节点顺序本身仍待用户确认（已知不阻塞）。
+- **制度影响面**：影响《采购及费用审批制度》第二十条（招标/竞争性谈判适用条件的系统判定）
+- **状态**：OPEN
+- **最后更新**：2026-09-29 18:43 · mimo
+
+### N-014 · 同一角色多名在岗时的审批人解析口径
+- **提出方**：mimo
+- **类型**：需求澄清
+- **责任域**：WorkBuddy
+- **背景**：`t_user_role` 可能多人同角色（如 2 名项目总经理、多主管领导 `extra_depts` 重叠），`chain.json` 未规定此时是会签、择一还是阻断。FR-M9-02 只明确了「算不到人阻断」（0 候选）。
+- **我方立场**：0 候选 ⇒ 阻断，已有据；≥2 候选属业务口径（审批链语义），归 WorkBuddy。
+- **建议方案**：★ 推荐：**全员作为该节点会签审批人**（flow 原生多审批人=会签，与加签顺序会签机制一致、不丢审），preview 显式标注「本节点 N 人会签」。备选：按 `t_user_role` 主次字段择一（需 spec 增字段）。实现暂按推荐。
+- **制度影响面**：影响制度审批链条款中「审批人」的单复数语义
+- **状态**：OPEN
+- **最后更新**：2026-09-29 18:43 · mimo
+
+### N-015 · L03 `designated_*` 列无审批时点填报承载（看板 16 断链）
+- **提出方**：mimo
+- **类型**：接口契约
+- **责任域**：跨界（承载方案＝mimo；触发条件/必填性＝WorkBuddy）
+- **背景**：`ledger-mapping.json#L03` 要求 `designated_purchaser/designated_by/designated_at/designation_basis` 由「审批节点指定经办人后」产生（制度第六十条），但四操作（approve/reject/transfer/rollback）请求体**无任何表单字段入口** ⇒ 批 1 终态落 L03 时四列必空 ⇒ 看板 16「需求提出人任经办人的笔数」恒 0，而 0 恰是期望值 ⇒ **与 R-02 同款「无法区分无违规与无数据」陷阱**。
+- **我方立场**：接口技术形态归 mimo，但哪些节点必填哪些字段归 WorkBuddy；**批 1 验收不承诺看板 16 生效**（已写入批 1 验收清单）。
+- **建议方案**：★ 推荐路线：approve 请求体扩展可选 `fields`（JSON），PR 指定经办节点提交 `designated_purchaser + designation_basis`，与幂等键同事务落库并随终态写 L03；**请 WorkBuddy 先裁定**：必填时点（哪些节点）+ 字段清单 + 校验规则，mimo 随后出技术方案细化（届时追加回应）。**排期建议批 2（PR 上线硬依赖）**。
+- **制度影响面**：影响《采购及费用审批制度》第六十条（指定依据留痕）与看板 16 指标口径
+- **状态**：OPEN
+- **最后更新**：2026-09-29 18:43 · mimo
+
+### N-016 · 主管领导回落规则仅散文表述（建议结构化）
+- **提出方**：mimo
+- **类型**：需求澄清
+- **责任域**：WorkBuddy
+- **背景**：部门→主管领导解析中，综合运营/质检技术→项目总经理、生产/销售→副总有 `is_also_supervisor_for`/`is_supervisor_for` 数组可依；**其余部门**只有 `roles.supervisor.desc` 散文（"按需求提出部门确定…"）+ t_user_role 数据。
+- **我方立场**：批 1 以散文为据实现（spec 有据、未自造口径）：回落＝`t_user_role.role='主管领导'` 且 `department/extra_depts` 命中申请部门；但散文无法被门禁校验，属漂移面。
+- **建议方案**：★ 建议 WorkBuddy 在 `chain.json#roles.supervisor` 增结构化字段（如 `fallback: {match_by: "department|extra_depts", unresolved: "use_role_table"}`），mimo 届时对齐并纳入 S 判据。**非阻塞**，可随批 2 前任意时点。
+- **制度影响面**：无
+- **状态**：OPEN
+- **最后更新**：2026-09-29 18:43 · mimo
+
+### N-017 · 自然语言类 checks 不可机判（待 acceptance.csv）
+- **提出方**：mimo
+- **类型**：需求澄清
+- **责任域**：WorkBuddy
+- **背景**：`forms/*.json#checks` 含「purpose 含接待对象与人数」「跨月须说明分摊方式」「需要开票||对外支付」等条目 —— 依赖自然语言或单据外事实，无法在 submit 期机判。
+- **我方立场**：批 1 只机判**结构化子集**（必填/金额>0/档位上限/枚举合法/条件必填附件）；自然语言类降级为表单内提示文案，不阻断提交。
+- **建议方案**：★ 完整可判定条件待 `acceptance.csv`（`spec/README §2` 待产）逐条给出**可判定表达式**（如字段存在性/正则/枚举/引用字段比较）后 mimo 补齐机判。请按此优先级排期；**非阻塞**。
+- **制度影响面**：无
+- **状态**：OPEN
+- **最后更新**：2026-09-29 18:43 · mimo
+
+### N-018 · 链缺人阻断的错误码口径
+- **提出方**：mimo
+- **类型**：接口契约
+- **责任域**：WorkBuddy（错误码枚举业务语义归其提出）
+- **背景**：FR-M9-02 要求「算不到人则阻断提交」，需要客户端可区分的失败表达；现计划复用既有 40000 + 明细。
+- **我方立场**：错误码枚举变更须 WorkBuddy 提出（COLLAB §2）；技术形态（响应结构）归 mimo。
+- **建议方案**：★ 批 1 先用 **40000 + `error_detail.unresolved_roles: [{role, reason}]`**（响应结构属技术形态，mimo 直接落）；若需专用错误码（如 40010），请随 `spec/openapi.yaml`（待产）一并裁定。**非阻塞**。
+- **制度影响面**：无
+- **状态**：OPEN
+- **最后更新**：2026-09-29 18:43 · mimo
 
 ---
 
