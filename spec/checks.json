@@ -1,0 +1,347 @@
+{
+  "version": "1.2",
+  "generated_by": "WorkBuddy",
+  "date": "2026-09-29",
+  "scope": "spec/",
+  "supersedes": "scripts/check_spec.py 的内联判据（本清单是判据的**唯一来源**）",
+  "_format_note": "★★ **格式决定：用 JSON 而非 YAML**（对 N-011 提议的 `checks.yaml` 的偏离）——\n① **不引入新依赖**：本项目 Python 门禁一律 **stdlib-only**（`check_md_tables.py` / `check_collab.py` / `audit_silent.py` 均无第三方依赖），YAML 需 PyYAML；\n② **Go 侧更省事**：`encoding/json` 是标准库，YAML 要引 `gopkg.in/yaml.v3`；\n③ 与 `spec/` 其余文件格式统一。\n★ 结构与「可执行声明式清单」的设计**完全按 N-011 约定**，**仅容器格式变化**。若 mimo 认为必须 YAML，请开议题并说明依赖引入方案。",
+  "_why_executable": "★★ **判据必须是「数据 + 少量原语」，不能是中文描述。** 若是描述，Python 与 Go 各按中文重新理解一遍 ⇒ 只是**第三份真相**，照样漂。\n⇒ 本清单只声明「哪个文件、用什么原语、什么参数」；原语集合固定且极小，两侧各实现一次引擎。",
+  "_selector_note": "`collect` 用点路径：`a.b` 取键 · `a.*` / `a[*]` 取全部子节点 · `**` 递归任意深度（如 `**.ledger[*]`）。★ **两侧解析器语法必须一致**。",
+  "primitives": {
+    "json_parse": {
+      "desc": "glob 匹配到的每个文件都必须能被 JSON 解析（抓语法错：引号、尾逗号）",
+      "args": {
+        "file": "glob"
+      }
+    },
+    "required_keys": {
+      "desc": "某文件某 scope 下必须含全部指定键",
+      "args": {
+        "file": "glob",
+        "scope": "点路径（空串＝根）",
+        "keys": [
+          "键"
+        ]
+      }
+    },
+    "coverage": {
+      "desc": "某 dict 的**键集合**必须覆盖 required；allow_extra=false 时不得有多余键",
+      "args": {
+        "file": "glob",
+        "dict_path": "点路径（指向 dict）",
+        "required": [
+          "键"
+        ],
+        "allow_extra": true
+      }
+    },
+    "enum_subset": {
+      "desc": "collect 收集到的**字符串集合**必须 ⊆ allowed",
+      "args": {
+        "file": "glob",
+        "collect": "点路径",
+        "allowed": [
+          "值"
+        ]
+      }
+    },
+    "ref_exists": {
+      "desc": "collect 收集到的**引用值**必须全部存在于 target 的键集合中（可加 extra_allowed）",
+      "args": {
+        "file": "glob",
+        "collect": "点路径",
+        "target_file": "glob",
+        "target_dict": "点路径",
+        "extra_allowed": []
+      }
+    },
+    "range_contiguous": {
+      "desc": "区间数组必须**无缝且无重叠**：首项 lower==null、末项 upper==null、后项 lower == 前项 upper + 1",
+      "args": {
+        "file": "glob",
+        "collect": "点路径",
+        "lower_key": "键名",
+        "upper_key": "键名"
+      }
+    },
+    "pattern_absent": {
+      "desc": "collect 递归收集到的所有**字符串**不得匹配任一 forbidden 正则",
+      "args": {
+        "file": "glob",
+        "collect": "点路径",
+        "forbidden_regex": [
+          "正则"
+        ]
+      }
+    },
+    "cross_equal_by_key": {
+      "desc": "★ 按 key 关联两处、逐项比较值**必须相等**（如 forms 的 ledger ↔ ledger-mapping 的 doc_to_ledger）",
+      "args": {
+        "left_glob": "glob",
+        "left_key": "键",
+        "left_value": "键",
+        "right_file": "glob",
+        "right_dict": "点路径",
+        "right_value": "键"
+      }
+    }
+  },
+  "checks": [
+    {
+      "id": "S1",
+      "severity": "must-green",
+      "desc": "spec/ 下所有 .json 必须可解析",
+      "primitive": "json_parse",
+      "args": {
+        "file": "spec/**/*.json"
+      }
+    },
+    {
+      "id": "S2",
+      "severity": "must-green",
+      "desc": "chain.json 顶层必含六键",
+      "primitive": "required_keys",
+      "args": {
+        "file": "spec/chain.json",
+        "scope": "",
+        "keys": [
+          "version",
+          "roles",
+          "thresholds",
+          "contract_approval",
+          "routes",
+          "doc_chains"
+        ]
+      }
+    },
+    {
+      "id": "S3",
+      "severity": "must-green",
+      "desc": "routes 必须恰好覆盖 9 条流程线（不多不少）",
+      "primitive": "coverage",
+      "args": {
+        "file": "spec/chain.json",
+        "dict_path": "routes",
+        "required": [
+          "purchase_tier1",
+          "purchase_tier2",
+          "purchase_tier3",
+          "expense_sales",
+          "expense_mgmt_advance",
+          "expense_mgmt_direct",
+          "sole_source",
+          "emergency",
+          "change"
+        ],
+        "allow_extra": false
+      }
+    },
+    {
+      "id": "S4",
+      "severity": "must-green",
+      "desc": "doc_chains 必须含 11 类单据（允许另有说明键）",
+      "primitive": "coverage",
+      "args": {
+        "file": "spec/chain.json",
+        "dict_path": "doc_chains",
+        "required": [
+          "BA",
+          "PR",
+          "SA",
+          "RFQ",
+          "BJ",
+          "SS",
+          "CT",
+          "PC",
+          "GR",
+          "QC",
+          "SUB"
+        ],
+        "allow_extra": true
+      }
+    },
+    {
+      "id": "S5a",
+      "severity": "must-green",
+      "desc": "chain.json 内全部 ledger 取值必须 ⊆ L01–L12",
+      "primitive": "enum_subset",
+      "args": {
+        "file": "spec/chain.json",
+        "collect": "**.ledger[*]",
+        "allowed": [
+          "L01",
+          "L02",
+          "L03",
+          "L04",
+          "L05",
+          "L06",
+          "L07",
+          "L08",
+          "L09",
+          "L10",
+          "L11",
+          "L12"
+        ],
+        "min_hits": 1
+      }
+    },
+    {
+      "id": "S5b",
+      "severity": "must-green",
+      "desc": "forms/*.json 内全部 ledger 取值必须 ⊆ L01–L12",
+      "primitive": "enum_subset",
+      "args": {
+        "file": "spec/forms/*.json",
+        "collect": "ledger[*]",
+        "allowed": [
+          "L01",
+          "L02",
+          "L03",
+          "L04",
+          "L05",
+          "L06",
+          "L07",
+          "L08",
+          "L09",
+          "L10",
+          "L11",
+          "L12"
+        ],
+        "min_hits": 1
+      }
+    },
+    {
+      "id": "S6",
+      "severity": "must-green",
+      "desc": "route 的取值必须存在于 routes（合同统一两级另列，允许）",
+      "primitive": "ref_exists",
+      "args": {
+        "file": "spec/chain.json",
+        "collect": "**.route",
+        "target_file": "spec/chain.json",
+        "target_dict": "routes",
+        "extra_allowed": [
+          "contract_two_level"
+        ],
+        "min_hits": 1
+      }
+    },
+    {
+      "id": "S7",
+      "severity": "must-green",
+      "desc": "采档阈值必须无缝且无重叠（首项 lower=null、末项 upper=null）",
+      "primitive": "range_contiguous",
+      "args": {
+        "file": "spec/chain.json",
+        "collect": "thresholds.purchase.bands",
+        "lower_key": "lower_inclusive",
+        "upper_key": "upper_inclusive",
+        "min_hits": 1
+      }
+    },
+    {
+      "id": "S8",
+      "severity": "must-green",
+      "desc": "forms/*.json 的字段名不得含 <br> 或空白（R-18 命名规范）",
+      "primitive": "pattern_absent",
+      "args": {
+        "file": "spec/forms/*.json",
+        "collect": "sections[*].fields[*].name",
+        "forbidden_regex": [
+          "<br\\s*/?>",
+          "\\s"
+        ],
+        "min_hits": 1
+      }
+    },
+    {
+      "id": "S9",
+      "severity": "must-green",
+      "desc": "ledger-mapping.json 必须恰好覆盖 L01–L12 全部 12 张",
+      "primitive": "coverage",
+      "args": {
+        "file": "spec/ledger-mapping.json",
+        "dict_path": "ledgers",
+        "required": [
+          "L01",
+          "L02",
+          "L03",
+          "L04",
+          "L05",
+          "L06",
+          "L07",
+          "L08",
+          "L09",
+          "L10",
+          "L11",
+          "L12"
+        ],
+        "allow_extra": false
+      }
+    },
+    {
+      "id": "S10",
+      "severity": "must-green",
+      "desc": "doc_to_ledger 的 ledger 取值必须真实存在于 ledgers",
+      "primitive": "ref_exists",
+      "args": {
+        "file": "spec/ledger-mapping.json",
+        "collect": "doc_to_ledger.*.ledger[*]",
+        "target_file": "spec/ledger-mapping.json",
+        "target_dict": "ledgers",
+        "extra_allowed": [],
+        "min_hits": 1
+      }
+    },
+    {
+      "id": "S11",
+      "severity": "must-green",
+      "desc": "doc_to_ledger 不得把 L08/L10/L11/L12 当落账目标（README 定案 #20）",
+      "primitive": "pattern_absent",
+      "args": {
+        "file": "spec/ledger-mapping.json",
+        "collect": "doc_to_ledger.*.ledger[*]",
+        "forbidden_regex": [
+          "^(L08|L10|L11|L12)$"
+        ],
+        "min_hits": 1
+      }
+    },
+    {
+      "id": "S12",
+      "severity": "must-green",
+      "desc": "★★ forms/*.json 的 ledger 必须与 ledger-mapping.doc_to_ledger 完全一致 —— 这条正是 R-02（L03 恒空静默缺陷）的执行守卫",
+      "primitive": "cross_equal_by_key",
+      "args": {
+        "left_glob": "spec/forms/*.json",
+        "left_key": "doc_type",
+        "left_value": "ledger",
+        "right_file": "spec/ledger-mapping.json",
+        "right_dict": "doc_to_ledger",
+        "right_value": "ledger"
+      }
+    }
+  ],
+  "consumer_obligations": {
+    "python_side": "`scripts/check_spec.py` 是**清单执行器**：不自持判据，只实现 `primitives` 引擎并逐条执行 `checks`。",
+    "go_side": "mimo 的 spec 加载器实现同一组原语的 Go 版、读同一份 `checks.json`。★ **原语语义以本文件 `desc` 裁决**；不一致即两侧漂移，必要时开议题。",
+    "on_adding_a_check": "★ 新增判据＝**在本文件加一条** ＋ 若需新原语则在 `primitives` 声明并在两侧实现。**不得只在某一侧硬编码。**"
+  },
+  "change_log": [
+    {
+      "version": "1.2",
+      "date": "2026-09-29",
+      "change": "★ **探针 C 逼出的第 4 例\"门禁自身假绿\"**：S7 的 collect 原写 `thresholds.purchase.bands[*]`（`[*]` 会**展开元素**，而本原语要的是**数组本身**）⇒ 判据一条未跑却报 OK。已改为 `bands`；并新增 `min_hits`（默认 1）：**collect 命中数不足即报错**，杜绝\"声明写错＝静默通过\""
+    },
+    {
+      "version": "1.1",
+      "date": "2026-09-29",
+      "change": "参数形态改为**可实现**（`dict_path` 取代 `collect` 取键；`coverage` 明确按 dict 键集合；`ref_exists` 加 `extra_allowed`）；S5 拆为 S5a/S5b"
+    },
+    {
+      "version": "1.0",
+      "date": "2026-09-29",
+      "change": "首版：8 原语 + S1–S12（原 check_spec.py 内联判据的清单化）"
+    }
+  ]
+}
