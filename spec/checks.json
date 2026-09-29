@@ -1,5 +1,5 @@
 {
-  "version": "1.4",
+  "version": "1.5",
   "generated_by": "WorkBuddy",
   "date": "2026-09-29",
   "scope": "spec/",
@@ -52,7 +52,8 @@
         "collect": "点路径",
         "target_file": "glob",
         "target_dict": "点路径",
-        "extra_allowed": []
+        "extra_allowed": [],
+        "split": "可选：分隔符（如 \"|\"）。设了则把每个引用**先按它拆段、逐段 TrimSpace、空段跳过**再逐段校验（用于 `route_by_condition` 这类**管道串**）。★ 未设 ⇒ 行为与原先逐字节一致（向后兼容）。★ 由 `N-021` 双方同时实现（Python ＋ Go），语义以本 desc 裁决。"
       }
     },
     "range_contiguous": {
@@ -83,6 +84,17 @@
         "right_file": "glob",
         "right_dict": "点路径",
         "right_value": "键"
+      }
+    },
+    "set_covers": {
+      "desc": "collect 取到的**标量**并成一个集合，断言 **⊇ `required`**，缺哪项报哪项。★ 用于「集合包含」语义的判据 —— 既有 `coverage` 只作用于 **dict 的键**，表达不了「字段上的标量值必须覆盖 1..8」这类要求。★ 标量规范化：字符串原样；数字按整数值去小数点（`8.0` → `\"8\"`）；布尔 → `\"true\"/\"false\"`；**非标量跳过**（不报错）。★ 两侧实现必须同口径，否则「同一份清单，一边绿一边红」。★ 由 `N-022` 双方同时实现（Python ＋ Go）。",
+      "args": {
+        "file": "glob",
+        "collect": "点路径",
+        "required": [
+          "必需项数组（元素可为字符串或数字；数字按整数值规范化）"
+        ],
+        "min_hits": 1
       }
     }
   },
@@ -257,6 +269,23 @@
       }
     },
     {
+      "id": "S6c",
+      "severity": "must-green",
+      "desc": "★ `doc_chains.*.route_by_condition` 的**管道串**须**逐段**存在于 `routes`（N-021 补：原 S6 的 collect 仅 `**.route`；依赖 `ref_exists.split`）",
+      "primitive": "ref_exists",
+      "args": {
+        "file": "spec/chain.json",
+        "collect": "**.route_by_condition",
+        "target_file": "spec/chain.json",
+        "target_dict": "routes",
+        "extra_allowed": [
+          "contract_two_level"
+        ],
+        "split": "|",
+        "min_hits": 1
+      }
+    },
+    {
       "id": "S7",
       "severity": "must-green",
       "desc": "采档阈值必须无缝且无重叠（首项 lower=null、末项 upper=null）",
@@ -350,6 +379,27 @@
         "right_dict": "doc_to_ledger",
         "right_value": "ledger"
       }
+    },
+    {
+      "id": "S13",
+      "severity": "must-green",
+      "desc": "★★ **制度第三十五条「合同必备条款」8 组完整性** —— `forms/CT.json` 的 `sections[*].fields[*].clause_group` 必须覆盖 **1..8**。制度原文「合同（含简式订单）至少应包含下列条款，**缺少任一项的不得进入合同审批环节**」⇒ 缺一组＝**少一道硬拦截**（与 `L03 恒空` 同族：少了东西与没违规长得一样）。",
+      "primitive": "set_covers",
+      "args": {
+        "file": "spec/forms/CT.json",
+        "collect": "sections[*].fields[*].clause_group",
+        "required": [
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8
+        ],
+        "min_hits": 8
+      }
     }
   ],
   "consumer_obligations": {
@@ -359,6 +409,11 @@
     "on_emitting_a_violation": "★★ **两侧引擎在报违规时，必须把「当前判据的真实 `id`」写进消息前缀** —— 例如 `[S5c] …`，**不得硬编码某个 ID 字面量、也不得写原语名**。★ 理由（实测事故）：同一原语会被**多条判据**复用（现 16 条判据复用 8 个原语），一旦硬编码，`S5c` 报出来的会是 `[S8/S11]` —— **排查者照错误 ID 去查，必然被带偏；这比『不报错』更坏**。Python 侧实现＝执行器注入 `args[\"__cid__\"]` ＋ `_self_audit_cid_literals()` 源码自审（禁止回潮）；Go 侧请同口径实现。"
   },
   "change_log": [
+    {
+      "version": "1.5",
+      "date": "2026-09-30",
+      "change": "★ **`N-021`/`N-022` 两侧同时落地（我方清单侧）**：① `ref_exists` 增可选 **`split`** 参数 ＋ 新增判据 **`S6c`**（`route_by_condition` 管道串逐段校验；此前该字段悬空无判据）；② 新增**第 9 原语 `set_covers`**（集合覆盖）＋ 新增判据 **`S13`**（`forms/CT.json` 的 8 组必备条款完整性，落实制度第三十五条「缺任一项不得进入合同审批」的硬拦截）。★ 判据 15 → **17** 条，原语 8 → **9** 个。★ 两侧均已实现（Go 侧 `1928dd7`；Python 侧本提交），语义以本文件 `desc` 裁决。★ **`N-022` 的第 2 条判据（可写台账字段 ⊆ 配置白名单）本轮未落**，原因见 `COLLAB.md#N-024`：`set_covers` 只能比**同一文件内**的标量集合，而 `ref_exists` 的目标集合只能取自 **dict 的键**（读不了 `ledger_field[*].field_key` 这种**标量数组**）；且权威面是**用户填的真实配置**而非样例 ⇒ 改由**导入层给可见提示**（与既有 `NonExtractableBizFields` 同款形态），见 `N-024`。"
+    },
     {
       "version": "1.4",
       "date": "2026-09-29",

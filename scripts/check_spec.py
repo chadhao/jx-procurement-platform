@@ -117,6 +117,25 @@ def _dict_keys(n):
     return set(k for k in n.keys() if not k.startswith("_"))
 
 
+def _scalar_str(v):
+    """
+    标量 → 规范字符串（供 `set_covers` 比较用）。★ 与 Go 侧 `scalarString` **同口径**：
+      · 字符串原样；整数 / 整数值浮点 → 去小数点的十进制（`8.0` → `"8"`）；布尔 → `"true"/"false"`；
+      · **非标量（dict/list/None）返回 None**（调用方跳过，不报错 —— 与 Go 的 `default: return "", false` 一致）。
+    ★ 为什么必须两边口径一致：`required` 里可能写 `1..8` 的数字，而 JSON 解出来一边是 int、一边是 float64；
+      若两侧规范化不同，就会出现「同一份清单，我这边绿、你那边红」。这正是"两侧共同契约"要防的漂移。
+    """
+    if isinstance(v, bool):          # ★ 必须排在 int 之前（Python 里 bool 是 int 的子类）
+        return "true" if v else "false"
+    if isinstance(v, int):
+        return str(v)
+    if isinstance(v, float):
+        return str(int(v)) if v == int(v) else str(v)
+    if isinstance(v, str):
+        return v
+    return None
+
+
 # ---------------------------------------------------------------- 8 个原语引擎
 #
 # ★★ 2026-09-29 加固（**探针 C 逼出的第 4 例"门禁自身假绿"**）：
@@ -210,12 +229,12 @@ def prim_enum_subset(args):
 
 
 def prim_ref_exists(args):
-    # ★ 2026-09-29 议题 N-021 待办：`route_by_condition` 形如 `"a | b | c"` 的**管道串**，
-    #   需要 `split` 参数才能逐段校验。★ **本轮刻意不落** —— 引擎能力是**两侧共同契约**
-    #   （Go 侧 `ref_exists` 无此参数、manifest 里一出现即 panic），单侧实现＝制造"清单说的
-    #   和 Go 做的不是一回事"。⇒ 由 N-021 双方同时引入（Python 与 Go 各一次，很小）。
-    #   ★ 反面做法已排除：用负向正则把允许集硬编码进 `pattern_absent` ⇒ 第二份真相，不可维护。
-    cid = _cid(args)
+    # ★ `split`（议题 N-021）：某些字段把多个引用**串在一个字符串里**（管道串），
+    #   如 `route_by_condition: "expense_sales | expense_mgmt_advance | expense_mgmt_direct"`
+    #   ⇒ 须先按分隔符拆段、逐段 TrimSpace、**空段跳过**（容忍多余空格/尾随分隔符）再逐段校验。
+    #   ★ **未设 split ⇒ 行为与原先逐字节一致**（向后兼容，不影响任何既有判据）。
+    #   ★ 语义与 Go 侧 `argStringOpt` 分支**逐字对齐**（两侧共同契约，见 spec/checks.json#consumer_obligations）。
+    cid, split = _cid(args), args.get("split")
     target = set(args.get("extra_allowed") or [])
     for tf in expand(args["target_file"]):
         for nd in sel(load_json(tf), toks(args["target_dict"])):
@@ -227,8 +246,45 @@ def prim_ref_exists(args):
         vals = sel(load_json(f), toks(args["collect"]))
         probs += _hits_guard(cid, args["collect"], vals, args)
         for v in vals:
-            if isinstance(v, str) and v not in target:
-                probs.append("[%s] %s `%s` 指向不存在的目标：%s" % (cid, rel(f), args["collect"], v))
+            if not isinstance(v, str):
+                continue
+            refs = [v] if not split else [x.strip() for x in v.split(split) if x.strip()]
+            for ref in refs:
+                if ref not in target:
+                    probs.append("[%s] %s `%s` 引用 %r 不存在于目标键集合"
+                                 % (cid, rel(f), args["collect"], ref))
+    return probs
+
+
+def prim_set_covers(args):
+    """
+    ★ 第 9 原语（议题 N-022）：**集合覆盖** —— collect 取到的**标量**并成一个集合，断言 ⊇ `required`，
+      缺哪项报哪项。
+
+    为什么需要它：有两条硬判据是「集合包含」语义，用既有 8 原语**表达不了** ——
+      ① `forms/CT.json` 的**制度第三十五条 8 组必备条款完整性**（字段上的标量值 1..8；
+         `coverage` 只作用于 **dict 的键**，校验不了「1..8 全在」）；
+      ② 可写台账字段与其登记白名单的**跨集合**关系。
+    ★ 语义与 Go 侧 `case "set_covers"` **逐字对齐**：
+      · 标量规范化：字符串原样；数字按整数值去小数点（`8.0` → `"8"`）；布尔 → `"true"/"false"`；**非标量跳过**（不报错）；
+      · `min_hits`（默认 1）不足 ⇒ 报「疑似清单声明有误」，**不许静默通过**（与既有加固同口径）。
+    """
+    cid = _cid(args)
+    probs = []
+    required = [_scalar_str(x) for x in args.get("required") or []]
+    required = [x for x in required if x is not None]
+    for f in expand(args["file"]):
+        vals = sel(load_json(f), toks(args["collect"]))
+        probs += _hits_guard(cid, args["collect"], vals, args)
+        got = set()
+        for v in vals:
+            s = _scalar_str(v)
+            if s is not None:
+                got.add(s)
+        for need in required:
+            if need not in got:
+                probs.append("[%s] %s `%s` 集合缺少必需项 %r（collect 覆盖不足）"
+                             % (cid, rel(f), args["collect"], need))
     return probs
 
 
@@ -312,6 +368,7 @@ PRIMITIVES = {
     "range_contiguous": prim_range_contiguous,
     "pattern_absent": prim_pattern_absent,
     "cross_equal_by_key": prim_cross_equal_by_key,
+    "set_covers": prim_set_covers,
 }
 
 
