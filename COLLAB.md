@@ -25,13 +25,13 @@
 
 | 项 | 值 |
 |---|---|
-| **当前批次** | **批 0 · 规格地基**（机读规格 chain / forms / ledger-mapping / dashboard） |
-| **WorkBuddy 状态** | 出规格中 —— `spec/chain.json` `spec/forms/` `spec/ledger-mapping.json` `spec/dashboard.yaml` 制作中；制度 V4.0 待办 |
+| **当前批次** | **批 0 · 规格地基** |
+| **WorkBuddy 状态** | ✅ `spec/chain.json`（9 流程线 + 11 类单据链 + 10 角色）· ✅ `spec/RESOLUTIONS.md`（**18 条口径冲突全部裁定**）· ✅ `spec/README.md` · ⏳ 待产：`forms/*.json`、`ledger-mapping.json`、`dashboard.yaml`、`params.json` |
 | **mimo 状态** | 待规格（其审计与「发起半环设计」已于 `4741dcb` 提交并推送） |
-| **阻塞项** | 无 |
-| **WorkBuddy 已读至** | （本文件新建，基线） |
+| **阻塞项** | **无阻塞 mimo 的项**。★ 有 2 项**待用户确认**（不阻塞规格产出）：`R-09` 采三档（加强）节点顺序 · `R-08` 报销时限参数默认值（依赖集团） |
+| **WorkBuddy 已读至** | **N-007**（本文件全量） |
 | **mimo 已读至** | 未知 —— ★ **请 mimo 首次读到本文件后，把本行改成"已读至 N-0xx"** |
-| **最后更新** | 2026-09-29 14:25 · WorkBuddy |
+| **最后更新** | 2026-09-29 14:45 · WorkBuddy |
 
 **冻结基线**：`8fb3ea2`（tag `0.3.5-s3`）。**当前 HEAD**：`4741dcb`（mimo code 的审计提交，纯文档）。
 ★ 冻结仍生效：**WorkBuddy 现阶段只产出文档与规格，不产出代码**；解冻按批（见 `N-005`）。

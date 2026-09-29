@@ -99,6 +99,11 @@ green       "md 表格列数门禁"          "$PY" scripts/check_md_tables.py
 #   并借此逼出过自身的 1 处**假绿**（把「待议＝## 1.」编号写死，而文件里实际是 `## 4.`），
 #   已改为按章节标题关键词判定（对重编号免疫）。见 `scripts/check_collab.py` 头注。
 green       "COLLAB 协商台账门禁"        "$PY" scripts/check_collab.py
+# ★ 2026-09-29 新增：`spec/`（机读规格）门禁。
+#   动因＝`spec/` 是交给 mimo code 的**机器可读契约**；若语法错 / 引用悬空 / 编号对不上，
+#   开发会拿到**静默错误的前提**。★ 首跑即抓到 WorkBuddy 自己写的 3 处中文引号误用（打断 JSON）；
+#   另已用探针自证（删流程线 / ledger 指向禁落账的 L10 / route 悬空 / 档位重叠 ⇒ 逐条报出）。
+green       "spec 机读规格门禁"          "$PY" scripts/check_spec.py
 green       "净检出可构建门禁"          bash scripts/check_head_buildable.sh
 echo
 echo "[会报既存问题]（不阻塞）"
