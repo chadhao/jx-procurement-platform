@@ -1,0 +1,146 @@
+{
+  "doc_type": "SA",
+  "label": "费用事前申请单",
+  "prefix": "SA",
+  "number_format": "SA-YYMM-####",
+  "version": "1.0",
+  "date": "2026-09-29",
+  "generated_by": "WorkBuddy",
+
+  "sources": {
+    "tool_table": "采购与费用审批体系配置工具表_v3.0.xlsx → sheet「表单字段清单」R22–R29（表头 8 字段）＋ R48–R51（结算补录组 4 字段）",
+    "institution": "费用管理办法V3.0（第四章 运营销售费用流程 / 第三十四条 / 第六十一条）",
+    "recon": "_scratch/recon-table-v3-fields.md §1.2、§1.3",
+    "resolution": "spec/RESOLUTIONS.md（R-10 / R-11 / R-20 / R-21）"
+  },
+
+  "ledger": ["L05"],
+  "routes": {
+    "_note": "★ 费用线**不分档**（任意金额均走本流程），但**分三条** —— 由「用途分类」＋「支付方式」共同决定（见 spec/enums.json#route_resolution）",
+    "expense_sales": "用途分类 ∈ S01–S07 / M04 / M05 / M08 ⇒ 销一档（5 节点，可提前支出）",
+    "expense_mgmt_advance": "用途分类 ∈ M01/M02/M03/M06 且 支付方式＝个人垫付 ⇒ 管一档（5 节点，可提前支出）",
+    "expense_mgmt_direct": "用途分类 ∈ P08 / M07，或（M01/M02/M03/M06 且 支付方式＝对公直付）⇒ 管二档（4 节点，**不可提前支出**）",
+    "_hard_rule": "★ `销一档` 与 `管一档` **审批链完全相同**，但批复 C3 要求**不合并**（差异在附加材料：销一档招待/烟酒须附接待事由、对象单位、人数）"
+  },
+
+  "sections": [
+    {
+      "id": "header",
+      "label": "表头",
+      "fields": [
+        {
+          "name": "biz_no", "label": "申请单号", "type": "string", "required": true, "source": "system",
+          "immutable_after_submit": true, "is_business_key": true,
+          "origin": "tool_table", "origin_ref": "表单字段清单 R22",
+          "rule": "格式 SA-YYMM-####；作为**费用线**的业务主键"
+        },
+        {
+          "name": "applicant", "label": "申请人", "type": "person", "required": true, "source": "system", "immutable": true,
+          "origin": "institution", "origin_ref": "制度第十一条「申请人」",
+          "note": "★ 工具表 SA 字段组（R22–R29）**未列出**申请人字段（PR 有）；依制度第十一条「各部门全员」为发起人 ⇒ 判定为**工具表缺漏**，补入。理由：D5 与「本人发起」判定（R-03 上抬分支）都依赖本字段"
+        },
+        {
+          "name": "applicant_department", "label": "所属部门", "type": "department", "required": true, "source": "system", "immutable": true,
+          "origin": "institution", "origin_ref": "制度第十一条「申请人 / 所属部门」",
+          "note": "同上；且**决定主管领导是谁**（生产部/销售部 → 副总；综合运营部/质检技术部 → 项目总经理）"
+        },
+        {
+          "name": "expense_subject", "label": "费用科目", "type": "enum", "required": true, "source": "user",
+          "enum_ref": "spec/enums.json#expense_subjects",
+          "origin": "tool_table", "origin_ref": "表单字段清单 R23"
+        },
+        {
+          "name": "usage_category_l1", "label": "用途分类（一级）", "type": "enum", "required": true, "source": "user",
+          "enum_ref": "spec/enums.json#usage_categories", "enum_size": 23,
+          "origin": "tool_table", "origin_ref": "表单字段清单 R24（原文写作「用途分类 / 二级明细」）",
+          "critical_note": "★ 本字段**决定该笔支出走哪条费用线**（S 类→销一档；M 类按支付方式再分）—— 见 spec/enums.json#route_resolution",
+          "rule": "唯一性：只能选一个一级分类（用途分类表 R31）"
+        },
+        {
+          "name": "usage_category_l2", "label": "二级明细", "type": "enum", "required": true, "source": "user",
+          "enum_ref": "spec/enums.json#usage_categories（按 usage_category_l1 联动）",
+          "origin": "tool_table", "origin_ref": "表单字段清单 R24",
+          "rule": "★ **二级明细必填，不得只填一级分类**（用途分类表 R32）"
+        },
+        {
+          "name": "amount_cents", "label": "申请金额", "type": "money_cents", "required": true, "source": "user",
+          "origin": "tool_table", "origin_ref": "表单字段清单 R25",
+          "note": "★ **运营销售与管理费用不分档**，任何金额均走本流程；由主管领导审批",
+          "rule": "必须 > 0（见 checks.amount_positive）"
+        },
+        {
+          "name": "purpose", "label": "事由 / 用途", "type": "textarea", "required": true, "source": "user",
+          "origin": "tool_table", "origin_ref": "表单字段清单 R26",
+          "rule": "★ **招待类必填接待对象与人数**；**检测类必填依据标准**"
+        },
+        {
+          "name": "occurrence_period", "label": "发生期间", "type": "date_range", "required": true, "source": "user",
+          "origin": "tool_table", "origin_ref": "表单字段清单 R27",
+          "rule": "起止日期；★ **跨月费用须说明分摊方式**"
+        },
+        {
+          "name": "counterparty", "label": "对方单位", "type": "text", "required": false, "source": "user",
+          "origin": "tool_table", "origin_ref": "表单字段清单 R28",
+          "rule": "**需开票或对外支付时必填**（条件必填）"
+        },
+        {
+          "name": "payment_method_input", "label": "支付方式", "type": "enum", "required": true, "source": "user",
+          "enum_ref": "spec/enums.json#payment_method_input",
+          "origin": "tool_table", "origin_ref": "表单字段清单 R29",
+          "rule": "选「垫付」则本人先行支付后走报销（**可提前支出**）；选「对公直付」则不产生垫付、**须等集团完成付款**",
+          "resolution_note": "R-10：本字段是**输入源**；SUB 端「付款方式」（`payment_method`）为其**派生只读**，两者不得混用",
+          "critical_note": "★ 本字段与 `usage_category_l1` **共同决定**走 expense_sales / expense_mgmt_advance / expense_mgmt_direct"
+        }
+      ]
+    },
+    {
+      "id": "settlement_backfill",
+      "label": "结算补录组",
+      "filled_at": "结算时（事后补录）",
+      "_origin": "tool_table", "origin_ref": "表单字段清单 R48–R51",
+      "_critical_note": "★★ 批复 A4：**报销单（BX）已取消** ⇒ 票据必须**挂到已批准的事前申请单上**才可移交集团；**无关联的票据一律不予受理**",
+      "fields": [
+        {
+          "name": "handler", "label": "经办人", "type": "person", "required": false, "source": "user",
+          "origin": "tool_table", "origin_ref": "表单字段清单 R48",
+          "rule": "★ 批复 C2：费用线**增设**本字段，**可为空**。用于费用线（销一档/管一档/管二档）的经办留痕，**语义与采购线的「采购经办人」一致，但不作必填、不适用「禁止自我经办」约束**",
+          "naming": "R-20#2：统一名为 `经办人`；采购线一律叫 `采购经办人`（两者**不合并**，语义与约束不同）"
+        },
+        {
+          "name": "invoice_info", "label": "票据信息", "type": "text_and_attachment", "required_conditional": "结算时必填", "source": "user",
+          "origin": "tool_table", "origin_ref": "表单字段清单 R49",
+          "rule": "发票号、金额、开票日期与票据扫描件。★ **无关联的票据一律不予受理**；建议接入发票验真（本期不做 —— PRD N8）"
+        },
+        {
+          "name": "actual_vs_approved_diff_cents", "label": "实际金额与申请额差异", "type": "money_cents", "required": false, "source": "computed",
+          "origin": "tool_table", "origin_ref": "表单字段清单 R50",
+          "rule": "★ **实际金额不得超过事前申请批准额**；超出须走**超支确认**，**未确认不得移交集团**",
+          "note": "原挂在「报销单」上的本字段，随 A4 改挂事前申请单"
+        },
+        {
+          "name": "invoice_count_and_overrun_note", "label": "票据张数与超支说明", "type": "number_and_textarea", "required": false, "source": "user",
+          "origin": "tool_table", "origin_ref": "表单字段清单 R51",
+          "rule": "有差额时填写；无差额可留空。★ 批复 D7：随月度报送一并列入「**1,000 元以下高频供应商**」清单与 **800–1,000 元重点抽查区间**"
+        }
+      ]
+    }
+  ],
+
+  "checks": [
+    { "id": "amount_positive",        "when": "submit", "assert": "amount_cents > 0", "else": "拒绝提交", "origin": "resolution", "origin_ref": "FR-M9-03（现实现仅 Warn 不拒；PR/SA 同此）" },
+    { "id": "completeness_l2",        "when": "submit", "assert": "usage_category_l1 与 usage_category_l2 均已填", "else": "拒绝提交", "origin": "tool_table", "origin_ref": "用途分类表 R32" },
+    { "id": "entertain_required",     "when": "submit && usage_category_l1 ∈ {S01,S02,S03}", "assert": "purpose 含接待对象与人数", "else": "拒绝提交", "origin": "tool_table", "origin_ref": "表单字段清单 R26" },
+    { "id": "inspection_basis",       "when": "submit && usage_category_l1 == 'P07'", "assert": "purpose 含依据标准", "else": "拒绝提交", "origin": "tool_table", "origin_ref": "表单字段清单 R26" },
+    { "id": "counterparty_conditional","when": "submit && (需要开票 || 对外支付)", "assert": "counterparty 非空", "else": "拒绝提交", "origin": "tool_table", "origin_ref": "表单字段清单 R28" },
+    { "id": "cross_month_allocation", "when": "submit && occurrence_period 跨月", "assert": "须说明分摊方式", "else": "拒绝提交", "origin": "tool_table", "origin_ref": "表单字段清单 R27" },
+    { "id": "actual_not_exceed",      "when": "结算补录", "assert": "actual_cents <= approved_cents", "else": "须走**超支确认**；未确认不得移交集团", "origin": "tool_table", "origin_ref": "表单字段清单 R50" },
+    { "id": "invoice_must_link",      "when": "结算补录", "assert": "票据关联到已批准的事前申请单", "else": "**不予受理**", "origin": "tool_table", "origin_ref": "批复 A4" },
+    { "id": "idempotency_key",        "when": "submit", "assert": "读取 Idempotency-Key", "else": "无幂等保护", "origin": "code", "origin_ref": "mimo 审计：现 submit 不读 Idempotency-Key" }
+  ],
+
+  "known_gaps": [
+    { "gap": "SA 在工具表字段组中**缺「申请人 / 所属部门」**", "status": "已按制度补入并存疑", "note": "★ 依制度第十一条补入（`origin: institution`）。若工具表维护方认为应走「系统带入」而非字段，不影响实现（两处都要求「自动带入、不可手改」）" },
+    { "gap": "「超支确认」的载体与流程未定义", "status": "未定", "note": "R50 要求「超出须走超支确认」，但**超支确认走什么单据/节点未在任何文档中定义** ⇒ 建议开议题或纳入制度 V4.0 待确认" },
+    { "gap": "P08 / M07 是否允许个人垫付", "status": "已裁定（按原文）", "note": "用途分类表把 P08 写作「费用线（**对公直付**）」、M07 同 ⇒ **只能对公直付**；而 M01/M02/M03/M06 写作「费用线（**可**对公直付）」⇒ **可垫付可直付**。这是原文区分，勿合并" }
+  ]
+}
