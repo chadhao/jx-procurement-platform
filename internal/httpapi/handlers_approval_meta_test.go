@@ -5,8 +5,11 @@ package httpapi
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"sort"
+	"strings"
 	"testing"
 
 	"github.com/labstack/echo/v4"
@@ -28,7 +31,8 @@ func TestHandleApprovalMeta(t *testing.T) {
 	e := echo.New()
 	req := httptest.NewRequest(http.MethodGet, "/api/approval/meta", nil)
 	rec := httptest.NewRecorder()
-	d := Deps{Spec: metaTestBundle(t)}
+	bundle := metaTestBundle(t)
+	d := Deps{Spec: bundle}
 
 	if err := d.handleApprovalMeta(e.NewContext(req, rec)); err != nil {
 		t.Fatalf("handler 返回错误: %v", err)
@@ -46,24 +50,52 @@ func TestHandleApprovalMeta(t *testing.T) {
 		t.Fatalf("data 非对象: %s", rec.Body.String())
 	}
 
-	// spec_version（N-008③）
+	// spec_version（N-008③）—— ★ 期望串由真源（bundle.Forms）派生，不硬编码表单清单
+	//（N-023：硬编码会把「批 1 临时范围」写成系统不变量，批 2 每落一张表单撞一次）。
 	sv, _ := data["spec_version"].(string)
-	if sv != "chain=1.0;enums=1.1;ledger=1.0;forms=BA:1.0,PR:1.0,SA:1.0" {
-		t.Errorf("spec_version = %q", sv)
+	wantSV := fmt.Sprintf("chain=%s;enums=%s;ledger=%s;forms=%s",
+		bundle.Chain.Version, bundle.Enums.Version, bundle.Ledger.Version, joinFormsVersionFor(bundle))
+	if sv != wantSV {
+		t.Errorf("spec_version = %q，应由真源派生为 %q", sv, wantSV)
 	}
-	// doc_types_available = 批 1 三类
+
+	// doc_types_available：**⊇ 批 1 三张**（包含语义；新表单到来不红），且去重有序
 	dts, _ := data["doc_types_available"].([]any)
-	if len(dts) != 3 {
-		t.Fatalf("doc_types_available = %v，应为 BA/PR/SA", dts)
+	seen := map[string]bool{}
+	var prev string
+	for _, x := range dts {
+		s, _ := x.(string)
+		if seen[s] {
+			t.Errorf("doc_types_available 重复: %s", s)
+		}
+		seen[s] = true
+		if prev != "" && s < prev {
+			t.Errorf("doc_types_available 未排序: %s 出现在 %s 之后", s, prev)
+		}
+		prev = s
 	}
-	// forms 含 sections 与 checks（驱动前端渲染）
+	for _, must := range []string{"BA", "PR", "SA"} {
+		if !seen[must] {
+			t.Errorf("doc_types_available 缺批 1 表单 %s：%v", must, dts)
+		}
+	}
+
+	// forms：**每张都必须带 sections 与 checks** —— 这才是契约不变量
+	//（"恰好 3 张"是批次临时范围；"新表单也必须结构完整"才是该守的）。
 	forms, _ := data["forms"].([]any)
-	if len(forms) != 3 {
-		t.Fatalf("forms = %d，应为 3", len(forms))
+	if len(forms) < 3 {
+		t.Fatalf("forms = %d，应 ≥3（至少含批 1 三张）", len(forms))
 	}
-	first, _ := forms[0].(map[string]any)
-	if _, ok := first["sections"]; !ok {
-		t.Error("forms[0] 缺 sections")
+	for i, f := range forms {
+		fm, _ := f.(map[string]any)
+		secs, hasSec := fm["sections"].([]any)
+		if !hasSec || len(secs) == 0 {
+			t.Errorf("forms[%d]（%v）缺非空 sections", i, fm["doc_type"])
+		}
+		chk, hasChk := fm["checks"].([]any)
+		if !hasChk || len(chk) == 0 {
+			t.Errorf("forms[%d]（%v）缺非空 checks", i, fm["doc_type"])
+		}
 	}
 	// enums 与 bands 下发
 	if _, ok := data["enums"]; !ok {
@@ -73,6 +105,21 @@ func TestHandleApprovalMeta(t *testing.T) {
 	if len(bands) != 3 {
 		t.Errorf("bands = %d，应为 3", len(bands))
 	}
+}
+
+// joinFormsVersionFor 测试侧独立拼接 spec_version 的 forms 段（与生产 buildSpecVersion
+// 交叉验证，而非调用被测函数自证）。
+func joinFormsVersionFor(b *specload.Bundle) string {
+	dts := make([]string, 0, len(b.Forms))
+	for dt := range b.Forms {
+		dts = append(dts, dt)
+	}
+	sort.Strings(dts)
+	parts := make([]string, 0, len(dts))
+	for _, dt := range dts {
+		parts = append(parts, dt+":"+b.Forms[dt].Version)
+	}
+	return strings.Join(parts, ",")
 }
 
 func TestHandleApprovalMetaNotAssembled(t *testing.T) {

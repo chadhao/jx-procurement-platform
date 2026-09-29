@@ -7,6 +7,8 @@ package specload
 
 import (
 	"encoding/json"
+	"fmt"
+	"sort"
 	"strings"
 	"testing"
 
@@ -72,11 +74,35 @@ func TestLoadRealSpec(t *testing.T) {
 		}
 	}
 
-	// spec_version 聚合（N-008 修正③）
-	wantSV := "chain=1.0;enums=1.1;ledger=1.0;forms=BA:1.0,PR:1.0,SA:1.0"
+	// spec_version 聚合（N-008 修正③）—— ★ **期望串由真源派生，不硬编码表单清单**
+	//（N-023：硬编码 forms=BA:1.0,PR:1.0,SA:1.0 把「批 1 临时范围」写成系统不变量，
+	//  批 2 每落一张表单撞一次；要守的是**格式与前缀**，不是"恰好几张表单"）。
+	wantSV := fmt.Sprintf("chain=%s;enums=%s;ledger=%s;forms=%s",
+		b.Chain.Version, b.Enums.Version, b.Ledger.Version, joinFormsVersion(b))
 	if b.SpecVersion != wantSV {
-		t.Errorf("SpecVersion = %q，应为 %q", b.SpecVersion, wantSV)
+		t.Errorf("SpecVersion = %q，应由真源派生为 %q", b.SpecVersion, wantSV)
 	}
+	// 契约不变量：批 1 三张必须在（**包含**语义，新表单到来不红）
+	for _, dt := range []string{"BA:", "PR:", "SA:"} {
+		if !strings.Contains(b.SpecVersion, dt) {
+			t.Errorf("SpecVersion 缺批 1 表单 %s 段：%q", dt, b.SpecVersion)
+		}
+	}
+}
+
+// joinFormsVersion 按 doc_type 升序拼 "DT:version,…"（与 buildSpecVersion 同形，
+// 但作为**测试侧独立实现**交叉验证，而非调用被测函数自证）。
+func joinFormsVersion(b *Bundle) string {
+	dts := make([]string, 0, len(b.Forms))
+	for dt := range b.Forms {
+		dts = append(dts, dt)
+	}
+	sort.Strings(dts)
+	parts := make([]string, 0, len(dts))
+	for _, dt := range dts {
+		parts = append(parts, dt+":"+b.Forms[dt].Version)
+	}
+	return strings.Join(parts, ",")
 }
 
 // ---------------------------------------------------------------------------
@@ -232,4 +258,154 @@ func int64Eq(a, b *int64) bool {
 		return a == b
 	}
 	return *a == *b
+}
+
+// ---------------------------------------------------------------------------
+// 引擎能力自测（N-021 split · N-022 set_covers）——
+// 清单尚无 S6c/S13/S14（你先我后顺序：Go 先落、门禁仍绿）；本组用内存追加判据自测。
+// ---------------------------------------------------------------------------
+
+// appendCheck 向内存 checks.json 追加一条判据（不落盘）。
+func appendCheck(t *testing.T, files map[string][]byte, c map[string]any) {
+	t.Helper()
+	var doc map[string]any
+	if err := json.Unmarshal(files["spec/checks.json"], &doc); err != nil {
+		t.Fatal(err)
+	}
+	doc["checks"] = append(doc["checks"].([]any), c)
+	out, err := json.Marshal(doc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	files["spec/checks.json"] = out
+}
+
+func TestRefExistsSplitEngine(t *testing.T) { // N-021
+	base := loadReal(t).ProblemsRaw
+
+	t.Run("管道串逐段校验_合法通过", func(t *testing.T) {
+		files := cloneFiles(base)
+		appendCheck(t, files, map[string]any{
+			"id": "S6c-probe", "primitive": "ref_exists",
+			"args": map[string]any{
+				"file": "spec/chain.json", "collect": "**.route_by_condition",
+				"target_file": "spec/chain.json", "target_dict": "routes",
+				"extra_allowed": []string{"contract_two_level"},
+				"split":         "|", "min_hits": 1,
+			},
+		})
+		if _, err := loadFiles(files); err != nil {
+			t.Fatalf("合法管道串不应报错: %v", err)
+		}
+	})
+
+	t.Run("坏段被抓出", func(t *testing.T) {
+		files := cloneFiles(base)
+		appendCheck(t, files, map[string]any{
+			"id": "S6c-bad", "primitive": "ref_exists",
+			"args": map[string]any{
+				"file": "spec/chain.json", "collect": "**.route_by_condition",
+				"target_file": "spec/chain.json", "target_dict": "routes",
+				"extra_allowed": []string{"contract_two_level"},
+				"split":         "|",
+			},
+		})
+		// 破坏 SA.route_by_condition 注入坏段
+		mutateJSON(t, files, "spec/chain.json", func(m map[string]any) {
+			asMap(asMap(m["doc_chains"])["SA"])["route_by_condition"] = "expense_sales | no_such_route"
+		})
+		_, err := loadFiles(files)
+		if err == nil || !strings.Contains(err.Error(), "no_such_route") {
+			t.Fatalf("应报出坏段 no_such_route: %v", err)
+		}
+	})
+
+	t.Run("未设split_行为不变", func(t *testing.T) {
+		files := cloneFiles(base)
+		// 整串当单个引用（含空格管道）⇒ 必然不存在 → 报错（证明拆分确实生效于有 split 时）
+		appendCheck(t, files, map[string]any{
+			"id": "S6c-nosplit", "primitive": "ref_exists",
+			"args": map[string]any{
+				"file": "spec/chain.json", "collect": "**.route_by_condition",
+				"target_file": "spec/chain.json", "target_dict": "routes",
+			},
+		})
+		if _, err := loadFiles(files); err == nil || !strings.Contains(err.Error(), "expense_sales | expense_mgmt_advance") {
+			t.Fatalf("未 split 时应整串比对失败: %v", err)
+		}
+	})
+}
+
+// declarePrimitive 向内存 checks.json 的 primitives 补声明（模拟 WorkBuddy 侧将
+// 随 S13/S14 提交的原语声明 —— META 自检要求「引用的原语必须已声明」，探针不许绕过它）。
+func declarePrimitive(t *testing.T, files map[string][]byte, id string) {
+	t.Helper()
+	var doc map[string]any
+	if err := json.Unmarshal(files["spec/checks.json"], &doc); err != nil {
+		t.Fatal(err)
+	}
+	prims, _ := doc["primitives"].(map[string]any)
+	if prims == nil {
+		prims = map[string]any{}
+		doc["primitives"] = prims
+	}
+	if _, ok := prims[id]; !ok {
+		prims[id] = map[string]any{"desc": "engine self-test stub", "args": map[string]any{}}
+	}
+	out, err := json.Marshal(doc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	files["spec/checks.json"] = out
+}
+
+func TestSetCoversEngine(t *testing.T) { // N-022
+	base := loadReal(t).ProblemsRaw
+
+	t.Run("CT八组必备条款_合法通过", func(t *testing.T) {
+		files := cloneFiles(base)
+		declarePrimitive(t, files, "set_covers")
+		appendCheck(t, files, map[string]any{
+			"id": "S13-probe", "primitive": "set_covers",
+			"args": map[string]any{
+				"file": "spec/forms/CT.json", "collect": "sections[*].fields[*].clause_group",
+				"required": []any{1, 2, 3, 4, 5, 6, 7, 8}, "min_hits": 8,
+			},
+		})
+		if _, err := loadFiles(files); err != nil {
+			t.Fatalf("CT 八组应覆盖: %v", err)
+		}
+	})
+
+	t.Run("缺项逐条报出", func(t *testing.T) {
+		files := cloneFiles(base)
+		declarePrimitive(t, files, "set_covers")
+		appendCheck(t, files, map[string]any{
+			"id": "S13-missing", "primitive": "set_covers",
+			"args": map[string]any{
+				"file": "spec/forms/CT.json", "collect": "sections[*].fields[*].clause_group",
+				"required": []any{1, 2, 3, 4, 5, 6, 7, 8, 99},
+			},
+		})
+		_, err := loadFiles(files)
+		if err == nil || !strings.Contains(err.Error(), "99") {
+			t.Fatalf("应报出缺失项 99: %v", err)
+		}
+	})
+
+	t.Run("min_hits不足报错", func(t *testing.T) {
+		files := cloneFiles(base)
+		declarePrimitive(t, files, "set_covers")
+		appendCheck(t, files, map[string]any{
+			"id": "S13-minhits", "primitive": "set_covers",
+			"args": map[string]any{
+				"file": "spec/forms/CT.json", "collect": "sections[*].fields[*].no_such_attr",
+				"required": []any{1}, "min_hits": 1,
+			},
+		})
+		_, err := loadFiles(files)
+		if err == nil || !strings.Contains(err.Error(), "min_hits") {
+			t.Fatalf("collect 命中 0 应触发 min_hits 报错: %v", err)
+		}
+	})
 }

@@ -17,9 +17,10 @@ var approverRoles = map[string]bool{
 
 // tier3_plus 阈值（分）—— 锚定 chain.json#routes.purchase_tier3.branches.tier3_plus.when
 // "amount_cents > 20000000 || is_fixed_asset == true"。
-// ★ is_fixed_asset 分支因 forms/PR.json 暂无该字段不可达（N-013 待 WorkBuddy 裁定），
+// ★ 两个触发条件**均已可达**（N-013 已 AGREED：forms/PR.json 已补 is_fixed_asset，
 //
-//	批 1 仅按金额触发；锚定测试断言 spec 中仍含该字面量，spec 漂移即测试红。
+//	submit/preview 从表单取值传入 Facts.IsFixedAsset）；金额常量与 spec 字面量
+//	由锚定测试互锁，spec 漂移即测试红。
 const tier3PlusAmountCents int64 = 20000000
 
 // BuildNodes 展开指定流程线为角色级链（含非审批环节）。

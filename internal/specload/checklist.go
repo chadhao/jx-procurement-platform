@@ -162,6 +162,9 @@ func runOne(c checkDef, files map[string][]byte, decoded map[string]any) []strin
 		targetDict, _ := argString(c.Args, "target_dict")
 		extra := argStrings(c.Args, "extra_allowed")
 		minHits := argInt(c.Args, "min_hits", 1)
+		// N-021：可选 `split` 分隔符 —— 管道串（如 route_by_condition）先拆段再逐段校验。
+		// 未设 ⇒ 行为与原先**完全一致**（向后兼容，不影响既有判据）。
+		splitSep, hasSplit := argStringOpt(c.Args, "split")
 		// target 键集合
 		targetKeys := map[string]bool{}
 		for _, tn := range globKeys(files, targetFile) {
@@ -177,8 +180,20 @@ func runOne(c checkDef, files map[string][]byte, decoded map[string]any) []strin
 		hits := collectAcross(decoded, pat, collect)
 		problems := minHitsProblems(c.ID, collect, hits, minHits)
 		for _, s := range stringHits(hits) {
-			if !targetKeys[s] {
-				problems = append(problems, fmt.Sprintf("[%s] 引用 %q 不存在于目标键集合", c.ID, s))
+			refs := []string{s}
+			if hasSplit {
+				refs = nil
+				for _, seg := range strings.Split(s, splitSep) {
+					seg = strings.TrimSpace(seg)
+					if seg != "" { // 空段跳过（容忍多余空格 / 尾随分隔符）
+						refs = append(refs, seg)
+					}
+				}
+			}
+			for _, ref := range refs {
+				if !targetKeys[ref] {
+					problems = append(problems, fmt.Sprintf("[%s] 引用 %q 不存在于目标键集合", c.ID, ref))
+				}
 			}
 		}
 		return problems
@@ -254,6 +269,29 @@ func runOne(c checkDef, files map[string][]byte, decoded map[string]any) []strin
 				if re.MatchString(s) {
 					problems = append(problems, fmt.Sprintf("[%s] 值 %q 命中禁止模式 %s", c.ID, s, re.String()))
 				}
+			}
+		}
+		return problems
+
+	// set_covers（N-022 第 9 原语）：collect 取到的**标量**并成集合，断言 ⊇ required，
+	// 缺哪项报哪项（CT 八组必备条款完整性 / 可写台账字段 ⊆ 白名单 —— 制度三十五/三十七条硬拦截）。
+	// min_hits 与既有加固同口径：collect 命中不足 ⇒ 报「疑似清单声明有误」，不许静默通过。
+	case "set_covers":
+		pat, _ := argString(c.Args, "file")
+		collect, _ := argString(c.Args, "collect")
+		required := argScalarStrings(c.Args, "required")
+		minHits := argInt(c.Args, "min_hits", 1)
+		hits := collectAcross(decoded, pat, collect)
+		problems := minHitsProblems(c.ID, collect, hits, minHits)
+		got := map[string]bool{}
+		for _, h := range hits {
+			if s, ok := scalarString(h); ok {
+				got[s] = true
+			}
+		}
+		for _, need := range required {
+			if !got[need] {
+				problems = append(problems, fmt.Sprintf("[%s] 集合缺少必需项 %q（collect 覆盖不足）", c.ID, need))
 			}
 		}
 		return problems
@@ -470,6 +508,57 @@ func argString(args map[string]json.RawMessage, key string) (string, error) {
 		return "", fmt.Errorf("参数 %q 非字符串", key)
 	}
 	return s, nil
+}
+
+// argStringOpt 可选字符串参数；未设返回 ("", false)（N-021 split 用）。
+func argStringOpt(args map[string]json.RawMessage, key string) (string, bool) {
+	raw, ok := args[key]
+	if !ok {
+		return "", false
+	}
+	var s string
+	if err := json.Unmarshal(raw, &s); err != nil {
+		return "", false
+	}
+	return s, true
+}
+
+// argScalarStrings 读标量数组（元素可为字符串或数字 —— JSON 数字解码为 float64；
+// required 里的 clause_group 可能写成 1..8 的数字）。规范化为比较用字符串。
+func argScalarStrings(args map[string]json.RawMessage, key string) []string {
+	raw, ok := args[key]
+	if !ok {
+		return nil
+	}
+	var list []any
+	if err := json.Unmarshal(raw, &list); err != nil {
+		return nil
+	}
+	out := make([]string, 0, len(list))
+	for _, v := range list {
+		if s, ok := scalarString(v); ok {
+			out = append(out, s)
+		}
+	}
+	return out
+}
+
+// scalarString 标量 → 规范字符串（JSON 数字 1.0 → "1"）；非标量返回 false。
+func scalarString(v any) (string, bool) {
+	switch t := v.(type) {
+	case string:
+		return t, true
+	case float64:
+		// 整数值去小数点（clause_group 8 → "8"）
+		if t == float64(int64(t)) {
+			return fmt.Sprintf("%d", int64(t)), true
+		}
+		return fmt.Sprintf("%v", t), true
+	case bool:
+		return fmt.Sprintf("%v", t), true
+	default:
+		return "", false
+	}
 }
 
 func argStrings(args map[string]json.RawMessage, key string) []string {

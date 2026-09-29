@@ -61,7 +61,8 @@ type Facts struct {
 	Department string
 	// ApplicantIsOpsSupervisor 驱动 R-03 备付金节点上抬分支。
 	ApplicantIsOpsSupervisor bool
-	// IsFixedAsset R-b：forms/PR.json 暂无该字段（N-013 待裁定），批 1 恒 false。
+	// IsFixedAsset N-013（已 AGREED）：forms/PR.json 已补「是否属于固定资产类」布尔字段，
+	// submit/preview 从表单取值传入 —— tier3_plus 的 `or is_fixed_asset` 分支自接线起可达。
 	IsFixedAsset bool
 }
 
