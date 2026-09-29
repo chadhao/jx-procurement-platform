@@ -21,7 +21,11 @@ scripts/check_spec.py —— `spec/` 机读规格门禁。
   S6  `route` / `ref` / `route_by_tier` 的取值必须指向存在的 route 或 `contract_two_level`
   S7  阈值区间的连续性：采一/采二/采三必须无缝且无重叠（99999 | 100000-500000 | 500001-）
   S8  `forms/*.json`（若存在）必须合法，且字段名不得含 `<br>` 或空格（R-18 命名规范）
-  S9  `ledger-mapping.json`（若存在）必须覆盖 L01–L12 全部 12 个编号
+  S9  `ledger-mapping.json` 必须覆盖 L01–L12 全部 12 个编号（★ 递归扫描，兼容嵌套 `ledgers` 结构）
+  S10 `doc_to_ledger` 的 `ledger` 取值必须在 `ledgers` 中真实存在
+  S11 ★ `doc_to_ledger` 不得把 L08/L10/L11/L12 当落账目标（README #20）
+  S12 ★★ `forms/*.json` 的 `ledger` 必须与 `doc_to_ledger` **完全一致**
+      —— 这条正是 `R-02`（PR 必须同时落 L02 与 L03）的**执行守卫**
 
 用法：python scripts/check_spec.py
 退出码：0 = 通过；1 = 有违规；2 = 无法定位 spec/ 目录
@@ -197,20 +201,74 @@ def check() -> int:
 
         walk_names(data, rel)
 
-    # ---- S9：ledger-mapping.json 覆盖 L01–L12 ----
+    # ---- S9~S12：ledger-mapping.json 与 forms/*.json 的交叉一致性 ----
+    # ★ 2026-09-29 扩：原 S9 只扫 ledger-mapping 顶层键，而实际文件是嵌套结构
+    #   （`ledgers.L01`）⇒ 首跑即误报"未覆盖 12 张"。改为**递归收集**，
+    #   并新增三条**交叉校验**（这才是契约类门禁真正该拦的东西）。
     lm = loaded.get("spec/ledger-mapping.json")
     if isinstance(lm, dict):
+        # S9：递归收集台账编号（任何 dict 里有 code=Lxx，或键名本身是 Lxx）
         codes = set()
-        for k, v in lm.items():
-            if k.startswith("_"):
-                continue
-            if isinstance(v, dict) and isinstance(v.get("code"), str):
-                codes.add(v["code"])
-            elif LEDGER_RE.match(k):
-                codes.add(k)
+
+        def collect_ledger_codes(obj):
+            if isinstance(obj, dict):
+                c = obj.get("code")
+                if isinstance(c, str) and LEDGER_RE.match(c):
+                    codes.add(c)
+                for k, v in obj.items():
+                    if LEDGER_RE.match(k):
+                        codes.add(k)
+                    collect_ledger_codes(v)
+            elif isinstance(obj, list):
+                for v in obj:
+                    collect_ledger_codes(v)
+
+        collect_ledger_codes(lm)
         missing = [c for c in ALL_LEDGERS if c not in codes]
         if missing:
             problems.append(f"[S9] ledger-mapping.json 未覆盖台账：{', '.join(missing)}")
+
+        # S10：doc_to_ledger 的 ledger 取值必须在 ledgers 中真实存在
+        d2l = lm.get("doc_to_ledger")
+        ledgers = lm.get("ledgers") or {}
+        if isinstance(d2l, dict):
+            for doc, spec_ in d2l.items():
+                if not isinstance(spec_, dict):
+                    continue
+                for code in (spec_.get("ledger") or []):
+                    if code not in ledgers:
+                        problems.append(
+                            f"[S10] ledger-mapping.doc_to_ledger[{doc}] 指向未定义的台账 {code}"
+                            f"（ledgers 中不存在）"
+                        )
+
+        # S11：★ “禁止作落账目标”的台账不得出现在 doc_to_ledger
+        if isinstance(d2l, dict):
+            for doc, spec_ in d2l.items():
+                if not isinstance(spec_, dict):
+                    continue
+                for code in (spec_.get("ledger") or []):
+                    if code in [x for x in FORBIDDEN_AS_TARGET]:
+                        problems.append(
+                            f"[S11] ledger-mapping.doc_to_ledger[{doc}] 把 {code} 当落账目标 —— "
+                            f"{'/'.join(FORBIDDEN_AS_TARGET)} 禁止作落账目标（README #20）"
+                        )
+
+        # S12：★★ forms/*.json 的 ledger 必须与 doc_to_ledger **完全一致**
+        #    （R-02 一对多正是靠这条守住：PR 必须同时落 L02 与 L03）
+        if isinstance(d2l, dict):
+            for rel, data in loaded.items():
+                if not rel.startswith("spec/forms/") or not isinstance(data, dict):
+                    continue
+                doc = data.get("doc_type")
+                if not isinstance(doc, str) or doc not in d2l:
+                    continue
+                want = sorted((d2l[doc].get("ledger") or []))
+                got = sorted((data.get("ledger") or []))
+                if want != got:
+                    problems.append(
+                        f"[S12] {rel} 的 ledger={got} 与 ledger-mapping.doc_to_ledger[{doc}]={want} 不一致"
+                    )
 
     if problems:
         print(f"FAIL [{NAME}] 共 {len(problems)} 处违规（已扫 {len(json_files)} 个 JSON）：")
