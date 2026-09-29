@@ -26,14 +26,15 @@
 | 项 | 值 |
 |---|---|
 | **当前批次** | **批 0 · 规格地基** |
-| **WorkBuddy 状态** | ✅ `spec/chain.json`（9 流程线 + 11 类单据链 + 10 角色）· ✅ `spec/RESOLUTIONS.md`（**18 条口径冲突全部裁定**）· ✅ `spec/README.md` · ⏳ 待产：`forms/*.json`、`ledger-mapping.json`、`dashboard.yaml`、`params.json` |
+| **WorkBuddy 状态** | ✅ `spec/chain.json`（9 流程线 + 11 类单据链 + 10 角色）· ✅ `spec/RESOLUTIONS.md` V1.2（**22 条口径冲突全部裁定**）· ✅ `spec/README.md` · ✅ `spec/enums.json` V1.1（用途分类 23 类含二级明细＋流程线映射、8 组枚举）· ✅ `spec/forms/PR.json`（**11 张里的第 1 张**）· ⏳ 待产：`forms/` 其余 10 张、`ledger-mapping.json`、`dashboard.yaml`、`params.json` |
+| **★ mimo 可开工时点** | ① **现在即可**：批 0 **工程性**修复（不涉业务口径，清单见 `MIMO-ONBOARDING.md` 第 5 步）② **批 1（BA+SA+PR）**：待 `forms/{BA,SA,PR}.json` ＋ `ledger-mapping.json` 出齐 —— **当前只差 SA 与 BA 两张** |
 | **mimo 状态** | 待规格（其审计与「发起半环设计」已于 `4741dcb` 提交并推送） |
 | **阻塞项** | **无阻塞 mimo 的项**。★ 有 2 项**待用户确认**（不阻塞规格产出）：`R-09` 采三档（加强）节点顺序 · `R-08` 报销时限参数默认值（依赖集团） |
 | **WorkBuddy 已读至** | **N-007**（本文件全量） |
 | **mimo 已读至** | 未知 —— ★ **请 mimo 首次读到本文件后，把本行改成"已读至 N-0xx"** |
 | **★ mimo 交接提示词** | **[`MIMO-ONBOARDING.md`](./MIMO-ONBOARDING.md)** —— 拉 mimo 进协作用的**可整份粘贴**提示词（含强制先读清单、铁律、当前状态、可做/不可做、议题提法、开工自检） |
 | **当前最大议题 ID** | **`N-007`** ⇒ 新议题从 **`N-008`** 起编（★ 新增议题后请同步更新 `MIMO-ONBOARDING.md` 第 6 步里的这个编号） |
-| **最后更新** | 2026-09-29 14:45 · WorkBuddy |
+| **最后更新** | 2026-09-29 16:10 · WorkBuddy |
 
 **冻结基线**：`8fb3ea2`（tag `0.3.5-s3`）。**当前 HEAD**：`4741dcb`（mimo code 的审计提交，纯文档）。
 ★ 冻结仍生效：**WorkBuddy 现阶段只产出文档与规格，不产出代码**；解冻按批（见 `N-005`）。

@@ -1,0 +1,529 @@
+{
+  "version": "1.1",
+  "generated_by": "WorkBuddy",
+  "date": "2026-09-29",
+  "sources": {
+    "tool_table": "采购与费用审批体系配置工具表_v3.0.xlsx → sheet「用途分类表」（A1:G33）与各字段「枚举」列",
+    "recon": "_scratch/recon-table-v3-fields.md（字段级取证）",
+    "institution": "费用管理办法V3.0（第十八条 / 第二十条 / 第六十条 / 第六十一条）"
+  },
+  "note": "★ 本文件是 `spec/forms/*.json` 的**枚举唯一来源**。表单字段的 `enum_ref` 一律指向本文件路径，禁止在各表单里另抄一份枚举（避免多份真相）。",
+  "usage_categories": {
+    "_source": "工具表「用途分类表」R4–R26（23 个一级分类）",
+    "_critical_rule": "★★ 「**分类是流程分流的起点：填入分类即决定该笔支出走哪条流程线、要附什么材料**」（工具表 R2 原文）⇒ 本表的 `route` 字段直接驱动 `chain.json` 的流程线选择。",
+    "rules": [
+      {
+        "id": "uniqueness",
+        "label": "唯一性",
+        "text": "一张申请单**只能选一个一级分类**。同一事项涉及多个分类的，**拆分**为多张单据（如「招待客户＋赠送礼品」拆为 S01 与 S02 两笔）"
+      },
+      {
+        "id": "completeness",
+        "label": "完整性",
+        "text": "**二级明细必填**，不得只填一级分类。理由：一级分类只用于台账汇总，**二级明细才是审计核查与价格比对的依据**"
+      },
+      {
+        "id": "consistency",
+        "label": "一致性",
+        "text": "分类口径须与财务科目、集团报送口径保持一致。**口径一旦确定不得随意新增** —— 新增分类须由综合运营主管提出、项目总经理批准，并经集团财务确认口径后由系统管理员维护"
+      }
+    ],
+    "groups": [
+      {
+        "group_code": "P",
+        "group_label": "生产性采购",
+        "count": 8,
+        "categories": [
+          {
+            "code": "P01",
+            "label": "原辅料",
+            "secondary": [
+              "主原料",
+              "辅料",
+              "包装物",
+              "添加剂"
+            ],
+            "typical": "煅后石油焦、滤布、吨袋、编织袋",
+            "route": "purchase",
+            "note": "满产高频品类"
+          },
+          {
+            "code": "P02",
+            "label": "备品备件与五金",
+            "secondary": [
+              "备件",
+              "易损件",
+              "轴承",
+              "皮带",
+              "密封件",
+              "紧固件",
+              "五金工具"
+            ],
+            "typical": "轴承、皮带、滤芯、螺栓、扳手",
+            "route": "purchase",
+            "note": "高频小额，**易拆分**"
+          },
+          {
+            "code": "P03",
+            "label": "劳保与安环用品",
+            "secondary": [
+              "劳保用品",
+              "防护器具",
+              "消防器材",
+              "安全标识"
+            ],
+            "typical": "手套、安全帽、防尘口罩、灭火器",
+            "route": "purchase",
+            "note": "涉安全，**须合格证明**"
+          },
+          {
+            "code": "P04",
+            "label": "设备与仪器",
+            "secondary": [
+              "生产设备",
+              "检测仪器",
+              "电气与自动化设备",
+              "工器具"
+            ],
+            "typical": "磨粉主机、除尘设备、激光粒度仪、水分仪、超纯水系统",
+            "route": "purchase",
+            "note": "★ 技术评审：**单台/套 ≥2 万元须附技术评审意见**"
+          },
+          {
+            "code": "P05",
+            "label": "设备与周转设施租赁",
+            "secondary": [
+              "施工机械",
+              "机具",
+              "周转材料",
+              "活动板房",
+              "脚手架"
+            ],
+            "typical": "吊车、叉车、装载机、发电机",
+            "route": "purchase",
+            "note": "须约定**进出场费与损坏责任**"
+          },
+          {
+            "code": "P06",
+            "label": "工程与安装",
+            "secondary": [
+              "土建",
+              "安装",
+              "管道",
+              "环保工程",
+              "消防工程"
+            ],
+            "typical": "设备安装、管道敷设、消防改造",
+            "route": "purchase",
+            "note": "★ **须附承接方资质与安全合规审查**"
+          },
+          {
+            "code": "P07",
+            "label": "生产性服务",
+            "secondary": [
+              "检测认证",
+              "运输仓储",
+              "设备维保",
+              "专业外包"
+            ],
+            "typical": "环境监测、道路运输、第三方检测、设备维保",
+            "route": "purchase",
+            "note": "服务类须明确**服务范围与验收标准**"
+          },
+          {
+            "code": "P08",
+            "label": "能源动力",
+            "secondary": [
+              "电",
+              "水",
+              "气",
+              "燃料",
+              "动力"
+            ],
+            "typical": "电费、水费、天然气、柴油",
+            "route": "expense_direct",
+            "note": "对公定期支付，**不适用个人垫付**"
+          }
+        ]
+      },
+      {
+        "group_code": "S",
+        "group_label": "运营销售费用",
+        "count": 7,
+        "categories": [
+          {
+            "code": "S01",
+            "label": "业务招待",
+            "secondary": [
+              "餐饮招待",
+              "住宿接待",
+              "接待用车",
+              "工作餐"
+            ],
+            "typical": "客户餐费、接待住宿、接送车辆",
+            "route": "expense_sales",
+            "note": "★ 须附**接待事由、对象单位、人数**"
+          },
+          {
+            "code": "S02",
+            "label": "烟酒与礼品",
+            "secondary": [
+              "烟",
+              "酒",
+              "茶叶",
+              "商务礼品",
+              "节日礼品"
+            ],
+            "typical": "商务用烟酒、茶叶、节礼",
+            "route": "expense_sales",
+            "note": "★ 敏感品类：须符合廉洁规定，禁止个人消费",
+            "resolution": "R-19：原备注「单次与年度限额**待定**」与待确认事项第 12 项「**不设单次限额、不设年度额度**」（已定 2026-09-25）冲突 ⇒ **以已定案为准**，此处不写限额"
+          },
+          {
+            "code": "S03",
+            "label": "客户关系维护",
+            "secondary": [
+              "客户走访",
+              "拜访交通",
+              "客户活动",
+              "客户联谊"
+            ],
+            "typical": "客户走访差旅、客户座谈活动",
+            "route": "expense_sales",
+            "note": "须列明**客户单位与参与人**"
+          },
+          {
+            "code": "S04",
+            "label": "市场推广",
+            "secondary": [
+              "广告",
+              "展会",
+              "宣传物料",
+              "样本印刷",
+              "线上推广"
+            ],
+            "typical": "展会摊位、宣传册、网站推广、公众号投放",
+            "route": "expense_sales",
+            "note": "须附**推广方案或刊例价**"
+          },
+          {
+            "code": "S05",
+            "label": "销售佣金与居间费",
+            "secondary": [
+              "居间费",
+              "代理费",
+              "渠道返点"
+            ],
+            "typical": "居间服务费、渠道佣金",
+            "route": "expense_sales",
+            "note": "★ 须附**居间协议**，涉及发票与个税合规"
+          },
+          {
+            "code": "S06",
+            "label": "差旅费",
+            "secondary": [
+              "交通",
+              "住宿",
+              "市内交通",
+              "出差补贴"
+            ],
+            "typical": "机票、高铁、住宿、打车",
+            "route": "expense_sales",
+            "note": "按公司差旅标准执行"
+          },
+          {
+            "code": "S07",
+            "label": "车辆费用",
+            "secondary": [
+              "油费",
+              "过路费",
+              "停车费",
+              "维修保养",
+              "保险"
+            ],
+            "typical": "加油费、过路费、车辆保养",
+            "route": "expense_sales",
+            "note": "须**关联车辆与用车记录**"
+          }
+        ]
+      },
+      {
+        "group_code": "M",
+        "group_label": "管理费用",
+        "count": 8,
+        "categories": [
+          {
+            "code": "M01",
+            "label": "办公费",
+            "secondary": [
+              "办公用品",
+              "印刷",
+              "快递",
+              "办公场所租赁与物业"
+            ],
+            "typical": "打印纸、文具、快递费、房租物业",
+            "route": "expense_direct_or_advance",
+            "note": "房租物业属**对公定期支付**"
+          },
+          {
+            "code": "M02",
+            "label": "通讯与信息化",
+            "secondary": [
+              "电话费",
+              "网络费",
+              "软件订阅",
+              "信息化服务"
+            ],
+            "typical": "宽带、云服务、ERP 订阅",
+            "route": "expense_direct_or_advance",
+            "note": "**正版授权须留证**"
+          },
+          {
+            "code": "M03",
+            "label": "咨询与中介",
+            "secondary": [
+              "法律",
+              "审计",
+              "税务",
+              "评估",
+              "认证",
+              "管理咨询"
+            ],
+            "typical": "律师费、审计费、环评费、体系认证费",
+            "route": "expense_direct_or_advance",
+            "note": "须附**合同或委托书**"
+          },
+          {
+            "code": "M04",
+            "label": "培训与招聘",
+            "secondary": [
+              "培训费",
+              "招聘费",
+              "人才中介"
+            ],
+            "typical": "培训课程、招聘平台费、猎头费",
+            "route": "expense_sales",
+            "note": "培训须附**通知与签到**"
+          },
+          {
+            "code": "M05",
+            "label": "会务费",
+            "secondary": [
+              "会议",
+              "场地",
+              "会务物料"
+            ],
+            "typical": "会议场地租赁、会务用品",
+            "route": "expense_sales",
+            "note": "须附**会议通知或纪要**"
+          },
+          {
+            "code": "M06",
+            "label": "行政规费",
+            "secondary": [
+              "工商税务规费",
+              "检测认证代办",
+              "证照办理"
+            ],
+            "typical": "证照工本费、年检费、代办服务费",
+            "route": "expense_direct_or_advance",
+            "note": "凭规费票据**据实报销**"
+          },
+          {
+            "code": "M07",
+            "label": "财务费用",
+            "secondary": [
+              "手续费",
+              "利息",
+              "汇兑损益"
+            ],
+            "typical": "银行手续费、贷款利息",
+            "route": "expense_direct",
+            "note": "由**集团财务统一入账**（湖南侧不设财务岗）"
+          },
+          {
+            "code": "M08",
+            "label": "其他",
+            "secondary": [],
+            "typical": null,
+            "route": "expense_sales",
+            "note": "**须书面说明未列入既有分类的理由**"
+          }
+        ]
+      }
+    ]
+  },
+  "route_resolution": {
+    "_note": "★ 由「用途分类」推导流程线的规则（驱动 chain.json 的 routes 选择）",
+    "purchase": "P01–P07 ⇒ 生产采购线，再按金额取 purchase_tier1 / purchase_tier2 / purchase_tier3",
+    "expense_direct": "P08 / M07 ⇒ 费用线·对公直付 ⇒ route = expense_mgmt_direct（不可提前支出）",
+    "expense_direct_or_advance": "M01 / M02 / M03 / M06 ⇒ 费用线，按「支付方式」字段再分：对公直付 ⇒ expense_mgmt_direct；个人垫付 ⇒ expense_mgmt_advance",
+    "expense_sales": "S01–S07 / M04 / M05 / M08 ⇒ 运营销售费用线 ⇒ route = expense_sales",
+    "conflict_note": "★ P08 / M07 的适用流程线写作「费用线（对公直付）」、M01/M02/M03/M06 写作「费用线（可对公直付）」⇒ 前者**只能对公直付**、后者**可垫付可直付**。这是原文区分，实现时勿合并。"
+  },
+  "requirement_types": {
+    "_source": "工具表 表单字段清单 R6（PR「需求类型」）",
+    "values": [
+      "生产物料",
+      "备品备件",
+      "设备类",
+      "工装器具",
+      "服务类",
+      "办公行政",
+      "劳保用品"
+    ]
+  },
+  "budget_subjects": {
+    "_source": "工具表 表单字段清单 R10（PR「预算科目」）",
+    "values": [
+      "基建投资",
+      "生产运行",
+      "研发",
+      "管理费用"
+    ],
+    "note": "★ 本期**不做余额校验**，仅作分类归集"
+  },
+  "expense_subjects": {
+    "_source": "工具表 表单字段清单 R23（SA「费用科目」）",
+    "values": [
+      "生产运行",
+      "设备维保",
+      "检测认证",
+      "行政办公",
+      "人力相关",
+      "税费规费"
+    ]
+  },
+  "urgent_levels": {
+    "_source": "工具表 表单字段清单 R9（PR「紧急程度」）",
+    "values": [
+      "常规",
+      "加急"
+    ],
+    "rule": "选「加急」须填写加急理由",
+    "hard_rule": "★ 批复 A6/B5：湖南侧所有流程一律截止到项目总经理，**不存在「上抬一级」**；紧急采购改由「先支出＋后补办＋核销闭合」承接，**不得借「加急」变相上抬或降档**"
+  },
+  "payment_method_input": {
+    "_source": "工具表 表单字段清单 R29（SA「支付方式」），来源＝用户填写",
+    "values": [
+      "个人垫付",
+      "对公直付"
+    ],
+    "rule": "选「垫付」则本人先行支付后走报销（**可提前支出**）；选「对公直付」则不产生垫付、**须等集团完成付款**",
+    "resolution": "R-10：本字段为**输入源**；SUB 端的「付款方式」为其**派生只读**"
+  },
+  "payment_method": {
+    "_source": "工具表 表单字段清单 R42（SUB「付款方式」），来源＝系统带入",
+    "values": [
+      "垫付报销",
+      "公户转账"
+    ],
+    "derived_from": "payment_method_input",
+    "rule": "决定该项能否提前支出：垫付类不受集团进度约束，公户转账类**必须等集团**"
+  },
+  "acceptance_conclusion": {
+    "_source": "工具表 表单字段清单 R37（GR「验收结论」）",
+    "values": [
+      "合格入库",
+      "让步接收",
+      "退货",
+      "换货"
+    ],
+    "rule": "让步接收须**质检与使用部门双签**"
+  },
+  "group_status": {
+    "_source": "工具表 表单字段清单 R46（SUB「集团流程状态」）",
+    "values": [
+      "未提交",
+      "已提交",
+      "办理中",
+      "已付款",
+      "已驳回"
+    ],
+    "rule": "★ 批复 B8：**由综合运营主管依集团人工反馈在运营表中登记**；驳回由经办人取消该单，或由最终审批人（项目总经理）驳回流程重走；**已执行的操作不撤回**"
+  },
+  "procure_methods": {
+    "_source": "工具表 表单字段清单 R32（PO「采购方式」；R-01 裁定后并入 CT）",
+    "values": [
+      "直采",
+      "询比价",
+      "招标",
+      "竞争性谈判",
+      "单一来源"
+    ],
+    "rule": "单一来源须附理由书；**不得事后补写**",
+    "resolution": "R-20#14：★ 工具表 R32 只列「直采 / 询比价 / 招标 / 单一来源」，**漏了「竞争性谈判」**；制度第 309 行明确有（\"升级为招标或竞争性谈判\"）⇒ **取并集 5 值**",
+    "note": "★ 「招标 / 竞争性谈判」对应采三档（加强）：>200,000 元 或固定资产类（见 spec/chain.json routes.purchase_tier3.branches.tier3_plus，★ 该分支节点顺序待用户确认）"
+  },
+  "three_way_match": {
+    "_source": "工具表 表单字段清单 R43（SUB「三单匹配结论」）",
+    "values": [
+      "一致",
+      "差异在容差内",
+      "差异超容差"
+    ],
+    "rule": "超容差须说明，由**集团财务最终复核**"
+  },
+  "acceptance_groups": {
+    "_source": "工具表 表单字段清单 R38（GR「验收人」）+ 批复 A2",
+    "by_category_prefix": [
+      {
+        "prefix": "P01",
+        "label": "原辅料类",
+        "members": [
+          "采购经办人",
+          "质检技术部",
+          "库管"
+        ],
+        "size": 3
+      },
+      {
+        "prefix": "P02–P04",
+        "label": "设备耗材类",
+        "members": [
+          "采购经办人",
+          "质检技术部"
+        ],
+        "size": 2
+      },
+      {
+        "prefix": "P05–P08",
+        "label": "其他类",
+        "members": [
+          "采购经办人",
+          "综合运营部人员"
+        ],
+        "size": 2
+      }
+    ],
+    "hard_rules": [
+      "一律采用「**验收入库**」一步合并",
+      "★ **综合运营主管不得同时作为该笔的验收人**",
+      "★ 原「验收人 ≠ 采购经办人」口径**已作废** —— 经办人本身就是验收人之一（批复 A2）"
+    ]
+  },
+  "pending_enums": {
+    "_note": "★ 以下枚举**尚未取得权威取值**，不得凭空填充；规格中引用时须标 `status: pending`",
+    "reporting_deadline_workdays": {
+      "status": "pending",
+      "reason": "待确认事项第 16 项「报销时限」**待填**，以集团确认为准（R-08）",
+      "must_not_hardcode": true
+    },
+    "institution_field_gaps": {
+      "_note": "R-21：制度要求登记、而工具表字段清单**没有**的 15 项，已裁定一律补入 `spec/forms/*.json`（逐项落点见 spec/RESOLUTIONS.md R-21）",
+      "count": 15
+    }
+  },
+  "change_log": [
+    {
+      "version": "V1.1",
+      "date": "2026-09-29",
+      "change": "`procure_methods` 补「竞争性谈判」（R-20#14）；新增 `pending_enums.institution_field_gaps`（R-21，15 项）"
+    },
+    {
+      "version": "V1.0",
+      "date": "2026-09-29",
+      "change": "首版：用途分类 23 类（含二级明细与流程线映射）+ 8 组枚举 + 1 项待定枚举"
+    }
+  ]
+}

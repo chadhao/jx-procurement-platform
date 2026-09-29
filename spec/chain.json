@@ -5,7 +5,7 @@
   "sources": {
     "tool_table": "deliverables/procurement-approval/采购与费用审批体系配置工具表_v3.0.xlsx（14 sheet，审批阈值矩阵 / 采购方式与留痕 / 角色权限矩阵 / 单据清单）",
     "institution": "deliverables/procurement-approval/费用管理办法V3.0.html（第二十条 / 第三十四条 / 第五十二条 / 第五十三条 / 第六十条 / 第六十一条）",
-    "code_side": "docs/_build/tplguide/data_templates.py（11 类审批定义 DEFS）",
+    "code_side": "deliverables/procurement-approval/_build/tplguide/data_templates.py（11 类审批定义 DEFS）★ **更正**：本路径**不在代码库内**，属交付物目录（代码库全库仅 5 个 .py，无该文件）；首版误写为 `docs/_build/…`，已按取证核实改正（2026-09-29）",
     "recon": "_scratch/recon-table-v3-fields.md（字段级取证，含 18 条口径冲突）"
   },
   "resolution_ref": "spec/RESOLUTIONS.md",
