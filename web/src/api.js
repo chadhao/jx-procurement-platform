@@ -170,8 +170,60 @@ export const fetchApproval = (bizNo) => api.get(`/api/approval/${encodeURICompon
 /** 三方审批定义清单（t_approval_def；管理页可选，系统管理员）。 */
 export const fetchApprovalDefs = () => api.get('/api/approval/defs')
 
-/** 我方提交：生成编号 + 建实例 + 首推飞书。 */
-export const submitApproval = (payload) => api.post('/api/approval/submit', payload)
+/** 发起页表单元数据（M3；含 spec_version / approval_codes / bands / enums）。 */
+export const fetchApprovalMeta = () => api.get('/api/approval/meta')
+
+/**
+ * 分档/审批链预览（M7/D5）：与提交**共算同一入口**，前端不本地算分档。
+ * 缺人时响应含 unresolved_roles（提交将被阻断，预览先行暴露）。
+ */
+export const previewApproval = (payload) => api.post('/api/approval/preview', payload)
+
+/**
+ * 我方提交：服务端算链 + 表单校验 + 回源标记。
+ * `idempotencyKey` 可选：同键同载荷重放返回首次 biz_no（含 idempotent_replay 标记），
+ * 同键异载荷 → 40900。
+ */
+export async function submitApproval(payload, idempotencyKey) {
+  const headers = { 'Content-Type': 'application/json', Accept: 'application/json' }
+  if (idempotencyKey) headers['Idempotency-Key'] = idempotencyKey
+  const resp = await fetch('/api/approval/submit', {
+    method: 'POST',
+    credentials: 'same-origin',
+    headers,
+    body: JSON.stringify(payload),
+  })
+  return unwrapEnvelope(resp)
+}
+
+/**
+ * 附件上传（M6）：multipart → 暂存，返回 {file_id, file_name, size_bytes}；
+ * 随提交的 `attachment_ids` 在提交事务内绑定。
+ */
+export async function uploadApprovalAttachment(file) {
+  const fd = new FormData()
+  fd.append('file', file)
+  const resp = await fetch('/api/approval/attachments', {
+    method: 'POST',
+    credentials: 'same-origin',
+    body: fd, // ★ 不手设 Content-Type：浏览器自动带 boundary
+  })
+  return unwrapEnvelope(resp)
+}
+
+/** 解析标准 Envelope（{code,data,message,trace_id}），code!==0 抛 ApiError。 */
+async function unwrapEnvelope(resp) {
+  let env
+  try {
+    env = await resp.json()
+  } catch (e) {
+    throw new ApiError(resp.status * 100, `响应解析失败（HTTP ${resp.status}）`)
+  }
+  if (!env || env.code !== 0) {
+    throw new ApiError(env ? env.code : -1, env ? env.message : '未知错误', env ? env.trace_id : '')
+  }
+  return env.data
+}
 
 /** 我方页面「同意」。与飞书回调共用同一状态机出口。 */
 export const approveTask = (bizNo, body) =>

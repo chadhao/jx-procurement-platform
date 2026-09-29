@@ -38,6 +38,7 @@ async function onLogout() {
 const navItems = computed(() => {
   const items = [
     { to: '/dashboard', label: '看板' },
+    { to: '/submit', label: '发起申请' },
     { to: '/tasks', label: '我的待办' },
     { to: '/instances', label: '审批实例' },
     { to: '/ledger', label: '台账' },

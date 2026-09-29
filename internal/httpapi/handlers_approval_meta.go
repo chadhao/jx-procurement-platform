@@ -21,8 +21,11 @@ type approvalMetaResponse struct {
 	SpecVersion       string             `json:"spec_version"`
 	DocTypesAvailable []string           `json:"doc_types_available"`
 	Forms             []specload.FormDoc `json:"forms"`
-	Enums             json.RawMessage    `json:"enums"`
-	Bands             []specload.Band    `json:"bands"`
+	// ApprovalCodes doc_type → approval_code（提交必填；来自 t_config_mapping 反查，
+	// 前端不猜码值）。未配置的 doc_type 不出现在 map 中（可见缺失，不静默）。
+	ApprovalCodes map[string]string `json:"approval_codes"`
+	Enums         json.RawMessage   `json:"enums"`
+	Bands         []specload.Band   `json:"bands"`
 }
 
 func (d *Deps) handleApprovalMeta(c echo.Context) error {
@@ -38,10 +41,22 @@ func (d *Deps) handleApprovalMeta(c echo.Context) error {
 	for _, dt := range docTypes {
 		forms = append(forms, d.Spec.Forms[dt])
 	}
+	// doc_type → approval_code（遍历已配置映射反查；Maps 未装配 ⇒ 空 map，可见不猜）
+	approvalCodes := map[string]string{}
+	if d.Maps != nil && d.Maps.Approval != nil {
+		for _, code := range d.Maps.Approval.Codes() {
+			if dt, ok := d.Maps.Approval.DocType(code); ok {
+				if _, exists := d.Spec.Forms[dt]; exists {
+					approvalCodes[dt] = code
+				}
+			}
+		}
+	}
 	return ok(c, approvalMetaResponse{
 		SpecVersion:       d.Spec.SpecVersion,
 		DocTypesAvailable: docTypes,
 		Forms:             forms,
+		ApprovalCodes:     approvalCodes,
 		Enums:             d.Spec.Enums.Raw,
 		Bands:             d.Spec.Chain.Thresholds.Purchase.Bands,
 	})

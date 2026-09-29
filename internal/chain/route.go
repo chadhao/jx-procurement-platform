@@ -79,13 +79,15 @@ func resolveExpenseRoute(usageL1, payment string) (string, error) {
 	case l1 == "P08" || l1 == "M07":
 		return "expense_mgmt_direct", nil
 	case l1 == "M01" || l1 == "M02" || l1 == "M03" || l1 == "M06":
-		switch payment {
+		// ★ 双语归一（spec 自身双写）：enums.json#payment_method_input.values 是中文
+		//   （用户输入权威），route_resolution 规则串是英文键 —— 两者皆 spec 原文，均接受。
+		switch normalizePayment(payment) {
 		case "corporate_direct":
 			return "expense_mgmt_direct", nil
 		case "personal_advance":
 			return "expense_mgmt_advance", nil
 		default:
-			return "", fmt.Errorf("%w: M 类可逆向组须 payment_method_input ∈ {personal_advance, corporate_direct}，实为 %q",
+			return "", fmt.Errorf("%w: M 类可逆向组须 payment_method_input ∈ {personal_advance/个人垫付, corporate_direct/对公直付}，实为 %q",
 				ErrPaymentInvalid, payment)
 		}
 	case strings.HasPrefix(l1, "S"), l1 == "M04", l1 == "M05", l1 == "M08":
@@ -95,5 +97,17 @@ func resolveExpenseRoute(usageL1, payment string) (string, error) {
 			ErrCategoryInvalid, l1)
 	default:
 		return "", fmt.Errorf("%w: 未知用途分类 %q", ErrCategoryInvalid, usageL1)
+	}
+}
+
+// normalizePayment 支付方式双语归一（见 resolveExpenseRoute 注释）。
+func normalizePayment(p string) string {
+	switch strings.TrimSpace(p) {
+	case "个人垫付", "垫付":
+		return "personal_advance"
+	case "对公直付":
+		return "corporate_direct"
+	default:
+		return strings.TrimSpace(p)
 	}
 }

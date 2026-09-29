@@ -67,6 +67,8 @@ func TestResolveRoute(t *testing.T) {
 		{"SA_M04销线", Facts{DocType: DocSA, UsageCategoryL1: "M04"}, "expense_sales", nil},
 		{"SA_M01直付", Facts{DocType: DocSA, UsageCategoryL1: "M01", PaymentMethodInput: "corporate_direct"}, "expense_mgmt_direct", nil},
 		{"SA_M01垫付", Facts{DocType: DocSA, UsageCategoryL1: "M01", PaymentMethodInput: "personal_advance"}, "expense_mgmt_advance", nil},
+		{"SA_M01垫付中文输入", Facts{DocType: DocSA, UsageCategoryL1: "M01", PaymentMethodInput: "个人垫付"}, "expense_mgmt_advance", nil},
+		{"SA_M01直付中文输入", Facts{DocType: DocSA, UsageCategoryL1: "M02", PaymentMethodInput: "对公直付"}, "expense_mgmt_direct", nil},
 		{"SA_M07恒直付", Facts{DocType: DocSA, UsageCategoryL1: "M07", PaymentMethodInput: "personal_advance"}, "expense_mgmt_direct", nil},
 		{"SA_P08恒直付", Facts{DocType: DocSA, UsageCategoryL1: "P08"}, "expense_mgmt_direct", nil},
 		{"SA_P01拒", Facts{DocType: DocSA, UsageCategoryL1: "P01"}, "", ErrCategoryInvalid},

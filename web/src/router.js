@@ -12,6 +12,8 @@ const routes = [
   // 审批流转（M9 · 转向 ③ 新增）：我的待办 + 审批操作台。
   { path: '/tasks', name: 'my-tasks', component: () => import('./views/MyTasks.vue') },
   { path: '/approval/:bizNo', name: 'approval-console', component: () => import('./views/ApprovalConsole.vue'), props: true },
+  // 发起申请（M7 · 批 1）：meta 驱动表单 + 分档/链预览；docType 可由飞书 create_link 深链。
+  { path: '/submit/:docType?', name: 'submit', component: () => import('./views/Submit.vue'), props: true },
   { path: '/ledger', name: 'ledger', component: () => import('./views/Ledger.vue') },
   { path: '/petty-cash', name: 'petty-cash', component: () => import('./views/PettyCash.vue') },
   { path: '/submission', name: 'submission', component: () => import('./views/Submission.vue') },
