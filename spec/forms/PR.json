@@ -18,13 +18,21 @@
   "ledger_resolution": "R-02：★ **一对多** —— PR 同时落 `L02`（采购需求与审批台账）与 `L03`（采购经办登记台账）。原实现一对一使 L03 恒空，进而使看板指标「需求提出人任经办人的笔数」**恒为 0，而 0 恰是期望值** ⇒ 违规永远发现不了",
 
   "routes": {
+    "_authority": "★ 分档与审批链的权威源＝`spec/chain.json#doc_chains.PR.route_by_tier`（**本文件不得与之冲突**）",
     "by_amount": {
-      "purchase_tier1": "amount_cents <= 99999",
       "purchase_tier2": "100000 <= amount_cents <= 500000",
       "purchase_tier3": "amount_cents >= 500001"
     },
+    "not_applicable": {
+      "purchase_tier1": {
+        "condition": "amount_cents <= 99999",
+        "action": "reject_with_40000",
+        "message": "采一档（< 1,000 元）请走**采购报备单（BA）**，本单不适用"
+      }
+    },
     "then_by_usage_category": "见 spec/enums.json → route_resolution",
-    "_note": "★ PR 是生产采购线的入口；采一档走 BA 报备（不签合同），采二/采三档由本单驱动 → 见 spec/chain.json routes"
+    "then_by_tier3_plus": "amount_cents > 20000000 或 is_fixed_asset ⇒ 走 tier3_plus 分支（见 spec/chain.json#routes.purchase_tier3.branches）",
+    "_resolution": "N-012 裁定：首版 `by_amount` 误含 `purchase_tier1`，与 `chain.json`（权威源，PR 无采一链）**内部不一致** ⇒ 已改为 `not_applicable` 显式拒收。★ 制度侧采一档单据本就是 BA"
   },
 
   "sections": [
@@ -111,6 +119,14 @@
           "required": true, "source": "user",
           "origin": "tool_table", "origin_ref": "表单字段清单 R13",
           "rule": "选「是」**触发合规校验分支**，须附资质文件或说明"
+        },
+        {
+          "name": "is_fixed_asset", "label": "是否属于固定资产类", "type": "boolean",
+          "required": true, "source": "user",
+          "origin": "resolution", "origin_ref": "N-013 裁定",
+          "resolution_note": "★★ **本字段在工具表 PR 字段组中【未列出】**，但 `spec/chain.json#routes.purchase_tier3.branches.tier3_plus.when` 含 `is_fixed_asset == true`，而**制度第二十条**的条件是「合同金额超过 200,000 元 **或属于固定资产类**」—— 后者是**独立条件** ⇒ **无本字段则该分支在批 1 内不可达**。",
+          "why_not_use_category": "★ **不得用 `usage_category_l1 == P04`（设备类）代理判定** —— 制度第二十条的「固定资产类」是**会计口径**（是否资本化），而「设备类」是**品类口径**；设备可以不资本化 ⇒ 代理会造成**误触发**（把非固定资产的设备单拉进招标/竞谈流程）。",
+          "rule": "由申请人按**公司固定资产标准**判定并勾选；★ 因判定带主观性，**审批人可在审批意见中复核**（不阻断）"
         }
       ]
     },

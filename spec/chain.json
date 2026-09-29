@@ -10,7 +10,6 @@
   },
   "resolution_ref": "spec/RESOLUTIONS.md",
   "note": "★ 本文件是**分档规则与审批链的唯一权威源**（COLLAB.md §2：该内容归 WorkBuddy）。任何实现与本文件不一致，以本文件为准；如需变更走 COLLAB.md 议题流程。",
-
   "conventions": {
     "money_unit": "cents",
     "money_note": "金额一律用「分」（整数）。1000 元 = 100000；5000 元 = 500000。禁止用浮点元。",
@@ -29,35 +28,116 @@
     "naming": "字段名一律用规范标识符（snake_case）；中文标签另置 label。★ 严禁把工具表表头里的 <br> 带进字段名（R-18）。",
     "terminology": "全案统一「项目总经理」= project_general_manager，不设 general_manager 别名（R-06）。"
   },
-
   "roles": {
-    "applicant":        { "label": "申请人",         "desc": "各部门全员；发起申请，无审批权" },
-    "supervisor":       { "label": "主管领导",       "desc": "按需求提出部门确定：综合运营部/质检技术部 → 项目总经理；生产部/销售部 → 副总（销售部由项目总经理协管）。★ 回避：不得审批本人发起的事项、或与本人有关联关系的供应商事项", "resolve_by": "需求提出部门" },
-    "project_general_manager": { "label": "项目总经理", "desc": "采购审批权限不设金额上限；同时是综合运营部、质检技术部的分管领导（主管领导）⇒ 这两个部门的事项，其主管领导审批即为终审", "is_also_supervisor_for": ["综合运营部", "质检技术部"] },
-    "deputy_general_manager":  { "label": "副总", "desc": "生产部、销售部事项的第一级审批（主管领导）", "is_supervisor_for": ["生产部", "销售部"] },
-    "ops_supervisor":   { "label": "综合运营主管",   "desc": "归口核心：备付金审批、防拆分校验、拨付、单据初审、提交集团、台账维护。★ 备付金审批不得代理", "actions": 7 },
-    "purchaser":        { "label": "采购经办人",     "desc": "由主管领导在审批「要不要买」时当场指定（审批节点必填）。★ 不得为需求提出人本人（采一档豁免）。可指定范围＝需求部门或综合运营部人员；跨部门指定须经被指定部门主管领导同意", "designated_at": "supervisor_approval" },
-    "inspector_group":  { "label": "验收人（按品类三组）", "desc": "设备耗材类 P02–P04＝采购经办人＋质检技术部（双方）；原辅料类 P01＝采购经办人＋质检技术部＋库管（三方）；其他类 P05–P08＝采购经办人＋综合运营部人员（双方）" },
-    "group_finance":    { "label": "集团财务",       "desc": "接收归口单据、执行集团合同与财务流程、付款、财务终审；★ 湖南侧流程止于「提交集团」" },
-    "group_approval":   { "label": "集团（审批）",   "desc": "★ 本办法不设集团审批节点，不介入日常审批" },
-    "sys_admin":        { "label": "系统管理员",     "desc": "指定 1–2 人；表单/流程配置、权限维护；不参与业务审批" }
+    "applicant": {
+      "label": "申请人",
+      "desc": "各部门全员；发起申请，无审批权"
+    },
+    "supervisor": {
+      "label": "主管领导",
+      "desc": "按需求提出部门确定：综合运营部/质检技术部 → 项目总经理；生产部/销售部 → 副总（销售部由项目总经理协管）。★ 回避：不得审批本人发起的事项、或与本人有关联关系的供应商事项",
+      "resolve_by": "需求提出部门",
+      "fallback": {
+        "match_by": [
+          "department",
+          "extra_depts"
+        ],
+        "source": "t_user_role",
+        "role_name": "主管领导",
+        "unresolved": "block",
+        "resolution": "N-016 裁定：原「按需求提出部门确定」仅为**散文描述**，无法被门禁校验 ⇒ 属漂移面。已结构化：回落时在 `t_user_role` 中按 `department` 或 `extra_depts` 命中申请部门；命中 0 人 ⇒ **阻断**（FR-M9-02）；命中 ≥2 人 ⇒ **全员会签**（见 N-014 裁定）"
+      },
+      "multi_candidate_policy": {
+        "rule": "all_sign（全员会签）",
+        "resolution": "N-014 裁定",
+        "warn_threshold": 3,
+        "note": "★ 会签人数 ≥3 时 preview 必须**告警**（不阻断）；★ preview 必须显式标注「本节点 N 人会签」"
+      }
+    },
+    "project_general_manager": {
+      "label": "项目总经理",
+      "desc": "采购审批权限不设金额上限；同时是综合运营部、质检技术部的分管领导（主管领导）⇒ 这两个部门的事项，其主管领导审批即为终审",
+      "is_also_supervisor_for": [
+        "综合运营部",
+        "质检技术部"
+      ]
+    },
+    "deputy_general_manager": {
+      "label": "副总",
+      "desc": "生产部、销售部事项的第一级审批（主管领导）",
+      "is_supervisor_for": [
+        "生产部",
+        "销售部"
+      ]
+    },
+    "ops_supervisor": {
+      "label": "综合运营主管",
+      "desc": "归口核心：备付金审批、防拆分校验、拨付、单据初审、提交集团、台账维护。★ 备付金审批不得代理",
+      "actions": 7
+    },
+    "purchaser": {
+      "label": "采购经办人",
+      "desc": "由主管领导在审批「要不要买」时当场指定（审批节点必填）。★ 不得为需求提出人本人（采一档豁免）。可指定范围＝需求部门或综合运营部人员；跨部门指定须经被指定部门主管领导同意",
+      "designated_at": "supervisor_approval"
+    },
+    "inspector_group": {
+      "label": "验收人（按品类三组）",
+      "desc": "设备耗材类 P02–P04＝采购经办人＋质检技术部（双方）；原辅料类 P01＝采购经办人＋质检技术部＋库管（三方）；其他类 P05–P08＝采购经办人＋综合运营部人员（双方）"
+    },
+    "group_finance": {
+      "label": "集团财务",
+      "desc": "接收归口单据、执行集团合同与财务流程、付款、财务终审；★ 湖南侧流程止于「提交集团」"
+    },
+    "group_approval": {
+      "label": "集团（审批）",
+      "desc": "★ 本办法不设集团审批节点，不介入日常审批"
+    },
+    "sys_admin": {
+      "label": "系统管理员",
+      "desc": "指定 1–2 人；表单/流程配置、权限维护；不参与业务审批"
+    }
   },
-
   "thresholds": {
     "purchase": {
       "amount_basis": "单笔含税总额（PR 预估总金额）",
       "bands": [
-        { "id": "purchase_tier1", "label": "采一档", "lower_inclusive": null,   "upper_inclusive": 99999,   "raw_text": "< 1,000 元" },
-        { "id": "purchase_tier2", "label": "采二档", "lower_inclusive": 100000, "upper_inclusive": 500000,  "raw_text": "1,000 – 5,000 元" },
-        { "id": "purchase_tier3", "label": "采三档", "lower_inclusive": 500001, "upper_inclusive": null,    "raw_text": "> 5,000 元" }
+        {
+          "id": "purchase_tier1",
+          "label": "采一档",
+          "lower_inclusive": null,
+          "upper_inclusive": 99999,
+          "raw_text": "< 1,000 元"
+        },
+        {
+          "id": "purchase_tier2",
+          "label": "采二档",
+          "lower_inclusive": 100000,
+          "upper_inclusive": 500000,
+          "raw_text": "1,000 – 5,000 元"
+        },
+        {
+          "id": "purchase_tier3",
+          "label": "采三档",
+          "lower_inclusive": 500001,
+          "upper_inclusive": null,
+          "raw_text": "> 5,000 元"
+        }
       ]
     },
     "expense": {
       "amount_basis": "申请金额",
       "bands": [
-        { "id": "expense_any", "label": "不分档", "raw_text": "任意金额（运营销售与管理费用不分档，任何金额均走本流程；由主管领导审批）" }
+        {
+          "id": "expense_any",
+          "label": "不分档",
+          "raw_text": "任意金额（运营销售与管理费用不分档，任何金额均走本流程；由主管领导审批）"
+        }
       ],
-      "sub_routes": ["expense_sales", "expense_mgmt_advance", "expense_mgmt_direct"],
+      "sub_routes": [
+        "expense_sales",
+        "expense_mgmt_advance",
+        "expense_mgmt_direct"
+      ],
       "split_rule": "★ 销一档与管一档**审批链完全相同**，但批复 C3 要求**不合并**（差异在附加材料：销一档招待/烟酒须附接待事由、对象单位、人数）"
     },
     "contract_approval_trigger": {
@@ -65,20 +145,55 @@
       "source": "工具表 审批阈值矩阵 R17（改动 B3 把适用范围扩至所有转账付款，删除「无合同小额对公直付」豁免）"
     }
   },
-
   "contract_approval": {
     "id": "contract_two_level",
     "label": "合同审批（统一两级）",
     "rule": "★ **统一两级**：先主管领导审批，后项目总经理审批。**不再按金额分档签署权限**",
     "signer": "项目总经理（或授权签署人）",
-    "review_points": ["付款条件", "验收标准", "质保金"],
+    "review_points": [
+      "付款条件",
+      "验收标准",
+      "质保金"
+    ],
     "order": [
-      { "seq": 1, "id": "confirm_supplier",      "label": "确认拟成交单位", "actor": "supervisor | project_general_manager", "only_for": "purchase_tier3" },
-      { "seq": 2, "id": "draft_contract",        "label": "经办人组织合同并与对方谈定条款", "actor": "purchaser" },
-      { "seq": 3, "id": "upload_contract",       "label": "上传系统", "actor": "purchaser" },
-      { "seq": 4, "id": "supervisor_approval",   "label": "主管领导审批（第一级）", "actor": "supervisor" },
-      { "seq": 5, "id": "pgm_approval",          "label": "项目总经理审批（第二级）", "actor": "project_general_manager" },
-      { "seq": 6, "id": "sign",                  "label": "签署盖章", "actor": "project_general_manager", "note": "或授权签署人" }
+      {
+        "seq": 1,
+        "id": "confirm_supplier",
+        "label": "确认拟成交单位",
+        "actor": "supervisor | project_general_manager",
+        "only_for": "purchase_tier3"
+      },
+      {
+        "seq": 2,
+        "id": "draft_contract",
+        "label": "经办人组织合同并与对方谈定条款",
+        "actor": "purchaser"
+      },
+      {
+        "seq": 3,
+        "id": "upload_contract",
+        "label": "上传系统",
+        "actor": "purchaser"
+      },
+      {
+        "seq": 4,
+        "id": "supervisor_approval",
+        "label": "主管领导审批（第一级）",
+        "actor": "supervisor"
+      },
+      {
+        "seq": 5,
+        "id": "pgm_approval",
+        "label": "项目总经理审批（第二级）",
+        "actor": "project_general_manager"
+      },
+      {
+        "seq": 6,
+        "id": "sign",
+        "label": "签署盖章",
+        "actor": "project_general_manager",
+        "note": "或授权签署人"
+      }
     ],
     "branches": [
       {
@@ -102,7 +217,6 @@
       "source": "工具表 单据清单 R10（D8 批复）"
     }
   },
-
   "routes": {
     "purchase_tier1": {
       "label": "采一档（生产采购）",
@@ -111,61 +225,219 @@
       "payment": "★ 备付金直接支出（不签合同、不走公户、不提交集团）",
       "fixed_timing": "先领款、后购买",
       "nodes": [
-        { "seq": 1, "id": "record",            "label": "备案",                 "actor": "applicant",       "required": true, "doc": "BA" },
-        { "seq": 2, "id": "approve_petty_cash","label": "综合运营主管审批备付金", "actor": "ops_supervisor",  "required": true,
+        {
+          "seq": 1,
+          "id": "record",
+          "label": "备案",
+          "actor": "applicant",
+          "required": true,
+          "doc": "BA"
+        },
+        {
+          "seq": 2,
+          "id": "approve_petty_cash",
+          "label": "综合运营主管审批备付金",
+          "actor": "ops_supervisor",
+          "required": true,
           "branches": [
-            { "when": "applicant.is_ops_supervisor == true", "actor": "supervisor", "effect": "该节点**上抬至主管领导**" }
+            {
+              "when": "applicant.is_ops_supervisor == true",
+              "actor": "supervisor",
+              "effect": "该节点**上抬至主管领导**"
+            }
           ],
           "resolution": "R-03：常规审批人＝综合运营主管；仅当申请人＝综合运营主管本人时上抬。★ 不得建为无条件双人节点",
           "review": "只判「备付金是否充足」，不判需求必要性",
-          "reject_options": ["申请集团备付金", "延后执行", "拒绝审批"]
+          "reject_options": [
+            "申请集团备付金",
+            "延后执行",
+            "拒绝审批"
+          ]
         },
-        { "seq": 3, "id": "anti_split_check",  "label": "防拆分／次数校验",       "actor": "system",          "required": true,
-          "params": { "same_supplier_same_category_monthly_cents": 100000, "dept_monthly_max_count": 15, "self_check_ratio": 0.20, "key_sample_ratio": 0.50 },
+        {
+          "seq": 3,
+          "id": "anti_split_check",
+          "label": "防拆分／次数校验",
+          "actor": "system",
+          "required": true,
+          "params": {
+            "same_supplier_same_category_monthly_cents": 100000,
+            "dept_monthly_max_count": 15,
+            "self_check_ratio": 0.2,
+            "key_sample_ratio": 0.5
+          },
           "source": "工具表 待确认事项 第 9 项（已确认 0925）",
           "prerequisite": "★ 必须在**拨款之前**完成",
           "limit_note": "★ 平台无跨字段校验能力 ⇒ 本节点为**公式列 + 人工核对**，不产生强制拦截（已知代价）"
         },
-        { "seq": 4, "id": "disburse",          "label": "拨付备付金（申请人在备案单上签领）", "actor": "ops_supervisor", "required": true, "condition": "anti_split_check passed",
-          "record_fields": ["签领人", "签领金额", "签领日期"] },
-        { "seq": 5, "id": "self_purchase",     "label": "申请人自购",            "actor": "applicant",       "required": true, "condition": "disburse done" },
-        { "seq": 6, "id": "return_receipt",    "label": "回交凭据",              "actor": "applicant",       "required": true, "condition": "purchase done",
-          "record_fields": ["审批人", "付款凭据号"] }
+        {
+          "seq": 4,
+          "id": "disburse",
+          "label": "拨付备付金（申请人在备案单上签领）",
+          "actor": "ops_supervisor",
+          "required": true,
+          "condition": "anti_split_check passed",
+          "record_fields": [
+            "签领人",
+            "签领金额",
+            "签领日期"
+          ]
+        },
+        {
+          "seq": 5,
+          "id": "self_purchase",
+          "label": "申请人自购",
+          "actor": "applicant",
+          "required": true,
+          "condition": "disburse done"
+        },
+        {
+          "seq": 6,
+          "id": "return_receipt",
+          "label": "回交凭据",
+          "actor": "applicant",
+          "required": true,
+          "condition": "purchase done",
+          "record_fields": [
+            "审批人",
+            "付款凭据号"
+          ]
+        }
       ],
-      "exemptions": { "no_contract": true, "no_public_account": true, "no_group_submission": true, "self_handling_allowed": "★ 明文豁免「禁止自我经办」" }
+      "exemptions": {
+        "no_contract": true,
+        "no_public_account": true,
+        "no_group_submission": true,
+        "self_handling_allowed": "★ 明文豁免「禁止自我经办」"
+      }
     },
-
     "purchase_tier2": {
       "label": "采二档（生产采购）",
       "when": "kind == 'purchase' && tier == 'purchase_tier2'",
       "env_count": 5,
       "payment": "集团公户转账（须待集团完成）",
       "nodes": [
-        { "seq": 1, "id": "supervisor_approval", "label": "主管领导审批（要不要买 ＋ 指定经办人）", "actor": "supervisor", "required": true, "doc": "PR",
-          "required_fields": ["指定采购经办人", "指定依据", "指定人与指定时间"], "resolution": "R-17：新增「指定依据」必填" },
-        { "seq": 2, "id": "contract_two_level","label": "合同审批（两级：主管领导 → 项目总经理）", "actor": "supervisor → project_general_manager", "required": true, "ref": "contract_two_level", "doc": "CT" },
-        { "seq": 3, "id": "ops_review",        "label": "综合运营主管初审（含经办人身份核对）", "actor": "ops_supervisor", "required": true },
-        { "seq": 4, "id": "submit_group",      "label": "提交集团",              "actor": "ops_supervisor", "required": true, "doc": "SUB", "condition": "contract approved" }
+        {
+          "seq": 1,
+          "id": "supervisor_approval",
+          "label": "主管领导审批（要不要买 ＋ 指定经办人）",
+          "actor": "supervisor",
+          "required": true,
+          "doc": "PR",
+          "required_fields": [
+            "指定采购经办人",
+            "指定依据",
+            "指定人与指定时间"
+          ],
+          "resolution": "R-17：新增「指定依据」必填"
+        },
+        {
+          "seq": 2,
+          "id": "contract_two_level",
+          "label": "合同审批（两级：主管领导 → 项目总经理）",
+          "actor": "supervisor → project_general_manager",
+          "required": true,
+          "ref": "contract_two_level",
+          "doc": "CT"
+        },
+        {
+          "seq": 3,
+          "id": "ops_review",
+          "label": "综合运营主管初审（含经办人身份核对）",
+          "actor": "ops_supervisor",
+          "required": true
+        },
+        {
+          "seq": 4,
+          "id": "submit_group",
+          "label": "提交集团",
+          "actor": "ops_supervisor",
+          "required": true,
+          "doc": "SUB",
+          "condition": "contract approved"
+        }
       ],
-      "required_materials": ["≥1 家报价或框架协议价", "到货验收记录"],
-      "notes": ["合同审批为提交集团的**前置条件**"]
+      "required_materials": [
+        "≥1 家报价或框架协议价",
+        "到货验收记录"
+      ],
+      "notes": [
+        "合同审批为提交集团的**前置条件**"
+      ]
     },
-
     "purchase_tier3": {
       "label": "采三档（生产采购）",
       "when": "kind == 'purchase' && tier == 'purchase_tier3'",
       "env_count": 7,
       "payment": "集团公户转账（须待集团完成）",
       "nodes": [
-        { "seq": 1, "id": "supervisor_approval", "label": "主管领导审批（要不要买 ＋ 指定经办人）", "actor": "supervisor", "required": true, "doc": "PR", "required_fields": ["指定采购经办人", "指定依据", "指定人与指定时间"] },
-        { "seq": 2, "id": "rfq",                 "label": "询比价（≥3 家）",       "actor": "purchaser", "required": true, "docs": ["RFQ", "BJ"] },
-        { "seq": 3, "id": "supervisor_review",   "label": "主管领导复核",          "actor": "supervisor", "required": true },
-        { "seq": 4, "id": "pgm_confirm",         "label": "项目总经理确认拟成交单位", "actor": "project_general_manager", "required": true },
-        { "seq": 5, "id": "contract_two_level",  "label": "合同审批（两级）",      "actor": "supervisor → project_general_manager", "required": true, "ref": "contract_two_level", "doc": "CT" },
-        { "seq": 6, "id": "ops_review",          "label": "综合运营主管初审（含经办人身份核对）", "actor": "ops_supervisor", "required": true },
-        { "seq": 7, "id": "submit_group",        "label": "提交集团",              "actor": "ops_supervisor", "required": true, "doc": "SUB" }
+        {
+          "seq": 1,
+          "id": "supervisor_approval",
+          "label": "主管领导审批（要不要买 ＋ 指定经办人）",
+          "actor": "supervisor",
+          "required": true,
+          "doc": "PR",
+          "required_fields": [
+            "指定采购经办人",
+            "指定依据",
+            "指定人与指定时间"
+          ]
+        },
+        {
+          "seq": 2,
+          "id": "rfq",
+          "label": "询比价（≥3 家）",
+          "actor": "purchaser",
+          "required": true,
+          "docs": [
+            "RFQ",
+            "BJ"
+          ]
+        },
+        {
+          "seq": 3,
+          "id": "supervisor_review",
+          "label": "主管领导复核",
+          "actor": "supervisor",
+          "required": true
+        },
+        {
+          "seq": 4,
+          "id": "pgm_confirm",
+          "label": "项目总经理确认拟成交单位",
+          "actor": "project_general_manager",
+          "required": true
+        },
+        {
+          "seq": 5,
+          "id": "contract_two_level",
+          "label": "合同审批（两级）",
+          "actor": "supervisor → project_general_manager",
+          "required": true,
+          "ref": "contract_two_level",
+          "doc": "CT"
+        },
+        {
+          "seq": 6,
+          "id": "ops_review",
+          "label": "综合运营主管初审（含经办人身份核对）",
+          "actor": "ops_supervisor",
+          "required": true
+        },
+        {
+          "seq": 7,
+          "id": "submit_group",
+          "label": "提交集团",
+          "actor": "ops_supervisor",
+          "required": true,
+          "doc": "SUB"
+        }
       ],
-      "required_materials": ["设备类单台/套 ≥2 万元：另附技术评审意见", "工程服务类：承接方资质"],
+      "required_materials": [
+        "设备类单台/套 ≥2 万元：另附技术评审意见",
+        "工程服务类：承接方资质"
+      ],
       "branches": {
         "tier3_plus": {
           "label": "采三档（加强）",
@@ -173,60 +445,168 @@
           "effect": "采购方式升级为**招标 / 竞争性谈判**",
           "insert_before": "rfq",
           "inserted_nodes": [
-            { "id": "procure_method_confirm", "label": "招标/竞谈方式确认", "actor": "supervisor", "required": true },
-            { "id": "tender_doc_issue",       "label": "招标文件编制与发出", "actor": "purchaser", "required": true },
-            { "id": "bid_opening_minutes",    "label": "开标/谈判纪要 + 评分表", "actor": "purchaser + 评审组", "required": true }
+            {
+              "id": "procure_method_confirm",
+              "label": "招标/竞谈方式确认",
+              "actor": "supervisor",
+              "required": true
+            },
+            {
+              "id": "tender_doc_issue",
+              "label": "招标文件编制与发出",
+              "actor": "purchaser",
+              "required": true
+            },
+            {
+              "id": "bid_opening_minutes",
+              "label": "开标/谈判纪要 + 评分表",
+              "actor": "purchaser + 评审组",
+              "required": true
+            }
           ],
           "resolution": "R-09：★ **本条节点顺序为 WorkBuddy 设计**（制度只规定「应升级为招标或竞争性谈判」，未给节点）⇒ **已标注待用户确认**",
           "source": "工具表 采购方式与留痕 R7；制度第二十条"
         }
       }
     },
-
     "expense_sales": {
       "label": "销一档（运营销售费用 S 类）",
       "when": "kind == 'expense' && category_group == 'S'",
       "env_count": 5,
       "payment": "集团打款至本人账户",
       "nodes": [
-        { "seq": 1, "id": "pre_apply",       "label": "事前申请", "actor": "applicant", "required": true, "doc": "SA" },
-        { "seq": 2, "id": "supervisor_approval", "label": "主管领导", "actor": "supervisor", "required": true },
-        { "seq": 3, "id": "advance_pay",     "label": "个人垫付", "actor": "applicant", "required": true, "note": "可提前支出" },
-        { "seq": 4, "id": "ops_review",      "label": "综合运营主管初审", "actor": "ops_supervisor", "required": true },
-        { "seq": 5, "id": "submit_group",    "label": "提交集团", "actor": "ops_supervisor", "required": true, "doc": "SUB" }
+        {
+          "seq": 1,
+          "id": "pre_apply",
+          "label": "事前申请",
+          "actor": "applicant",
+          "required": true,
+          "doc": "SA"
+        },
+        {
+          "seq": 2,
+          "id": "supervisor_approval",
+          "label": "主管领导",
+          "actor": "supervisor",
+          "required": true
+        },
+        {
+          "seq": 3,
+          "id": "advance_pay",
+          "label": "个人垫付",
+          "actor": "applicant",
+          "required": true,
+          "note": "可提前支出"
+        },
+        {
+          "seq": 4,
+          "id": "ops_review",
+          "label": "综合运营主管初审",
+          "actor": "ops_supervisor",
+          "required": true
+        },
+        {
+          "seq": 5,
+          "id": "submit_group",
+          "label": "提交集团",
+          "actor": "ops_supervisor",
+          "required": true,
+          "doc": "SUB"
+        }
       ],
-      "extra_materials": ["招待/烟酒类：须附接待事由、接待对象单位与人数、参与人签字、含品名数量的消费明细"],
+      "extra_materials": [
+        "招待/烟酒类：须附接待事由、接待对象单位与人数、参与人签字、含品名数量的消费明细"
+      ],
       "no_split_with": "expense_mgmt_advance（★ 批复 C3 要求不合并，尽管链完全相同）"
     },
-
     "expense_mgmt_advance": {
       "label": "管一档（管理费用·需垫付）",
       "when": "kind == 'expense' && category_group == 'M' && payment_method_input == 'personal_advance'",
       "env_count": 5,
       "payment": "集团打款至本人账户",
       "nodes": [
-        { "seq": 1, "id": "pre_apply",       "label": "事前申请", "actor": "applicant", "required": true, "doc": "SA" },
-        { "seq": 2, "id": "supervisor_approval", "label": "主管领导", "actor": "supervisor", "required": true },
-        { "seq": 3, "id": "advance_pay",     "label": "个人垫付", "actor": "applicant", "required": true, "note": "可提前支出" },
-        { "seq": 4, "id": "ops_review",      "label": "综合运营主管初审", "actor": "ops_supervisor", "required": true },
-        { "seq": 5, "id": "submit_group",    "label": "提交集团", "actor": "ops_supervisor", "required": true, "doc": "SUB" }
+        {
+          "seq": 1,
+          "id": "pre_apply",
+          "label": "事前申请",
+          "actor": "applicant",
+          "required": true,
+          "doc": "SA"
+        },
+        {
+          "seq": 2,
+          "id": "supervisor_approval",
+          "label": "主管领导",
+          "actor": "supervisor",
+          "required": true
+        },
+        {
+          "seq": 3,
+          "id": "advance_pay",
+          "label": "个人垫付",
+          "actor": "applicant",
+          "required": true,
+          "note": "可提前支出"
+        },
+        {
+          "seq": 4,
+          "id": "ops_review",
+          "label": "综合运营主管初审",
+          "actor": "ops_supervisor",
+          "required": true
+        },
+        {
+          "seq": 5,
+          "id": "submit_group",
+          "label": "提交集团",
+          "actor": "ops_supervisor",
+          "required": true,
+          "doc": "SUB"
+        }
       ]
     },
-
     "expense_mgmt_direct": {
       "label": "管二档（管理费用·对公直付）",
       "when": "kind == 'expense' && category_group == 'M' && payment_method_input == 'corporate_direct'",
       "env_count": 4,
       "payment": "集团公户转账（须待集团完成）",
       "nodes": [
-        { "seq": 1, "id": "pre_apply",       "label": "事前申请", "actor": "applicant", "required": true, "doc": "SA" },
-        { "seq": 2, "id": "supervisor_approval", "label": "主管领导", "actor": "supervisor", "required": true },
-        { "seq": 3, "id": "ops_review",      "label": "综合运营主管初审", "actor": "ops_supervisor", "required": true },
-        { "seq": 4, "id": "submit_group",    "label": "提交集团", "actor": "ops_supervisor", "required": true, "doc": "SUB" }
+        {
+          "seq": 1,
+          "id": "pre_apply",
+          "label": "事前申请",
+          "actor": "applicant",
+          "required": true,
+          "doc": "SA"
+        },
+        {
+          "seq": 2,
+          "id": "supervisor_approval",
+          "label": "主管领导",
+          "actor": "supervisor",
+          "required": true
+        },
+        {
+          "seq": 3,
+          "id": "ops_review",
+          "label": "综合运营主管初审",
+          "actor": "ops_supervisor",
+          "required": true
+        },
+        {
+          "seq": 4,
+          "id": "submit_group",
+          "label": "提交集团",
+          "actor": "ops_supervisor",
+          "required": true,
+          "doc": "SUB"
+        }
       ],
-      "notes": ["★ 不可提前支出", "★ 所有转账付款一律需合同（B3）"]
+      "notes": [
+        "★ 不可提前支出",
+        "★ 所有转账付款一律需合同（B3）"
+      ]
     },
-
     "sole_source": {
       "label": "独家采购（例外）",
       "when": "procure_method == 'sole_source'",
@@ -234,11 +614,44 @@
       "payment": "同对应档位",
       "chain_rule": "按对应档位的审批链正常审批，**由项目总经理终审**",
       "nodes": [
-        { "seq": 1, "id": "submit_reason",      "label": "提交",              "actor": "purchaser", "required": true, "doc": "SS" },
-        { "seq": 2, "id": "tech_opinion",       "label": "技术部门意见",       "actor": "inspector_group", "required": true },
-        { "seq": 3, "id": "tier_chain",         "label": "按对应档位审批",     "actor": "supervisor → project_general_manager", "required": true, "ref": "routes.<对应档位>" },
-        { "seq": 4, "id": "pgm_final",          "label": "项目总经理终审",     "actor": "project_general_manager", "required": true },
-        { "seq": 5, "id": "ledger_and_report",  "label": "台账标记 ＋ 报送备案", "actor": "ops_supervisor", "required": true, "ledger": "L09" }
+        {
+          "seq": 1,
+          "id": "submit_reason",
+          "label": "提交",
+          "actor": "purchaser",
+          "required": true,
+          "doc": "SS"
+        },
+        {
+          "seq": 2,
+          "id": "tech_opinion",
+          "label": "技术部门意见",
+          "actor": "inspector_group",
+          "required": true
+        },
+        {
+          "seq": 3,
+          "id": "tier_chain",
+          "label": "按对应档位审批",
+          "actor": "supervisor → project_general_manager",
+          "required": true,
+          "ref": "routes.<对应档位>"
+        },
+        {
+          "seq": 4,
+          "id": "pgm_final",
+          "label": "项目总经理终审",
+          "actor": "project_general_manager",
+          "required": true
+        },
+        {
+          "seq": 5,
+          "id": "ledger_and_report",
+          "label": "台账标记 ＋ 报送备案",
+          "actor": "ops_supervisor",
+          "required": true,
+          "ledger": "L09"
+        }
       ],
       "hard_rules": [
         "★ 湖南侧一律截止到项目总经理，**不再「上抬一级」至集团**（批复 A6）",
@@ -247,7 +660,6 @@
         "★ 无次数上限"
       ]
     },
-
     "emergency": {
       "label": "紧急采购（例外）",
       "when": "is_emergency == true",
@@ -255,22 +667,71 @@
       "payment": "补录后按对应档位付款",
       "structure": "★ **先支出、后补办、核销闭合**（双层结构）",
       "nodes": [
-        { "seq": 1, "id": "submit",          "label": "需求提出人提交",                  "actor": "applicant", "required": true },
-        { "seq": 2, "id": "emergency_confirm","label": "主管领导审核认定「紧急」（通过即可支出）", "actor": "supervisor", "required": true, "note": "★ 认定人＝**对应部门主管领导**" },
-        { "seq": 3, "id": "backfill_purchaser","label": "24 小时内补录实际经办人",        "actor": "applicant", "required": true, "deadline_hours": 24, "note": "★ 本档**豁免事前指定经办人**" },
-        { "seq": 4, "id": "backfill_formalities","label": "按采购分类补办手续",            "actor": "purchaser", "required": true },
-        { "seq": 5, "id": "backfill_approval","label": "按对应档位补审批（★ **不得降档**）", "actor": "按档位审批人", "required": true },
-        { "seq": 6, "id": "close_loop",      "label": "核销闭合",                        "actor": "ops_supervisor", "required": true, "ledger": "L09" }
+        {
+          "seq": 1,
+          "id": "submit",
+          "label": "需求提出人提交",
+          "actor": "applicant",
+          "required": true
+        },
+        {
+          "seq": 2,
+          "id": "emergency_confirm",
+          "label": "主管领导审核认定「紧急」（通过即可支出）",
+          "actor": "supervisor",
+          "required": true,
+          "note": "★ 认定人＝**对应部门主管领导**"
+        },
+        {
+          "seq": 3,
+          "id": "backfill_purchaser",
+          "label": "24 小时内补录实际经办人",
+          "actor": "applicant",
+          "required": true,
+          "deadline_hours": 24,
+          "note": "★ 本档**豁免事前指定经办人**"
+        },
+        {
+          "seq": 4,
+          "id": "backfill_formalities",
+          "label": "按采购分类补办手续",
+          "actor": "purchaser",
+          "required": true
+        },
+        {
+          "seq": 5,
+          "id": "backfill_approval",
+          "label": "按对应档位补审批（★ **不得降档**）",
+          "actor": "按档位审批人",
+          "required": true
+        },
+        {
+          "seq": 6,
+          "id": "close_loop",
+          "label": "核销闭合",
+          "actor": "ops_supervisor",
+          "required": true,
+          "ledger": "L09"
+        }
       ],
-      "limits": { "single_max_cents": 2000000, "monthly_max_count": 3 },
-      "required_materials": ["补录单据", "实际情况说明", "主管领导紧急认定记录", "★ 实际经办人（补录时必填）", "补办后的完整手续与审批记录", "核销闭合标记"],
+      "limits": {
+        "single_max_cents": 2000000,
+        "monthly_max_count": 3
+      },
+      "required_materials": [
+        "补录单据",
+        "实际情况说明",
+        "主管领导紧急认定记录",
+        "★ 实际经办人（补录时必填）",
+        "补办后的完整手续与审批记录",
+        "核销闭合标记"
+      ],
       "hard_rules": [
         "★ 未核销的紧急单在台账中保持「未闭合」状态并进入月度报送",
         "★ 连续两月超限由主管领导复盘",
         "★ 不得借「加急」变相上抬审批层级或降档"
       ]
     },
-
     "change": {
       "label": "采购变更（例外）",
       "when": "doc == 'PC'",
@@ -280,70 +741,288 @@
         "tier_formula": "tier = tier_of(max(change_amount_cents, original_contract_amount_cents))",
         "tier_formula_label": "★ 档位就高",
         "tier_formula_reason": "关闭「化整为零」通道：4,000 元的采二档合同加价 4,000 元，拆成 5 次各 800 元**也不再落入采一档**",
-        "reset_as_new_purchase": { "when": "new_total_cents > original_contract_amount_cents * 1.5", "effect": "★ 视为**新采购**，须重走全套流程" },
-        "special_explanation": { "when": "total_change_cents > original_contract_amount_cents * 0.3", "effect": "须**专项说明**" },
-        "anomaly_list": { "when": "same contract changes >= 2 times within 90 days", "effect": "进**异常清单**" },
-        "tech_opinion": { "when": "engineering category", "effect": "须**质检技术岗出技术意见**" }
+        "reset_as_new_purchase": {
+          "when": "new_total_cents > original_contract_amount_cents * 1.5",
+          "effect": "★ 视为**新采购**，须重走全套流程"
+        },
+        "special_explanation": {
+          "when": "total_change_cents > original_contract_amount_cents * 0.3",
+          "effect": "须**专项说明**"
+        },
+        "anomaly_list": {
+          "when": "same contract changes >= 2 times within 90 days",
+          "effect": "进**异常清单**"
+        },
+        "tech_opinion": {
+          "when": "engineering category",
+          "effect": "须**质检技术岗出技术意见**"
+        }
       },
       "resolution_note": "R-15：150% 与 30% **不是冲突** —— 前者管「重走全套流程」，后者管「专项说明」，**分别挂到不同规则**，不得混用",
       "nodes": [
-        { "seq": 1, "id": "submit_change", "label": "提交变更", "actor": "purchaser", "required": true, "doc": "PC", "required_fields": ["关联合同号"] },
-        { "seq": 2, "id": "tier_judge",    "label": "档位判定", "actor": "system", "required": true, "formula": "tier_formula" },
-        { "seq": 3, "id": "tier_approval", "label": "按该档位审批", "actor": "supervisor → project_general_manager", "required": true },
-        { "seq": 4, "id": "ledger_submit", "label": "台账留痕 ＋ 提交集团", "actor": "ops_supervisor", "required": true, "ledger": "L09" }
+        {
+          "seq": 1,
+          "id": "submit_change",
+          "label": "提交变更",
+          "actor": "purchaser",
+          "required": true,
+          "doc": "PC",
+          "required_fields": [
+            "关联合同号"
+          ]
+        },
+        {
+          "seq": 2,
+          "id": "tier_judge",
+          "label": "档位判定",
+          "actor": "system",
+          "required": true,
+          "formula": "tier_formula"
+        },
+        {
+          "seq": 3,
+          "id": "tier_approval",
+          "label": "按该档位审批",
+          "actor": "supervisor → project_general_manager",
+          "required": true
+        },
+        {
+          "seq": 4,
+          "id": "ledger_submit",
+          "label": "台账留痕 ＋ 提交集团",
+          "actor": "ops_supervisor",
+          "required": true,
+          "ledger": "L09"
+        }
       ],
-      "hard_rules": ["★ 严禁以变更名义实质新增采购", "★ 变更链须可回溯（关联合同号）", "★ 变更后重新归口提交集团"]
+      "hard_rules": [
+        "★ 严禁以变更名义实质新增采购",
+        "★ 变更链须可回溯（关联合同号）",
+        "★ 变更后重新归口提交集团"
+      ]
     }
   },
-
   "doc_chains": {
-    "_note": "★ 这是**面向机读的 11 类审批定义**（对应代码侧 data_templates.py 的 DEFS）。与 routes（按金额/条件分流）互补：doc_chains 定义「这张单据走什么节点」，routes 定义「这条流程线的节点」。"
-
-    , "BA": { "label": "采购报备单", "prefix": "BA", "ledger": ["L01"], "route": "purchase_tier1", "env_count": 6, "exemptions": ["★ 本定义不需要「采购经办人」节点（采一档豁免自我经办）"] },
-      "PR": { "label": "物资采购申请单", "prefix": "PR", "ledger": ["L02", "L03"],
-        "ledger_resolution": "R-02：★ **一对多** —— PR 同时落 L02 与 L03（原实现一对一致 L03 恒空，进而使看板指标「需求提出人任经办人的笔数」恒为 0 而无法发现违规）",
-        "route_by_tier": { "purchase_tier2": "purchase_tier2", "purchase_tier3": "purchase_tier3" },
-        "added_fields": ["用途分类（一级）", "二级明细"],
-        "added_fields_resolution": "R-05：判定为字段清单缺漏，PR 必须补这两个必填枚举字段（取值＝用途分类表 23 个一级分类）" },
-      "SA": { "label": "费用事前申请单", "prefix": "SA", "ledger": ["L05"], "route_by_condition": "expense_sales | expense_mgmt_advance | expense_mgmt_direct",
-        "settlement_backfill": { "label": "结算补录组", "fields": ["经办人（可空）", "票据信息", "实际金额与申请额差异", "票据张数与超支说明"], "note": "★ 报销单已取消（A4）⇒ 票据必须挂到已批准的事前申请单上才可移交集团" } },
-      "RFQ": { "label": "询价单", "prefix": "RFQ", "ledger": [], "env_count": 0, "note": "★ **无独立审批链、不落账**；作为采三档「询比价」环节产生，随主单 PR 留痕", "parent": "PR@rfq" },
-      "BJ": { "label": "比价表", "prefix": "BJ", "ledger": [], "env_count": 0, "note": "★ **无独立审批链、不落账**（嵌入采三档询比价环节）" },
-      "SS": { "label": "单一来源理由书", "prefix": "SS", "ledger": ["L09"], "route": "sole_source", "env_count": 1, "final_approver": "project_general_manager" },
-      "CT": { "label": "合同 / 简式订单", "prefix": "CT", "ledger": ["L04"], "route": "contract_two_level", "env_count": 6,
-        "hard_rules": ["★ 审批节点只有两级（主管领导 → 项目总经理），**不得再按金额插档**"],
-        "merged_from_PO": ["供应商 / 收款账户", "付款条件"],
-        "merged_resolution": "R-01：PO 不单列，其字段并入 CT/GR" },
-      "PC": { "label": "采购变更单", "prefix": "PC", "ledger": ["L09"], "route": "change", "env_count": 1 },
-      "GR": { "label": "到货验收单 / 入库单", "prefix": "GR", "ledger": ["L07"], "env_count": 1,
-        "acceptance_groups": {
-          "P01": { "label": "原辅料类", "members": ["采购经办人", "质检技术部", "库管"], "size": 3 },
-          "P02-P04": { "label": "设备耗材类", "members": ["采购经办人", "质检技术部"], "size": 2 },
-          "P05-P08": { "label": "其他类", "members": ["采购经办人", "综合运营部人员"], "size": 2 }
+    "_note": "★ 这是**面向机读的 11 类审批定义**（对应代码侧 data_templates.py 的 DEFS）。与 routes（按金额/条件分流）互补：doc_chains 定义「这张单据走什么节点」，routes 定义「这条流程线的节点」。",
+    "BA": {
+      "label": "采购报备单",
+      "prefix": "BA",
+      "ledger": [
+        "L01"
+      ],
+      "route": "purchase_tier1",
+      "env_count": 6,
+      "exemptions": [
+        "★ 本定义不需要「采购经办人」节点（采一档豁免自我经办）"
+      ]
+    },
+    "PR": {
+      "label": "物资采购申请单",
+      "prefix": "PR",
+      "ledger": [
+        "L02",
+        "L03"
+      ],
+      "ledger_resolution": "R-02：★ **一对多** —— PR 同时落 L02 与 L03（原实现一对一致 L03 恒空，进而使看板指标「需求提出人任经办人的笔数」恒为 0 而无法发现违规）",
+      "route_by_tier": {
+        "purchase_tier2": "purchase_tier2",
+        "purchase_tier3": "purchase_tier3"
+      },
+      "added_fields": [
+        "用途分类（一级）",
+        "二级明细"
+      ],
+      "added_fields_resolution": "R-05：判定为字段清单缺漏，PR 必须补这两个必填枚举字段（取值＝用途分类表 23 个一级分类）"
+    },
+    "SA": {
+      "label": "费用事前申请单",
+      "prefix": "SA",
+      "ledger": [
+        "L05"
+      ],
+      "route_by_condition": "expense_sales | expense_mgmt_advance | expense_mgmt_direct",
+      "settlement_backfill": {
+        "label": "结算补录组",
+        "fields": [
+          "经办人（可空）",
+          "票据信息",
+          "实际金额与申请额差异",
+          "票据张数与超支说明"
+        ],
+        "note": "★ 报销单已取消（A4）⇒ 票据必须挂到已批准的事前申请单上才可移交集团"
+      }
+    },
+    "RFQ": {
+      "label": "询价单",
+      "prefix": "RFQ",
+      "ledger": [],
+      "env_count": 0,
+      "note": "★ **无独立审批链、不落账**；作为采三档「询比价」环节产生，随主单 PR 留痕",
+      "parent": "PR@rfq"
+    },
+    "BJ": {
+      "label": "比价表",
+      "prefix": "BJ",
+      "ledger": [],
+      "env_count": 0,
+      "note": "★ **无独立审批链、不落账**（嵌入采三档询比价环节）"
+    },
+    "SS": {
+      "label": "单一来源理由书",
+      "prefix": "SS",
+      "ledger": [
+        "L09"
+      ],
+      "route": "sole_source",
+      "env_count": 1,
+      "final_approver": "project_general_manager"
+    },
+    "CT": {
+      "label": "合同 / 简式订单",
+      "prefix": "CT",
+      "ledger": [
+        "L04"
+      ],
+      "route": "contract_two_level",
+      "env_count": 6,
+      "hard_rules": [
+        "★ 审批节点只有两级（主管领导 → 项目总经理），**不得再按金额插档**"
+      ],
+      "merged_from_PO": [
+        "供应商 / 收款账户",
+        "付款条件"
+      ],
+      "merged_resolution": "R-01：PO 不单列，其字段并入 CT/GR"
+    },
+    "PC": {
+      "label": "采购变更单",
+      "prefix": "PC",
+      "ledger": [
+        "L09"
+      ],
+      "route": "change",
+      "env_count": 1
+    },
+    "GR": {
+      "label": "到货验收单 / 入库单",
+      "prefix": "GR",
+      "ledger": [
+        "L07"
+      ],
+      "env_count": 1,
+      "acceptance_groups": {
+        "P01": {
+          "label": "原辅料类",
+          "members": [
+            "采购经办人",
+            "质检技术部",
+            "库管"
+          ],
+          "size": 3
         },
-        "finalized": "已作废口径", "avoidance_rules": ["★ 需求提出人不得同时作为该笔的指定人（审批人）", "★ 综合运营主管不得同时作为该笔的验收人"],
-        "avoidance_resolution": "R-16：A2 已把经办人纳入验收组（旧「经办人不得验收」口径作废）；保留上述两条真正有效的回避约束" },
-      "QC": { "label": "来料检验报告", "prefix": "QC", "ledger": [], "env_count": 0,
-        "note": "★ **无独立审批链、不落账**；结论并入 L07",
-        "required_config": ["★ 必须配 related_biz_no → GR 单号，否则 L07「检验结论」列永远为空", "★ 必须配 inspection_result（判定结论）"] },
-      "SUB": { "label": "集团提交流转单", "prefix": "SUB", "ledger": ["L06"], "env_count": 1,
-        "hard_prerequisite": "★ 1,000 元以上采购**必须已完成合同审批**（合同审批为提交集团的硬性前置）",
-        "deadline_workdays": 3,
-        "nodes": [
-          { "seq": 1, "id": "check_submittable", "label": "判断可提交", "actor": "ops_supervisor" },
-          { "seq": 2, "id": "handover",          "label": "归口移交",   "actor": "ops_supervisor" },
-          { "seq": 3, "id": "obtain_receipt",    "label": "取得移交凭证", "actor": "ops_supervisor", "note": "★ **无凭证视为未提交**" },
-          { "seq": 4, "id": "time_limit",        "label": "时限（3 个工作日）", "actor": "ops_supervisor" },
-          { "seq": 5, "id": "register_group",    "label": "人工登记集团侧回执", "actor": "ops_supervisor", "note": "★ 仅人工登记，**不要求系统回填、不作数据对齐**（B8）" },
-          { "seq": 6, "id": "reject_handling",   "label": "驳回处置", "actor": "purchaser | project_general_manager", "note": "驳回由经办人取消该单，或由最终审批人驳回流程重走；**已执行的操作不撤回**" }
-        ] }
+        "P02-P04": {
+          "label": "设备耗材类",
+          "members": [
+            "采购经办人",
+            "质检技术部"
+          ],
+          "size": 2
+        },
+        "P05-P08": {
+          "label": "其他类",
+          "members": [
+            "采购经办人",
+            "综合运营部人员"
+          ],
+          "size": 2
+        }
+      },
+      "finalized": "已作废口径",
+      "avoidance_rules": [
+        "★ 需求提出人不得同时作为该笔的指定人（审批人）",
+        "★ 综合运营主管不得同时作为该笔的验收人"
+      ],
+      "avoidance_resolution": "R-16：A2 已把经办人纳入验收组（旧「经办人不得验收」口径作废）；保留上述两条真正有效的回避约束"
+    },
+    "QC": {
+      "label": "来料检验报告",
+      "prefix": "QC",
+      "ledger": [],
+      "env_count": 0,
+      "note": "★ **无独立审批链、不落账**；结论并入 L07",
+      "required_config": [
+        "★ 必须配 related_biz_no → GR 单号，否则 L07「检验结论」列永远为空",
+        "★ 必须配 inspection_result（判定结论）"
+      ]
+    },
+    "SUB": {
+      "label": "集团提交流转单",
+      "prefix": "SUB",
+      "ledger": [
+        "L06"
+      ],
+      "env_count": 1,
+      "hard_prerequisite": "★ 1,000 元以上采购**必须已完成合同审批**（合同审批为提交集团的硬性前置）",
+      "deadline_workdays": 3,
+      "nodes": [
+        {
+          "seq": 1,
+          "id": "check_submittable",
+          "label": "判断可提交",
+          "actor": "ops_supervisor"
+        },
+        {
+          "seq": 2,
+          "id": "handover",
+          "label": "归口移交",
+          "actor": "ops_supervisor"
+        },
+        {
+          "seq": 3,
+          "id": "obtain_receipt",
+          "label": "取得移交凭证",
+          "actor": "ops_supervisor",
+          "note": "★ **无凭证视为未提交**"
+        },
+        {
+          "seq": 4,
+          "id": "time_limit",
+          "label": "时限（3 个工作日）",
+          "actor": "ops_supervisor"
+        },
+        {
+          "seq": 5,
+          "id": "register_group",
+          "label": "人工登记集团侧回执",
+          "actor": "ops_supervisor",
+          "note": "★ 仅人工登记，**不要求系统回填、不作数据对齐**（B8）"
+        },
+        {
+          "seq": 6,
+          "id": "reject_handling",
+          "label": "驳回处置",
+          "actor": "purchaser | project_general_manager",
+          "note": "驳回由经办人取消该单，或由最终审批人驳回流程重走；**已执行的操作不撤回**"
+        }
+      ]
+    }
   },
-
   "open_items": {
     "pending_user_confirmation": [
-      { "id": "R-09", "item": "采三档（加强）的节点顺序（招标/竞谈三节点插入位置）", "why": "制度只规定「应升级为招标或竞争性谈判」，节点顺序由 WorkBuddy 设计" },
-      { "id": "R-08", "item": "报销时限参数默认值", "why": "依赖集团书面确认（待确认事项第 16 项）；确认前参数留空并在 UI 标注" }
+      {
+        "id": "R-09",
+        "item": "采三档（加强）的节点顺序（招标/竞谈三节点插入位置）",
+        "why": "制度只规定「应升级为招标或竞争性谈判」，节点顺序由 WorkBuddy 设计"
+      },
+      {
+        "id": "R-08",
+        "item": "报销时限参数默认值",
+        "why": "依赖集团书面确认（待确认事项第 16 项）；确认前参数留空并在 UI 标注"
+      }
     ],
-    "params_pending_group": ["reporting.deadline_workdays（第 16 项）", "group_process_trigger（第 11 项）"]
+    "params_pending_group": [
+      "reporting.deadline_workdays（第 16 项）",
+      "group_process_trigger（第 11 项）"
+    ]
   }
 }
