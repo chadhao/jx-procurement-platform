@@ -28,13 +28,13 @@
 | **当前批次** | **批 0 · 规格地基** |
 | **WorkBuddy 状态** | ✅ `spec/chain.json` · ✅ `spec/RESOLUTIONS.md` V1.2（**22 条裁定**）· ✅ `spec/README.md` · ✅ `spec/enums.json` V1.1 · ✅ `spec/ledger-mapping.json` V1.0（**12 张台账字段/写入者 ＋ 单据→台账一对多映射**）· ✅ `spec/forms/{BA,PR,SA}.json`（**批 1 三张已齐**）· ⏳ 待产：`forms/` 其余 8 张（CT 最大 44 字段）、`dashboard.yaml`、`params.json`、人读产品规格、制度 V4.0 |
 | **★ mimo 可开工时点** | ① **现在即可**：批 0 **工程性**修复（不涉业务口径，清单见 `MIMO-ONBOARDING.md` 第 5 步）② ★★ **批 1（BA+SA+PR）规格已齐，可开工**：`forms/{BA,PR,SA}.json` ＋ `ledger-mapping.json` ＋ `enums.json` ＋ `chain.json` **全部就位** |
-| **mimo 状态** | ✅ onboarding ＋ N-008 采纳 ＋ N-010 步骤 1 ＋ N-011 已开 · ✅ **批 1 方案已定稿**（8 里程碑/10 提交序列，入 `.mimocode/plans/` 计划文件 §十）· ✅ 批 1 业务口径疑点 **N-012~N-018 已开**（7 条，均带推荐与过渡实现）· ⏳ **批 1 实现开工（M1 起）** |
+| **mimo 状态** | ✅ onboarding ＋ N-008 采纳 ＋ N-010 步骤 1 ＋ 议题 N-008~N-018 已开 · ✅✅ **批 1（BA+SA+PR）M1–M8 全部完成并推送**：M1 `5cb02bc` spec 内嵌+拒启 · M2 `806775e`+`3a115ec` 分档链计算+角色解析 · M3 `cebf7b7` meta · M4 `e60ea85` submit 收敛+幂等（迁移 0015）· M5 `13c7c40` 回源 FR-M9-17 · M6 `4744a51` 附件暂存（迁移 0016）· M7 `1888a7e`+`c7e9d0f` preview+发起页 Submit.vue+create_link · M8 `db862fa` R-02 锚定+05-API 回填（C5 清零）· 门禁 **8/8 全绿、会报 0 命中** · ⏳ **待 WorkBuddy 验收**（N-005 批次流程）；★ 未做项：真机端到端冒烟与 UI 手工点检（需部署环境） |
 | **阻塞项** | **无阻塞 mimo 的项**。★ 有 2 项**待用户确认**（不阻塞规格产出）：`R-09` 采三档（加强）节点顺序 · `R-08` 报销时限参数默认值（依赖集团） |
 | **WorkBuddy 已读至** | **N-007**（本文件全量） |
 | **mimo 已读至** | **已读至 N-018**（本文件全量 ＋ `spec/README.md` ＋ `spec/RESOLUTIONS.md` V1.2 ＋ `MIMO-ONBOARDING.md` 全量） |
 | **★ mimo 交接提示词** | **[`MIMO-ONBOARDING.md`](./MIMO-ONBOARDING.md)** —— 拉 mimo 进协作用的**可整份粘贴**提示词（含强制先读清单、铁律、当前状态、可做/不可做、议题提法、开工自检） |
 | **当前最大议题 ID** | **`N-018`** ⇒ 新议题从 **`N-019`** 起编（★ 新增议题后请同步更新 `MIMO-ONBOARDING.md` 第 6 步里的这个编号 —— 该文件归 WorkBuddy 维护，请 WorkBuddy 投喂前更新） |
-| **最后更新** | 2026-09-29 18:43 · mimo（批 1 方案定稿 ＋ 开 N-012~N-018） |
+| **最后更新** | 2026-09-29 21:17 · mimo（批 1 M1–M8 完成，申报待验收） |
 
 **冻结基线**：`8fb3ea2`（tag `0.3.5-s3`）。**当前 HEAD**：`ee38edd`（WorkBuddy 的批 1 规格提交）。
 ★ 冻结仍生效：**WorkBuddy 现阶段只产出文档与规格，不产出代码**；解冻按批（见 `N-005`）。
