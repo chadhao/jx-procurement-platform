@@ -1,76 +1,292 @@
 {
   "approval_code": [
-    { "code": "REPLACE_ME_approval_code_BA", "doc_type": "BA", "remark": "①采购报备单（采一档；1,000 元以下不签合同、备付金直接支出）" },
-    { "code": "REPLACE_ME_approval_code_PR", "doc_type": "PR", "remark": "②物资采购申请单（全流程主键）" },
-    { "code": "REPLACE_ME_approval_code_SA", "doc_type": "SA", "remark": "③费用事前申请单" },
-    { "code": "REPLACE_ME_approval_code_RFQ", "doc_type": "RFQ", "remark": "④询价单（采三档）" },
-    { "code": "REPLACE_ME_approval_code_BJ", "doc_type": "BJ", "remark": "⑤比价表（不少于 3 家）" },
-    { "code": "REPLACE_ME_approval_code_SS", "doc_type": "SS", "remark": "⑥单一来源理由书（独家采购）" },
-    { "code": "REPLACE_ME_approval_code_CT", "doc_type": "CT", "remark": "⑦合同／简式订单（≥1,000 元原则上均须签订）" },
-    { "code": "REPLACE_ME_approval_code_PC", "doc_type": "PC", "remark": "⑧采购变更单（关联原合同号）" },
-    { "code": "REPLACE_ME_approval_code_GR", "doc_type": "GR", "remark": "⑨到货验收单／入库单" },
-    { "code": "REPLACE_ME_approval_code_QC", "doc_type": "QC", "remark": "⑩来料检验报告" },
-    { "code": "REPLACE_ME_approval_code_SUB", "doc_type": "SUB", "remark": "⑪集团提交流转单" }
+    {
+      "code": "REPLACE_ME_approval_code_BA",
+      "doc_type": "BA",
+      "remark": "①采购报备单（采一档；1,000 元以下不签合同、备付金直接支出）"
+    },
+    {
+      "code": "REPLACE_ME_approval_code_PR",
+      "doc_type": "PR",
+      "remark": "②物资采购申请单（全流程主键）"
+    },
+    {
+      "code": "REPLACE_ME_approval_code_SA",
+      "doc_type": "SA",
+      "remark": "③费用事前申请单"
+    },
+    {
+      "code": "REPLACE_ME_approval_code_RFQ",
+      "doc_type": "RFQ",
+      "remark": "④询价单（采三档）"
+    },
+    {
+      "code": "REPLACE_ME_approval_code_BJ",
+      "doc_type": "BJ",
+      "remark": "⑤比价表（不少于 3 家）"
+    },
+    {
+      "code": "REPLACE_ME_approval_code_SS",
+      "doc_type": "SS",
+      "remark": "⑥单一来源理由书（独家采购）"
+    },
+    {
+      "code": "REPLACE_ME_approval_code_CT",
+      "doc_type": "CT",
+      "remark": "⑦合同／简式订单（≥1,000 元原则上均须签订）"
+    },
+    {
+      "code": "REPLACE_ME_approval_code_PC",
+      "doc_type": "PC",
+      "remark": "⑧采购变更单（关联原合同号）"
+    },
+    {
+      "code": "REPLACE_ME_approval_code_GR",
+      "doc_type": "GR",
+      "remark": "⑨到货验收单／入库单"
+    },
+    {
+      "code": "REPLACE_ME_approval_code_QC",
+      "doc_type": "QC",
+      "remark": "⑩来料检验报告"
+    },
+    {
+      "code": "REPLACE_ME_approval_code_SUB",
+      "doc_type": "SUB",
+      "remark": "⑪集团提交流转单"
+    }
   ],
-
   "field_id": [
-    { "doc_type": "CT", "field_id": "REPLACE_ME_widget_amount",      "field_name": "合同金额",   "biz_field": "amount" },
-    { "doc_type": "CT", "field_id": "REPLACE_ME_widget_supplier",    "field_name": "供应商",     "biz_field": "supplier" },
-    { "doc_type": "CT", "field_id": "REPLACE_ME_widget_purpose_l1",  "field_name": "用途一级",   "biz_field": "purpose_class_l1" },
-    { "doc_type": "CT", "field_id": "REPLACE_ME_widget_purpose_l2",  "field_name": "用途二级",   "biz_field": "purpose_class_l2" },
-    { "doc_type": "CT", "field_id": "REPLACE_ME_widget_dept",        "field_name": "申请部门",   "biz_field": "department" },
-
-    { "doc_type": "GR", "field_id": "REPLACE_ME_widget_gr_amount",   "field_name": "验收数量金额", "biz_field": "amount" },
-    { "doc_type": "GR", "field_id": "REPLACE_ME_widget_gr_supplier", "field_name": "供应商",     "biz_field": "supplier" },
-
-    { "doc_type": "PC", "field_id": "REPLACE_ME_widget_pc_contract", "field_name": "原合同号",   "biz_field": "contract_no" },
-
-    { "doc_type": "",   "field_id": "REPLACE_ME_widget_remark",      "field_name": "备注",       "biz_field": "remark" }
+    {
+      "doc_type": "CT",
+      "field_id": "REPLACE_ME_widget_amount",
+      "field_name": "合同金额",
+      "biz_field": "amount"
+    },
+    {
+      "doc_type": "CT",
+      "field_id": "REPLACE_ME_widget_supplier",
+      "field_name": "供应商",
+      "biz_field": "supplier"
+    },
+    {
+      "doc_type": "CT",
+      "field_id": "REPLACE_ME_widget_purpose_l1",
+      "field_name": "用途一级",
+      "biz_field": "purpose_class_l1"
+    },
+    {
+      "doc_type": "CT",
+      "field_id": "REPLACE_ME_widget_purpose_l2",
+      "field_name": "用途二级",
+      "biz_field": "purpose_class_l2"
+    },
+    {
+      "doc_type": "CT",
+      "field_id": "REPLACE_ME_widget_dept",
+      "field_name": "申请部门",
+      "biz_field": "department"
+    },
+    {
+      "doc_type": "GR",
+      "field_id": "REPLACE_ME_widget_gr_amount",
+      "field_name": "验收数量金额",
+      "biz_field": "amount"
+    },
+    {
+      "doc_type": "GR",
+      "field_id": "REPLACE_ME_widget_gr_supplier",
+      "field_name": "供应商",
+      "biz_field": "supplier"
+    },
+    {
+      "doc_type": "PC",
+      "field_id": "REPLACE_ME_widget_pc_contract",
+      "field_name": "原合同号",
+      "biz_field": "contract_no"
+    },
+    {
+      "doc_type": "",
+      "field_id": "REPLACE_ME_widget_remark",
+      "field_name": "备注",
+      "biz_field": "remark"
+    }
   ],
-
   "ledger_type": [
-    { "key": "BA",  "value": "L01", "remark": "采购备案台账" },
-    { "key": "PR",  "value": "L02", "remark": "采购需求与审批台账" },
-    { "key": "PR",  "value": "L03", "remark": "★ 采购经办登记台账 —— 同一 doc_type 可落**多个**台账（B47）。工具表·台账第 3 号明确 L03 由「物资采购申请单审批节点指定经办人后自动写入」；漏了这条 L03 恒空 → 看板「需求提出人任经办人的笔数」恒为 0（而 0 恰是期望值，看不出来）" },
-    { "key": "SA",  "value": "L05", "remark": "费用事前申请台账" },
-    { "key": "CT",  "value": "L04", "remark": "合同台账" },
-    { "key": "GR",  "value": "L07", "remark": "到货验收台账" },
-    { "key": "SS",  "value": "L09", "remark": "例外事项台账（独家采购）" },
-    { "key": "PC",  "value": "L09", "remark": "例外事项台账（采购变更）——例外流程三条：采购变更／独家采购／紧急采购" },
-    { "key": "SUB", "value": "L06", "remark": "集团提交与付款衔接台账" }
+    {
+      "key": "BA",
+      "value": "L01",
+      "remark": "采购备案台账"
+    },
+    {
+      "key": "PR",
+      "value": "L02",
+      "remark": "采购需求与审批台账"
+    },
+    {
+      "key": "PR",
+      "value": "L03",
+      "remark": "★ 采购经办登记台账 —— 同一 doc_type 可落**多个**台账（B47）。工具表·台账第 3 号明确 L03 由「物资采购申请单审批节点指定经办人后自动写入」；漏了这条 L03 恒空 → 看板「需求提出人任经办人的笔数」恒为 0（而 0 恰是期望值，看不出来）"
+    },
+    {
+      "key": "SA",
+      "value": "L05",
+      "remark": "费用事前申请台账"
+    },
+    {
+      "key": "CT",
+      "value": "L04",
+      "remark": "合同台账"
+    },
+    {
+      "key": "GR",
+      "value": "L07",
+      "remark": "到货验收台账"
+    },
+    {
+      "key": "SS",
+      "value": "L09",
+      "remark": "例外事项台账（独家采购）"
+    },
+    {
+      "key": "PC",
+      "value": "L09",
+      "remark": "例外事项台账（采购变更）——例外流程三条：采购变更／独家采购／紧急采购"
+    },
+    {
+      "key": "SUB",
+      "value": "L06",
+      "remark": "集团提交与付款衔接台账"
+    }
   ],
-
   "threshold": [
-    { "key": "split_supplier_month", "value": "1000",     "remark": "同供应商当月累计阈值（元）——制度第二十一条第 7 项、D7 防拆分。★ 已消费" },
-    { "key": "spot_check_range",     "value": "800-1000", "remark": "重点抽查区间（元，左闭右闭）——D7 抽查 ≥50%。★ 已消费" },
-    { "key": "purchase_tier",        "value": "1000-5000","remark": "采购档位分界（元）：<1000 采一档；1000–5000 采二档；>5000 采三档。★ 边界含端点于低档。★ 当前【无消费端】——写入不改变任何行为，仅为口径登记" },
-    { "key": "emergency_hours",      "value": "24",       "remark": "紧急采购补录时限（小时）——B5/B6/A7。★ 当前【无消费端】，仅口径登记" },
-    { "key": "submit_workdays",      "value": "3",        "remark": "提交集团时限（工作日）——人工桥纪律①、制度第四十八/四十九条。★ 当前【无消费端】，仅口径登记" }
+    {
+      "key": "split_supplier_month",
+      "value": "1000",
+      "remark": "同供应商当月累计阈值（元）——制度第二十一条第 7 项、D7 防拆分。★ 已消费"
+    },
+    {
+      "key": "spot_check_range",
+      "value": "800-1000",
+      "remark": "重点抽查区间（元，左闭右闭）——D7 抽查 ≥50%。★ 已消费"
+    },
+    {
+      "key": "purchase_tier",
+      "value": "1000-5000",
+      "remark": "采购档位分界（元）：<1000 采一档；1000–5000 采二档；>5000 采三档。★ 边界含端点于低档。★ 当前【无消费端】——写入不改变任何行为，仅为口径登记"
+    },
+    {
+      "key": "emergency_hours",
+      "value": "24",
+      "remark": "紧急采购补录时限（小时）——B5/B6/A7。★ 当前【无消费端】，仅口径登记"
+    },
+    {
+      "key": "submit_workdays",
+      "value": "3",
+      "remark": "提交集团时限（工作日）——人工桥纪律①、制度第四十八/四十九条。★ 当前【无消费端】，仅口径登记"
+    }
   ],
-
   "ledger_field": [
-    { "ledger_type": "L01", "field_key": "付款凭据号", "is_sensitive": false },
-    { "ledger_type": "L01", "field_key": "抽查状态", "is_sensitive": false },
-
-    { "ledger_type": "L03", "field_key": "经办状态", "is_sensitive": false },
-    { "ledger_type": "L03", "field_key": "完成日期", "is_sensitive": false },
-    { "ledger_type": "L03", "field_key": "是否按期", "is_sensitive": false },
-
-    { "ledger_type": "L04", "field_key": "预付比例", "is_sensitive": false },
-    { "ledger_type": "L04", "field_key": "质保金余额", "is_sensitive": false },
-
-    { "ledger_type": "L05", "field_key": "结算状态", "is_sensitive": false },
-    { "ledger_type": "L05", "field_key": "移交集团日期", "is_sensitive": false },
-
-    { "ledger_type": "L06", "field_key": "提交日期", "is_sensitive": false },
-    { "ledger_type": "L06", "field_key": "集团受理编号", "is_sensitive": false },
-    { "ledger_type": "L06", "field_key": "集团流程状态", "is_sensitive": false },
-    { "ledger_type": "L06", "field_key": "付款完成日期", "is_sensitive": false },
-
-    { "ledger_type": "L07", "field_key": "检验结论", "is_sensitive": false },
-    { "ledger_type": "L07", "field_key": "差异说明", "is_sensitive": false },
-
-    { "ledger_type": "L09", "field_key": "是否已核销闭合", "is_sensitive": false }
+    {
+      "ledger_type": "L01",
+      "field_key": "付款凭据号",
+      "is_sensitive": false
+    },
+    {
+      "ledger_type": "L01",
+      "field_key": "抽查状态",
+      "is_sensitive": false
+    },
+    {
+      "ledger_type": "L03",
+      "field_key": "经办状态",
+      "is_sensitive": false
+    },
+    {
+      "ledger_type": "L03",
+      "field_key": "完成日期",
+      "is_sensitive": false
+    },
+    {
+      "ledger_type": "L03",
+      "field_key": "是否按期",
+      "is_sensitive": false
+    },
+    {
+      "ledger_type": "L04",
+      "field_key": "预付比例",
+      "is_sensitive": false
+    },
+    {
+      "ledger_type": "L04",
+      "field_key": "质保金余额",
+      "is_sensitive": false
+    },
+    {
+      "ledger_type": "L05",
+      "field_key": "结算状态",
+      "is_sensitive": false
+    },
+    {
+      "ledger_type": "L05",
+      "field_key": "移交集团日期",
+      "is_sensitive": false
+    },
+    {
+      "ledger_type": "L06",
+      "field_key": "提交集团日期",
+      "is_sensitive": false,
+      "remark": "★ 2026-09-29 按 R-20#13 统一名（以制度为准）：提交日期 → 提交集团日期"
+    },
+    {
+      "ledger_type": "L06",
+      "field_key": "集团流程编号",
+      "is_sensitive": false,
+      "remark": "★ 2026-09-29 按 R-20#13 统一名（以制度为准）：集团受理编号 → 集团流程编号"
+    },
+    {
+      "ledger_type": "L06",
+      "field_key": "集团流程状态",
+      "is_sensitive": false
+    },
+    {
+      "ledger_type": "L06",
+      "field_key": "付款完成日期",
+      "is_sensitive": false
+    },
+    {
+      "ledger_type": "L07",
+      "field_key": "检验结论",
+      "is_sensitive": false
+    },
+    {
+      "ledger_type": "L07",
+      "field_key": "差异说明",
+      "is_sensitive": false
+    },
+    {
+      "ledger_type": "L09",
+      "field_key": "紧急单是否已核销闭合",
+      "is_sensitive": false,
+      "remark": "★ 2026-09-29 按 R-20#13 统一名（以制度为准）：是否已核销闭合 → 紧急单是否已核销闭合"
+    },
+    {
+      "ledger_type": "L04",
+      "field_key": "履约状态",
+      "is_sensitive": false,
+      "remark": "★ 2026-09-29 补：R-21#12 依制度第三十七条已进 L04.fields(writable)，样例漏登记 ⇒ 台账页无写入入口"
+    },
+    {
+      "ledger_type": "L04",
+      "field_key": "集团付款状态",
+      "is_sensitive": false,
+      "remark": "★ 同上；制度第三十七条明确要求合同台账含「集团付款状态」"
+    },
+    {
+      "ledger_type": "L04",
+      "field_key": "提交集团日期",
+      "is_sensitive": false,
+      "remark": "★ 同上"
+    }
   ]
 }
-
