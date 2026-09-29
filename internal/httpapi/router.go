@@ -15,6 +15,7 @@ import (
 
 	"github.com/chadhao/jx-procurement-platform/internal/access"
 	"github.com/chadhao/jx-procurement-platform/internal/approval"
+	"github.com/chadhao/jx-procurement-platform/internal/chain"
 	"github.com/chadhao/jx-procurement-platform/internal/config"
 	"github.com/chadhao/jx-procurement-platform/internal/flow"
 	"github.com/chadhao/jx-procurement-platform/internal/inbox"
@@ -68,6 +69,9 @@ type Deps struct {
 	// Spec 内嵌机读规格（specload.Bundle；启动即 S1–S12 校验，见 M1）。
 	// 消费方：GET /approval/meta（M3 下发表单 schema）、submit 提交校验（M4）。
 	Spec *specload.Bundle
+	// Chain 分档/审批链计算（FR-M9-02；chain.json 唯一权威源）。
+	// submit 服务端算链（d5：调用方 nodes 一律拒绝）；preview 端点（M7）复用同一实例。
+	Chain *chain.Service
 }
 
 // NewRouter 装配 Echo 路由与中间件。

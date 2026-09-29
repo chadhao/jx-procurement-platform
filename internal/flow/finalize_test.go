@@ -3,6 +3,7 @@ package flow_test
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"sort"
 	"testing"
 
@@ -98,18 +99,32 @@ func TestFinalizeSkipsNonInstanceLedgers(t *testing.T) {
 	}
 }
 
-// TestFinalizeBizDateAndAmountGuards ★ #33 biz_date 必须 YYYY-MM-DD；#39 amount_cents ≤ 0 不落有效金额。
+// TestFinalizeBizDateAndAmountGuards ★ #33 biz_date 必须 YYYY-MM-DD；#39 单笔金额必须 > 0。
+// ★ M4 语义收紧：金额 ≤ 0 在**提交期即拒**（FR-M9-03 可见失败），不再「接受后置空」——
+//
+//	故本测试改为：① 非法 biz_date 退回提交日期 + 正常金额照常落账；①b 金额 ≤ 0 提交被拒。
 func TestFinalizeBizDateAndAmountGuards(t *testing.T) {
 	db := newFlowDB(t)
 	maps := &config.Maps{Ledger: map[string][]string{"PR": {"L02"}}}
 	svc := flow.NewWithConfig(db, "app", maps, nil)
 	ctx := context.Background()
 
-	// ① 非法 biz_date（非 YYYY-MM-DD）+ 非正金额 → 退回提交日期、金额 NULL。
-	bad := int64(0)
+	// ①b 金额 ≤ 0 ⇒ 提交期即拒（ErrInvalidSubmit）。
+	zero := int64(0)
+	if _, err := svc.Submit(ctx, flow.SubmitInput{
+		DocType: "PR", ApprovalCode: "code-pr", ApplicantOpenID: "ou_app",
+		AmountCents: &zero,
+		Nodes:       []flow.NodeSpec{{NodeID: "n1", Seq: 1, Approvers: []flow.Approver{{OpenID: "ou_x"}}}},
+		At:          flowAt,
+	}); !errors.Is(err, flow.ErrInvalidSubmit) {
+		t.Errorf("金额 0 提交应返回 ErrInvalidSubmit，实际 %v", err)
+	}
+
+	// ① 非法 biz_date（非 YYYY-MM-DD）→ 退回提交日期；金额照常落账。
+	amt0 := int64(500)
 	bizNo1, err := svc.Submit(ctx, flow.SubmitInput{
 		DocType: "PR", ApprovalCode: "code-pr", ApplicantOpenID: "ou_app",
-		AmountCents: &bad, BizFields: map[string]any{"biz_date": "2026-9-1"},
+		AmountCents: &amt0, BizFields: map[string]any{"biz_date": "2026-9-1"},
 		Nodes: []flow.NodeSpec{{NodeID: "n1", Seq: 1, Approvers: []flow.Approver{{OpenID: "ou_x"}}}},
 		At:    flowAt,
 	})
@@ -129,8 +144,8 @@ func TestFinalizeBizDateAndAmountGuards(t *testing.T) {
 	if bizDate1.String != "2026-09-27" {
 		t.Errorf("非法 biz_date 应退回提交日期 2026-09-27，实际 %q", bizDate1.String)
 	}
-	if amount1.Valid {
-		t.Errorf("amount_cents ≤ 0 不应落有效金额，实际 %q", amount1.String)
+	if amount1.String != "500" {
+		t.Errorf("正常金额应落账 500，实际 %q", amount1.String)
 	}
 
 	// ② 合法 biz_date 必须被采用（YYYY-MM-DD）。

@@ -1,6 +1,8 @@
 package httpapi
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -10,6 +12,7 @@ import (
 	"github.com/labstack/echo/v4"
 
 	"github.com/chadhao/jx-procurement-platform/internal/approval"
+	"github.com/chadhao/jx-procurement-platform/internal/chain"
 	"github.com/chadhao/jx-procurement-platform/internal/config"
 	"github.com/chadhao/jx-procurement-platform/internal/flow"
 	"github.com/chadhao/jx-procurement-platform/internal/permission"
@@ -463,20 +466,30 @@ func (d Deps) handleApprovalTasks(c echo.Context) error {
 
 // ---------- 提交 / 详情 / 定义（§3.13）----------
 
-// approvalSubmitBody 提交请求体（§3.13：`doc_type` + 表单字段 + `department`/`contact` + 审批链）。
+// approvalSubmitBody 提交请求体（§3.13；M4 契约收敛）。
 //
-// ★ `nodes` ＝审批链：`flow.Submit` 必需（`validateSubmit` 要求非空，`01a §4`）；由我方页面按定义给出。
+// ★ `nodes` 字段**保留但一律拒绝**（d5：调用方不再决定链 —— 非空即 400 可见失败，
+//
+//	不静默忽略；旧契约迁移期零成本，因前端原无调用方）。
+//
+// ★ 审批链由服务端计算（chain.Service，spec/chain.json 唯一权威源，N-008）。
 type approvalSubmitBody struct {
-	DocType        string           `json:"doc_type"`
-	ApprovalCode   string           `json:"approval_code"`
-	PrevBizNo      string           `json:"prev_biz_no"` // 驳回/撤回重提时指向旧单号（因果链）
-	Department     string           `json:"department"`
-	Supplier       string           `json:"supplier"`
-	AmountCents    *int64           `json:"amount_cents"`
-	PurposeClassL1 string           `json:"purpose_class_l1"`
-	PurposeClassL2 string           `json:"purpose_class_l2"`
-	Fields         map[string]any   `json:"fields"` // 已映射表单字段（键＝规范 biz_field）
-	Nodes          []approvalNodeIn `json:"nodes"`
+	DocType        string `json:"doc_type"`
+	ApprovalCode   string `json:"approval_code"`
+	PrevBizNo      string `json:"prev_biz_no"` // 驳回/撤回重提时指向旧单号（因果链）
+	Department     string `json:"department"`
+	Supplier       string `json:"supplier"`
+	AmountCents    *int64 `json:"amount_cents"`
+	PurposeClassL1 string `json:"purpose_class_l1"` // 兼容旧键；schema 权威键＝usage_category_l1
+	PurposeClassL2 string `json:"purpose_class_l2"`
+	// usage_category_*：spec/forms 的权威键（D8：与旧键双写皆可，服务端取并集）。
+	UsageCategoryL1 string `json:"usage_category_l1"`
+	UsageCategoryL2 string `json:"usage_category_l2"`
+	// PaymentMethodInput 费用线按支付方式二分（enums#route_resolution）：
+	//   personal_advance / corporate_direct。
+	PaymentMethodInput string           `json:"payment_method_input"`
+	Fields             map[string]any   `json:"fields"` // 已映射表单字段（键＝规范 biz_field）
+	Nodes              []approvalNodeIn `json:"nodes"`  // ★ 仅用于检测并拒绝（d5）
 }
 
 type approvalNodeIn struct {
@@ -491,12 +504,17 @@ type approvalUserIn struct {
 	Name   string `json:"name"`
 }
 
-// handleApprovalSubmit 我方提交：生成编号 + 建实例 + 首推飞书（§3.13；`04a §3`）。
+// handleApprovalSubmit 我方提交（§3.13；M4 契约收敛）：
 //
-// ★ 薄壳：校验 / 建实例 / 落库语义全在 `flow.Submit`（本文件不复制状态机）。
+//	服务端算链 → 表单结构化校验 → 幂等（Idempotency-Key）→ flow.Submit（编号/落库/首推）。
+//
+// ★ 薄壳：状态机语义全在 `flow.Submit`；链与分档在 `chain.Service`（preview 共算，D5）。
 func (d Deps) handleApprovalSubmit(c echo.Context) error {
 	if d.Flow == nil {
 		return fail(c, http.StatusServiceUnavailable, codeNotReady, "审批服务未装配")
+	}
+	if d.Spec == nil || d.Chain == nil {
+		return fail(c, http.StatusServiceUnavailable, codeNotReady, "机读规格/链计算未装配")
 	}
 	idn, _, err := d.identityFrom(c)
 	if err != nil {
@@ -506,15 +524,62 @@ func (d Deps) handleApprovalSubmit(c echo.Context) error {
 	if err := json.NewDecoder(c.Request().Body).Decode(&body); err != nil {
 		return fail(c, http.StatusBadRequest, codeBadRequest, "请求体非法: "+err.Error())
 	}
-	nodes := make([]flow.NodeSpec, 0, len(body.Nodes))
-	for _, n := range body.Nodes {
-		approvers := make([]flow.Approver, 0, len(n.Approvers))
-		for _, a := range n.Approvers {
-			approvers = append(approvers, flow.Approver{OpenID: a.OpenID, Name: a.Name})
-		}
-		nodes = append(nodes, flow.NodeSpec{NodeID: n.NodeID, NodeName: n.NodeName, Seq: n.Seq, Approvers: approvers})
-	}
 	ctx := c.Request().Context()
+
+	// ---- d5：调用方 nodes 一律拒绝（链由服务端计算）----
+	if len(body.Nodes) > 0 {
+		return fail(c, http.StatusBadRequest, codeBadRequest,
+			"审批链由服务端计算：请求体不再接受 nodes 字段（请移除后重试）")
+	}
+	// ---- approval_code ↔ doc_type 双向一致（M2-05；不一致=回调将静默失败，提交侧先行拦截）----
+	if dt, ok := d.Maps.Approval.DocType(body.ApprovalCode); !ok || dt != body.DocType {
+		return fail(c, http.StatusBadRequest, codeBadRequest,
+			fmt.Sprintf("approval_code %q 与 doc_type %q 不匹配或映射缺失", body.ApprovalCode, body.DocType))
+	}
+
+	// ---- 服务端算链（FR-M9-02）----
+	usageL1 := firstNonEmptyStr(body.UsageCategoryL1, body.PurposeClassL1)
+	usageL2 := firstNonEmptyStr(body.UsageCategoryL2, body.PurposeClassL2)
+	facts := chain.Facts{
+		DocType:                  body.DocType,
+		AmountCents:              body.AmountCents,
+		UsageCategoryL1:          usageL1,
+		PaymentMethodInput:       body.PaymentMethodInput,
+		Department:               firstNonEmptyStr(body.Department, idn.Department),
+		ApplicantIsOpsSupervisor: idn.Role == "综合运营主管",
+	}
+	rc, err := d.Chain.Compute(ctx, facts)
+	if err != nil {
+		if isChainInputError(err) {
+			return fail(c, http.StatusBadRequest, codeBadRequest, err.Error())
+		}
+		return fail(c, http.StatusInternalServerError, codeInternal, err.Error())
+	}
+	// ---- 算不到人 ⇒ 阻断（FR-M9-02；N-018 过渡：40000 + error_detail 明细）----
+	if err := rc.EnsureResolvable(); err != nil {
+		return failWithDetail(c, http.StatusBadRequest, codeBadRequest, err.Error(), map[string]any{
+			"unresolved_roles": rc.Unresolved,
+		})
+	}
+
+	// ---- 表单结构化校验（spec/forms schema；N-17 结构化子集）----
+	form, hasForm := d.Spec.Forms[body.DocType]
+	if hasForm {
+		if verr := validateSubmitForm(form, mergeProvidedFields(&body, usageL1, usageL2)); verr != nil {
+			return fail(c, http.StatusBadRequest, codeBadRequest, "表单校验失败: "+verr.Error())
+		}
+	}
+
+	// ---- 幂等（Idempotency-Key；d9 照 submission 模式）----
+	idemKey := strings.TrimSpace(c.Request().Header.Get("Idempotency-Key"))
+	idemHash := ""
+	if idemKey != "" {
+		if raw, mErr := json.Marshal(body); mErr == nil {
+			sum := sha256.Sum256(raw)
+			idemHash = hex.EncodeToString(sum[:])
+		}
+	}
+
 	bizNo, err := d.Flow.Submit(ctx, flow.SubmitInput{
 		DocType:         body.DocType,
 		ApprovalCode:    body.ApprovalCode,
@@ -522,13 +587,27 @@ func (d Deps) handleApprovalSubmit(c echo.Context) error {
 		ApplicantOpenID: idn.OpenID,
 		Department:      firstNonEmptyStr(body.Department, idn.Department),
 		AmountCents:     body.AmountCents,
-		PurposeClassL1:  body.PurposeClassL1,
-		PurposeClassL2:  body.PurposeClassL2,
+		PurposeClassL1:  usageL1,
+		PurposeClassL2:  usageL2,
 		Supplier:        body.Supplier,
 		BizFields:       body.Fields,
-		Nodes:           nodes,
+		Nodes:           rc.Spec,
+		IdemKey:         idemKey,
+		IdemPayloadHash: idemHash,
 	})
-	if err != nil {
+	switch {
+	case errors.Is(err, flow.ErrIdemReplay):
+		// 同键同载荷 ⇒ 200 复用首次结果（bizNo 由 Submit 携带返回）。
+		inst, gErr := d.DB.GetInstanceByBizNo(ctx, bizNo)
+		if gErr != nil {
+			return fail(c, http.StatusInternalServerError, codeInternal, gErr.Error())
+		}
+		return ok(c, map[string]any{"biz_no": bizNo, "instance_id": inst.InstanceCode,
+			"status": inst.Status, "idempotent_replay": true})
+	case errors.Is(err, flow.ErrIdemConflict):
+		return fail(c, http.StatusConflict, codeConflict,
+			"Idempotency-Key 冲突：该键已用于另一次请求（请求载荷不一致）")
+	case err != nil:
 		return d.approvalError(c, err)
 	}
 	d.audit(ctx, &store.AuditLogRow{ActorOpenID: idn.OpenID, ActorRole: idn.Role,
@@ -538,6 +617,44 @@ func (d Deps) handleApprovalSubmit(c echo.Context) error {
 		return fail(c, http.StatusInternalServerError, codeInternal, err.Error())
 	}
 	return ok(c, map[string]any{"biz_no": bizNo, "instance_id": inst.InstanceCode, "status": inst.Status})
+}
+
+// isChainInputError chain 计算中「输入驱动」的错误 ⇒ 400；其余（查询失败等）⇒ 500。
+func isChainInputError(err error) bool {
+	return errors.Is(err, chain.ErrUnsupportedDoc) ||
+		errors.Is(err, chain.ErrAmountMissing) ||
+		errors.Is(err, chain.ErrTierOutOfDoc) ||
+		errors.Is(err, chain.ErrRouteMissing) ||
+		errors.Is(err, chain.ErrTierNoBand) ||
+		errors.Is(err, chain.ErrCategoryInvalid) ||
+		errors.Is(err, chain.ErrPaymentInvalid)
+}
+
+// mergeProvidedFields 构造提交载荷合并视图（顶层别名 + fields map）。
+func mergeProvidedFields(body *approvalSubmitBody, usageL1, usageL2 string) map[string]any {
+	provided := make(map[string]any, len(body.Fields)+8)
+	for k, v := range body.Fields {
+		provided[k] = v
+	}
+	if body.AmountCents != nil {
+		provided["amount_cents"] = *body.AmountCents
+	}
+	if strings.TrimSpace(body.Supplier) != "" {
+		provided["supplier"] = body.Supplier
+	}
+	if usageL1 != "" {
+		provided["usage_category_l1"] = usageL1
+	}
+	if usageL2 != "" {
+		provided["usage_category_l2"] = usageL2
+	}
+	if strings.TrimSpace(body.PurposeClassL1) != "" {
+		provided["purpose_class_l1"] = body.PurposeClassL1
+	}
+	if strings.TrimSpace(body.PurposeClassL2) != "" {
+		provided["purpose_class_l2"] = body.PurposeClassL2
+	}
+	return provided
 }
 
 // handleApprovalInstance 单实例审批详情 + 时间线（§3.13）。

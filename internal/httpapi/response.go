@@ -63,3 +63,10 @@ func ok(c echo.Context, data any) error {
 func fail(c echo.Context, status, code int, msg string) error {
 	return c.JSON(status, Envelope{Code: code, Data: nil, Message: msg, TraceID: traceID(c)})
 }
+
+// failWithDetail 返回带结构化明细的错误包裹（Data=detail）。
+// 用途：链算不到人时的 `unresolved_roles`（N-018 过渡口径：40000 + 明细）等
+// 「错误消息承载不了结构、但客户端需要机器可读」的场景。
+func failWithDetail(c echo.Context, status, code int, msg string, detail map[string]any) error {
+	return c.JSON(status, Envelope{Code: code, Data: detail, Message: msg, TraceID: traceID(c)})
+}

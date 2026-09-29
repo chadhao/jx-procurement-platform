@@ -79,6 +79,10 @@ var (
 	// ★ 必须**可见地失败**：定义缺失时若放行提交，结果是「提交看起来成功，但审批中心看不到数据」
 	//   ——与 S1/S7 同类不可见故障、无任何异常（docs/11 R10）。
 	ErrDefinitionMissing = errors.New("flow: 三方审批定义未注册")
+	// ErrIdemReplay 同幂等键 + 同载荷：返回值携带**首次** biz_no，调用方 200 复用（d9）。
+	ErrIdemReplay = errors.New("flow: 幂等重放（同键同载荷，返回首次结果）")
+	// ErrIdemConflict 同幂等键 + 异载荷：调用方应 40900。
+	ErrIdemConflict = errors.New("flow: 幂等键冲突（同键异载荷）")
 )
 
 // Approver 审批人。
@@ -125,6 +129,10 @@ type SubmitInput struct {
 	Attachments []AttachmentRef
 	Nodes       []NodeSpec
 	At          time.Time // 业务时刻（零值取 now），YYMM 由它决定
+	// IdemKey / IdemPayloadHash 提交幂等（M4 d9，照抄 submission 模式）：
+	//   两者皆空 ⇒ 不启用。占用冲突由 Submit 返回 ErrIdemReplay/ErrIdemConflict。
+	IdemKey         string
+	IdemPayloadHash string
 }
 
 // Service 审批领域服务。
@@ -199,6 +207,13 @@ func (s *Service) Submit(ctx context.Context, in SubmitInput) (string, error) {
 		events []FlowEvent
 	)
 	err := s.db.WithTx(ctx, func(tx *sql.Tx) error {
+		// ★ 幂等占位（d9）：必须**先占位、后建单**（语义详见 store.InsertApprovalIdemTx）；
+		//   冲突 ⇒ 让路中止本事务（未写任何业务数据），事务外回读胜出者。
+		if strings.TrimSpace(in.IdemKey) != "" {
+			if err := s.db.InsertApprovalIdemTx(ctx, tx, in.IdemKey, in.ApplicantOpenID, in.IdemPayloadHash); err != nil {
+				return err // store.ErrApprovalIdemTaken 或包装错误
+			}
+		}
 		var err error
 		bizNo, err = s.gen.AllocTx(ctx, tx, in.DocType, at)
 		if err != nil {
@@ -229,12 +244,10 @@ func (s *Service) Submit(ctx context.Context, in SubmitInput) (string, error) {
 			return err
 		}
 		inst.ExtJSON = extJSON
-		// ★ 单笔金额必须 > 0（决策 #39）：0/负金额不作有效金额落库（保持 NULL）并告警，
-		//   否则「0 元采购单」既被接受、又以 0 参与看板统计与档位判定。
+		// ★ 单笔金额必须 > 0（决策 #39 / FR-M9-03）：0/负金额**拒绝提交**（M4 起由
+		//   原「Warn + 置空」收紧为可见失败 —— 置空会让 0 元单既被接受又以 NULL 统计）。
 		if inst.AmountCents != nil && *inst.AmountCents <= 0 {
-			s.log.Warn("提交金额非正，已忽略该金额（#39：单笔金额必须 > 0）",
-				"biz_no", bizNo, "amount_cents", *inst.AmountCents)
-			inst.AmountCents = nil
+			return fmt.Errorf("%w: 单笔金额必须 > 0，实为 %d 分", ErrInvalidSubmit, *inst.AmountCents)
 		}
 		// ★ P3 兜底：biz_no 唯一索引拦截「试图复用终态号」——命中即失败，绝不静默分配同号。
 		if err := s.db.UpsertInstanceTx(ctx, tx, inst); err != nil {
@@ -280,8 +293,28 @@ func (s *Service) Submit(ctx context.Context, in SubmitInput) (string, error) {
 			Type: EventSubmitted, BizNo: bizNo, InstanceCode: inst.InstanceCode, DocType: in.DocType,
 			ActorOpenID: in.ApplicantOpenID, Reason: in.PrevBizNo, At: at,
 		})
+		// ★ 幂等簿记回填（同事务）：建单成功才落 biz_no；事务失败整体回滚 ⇒ 键不被毒化。
+		if strings.TrimSpace(in.IdemKey) != "" {
+			if err := s.db.BackfillApprovalIdemTx(ctx, tx, in.IdemKey, in.ApplicantOpenID, bizNo, in.IdemPayloadHash); err != nil {
+				return err
+			}
+		}
 		return nil
 	})
+	if errors.Is(err, store.ErrApprovalIdemTaken) {
+		// 让路：回读胜出者 —— 同载荷 ⇒ 返回首次 biz_no + ErrIdemReplay；异载荷 ⇒ 冲突。
+		rec, found, ferr := s.db.FindApprovalIdem(ctx, in.IdemKey, in.ApplicantOpenID)
+		if ferr != nil {
+			return "", ferr
+		}
+		if !found {
+			return "", fmt.Errorf("flow: 幂等键刚判定冲突却查不到记录（key=%s）", in.IdemKey)
+		}
+		if rec.PayloadHash != "" && rec.PayloadHash == in.IdemPayloadHash && rec.BizNo != "" {
+			return rec.BizNo, ErrIdemReplay
+		}
+		return "", ErrIdemConflict
+	}
 	if err != nil {
 		return "", err
 	}
