@@ -48,6 +48,14 @@ var submitHardChecks = map[string]hardCheckFn{
 	"special_explanation_required":      checkPCSpecialExplanation,
 	"tech_opinion_for_engineering":      checkPCTechOpinionEngineering,
 	"new_supplier_when_supplier_change": checkPCNewSupplier,
+	// ---- BJ（比价表）----
+	"min_three_valid_quotes":               checkBJMinThreeQuotes,
+	"quotes_must_be_independent":           checkBJQuotesIndependent,
+	"technical_compliance_filled":          checkBJTechnicalCompliance,
+	"selected_must_be_valid_and_compliant": checkBJSelectedValidCompliant,
+	"not_single_source":                    checkBJNotSingleSource,
+	// "selection_reason_immutable"：when=提交后 ⇒ verifyBJPostSubmitImmutability 承载
+
 	// ---- SUB（集团提交流转单）----
 	"related_docs_complete":            checkSUBRelatedDocsComplete,
 	"contract_approved_when_over_1000": checkSUBContractApproved,
@@ -86,9 +94,14 @@ func (d Deps) evaluateHardChecks(ctx context.Context, form specload.FormDoc, bod
 		if c.Severity != "hard" {
 			continue
 		}
-		when := c.When
-		if !strings.Contains(when, "submit") && !strings.Contains(when, "提交") {
-			continue // 非提交时点（签署 / 算链 / 终态 / 节点时点）—— 由各自时点承载
+		// 提交**时点**判定：白名单而非「含"提交"二字」——
+		// "提交后" 与 "落账后（…提交→落账→自检…）" 都含"提交"却不是提交时点，
+		// 误入会因未注册而 fail-closed 报错（自检由 verify*Post* 承载）。
+		when := strings.TrimSpace(c.When)
+		isSubmitMoment := when == "submit" || strings.HasPrefix(when, "submit ") ||
+			strings.Contains(when, "提交前")
+		if !isSubmitMoment {
+			continue // 非提交时点（签署 / 算链 / 终态 / 提交后 / 落账后 / 节点时点）—— 由各自时点承载
 		}
 		switch c.ID {
 		case "idempotency_key":
@@ -769,8 +782,10 @@ WHERE ledger_type='L07' AND biz_no = ?`, bizNo).Scan(&related, &extRaw, &qty)
 // SUB（集团提交流转单 · 判据见 spec/forms/SUB.json#checks）
 // ---------------------------------------------------------------------------
 
-// subBizNoRe 识别我方业务单号（前缀-YYMM-####，两段各 4 位数字）。
-var subBizNoRe = regexp.MustCompile(`[A-Z]{2}-[0-9]{4}-[0-9]{4}`)
+// subBizNoRe 识别我方业务单号（前缀-YYMM-####）。
+// ★ 前缀白名单＝chain.json 的 11 类单据（含 3 字母 RFQ）—— `[A-Z]{2}` 会把
+// 形似串（XX-2610-0001）当有效单号去查，查无 ⇒ 误拦（WB SUB 验收记项，闭环）。
+var subBizNoRe = regexp.MustCompile(`(?:BA|PR|SA|RFQ|BJ|SS|CT|PC|GR|QC|SUB)-[0-9]{4}-[0-9]{4}`)
 
 // parseRelatedDocs 从文本清单解析单据号（去重保序）。
 func parseRelatedDocs(text string) []string {
@@ -952,6 +967,155 @@ WHERE ledger_type='L06' AND biz_no = ?`, bizNo).Scan(&extRaw, &amount); err != n
 		}
 		if s, isStr := v.(string); isStr && strings.TrimSpace(s) == "" {
 			return fmt.Errorf("SUB 落账自检失败：运营列 %s 为空（biz_no=%s）", k, bizNo)
+		}
+	}
+	return nil
+}
+
+// ---------------------------------------------------------------------------
+// BJ（比价表 · 判据见 spec/forms/BJ.json#checks；权威源＝工具表 采购方式与留痕 R6/R19）
+// ---------------------------------------------------------------------------
+
+// countBJQuotes 从文本明细计数报价家数 —— ★ **由明细自动计数，不接受手填**
+// （手填必然填成 3：「表格会自己骗自己」）。逐行 + 行内分号分段（能解析的部分）。
+func countBJQuotes(text string) int {
+	n := 0
+	for _, line := range strings.Split(text, "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		for _, seg := range strings.FieldsFunc(line, func(r rune) bool {
+			return r == '；' || r == ';' || r == '，'
+		}) {
+			if strings.TrimSpace(seg) != "" {
+				n++
+			}
+		}
+	}
+	return n
+}
+
+// quoteLines 取报价明细的逐行内容（选定单位定位用）。
+func quoteLines(text string) []string {
+	var out []string
+	for _, line := range strings.Split(text, "\n") {
+		if s := strings.TrimSpace(line); s != "" {
+			out = append(out, s)
+		}
+	}
+	return out
+}
+
+// checkBJMinThreeQuotes 明细计数 ≥3；与 system 声明的 quote_count 不一致 ⇒ 拦
+// （「表上 3 家、明细 2 家」是本判据要抓的核心形态）。
+func checkBJMinThreeQuotes(_ context.Context, _ Deps, _ specload.FormDoc, body *approvalSubmitBody, _ string) error {
+	provided := hbProvided(body)
+	quotes := hStr(provided, "quotes")
+	if quotes == "" {
+		return fmt.Errorf("报价明细（quotes）必填 —— 家数由明细自动计数")
+	}
+	derived := countBJQuotes(quotes)
+	if derived < 3 {
+		return fmt.Errorf("报价明细计数 %d 家，少于 3 家 —— 采三档成立条件不足（正确出路：改走竞争性谈判或单一来源通道）", derived)
+	}
+	if qc, ok := hNum(provided, "quote_count"); ok && int(qc) != derived {
+		return fmt.Errorf("quote_count=%d 与明细实际家数 %d 不一致（家数以明细为准，不接受手填）", int(qc), derived)
+	}
+	return nil
+}
+
+// checkBJQuotesIndependent 关联关系**声明**必须为「是」（全部独立）。
+// ★ 本判据校验的是声明不是事实（无工商数据源）—— 报错文案不得暗示系统能发现围标。
+func checkBJQuotesIndependent(_ context.Context, _ Deps, _ specload.FormDoc, body *approvalSubmitBody, _ string) error {
+	provided := hbProvided(body)
+	v, isBool := provided["all_quotes_independent"].(bool)
+	if !isBool {
+		return fmt.Errorf("关联关系声明（all_quotes_independent）必须为布尔值")
+	}
+	if !v {
+		return fmt.Errorf("关联关系声明为「否」—— 存在关联报价须剔除关联方，或改走招标／竞争性谈判" +
+			"（注：本判据校验的是**显式声明**，系统无工商数据源、不核验事实）")
+	}
+	return nil
+}
+
+// checkBJTechnicalCompliance 技术符合性非空且**逐家**（按明细条数）给出判断。
+// ★ 只要求「填了」，不要求「结论正确」—— 技术判断是人的专业判断，系统只让它必须发生。
+func checkBJTechnicalCompliance(_ context.Context, _ Deps, _ specload.FormDoc, body *approvalSubmitBody, _ string) error {
+	provided := hbProvided(body)
+	text := hStr(provided, "technical_compliance")
+	if text == "" {
+		return fmt.Errorf("技术符合性（technical_compliance）必填 —— 逐家给出符合/不符合判断")
+	}
+	quotesN := countBJQuotes(hStr(provided, "quotes"))
+	mentions := strings.Count(text, "符合") // 覆盖「符合」与「不符合」
+	if quotesN > 0 && mentions < quotesN {
+		return fmt.Errorf("技术符合性判断不足逐家：明细 %d 家，符合/不符合 仅提及 %d 处", quotesN, mentions)
+	}
+	return nil
+}
+
+// checkBJSelectedValidCompliant 选定单位必须出现在明细中，且该行标注**有效**与**技术符合**。
+// ★ 防「比价做样子」：陪标 3 家、最后选了没报价/技术不符合的一家 —— 那样前面所有判据都白做。
+// ★ 文本明细的代价（known_gaps 第 1 条）：只校验**能解析出来的部分**，标注缺失 ⇒ fail-closed。
+func checkBJSelectedValidCompliant(_ context.Context, _ Deps, _ specload.FormDoc, body *approvalSubmitBody, _ string) error {
+	provided := hbProvided(body)
+	selected := hStr(provided, "selected_supplier")
+	if selected == "" {
+		return fmt.Errorf("选定单位（selected_supplier）必填")
+	}
+	var hit string
+	for _, line := range quoteLines(hStr(provided, "quotes")) {
+		if strings.Contains(line, selected) {
+			hit = line
+			break
+		}
+	}
+	if hit == "" {
+		return fmt.Errorf("选定单位 %q 未出现在报价明细中 —— 必须从报价清单里选（不能选没报过价的）", selected)
+	}
+	valid := strings.Contains(hit, "有效") && !strings.Contains(hit, "无效")
+	compliant := strings.Contains(hit, "技术符合") ||
+		(strings.Contains(hit, "符合") && !strings.Contains(hit, "不符合"))
+	if !valid || !compliant {
+		return fmt.Errorf("明细中 %q 所在行未标注为「有效」且「技术符合」（文本明细只校验能解析的部分 —— 标注缺失不放行）", selected)
+	}
+	return nil
+}
+
+// checkBJNotSingleSource 本单存在 ⇒ 采购方式不得为「单一来源」（关闭 SS 遗留互斥缺口：
+// 单一来源的前提是凑不出 3 家，与本单语义不可能同时成立 —— 答案就在 procure_method 一个字段上）。
+func checkBJNotSingleSource(_ context.Context, _ Deps, _ specload.FormDoc, body *approvalSubmitBody, _ string) error {
+	provided := hbProvided(body)
+	if hStr(provided, "procure_method") == "单一来源" {
+		return fmt.Errorf("比价表的采购方式不得为「单一来源」—— 无询比价即无比价表（应改走单一来源通道的单据是 SS）")
+	}
+	return nil
+}
+
+// verifyBJPostSubmitImmutability BJ#selection_reason_immutable（when=提交后）：
+// selected_reason / procure_method / selected_supplier **提交后不得修改**。
+// ★ 工具表 R19「不得事后补写」在系统里的唯一可执行形态 —— 否则「事前形成」在系统上不成立。
+// 实现＝提交即冻结自检：回读实例 ext 与提交值比对；结构性保障＝本系统**不存在**
+// 任何修改实例业务字段的接口（路由断言见测试），无路径 ⇒ 不可改。
+func (d Deps) verifyBJPostSubmitImmutability(ctx context.Context, body *approvalSubmitBody, bizNo string) error {
+	inst, err := d.DB.GetInstanceByBizNo(ctx, bizNo)
+	if err != nil {
+		return fmt.Errorf("BJ 提交后不可改自检失败：实例读取失败（biz_no=%s）: %w", bizNo, err)
+	}
+	ext := map[string]any{}
+	if inst.ExtJSON != "" && inst.ExtJSON != "{}" {
+		if err := json.Unmarshal([]byte(inst.ExtJSON), &ext); err != nil {
+			return fmt.Errorf("BJ 提交后不可改自检失败：ext_json 损坏（biz_no=%s）: %w", bizNo, err)
+		}
+	}
+	provided := hbProvided(body)
+	for _, k := range []string{"selected_reason", "procure_method", "selected_supplier"} {
+		submitted := hStr(provided, k)
+		frozen, _ := ext[k].(string)
+		if submitted != "" && frozen != submitted {
+			return fmt.Errorf("BJ 提交后不可改自检失败：%s 冻结值与提交值不一致（biz_no=%s）", k, bizNo)
 		}
 	}
 	return nil

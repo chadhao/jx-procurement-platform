@@ -39,6 +39,13 @@ VALUES (?, 'ac-x', ?, ?, 'APPROVED', 'ou_app', 1000, 'flow', ?, ?)`,
 		subBody(map[string]any{"related_docs": "CT-2609-0001、GR-0000-0000"}), "ou_app"))
 	mustPass(t, "逐项齐全", checkSUBRelatedDocsComplete(ctx, d, form,
 		subBody(map[string]any{"related_docs": "CT-2609-0001、GR-2609-0002"}), "ou_app"))
+	// ★ 形似串（白名单外前缀）不计入单号 —— 否则去查必查无 ⇒ 误拦合法单
+	mustBlock(t, "仅形似串", checkSUBRelatedDocsComplete(ctx, d, form,
+		subBody(map[string]any{"related_docs": "XX-2609-0001、INV-2609-0002"}), "ou_app"))
+	// ★ RFQ 三字母前缀必须识别（`[A-Z]{2}` 白名单化后仍要覆盖 3 字母类）
+	seedRelatedInstance(t, db, "ac-rfq", "RFQ", "RFQ-2609-0003")
+	mustPass(t, "RFQ三字母前缀", checkSUBRelatedDocsComplete(ctx, d, form,
+		subBody(map[string]any{"related_docs": "RFQ-2609-0003"}), "ou_app"))
 }
 
 func TestSUBContractApprovedThreshold(t *testing.T) {

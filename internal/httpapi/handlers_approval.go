@@ -667,6 +667,13 @@ func (d Deps) handleApprovalSubmit(c echo.Context) error {
 				return fail(c, http.StatusInternalServerError, codeInternal, verr.Error())
 			}
 		}
+		// BJ#selection_reason_immutable（when=提交后）：选定理由/采购方式/选定单位
+		// 提交即冻结 —— 工具表 R19「不得事后补写」的唯一可执行形态
+		if hasFormCheck(form, "selection_reason_immutable") {
+			if verr := d.verifyBJPostSubmitImmutability(ctx, &body, bizNo); verr != nil {
+				return fail(c, http.StatusInternalServerError, codeInternal, verr.Error())
+			}
+		}
 	}
 	d.audit(ctx, &store.AuditLogRow{ActorOpenID: idn.OpenID, ActorRole: idn.Role,
 		Action: "submit", Resource: "approval", TargetID: bizNo, Result: "allow"})
