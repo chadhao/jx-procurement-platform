@@ -12,6 +12,7 @@
   "resolution_ref": "spec/RESOLUTIONS.md",
   "note": "★ 本文件是**分档规则与审批链的唯一权威源**（COLLAB.md §2：该内容归 WorkBuddy）。任何实现与本文件不一致，以本文件为准；如需变更走 COLLAB.md 议题流程。",
   "conventions": {
+    "agent_allowed": "★ **节点是否接受代理人操作**（`routes.*.nodes[*].agent_allowed`）：**缺省 true**；显式 `false` ＝ 制度禁止代理（第十二条「备付金审批不得代理」）。★★ **判据＝数据** —— 节点名单**必须写在 spec**，**不得在代码里写字面量**：否则改链（节点改名 / 增删备付金节点）会**静默漏拦**（代理人被放行、且没有任何东西报错）。★ **消费端**：`chain.NodeAllowsAgent`（`M9` 转交/回退入口）＋ 后台 `GET /api/admin/role-agents` 回传 `denied_node_ids`。★ **迁移状态（如实）**：本标记于 2026-09-30 加入，`chain.PettyCashAgentDeniedNodeIDs` **当前仍按 id 字面量判定**（行为正确但非数据驱动）⇒ 由 `COLLAB.md` 的 `N-031` 收口（**两侧同批**）。",
     "money_unit": "cents",
     "money_note": "金额一律用「分」（整数）。1000 元 = 100000；5000 元 = 500000。禁止用浮点元。",
     "amount_field": "单笔含税总额（对应 PR 的「预估总金额」计算列）",
@@ -241,6 +242,7 @@
           "label": "综合运营主管审批备付金",
           "actor": "ops_supervisor",
           "required": true,
+          "agent_allowed": false,
           "branches": [
             {
               "when": "applicant.is_ops_supervisor == true",
@@ -278,6 +280,7 @@
           "label": "拨付备付金（申请人在备案单上签领）",
           "actor": "ops_supervisor",
           "required": true,
+          "agent_allowed": false,
           "condition": "anti_split_check passed",
           "record_fields": [
             "签领人",
