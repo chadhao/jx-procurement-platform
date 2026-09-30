@@ -59,6 +59,17 @@ func ResolveRoute(b *specload.Bundle, f Facts) (RouteResult, error) {
 		}
 		return RouteResult{RouteID: route, Tier: "expense_any"}, nil
 
+	case DocCT:
+		// 合同/简式订单：**恒走合同统一两级**（doc_chains.CT.route = contract_two_level，
+		// S6 extra_allowed 已认可该引用）；触发条件＝是否签合同（R-26）—— CT 即有合同。
+		tier := ""
+		if f.AmountCents != nil {
+			if t, err := TierOf(b, *f.AmountCents); err == nil {
+				tier = t
+			}
+		}
+		return RouteResult{RouteID: b.Chain.ContractApproval.ID, Tier: tier}, nil
+
 	default:
 		return RouteResult{}, fmt.Errorf("%w: %s", ErrUnsupportedDoc, f.DocType)
 	}

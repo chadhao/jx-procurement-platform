@@ -265,6 +265,8 @@ type CheckDoc struct {
 	Else      string `json:"else"`
 	Origin    string `json:"origin"`
 	OriginRef string `json:"origin_ref"`
+	// Severity hard = 提交期机判硬拦截（T4：amount_vs_pr / no_self_purchaser）；缺省 soft。
+	Severity string `json:"severity"`
 }
 
 // ---------------------------------------------------------------------------

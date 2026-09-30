@@ -28,6 +28,13 @@ const tier3PlusAmountCents int64 = 20000000
 // 输入 routeID 必须是 ResolveRoute 的结果（不在此再判线）。
 // 输出 Seq 为审批任务序（1..N，IsApproval=false 的环节 Seq=0）。
 func BuildNodes(b *specload.Bundle, routeID string, f Facts) ([]RoleNode, error) {
+	// ---- 合同统一两级（CT 单据 / T4）：不走 routes 表，直接由 contract_approval.order 展开 ----
+	//   审批任务＝supervisor_approval + pgm_approval（沿用 contract_supervisor/pgm 节点 id，
+	//   与 expandContract 同源 ⇒ R-26 的通用插入会因 hasContractNodes 命中而不再重复插入）；
+	//   其余步骤（确认/拟稿/上传/签署）为动作环节，进展示不生成审批任务。
+	if routeID == b.Chain.ContractApproval.ID {
+		return buildContractRouteNodes(b, f), nil
+	}
 	route, ok := b.Chain.Routes[routeID]
 	if !ok {
 		return nil, fmt.Errorf("%w: %s", ErrRouteMissing, routeID)
@@ -215,4 +222,37 @@ func isActionActor(actor string) bool {
 		return true
 	}
 	return false
+}
+
+// buildContractRouteNodes 由 contract_approval 展开 CT 的两级合同链（T4）。
+func buildContractRouteNodes(b *specload.Bundle, f Facts) []RoleNode {
+	out := []RoleNode{}
+	pgm := b.Chain.Roles["project_general_manager"]
+	supervisorIsPGM := containsDept(pgm.IsAlsoSupervisorFor, f.Department)
+	for _, step := range b.Chain.ContractApproval.Order {
+		switch step.ID {
+		case "supervisor_approval":
+			out = append(out, RoleNode{SourceNodeID: "contract_supervisor", NodeName: step.Label,
+				ActorRole: "supervisor", IsApproval: true})
+		case "pgm_approval":
+			if supervisorIsPGM {
+				out = append(out, RoleNode{SourceNodeID: "contract_pgm", NodeName: step.Label,
+					IsApproval: false,
+					BranchNote: "supervisor_is_pgm：主管领导即项目总经理，一级即终审，跳过二级"})
+				continue
+			}
+			out = append(out, RoleNode{SourceNodeID: "contract_pgm", NodeName: step.Label,
+				ActorRole: "project_general_manager", IsApproval: true})
+		default:
+			out = append(out, RoleNode{SourceNodeID: step.ID, NodeName: step.Label, IsApproval: false})
+		}
+	}
+	seq := 0
+	for i := range out {
+		if out[i].IsApproval {
+			seq++
+			out[i].Seq = seq
+		}
+	}
+	return out
 }

@@ -31,6 +31,7 @@ const (
 	DocBA = "BA"
 	DocPR = "PR"
 	DocSA = "SA"
+	DocCT = "CT" // 合同 / 简式订单（批 3 · T4）
 )
 
 // 常见错误（handler 映射为 40000 + 中文明细；错误码枚举归 WorkBuddy，N-018）。

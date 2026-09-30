@@ -74,7 +74,7 @@ func TestResolveRoute(t *testing.T) {
 		{"SA_P01拒", Facts{DocType: DocSA, UsageCategoryL1: "P01"}, "", ErrCategoryInvalid},
 		{"SA_M01支付方式缺", Facts{DocType: DocSA, UsageCategoryL1: "M01"}, "", ErrPaymentInvalid},
 		{"SA_未知分类", Facts{DocType: DocSA, UsageCategoryL1: "Z99"}, "", ErrCategoryInvalid},
-		{"批1之外单据", Facts{DocType: "CT", AmountCents: i64(1000)}, "", ErrUnsupportedDoc},
+		{"批3之外单据(RFQ未接入)", Facts{DocType: "RFQ"}, "", ErrUnsupportedDoc},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {

@@ -590,6 +590,10 @@ func (d Deps) handleApprovalSubmit(c echo.Context) error {
 		if verr := d.validateConstantRefs(ctx, form, body.Fields); verr != nil {
 			return fail(c, http.StatusBadRequest, codeBadRequest, verr.Error())
 		}
+		// ---- T4：severity=hard 判据机判（amount_vs_pr / no_self_purchaser，R-25/R-27）----
+		if verr := d.evaluateHardChecks(ctx, form, &body, idn.OpenID); verr != nil {
+			return fail(c, http.StatusBadRequest, codeBadRequest, verr.Error())
+		}
 	}
 
 	// ---- 幂等（Idempotency-Key；d9 照 submission 模式）----
