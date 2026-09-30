@@ -335,6 +335,20 @@ func TestPaymentRouteRuleAnchor(t *testing.T) {
 			t.Errorf("payment_route 值 %q 不在值域内（且勿与审批流程线 route 混用）", v)
 		}
 	}
+
+	// ★ N-026 顺序敏感断言：priority 1 必须是「有合同」那条（when 含 has_contract == true），
+	//   且其 payment_route 必须等于「有合同情形」的计算结果 —— 调换 decisions 顺序/语义即红。
+	d1 := ds[0]
+	if d1.Priority != 1 || !strings.Contains(d1.When, "has_contract") {
+		t.Fatalf("decisions[0] 应为 priority=1 的「有合同」决策，实为 priority=%d when=%q", d1.Priority, d1.When)
+	}
+	got, err := PaymentRouteOf(b, Facts{DocType: DocBA, AmountCents: i64(99999), UsageCategoryL1: "P01", HasContract: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != d1.PaymentRoute {
+		t.Errorf("有合同情形返回 %q，与 decisions[0].payment_route=%q 不一致（优先级语义被改？）", got, d1.PaymentRoute)
+	}
 }
 
 // TestPaymentRoutePriorities T3：4 条优先级 + <1000 有合同边界。
@@ -348,10 +362,12 @@ func TestPaymentRoutePriorities(t *testing.T) {
 		}
 		return s
 	}
-	// 从 spec 读期望值（不硬编码 —— 改 spec 即变）
-	v1, _ := routeValue(b, 1)
-	v3, _ := routeValue(b, 3)
-	v4, _ := routeValue(b, 4)
+	// ★ N-026：期望值用**显式字面量** —— payment_route 名本身是**契约**，
+	//   不是会变的数据。原实现从 spec 读期望 ⇒ 调换 decisions 顺序时
+	//   期望与实现同步变化 ⇒ 测试无鉴别力（WorkBuddy 探针 P3 实证）。
+	const v1 = "group_public_account"
+	const v3 = "petty_cash"
+	const v4 = "personal_advance_reimburse"
 
 	cases := []struct {
 		name string
