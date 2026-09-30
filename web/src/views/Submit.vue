@@ -74,6 +74,9 @@ const usageL2Options = computed(() => {
   }
   return []
 })
+// 运营性常量（T2）：meta 下发 table → active 值；constant_ref 字段渲染下拉
+//（retired 不在其中 ⇒ 新单据选不到；历史单据显示走 ext_json 的值快照）。
+const constants = computed(() => (meta.value && meta.value.constants) || {})
 const paymentOptions = computed(() => {
   const pm = meta.value && meta.value.enums && meta.value.enums.payment_method_input
   return (pm && pm.values) || []
@@ -338,6 +341,16 @@ watch(() => [curDocType.value, fields.amount_cents, fields.usage_category_l1, fi
             >
               <option value="">请选择</option>
               <option v-for="p in paymentOptions" :key="p" :value="p">{{ p }}</option>
+            </select>
+
+            <!-- 运营性常量（constant_ref，T2）：从 meta.constants[字段名] 取 active 值 -->
+            <select
+              v-else-if="f.type === 'constant_ref' && constants[f.name]"
+              v-model="fields[f.name]"
+              class="inp"
+            >
+              <option value="">请选择</option>
+              <option v-for="v in constants[f.name]" :key="v" :value="v">{{ v }}</option>
             </select>
 
             <!-- 枚举（自带 values） -->

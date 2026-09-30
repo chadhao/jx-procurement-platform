@@ -26,9 +26,13 @@ type approvalMetaResponse struct {
 	ApprovalCodes map[string]string `json:"approval_codes"`
 	Enums         json.RawMessage   `json:"enums"`
 	Bands         []specload.Band   `json:"bands"`
+	// Constants 运营性常量表（T2）：table → **active** 值（retired 不下发 ⇒ 新单据选不到）。
+	// constant_ref 字段渲染下拉用；停用项历史单据不受影响（值快照在 ext_json）。
+	Constants map[string][]string `json:"constants"`
 }
 
 func (d *Deps) handleApprovalMeta(c echo.Context) error {
+	ctx := c.Request().Context()
 	if d.Spec == nil {
 		return fail(c, http.StatusServiceUnavailable, codeNotReady, "机读规格未装配")
 	}
@@ -52,6 +56,17 @@ func (d *Deps) handleApprovalMeta(c echo.Context) error {
 			}
 		}
 	}
+	// T2：常量表只下发 active（新单据选不到 retired；历史显示走快照）
+	constants := map[string][]string{}
+	if d.Spec.Constants != nil {
+		for _, tb := range d.Spec.Constants.Tables {
+			vals, err := d.DB.ListActiveConstantValues(ctx, tb.Key)
+			if err != nil {
+				return fail(c, http.StatusInternalServerError, codeInternal, err.Error())
+			}
+			constants[tb.Key] = vals
+		}
+	}
 	return ok(c, approvalMetaResponse{
 		SpecVersion:       d.Spec.SpecVersion,
 		DocTypesAvailable: docTypes,
@@ -59,5 +74,6 @@ func (d *Deps) handleApprovalMeta(c echo.Context) error {
 		ApprovalCodes:     approvalCodes,
 		Enums:             d.Spec.Enums.Raw,
 		Bands:             d.Spec.Chain.Thresholds.Purchase.Bands,
+		Constants:         constants,
 	})
 }

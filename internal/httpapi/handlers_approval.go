@@ -575,6 +575,11 @@ func (d Deps) handleApprovalSubmit(c echo.Context) error {
 		if verr := validateSubmitForm(form, mergeProvidedFields(&body, usageL1, usageL2)); verr != nil {
 			return fail(c, http.StatusBadRequest, codeBadRequest, "表单校验失败: "+verr.Error())
 		}
+		// ---- T2：constant_ref 字段 —— 值必须在常量表 active 集合内；通过则写**值快照** ----
+		//（policy.snapshot_rule：单据同时存 key 与显示值快照 ⇒ 字典改名/停用后历史单据一字不变）
+		if verr := d.validateConstantRefs(ctx, form, body.Fields); verr != nil {
+			return fail(c, http.StatusBadRequest, codeBadRequest, verr.Error())
+		}
 	}
 
 	// ---- 幂等（Idempotency-Key；d9 照 submission 模式）----

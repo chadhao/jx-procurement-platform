@@ -124,6 +124,23 @@ func run(version string) error {
 		logger.Info("Q3 默认权限口径已播种", "inserted", n)
 	}
 
+	// ---- ②″ 播种运营性常量（T2 / R-24）：spec/constants.json#tables[].seed → t_constant ----
+	// ★ 幂等（ON CONFLICT DO NOTHING）；seed **只是可用起点，不是权威清单** ——
+	//   管理员已在后台增删的行不会被播种覆盖（冲突即跳过）。
+	if specBundle.Constants != nil {
+		constSeeded := 0
+		for _, tb := range specBundle.Constants.Tables {
+			n, err := db.SeedConstants(ctx, tb.Key, tb.Seed)
+			if err != nil {
+				return fmt.Errorf("播种运营性常量 %q 失败: %w", tb.Key, err)
+			}
+			constSeeded += n
+		}
+		if constSeeded > 0 {
+			logger.Info("运营性常量已播种", "inserted", constSeeded)
+		}
+	}
+
 	// ---- ③ 启动自检：数据库可写（失败拒绝启动，避免半可用态，TC-28）----
 	if err := db.WritableProbe(ctx); err != nil {
 		health.SetDBWritable(false)

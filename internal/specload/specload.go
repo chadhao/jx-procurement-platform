@@ -34,6 +34,7 @@ type Bundle struct {
 	Enums       EnumsDoc
 	Ledger      LedgerDoc
 	Params      *ParamsDoc
+	Constants   *ConstantsDoc
 	ProblemsRaw map[string][]byte // 全部 spec/**/*.json 原始字节（键 "spec/xxx.json"，测试/诊断用）
 }
 
@@ -318,6 +319,17 @@ func loadFiles(files map[string][]byte) (*Bundle, error) {
 	b.Params = params
 	if p := validateParams(params); len(p) > 0 {
 		return nil, fmt.Errorf("specload: spec/params.json 校验失败 %d 处:\n  %s",
+			len(p), strings.Join(p, "\n  "))
+	}
+
+	// constants.json：类型化解析 + [C1]/[C2] 自检（R-24：只停用不删等纪律在声明侧先拦）
+	constants, err := decodeConstants(files)
+	if err != nil {
+		return nil, err
+	}
+	b.Constants = constants
+	if p := validateConstants(constants); len(p) > 0 {
+		return nil, fmt.Errorf("specload: spec/constants.json 校验失败 %d 处:\n  %s",
 			len(p), strings.Join(p, "\n  "))
 	}
 

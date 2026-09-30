@@ -509,6 +509,21 @@ sequenceDiagram
 | 关联 FR | FR-M5-10、FR-M5-11 |
 | 备注 | 停用 / 改角色后**下一次请求即时生效**（每请求实时解析角色，不缓存决策，TC-11） |
 
+#### `GET /api/admin/constants` · `POST /api/admin/constants` · `PUT /api/admin/constants/{id}` · `DELETE /api/admin/constants/{id}`（T2 · R-24）
+
+> ★ **运营性常量表**（`spec/constants.json`：`unit` / `role_display_name` / `contract_template`）。
+> ★ **三分法**：制度性枚举在 `spec/enums.json`（后台不可改）、人员部门在飞书镜像（本系统不维护）——
+> 只有「改了不影响流程线」的字典才进本表。
+
+| 项 | 内容 |
+|---|---|
+| 用途 | 常量表增删改查：`GET?table=unit[&status=]` 列出 · `POST {table,value,sort_order?}` 新增 · `PUT {value?,sort_order?,status?}` 改名/排序/**停用** · `DELETE` **永远 409**（只停用不删） |
+| 权限要求 | 系统管理员（与 §3.9 同口径） |
+| ★ 护栏 | ① **只停用不删**（`DELETE` → `40900` 并审计 `constant_delete_refused`）；② **`role_display_name` 禁止新增**（`POST` → 40000 —— 角色有无归 `chain.json#roles`）；③ 每次成功变更写审计（`constant_create` / `constant_update`，含条目前后值） |
+| 请求 / 响应字段 | `table`·`value`·`sort_order`·`status`（`active` 或 `retired`）；`GET` 响应含 `{table:{key,label,delete_policy,used_by}, items[]}` |
+| 错误码 | 40000（未知表 / 空值 / 角色表新增）、40300、40400、40900（同表同值冲突 / 删除被拒） |
+| 关联 | `spec/constants.json`（R-24）、`RESOLUTIONS R-24`；★ 下发走 `GET /api/approval/meta#constants`（**仅 active**）；提交侧值快照见 §3.13 `constant_ref` 校验 |
+
 #### `POST /api/admin/approval/defs/sync`
 
 > ★ **为什么补登这一条**（2026-09-27 静默审计 C5）：该端点为回调链路修复第 1 批（docs/16 §2-C
@@ -643,7 +658,7 @@ sequenceDiagram
 |---|---|
 | 用途 | 下发表单 schema（`spec/forms/*.json` 内嵌）→ 前端 meta 驱动渲染；**后端权威、前端不持业务口径**（D1/N-008） |
 | 鉴权 | 免登会话（普通会话，非 admin） |
-| 响应 | `spec_version`（N-008③ 聚合版本）· `doc_types_available[]` · `forms[]`（sections/fields/checks）· **`approval_codes{doc_type→code}`**（提交必填，前端不猜码值）· `enums`（`spec/enums.json` 全文）· `bands`（采三档，仅展示；计算仍在后端） |
+| 响应 | `spec_version`（N-008③ 聚合版本）· `doc_types_available[]` · `forms[]`（sections/fields/checks）· **`approval_codes{doc_type→code}`**（提交必填，前端不猜码值）· `enums`（`spec/enums.json` 全文）· `bands`（采三档，仅展示；计算仍在后端）· ★ `constants{}`（T2 运营性常量表：table→**仅 active** 值，constant_ref 下拉数据源） |
 | 关联 | FR-M9-03、D1 |
 
 #### `POST /api/approval/preview`（分档/链预览 · M7）

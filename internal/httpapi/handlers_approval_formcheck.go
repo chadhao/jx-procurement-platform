@@ -10,6 +10,7 @@ package httpapi
 //   系统字段（source=system）与审批/后置 section（filled_at 非空）不在提交时点校验。
 
 import (
+	"context"
 	"fmt"
 	"strings"
 
@@ -126,4 +127,62 @@ func isSnakeIdent(s string) bool {
 		}
 	}
 	return true
+}
+
+// validateConstantRefs T2：constant_ref 字段（如 PR/CT.unit）提交校验 + **值快照**。
+//   - 值必须在对应常量表的 active 集合内；retired ⇒ 40000（新单据选不到）；
+//   - 通过 ⇒ 就地写入 `fields["<字段>_snapshot"]`（policy.snapshot_rule：
+//     字典可变，但已落单据的取值必须冻结 —— 改名/停用后历史单据显示一字不变）。
+//
+// 表约定：constant_ref 字段的表键 ＝ 字段名（constants.json#tables[].used_by 同口径）。
+func (d Deps) validateConstantRefs(ctx context.Context, form specload.FormDoc, fields map[string]any) error {
+	if d.DB == nil || d.Spec == nil || d.Spec.Constants == nil {
+		return nil // 表未装配时由 requireSpec 路径可见失败；此处不静默改写
+	}
+	known := d.knownConstantTables()
+	for _, sec := range form.Sections {
+		for _, f := range sec.Fields {
+			if f.Type != "constant_ref" {
+				continue
+			}
+			v, exists := fields[f.Name]
+			if !exists {
+				continue // 必填校验归 validateSubmitForm；未提供时不在此拦
+			}
+			s, isStr := v.(string)
+			if !isStr || strings.TrimSpace(s) == "" {
+				continue
+			}
+			if !known[f.Name] {
+				return fmt.Errorf("字段 %q 是 constant_ref 但没有对应的常量表 %q（spec/constants.json 未登记该表）", f.Name, f.Name)
+			}
+			active, err := d.DB.ListActiveConstantValues(ctx, f.Name)
+			if err != nil {
+				return fmt.Errorf("常量校验失败: %w", err)
+			}
+			found := false
+			for _, a := range active {
+				if a == s {
+					found = true
+					break
+				}
+			}
+			if found {
+				fields[f.Name+"_snapshot"] = s // ★ 值快照（冻结历史显示）
+				continue
+			}
+			// 不在 active：区分「已停用」与「未登记」（可见、可归因）
+			all, err := d.DB.ListConstants(ctx, f.Name, "")
+			if err != nil {
+				return fmt.Errorf("常量校验失败: %w", err)
+			}
+			for _, r := range all {
+				if r.Value == s {
+					return fmt.Errorf("常量「%s」已停用（%s 表）—— 新单据不得选择已停用项", s, f.Name)
+				}
+			}
+			return fmt.Errorf("常量值「%s」未在 %s 表登记（或已被删除）", s, f.Name)
+		}
+	}
+	return nil
 }

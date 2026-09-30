@@ -4,6 +4,7 @@ package httpapi
 // 枚举与档位随 schema 下发；Spec 未装配可见失败。
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -16,6 +17,8 @@ import (
 
 	specfs "github.com/chadhao/jx-procurement-platform"
 	"github.com/chadhao/jx-procurement-platform/internal/specload"
+	"github.com/chadhao/jx-procurement-platform/internal/store"
+	"github.com/chadhao/jx-procurement-platform/internal/store/storetest"
 )
 
 func metaTestBundle(t *testing.T) *specload.Bundle {
@@ -32,7 +35,12 @@ func TestHandleApprovalMeta(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/api/approval/meta", nil)
 	rec := httptest.NewRecorder()
 	bundle := metaTestBundle(t)
-	d := Deps{Spec: bundle}
+	testDB := storetest.NewDB(t)
+	if err := store.Migrate(context.Background(), testDB); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = testDB.Close() })
+	d := Deps{Spec: bundle, DB: testDB}
 
 	if err := d.handleApprovalMeta(e.NewContext(req, rec)); err != nil {
 		t.Fatalf("handler 返回错误: %v", err)

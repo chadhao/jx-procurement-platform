@@ -207,6 +207,11 @@ func NewRouter(d Deps) *echo.Echo {
 	admin.GET("/users", d.handleAdminUsersGet)
 	admin.POST("/users", d.handleAdminUsersPost)
 	admin.PATCH("/users/:open_id", d.handleAdminUsersPatch)
+	// ---- 运营性常量表（T2 / R-24）：增改 + **只停用不删**（DELETE 显式拒绝）----
+	admin.GET("/constants", d.handleAdminConstantsList)
+	admin.POST("/constants", d.handleAdminConstantsCreate)
+	admin.PUT("/constants/:id", d.handleAdminConstantsUpdate)
+	admin.DELETE("/constants/:id", d.handleAdminConstantsDeleteRefused)
 	// ---- 三方审批定义装载（docs/16 §2-C 通道①：主通道）----
 	// ★ 清单源＝`t_config_mapping(map_kind='approval_code')`（清单正本＝
 	//   docs/reference/config-mapping.sample.json 的 approval_code 节，11 类）；
