@@ -47,6 +47,13 @@ var submitHardChecks = map[string]hardCheckFn{
 	"special_explanation_required":      checkPCSpecialExplanation,
 	"tech_opinion_for_engineering":      checkPCTechOpinionEngineering,
 	"new_supplier_when_supplier_change": checkPCNewSupplier,
+	// ---- QC（来料检验报告）----
+	"related_gr_must_exist":            checkQCRelatedGRExists,
+	"inspection_result_required":       checkQCInspectionResult,
+	"sample_quantity_pair":             checkQCSampleQuantityPair,
+	"defect_description_when_not_pass": checkQCDefectDescription,
+	// "l07_inspection_conclusion_written"：when=提交后 ⇒ verifyQCPostSubmitL07 承载（写 L07）
+
 	// ---- 跨单据同款（★ 唯一实现，四处共用）----
 	"no_self_purchaser": checkNoSelfPurchaser,
 }
@@ -439,6 +446,89 @@ func checkPCNewSupplier(_ context.Context, _ Deps, _ specload.FormDoc, body *app
 // 跨单据同款（★ 唯一实现）
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// QC（来料检验报告 · 判据见 spec/forms/QC.json#checks）
+// ---------------------------------------------------------------------------
+
+// checkQCRelatedGRExists 关联 GR 必须存在且**等值匹配**（与 related_pr 不同：
+// QC 只须存在、不校验 GR 状态 —— 照抄 assert）。
+func checkQCRelatedGRExists(ctx context.Context, d Deps, _ specload.FormDoc, body *approvalSubmitBody, _ string) error {
+	provided := hbProvided(body)
+	related := hStr(provided, "related_biz_no")
+	if related == "" {
+		return fmt.Errorf("related_biz_no 不能为空（须关联到货验收单 GR）")
+	}
+	gr, err := d.DB.GetInstanceByBizNo(ctx, related)
+	if err != nil || gr == nil {
+		return fmt.Errorf("关联验收单 %q 不存在 —— 不静默通过（fail-open＝假校验）", related)
+	}
+	if gr.DocType != "GR" {
+		return fmt.Errorf("关联单 %q 不是 GR（当前 doc_type=%s）", related, gr.DocType)
+	}
+	return nil
+}
+
+// checkQCInspectionResult 判定结论必填且 ∈ {合格, 不合格, 让步使用}。
+func checkQCInspectionResult(_ context.Context, _ Deps, _ specload.FormDoc, body *approvalSubmitBody, _ string) error {
+	provided := hbProvided(body)
+	v := hStr(provided, "inspection_result")
+	if v == "" {
+		return fmt.Errorf("判定结论（inspection_result）必填")
+	}
+	switch v {
+	case "合格", "不合格", "让步使用":
+		return nil
+	default:
+		return fmt.Errorf("判定结论取值 %q 不在 {合格, 不合格, 让步使用} 内", v)
+	}
+}
+
+// checkQCSampleQuantityPair 抽检 ⟺ 抽检数量>0（双向）：抽检缺数量拦、全检填数量也拦。
+func checkQCSampleQuantityPair(_ context.Context, _ Deps, _ specload.FormDoc, body *approvalSubmitBody, _ string) error {
+	provided := hbProvided(body)
+	method := hStr(provided, "inspection_method")
+	qty, hasQty := hNum(provided, "sample_quantity")
+	if method == "抽检" {
+		if !hasQty || qty <= 0 {
+			return fmt.Errorf("检验方式为「抽检」时必须填写大于 0 的抽检数量（sample_quantity）")
+		}
+		return nil
+	}
+	if hasQty && qty > 0 {
+		return fmt.Errorf("非抽检方式不得填写抽检数量（sample_quantity 须为空）")
+	}
+	return nil
+}
+
+// checkQCDefectDescription 判定非「合格」⇒ 须填不合格描述。
+func checkQCDefectDescription(_ context.Context, _ Deps, _ specload.FormDoc, body *approvalSubmitBody, _ string) error {
+	provided := hbProvided(body)
+	result := hStr(provided, "inspection_result")
+	if result == "" || result == "合格" {
+		return nil // 空由 inspection_result_required 拦；合格无约束
+	}
+	if !hHas(provided, "defect_description") {
+		return fmt.Errorf("判定为「%s」时必须填写不合格描述（defect_description）", result)
+	}
+	return nil
+}
+
+// verifyQCPostSubmitL07 QC#l07_inspection_conclusion_written（when=提交后）：
+// 把本单 inspection_result 写入**关联 GR 的 L07 行** ext_json.inspection_conclusion。
+// ★ 失败**可见**（返回错误 ⇒ 消息带 biz_no）——「不静默通过、不得只记日志」。
+func (d Deps) verifyQCPostSubmitL07(ctx context.Context, body *approvalSubmitBody, bizNo string) error {
+	provided := hbProvided(body)
+	gr := hStr(provided, "related_biz_no")
+	result := hStr(provided, "inspection_result")
+	if gr == "" || result == "" {
+		return fmt.Errorf("QC 提交后 L07 写入失败：related_biz_no / inspection_result 缺失（biz_no=%s）", bizNo)
+	}
+	if err := d.DB.MergeLedgerArchiveExtField(ctx, "L07", gr, "inspection_conclusion", result); err != nil {
+		return fmt.Errorf("QC 提交后 L07 写入失败（biz_no=%s，GR=%s）: %w", bizNo, gr, err)
+	}
+	return nil
+}
+
 // checkNoSelfPurchaser **禁止自批自派自经办**（R-27 · PR/CT/SS/PC 四处同款）——
 // 拦截条件＝`designated_by == 需求提出人`（指定人是申请人本人）；
 // 上级领导指派时经办人可以是申请人（放行）。designated_by 未提供 ⇒ 跳过
@@ -450,4 +540,14 @@ func checkNoSelfPurchaser(_ context.Context, _ Deps, _ specload.FormDoc, body *a
 		return fmt.Errorf("指定人不能是需求提出人本人（禁止自批、自派、自经办 —— R-27）")
 	}
 	return nil
+}
+
+// hasFormCheck 表单是否声明了指定 id 的判据。
+func hasFormCheck(form specload.FormDoc, id string) bool {
+	for _, c := range form.Checks {
+		if c.ID == id {
+			return true
+		}
+	}
+	return false
 }

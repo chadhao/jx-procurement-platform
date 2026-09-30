@@ -646,6 +646,13 @@ func (d Deps) handleApprovalSubmit(c echo.Context) error {
 		if verr := d.verifyPostSubmitHard(form, bizNo); verr != nil {
 			return fail(c, http.StatusInternalServerError, codeInternal, verr.Error())
 		}
+		// QC#l07_inspection_conclusion_written（when=提交后）：写关联 GR 的 L07 行；
+		// 失败可见（500 带 biz_no）——「不静默通过、不得只记日志」
+		if hasFormCheck(form, "l07_inspection_conclusion_written") {
+			if verr := d.verifyQCPostSubmitL07(ctx, &body, bizNo); verr != nil {
+				return fail(c, http.StatusInternalServerError, codeInternal, verr.Error())
+			}
+		}
 	}
 	d.audit(ctx, &store.AuditLogRow{ActorOpenID: idn.OpenID, ActorRole: idn.Role,
 		Action: "submit", Resource: "approval", TargetID: bizNo, Result: "allow"})

@@ -3,9 +3,11 @@ package store
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/chadhao/jx-procurement-platform/internal/normalize"
 )
@@ -247,4 +249,47 @@ WHERE ledger_type = ? AND supplier_norm = ? AND biz_date LIKE ?`,
 		return 0, err
 	}
 	return sum.Int64, nil
+}
+
+// MergeLedgerArchiveExtField N-032/QC#l07_inspection_conclusion_written：
+// 把一个键合并进既有台账存档行的 ext_json（JSON 键级合并，非整体覆盖）。
+// 行不存在 ⇒ ErrNotFound（调用方须**可见失败**——「没有数据」不得与「没有违规」一样）。
+func (d *DB) MergeLedgerArchiveExtField(ctx context.Context, ledgerType, bizNo, key string, value any) error {
+	tx, err := d.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("store: 开启事务失败: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+	var raw string
+	err = tx.QueryRowContext(ctx,
+		`SELECT ext_json FROM t_ledger_archive WHERE ledger_type = ? AND biz_no = ?`,
+		ledgerType, bizNo).Scan(&raw)
+	if errors.Is(err, sql.ErrNoRows) {
+		return fmt.Errorf("%w: 台账 %s 行 %s 不存在", ErrNotFound, ledgerType, bizNo)
+	}
+	if err != nil {
+		return fmt.Errorf("store: 读取台账行失败: %w", err)
+	}
+	ext := map[string]any{}
+	if raw != "" && raw != "{}" {
+		if err := json.Unmarshal([]byte(raw), &ext); err != nil {
+			// 损坏的 ext_json：不静默覆盖 —— 可见失败
+			return fmt.Errorf("store: 台账 %s/%s 的 ext_json 损坏（拒绝合并）: %w", ledgerType, bizNo, err)
+		}
+	}
+	ext[key] = value
+	b, err := json.Marshal(ext)
+	if err != nil {
+		return fmt.Errorf("store: ext_json 序列化失败: %w", err)
+	}
+	res, err := tx.ExecContext(ctx,
+		`UPDATE t_ledger_archive SET ext_json = ?, updated_at = ? WHERE ledger_type = ? AND biz_no = ?`,
+		string(b), fmtTime(time.Now().UTC()), ledgerType, bizNo)
+	if err != nil {
+		return fmt.Errorf("store: 更新台账行失败: %w", err)
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return fmt.Errorf("%w: 台账 %s 行 %s 更新未命中", ErrNotFound, ledgerType, bizNo)
+	}
+	return tx.Commit()
 }
