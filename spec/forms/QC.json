@@ -3,11 +3,12 @@
   "label": "来料检验报告",
   "prefix": "QC",
   "number_format": "QC-YYMM-####",
-  "version": "1.0",
+  "version": "1.2",
   "date": "2026-09-30",
   "generated_by": "WorkBuddy",
 
   "sources": {
+    "_v1_1": "★ 2026-10-01：把 `inspection_report_file` 的 `type` 由 `file` 改为 **`attachment`** —— ★ 起因：核对全量表单时发现**其余 9 个附件字段全部用 `attachment`，只有本单用了 `file`** ⇒ **同一概念两个词**（自造的第二词）。★ 无功能影响（Go 侧无类型白名单），但**同义异名必然漂移**，故立即对齐。",
     "tool_table": "★ **工具表 `表单字段清单` 未列 QC 字段组**（该表只到 6 组：PR／SA／PO／到货验收单／集团提交流转单／结算补录）⇒ 本表字段**由 `L07` 台账列需求 ＋ 制度 ＋ 代码侧推导**，且**逐条标注来源**（见 `known_gaps` 第 1 条）。",
     "chain": "spec/chain.json#doc_chains.QC —— 「★ **无独立审批链、不落账**；结论并入 `L07`」＋ `required_config`：**必须配 `related_biz_no → GR 单号`，否则 `L07`「检验结论」列永远为空**；**必须配 `inspection_result`（判定结论）**。",
     "ledger": "spec/ledger-mapping.json#ledgers.L07.fields[inspection_conclusion] —— `writable: true`，`writer: 质检技术部`，`when: 到货验收当日`，`naming: R-20#6`（制度写「检验结论」、工具表写「判定结论」⇒ **统一用制度名**）。",
@@ -208,7 +209,7 @@
         {
           "name": "inspection_report_file",
           "label": "检验报告附件",
-          "type": "file",
+          "type": "attachment",
           "required": true,
           "source": "user",
           "origin": "code",
@@ -290,12 +291,14 @@
     },
     {
       "gap": "「**让步接收**」的**双签**落在哪张单承载",
-      "status": "未定（★ 影响 GR 与 QC 的字段划分）",
+      "status": "★★ **已定（2026-10-01 · 随 `forms/GR.json` 交付一并定）**",
+      "decision": "★ **落在 `GR`（到货验收单）** —— `concession_qc_signer` ＋ `concession_user_dept_signer`，由 `GR.checks#concession_dual_sign_when_concession` 强制（且两者不得为同一人）。★ 依据＝**措辞字面一致**：「让步接收」正是 `GR#acceptance_conclusion` 的枚举值 ⇒ **结论在哪张单，对结论的加强就在哪张单**。★ 若放在 `QC`（判定＝让步使用），会出现「QC 签了、GR 判了、两张单各说一半」的缝隙。",
       "note": "★ `enums.json#acceptance_conclusion.rule` 明写：「**让步接收须质检与使用部门双签**」。但 `L07` **没有**双签列，`acceptance_conclusion` 只是 4 值枚举 ⇒ ★ **「双签」目前没有承载位点**。\n· 候选方案：① 落在 **GR**（验收人组已含质检 —— 但那是「人是质检」，不等于「质检签字认可让步」）；② 落在 **QC**（判定＝让步使用 ⇒ 要求使用部门会签）；③ 新增字段（`concession_signers`）。★ 我方倾向 **②**（判定在哪张单，确认就挂在哪张单）。★ **建议在交付 `GR` 时一并定**（两张单的字段划分必须同时定，否则会各写一半）。"
     },
     {
       "gap": "`inspection_result`（QC 判定）与 `acceptance_conclusion`（GR 验收结论）的**一致性约束**",
-      "status": "未定（★ 现行**不设硬约束**，见 `disposition.critical_note`）",
+      "status": "★★ **已定（2026-10-01 · 随 `forms/GR.json` 交付一并定）**",
+      "decision": "★ **不设硬约束，改为 `GR` 侧的 `soft` 提示**（`GR.checks#inspection_vs_conclusion_hint`：`inspection_result = 不合格` 而 `GR` 判「合格入库」⇒ 提示并要求在差异说明中写理由）。★ 理由：一次到货可「**部分合格、部分不合格**」（分批／分项检验），用硬规则把两名绑死会**误拦真实业务**；★ 但明显冲突时**不能一声不响** ⇒ 提示 ＋ 留痕，把判断留给经办人。",
       "note": "★ 两者理论上相关（检验不合格 ⇒ 验收难判「合格入库」），但**不设硬约束的理由**：制度把验收与检验定为**同一时点的两件事**，一次到货可能出现「部分合格、部分不合格」⇒ 用一条硬规则绑死两者会**误拦真实业务**。★ 我方建议：**先不绑**，改由 `GR` 侧**可见提示**（QC 判定为不合格时，若 `acceptance_conclusion = 合格入库` ⇒ 提示说明理由）。★ 待 `GR` 交付时一并定。"
     },
     {

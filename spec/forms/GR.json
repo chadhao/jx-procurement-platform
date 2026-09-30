@@ -1,0 +1,388 @@
+{
+  "doc_type": "GR",
+  "label": "到货验收单 / 入库单",
+  "prefix": "GR",
+  "number_format": "GR-YYMM-####",
+  "version": "1.0",
+  "date": "2026-10-01",
+  "generated_by": "WorkBuddy",
+
+  "sources": {
+    "tool_table": "采购与费用审批体系配置工具表_v3.0.xlsx → `表单字段清单` R35–R38（GR 组 **4 个字段**：关联订单号或报备单号 / 实收数量 / 验收结论 / 验收人·验收日期）＋ `单据清单`（编号 `GR-YYMM-####`）。★ **工具表只给到骨架**，本表字段另由 `L07` 台账列需求推导，逐条标注来源。",
+    "chain": "spec/chain.json#doc_chains.GR —— `prefix: GR` · `ledger: [L07]` · `env_count: 1` · ★ `acceptance_groups`（`P01` 三方 / `P02–P04` 双方 / `P05–P08` 双方）· ★ `avoidance_rules` ＋ `avoidance_resolution`（**R-16**）。",
+    "ledger": "spec/ledger-mapping.json#ledgers.L07（到货验收台账，`producer: [GR, QC]`）—— **GR 写其中的「行」**：`biz_no` / `related_order_or_record_no` / `received_quantity` / `acceptance_conclusion` / `acceptance_members`（5 列）；另 2 列 `inspection_conclusion`（**由 `QC` 补**）与 `difference_note`（采购经办人）见 `ledger_resolution`。",
+    "enum": "spec/enums.json#acceptance_conclusion（**4 值**：合格入库 / 让步接收 / 退货 / 换货）＋ `rule`「**让步接收须质检与使用部门双签**」· `#acceptance_groups.hard_rules`（★「**一律采用『验收入库』一步合并**」·「**综合运营主管不得同时作为该笔的验收人**」· ★ 原「验收人 ≠ 采购经办人」**已作废**）。",
+    "institution": "费用管理办法V4.0 —— **第十条**「**审批人不得同时担任验收人**」· 第十三条（采一档「到货后由申请部门或者仓储办理入库」）· **第三十四条**「合同付款前应当完成**三单匹配**，三项相互一致：**合同（或者订单）、到货验收单、发票**」· 第三十五条（验收标准属合同必备条款）· 第五十九条（到货验收台账）。",
+    "resolution": "spec/RESOLUTIONS.md（**R-16**：经办人已纳入验收组，旧「经办人不得验收」口径作废；保留「需求提出人不得同时作为指定人」与「综合运营主管不得同时作为验收人」两条真约束 / **R-20#6**：制度写「检验结论」、工具表写「判定结论」⇒ 统一用制度名 / **R-22**：`RFQ`／`QC` 侧字段以工具表 C6 ＋ 代码侧为准，须标注「制度未明说」）"
+  },
+
+  "ledger": ["L07"],
+
+  "ledger_resolution": "★★ **GR 是 `L07` 的「行」生产者**（`producer: [GR, QC]` 中的主生产者），**一次验收落一行**。本单负责写出 `L07` 的 **5 列**：`biz_no`（GR 号）· `related_order_or_record_no`（关联订单或备案单）· `received_quantity`（实收数量）· `acceptance_conclusion`（验收结论）· `acceptance_members`（验收人，**按三组构成**）。\n· 另 2 列**不由本单写**：`inspection_conclusion`（**由 `QC` 单补**，其字段 `inspection_result` 落此列 —— 见 `forms/QC.json#l07_inspection_conclusion`）· `difference_note`（差异说明，`writer: 采购经办人` ⇒ **本单承载**，见 §三）。\n★★ **为什么把这三件事写在这里**：本项目已发生多起「**台账某列恒空而没人发现**」的静默缺陷（`L03` 恒空、看板 16 恒 0）。⇒ 凡「**某张单应写出某个值**」的地方，都要**显式写明谁写、写到哪一列**，并配一条**落账自检**（见 `checks#ledger_l07_written`）。\n★ `L07.split_note` 建议「把 `检验结论` 与 `差异说明` 放运营表」—— ★ 那是**存储布局**建议（`storage: split_suggested`），**不影响本单必须写这些字段**；★ 布局归 mimo 定（`COLLAB §2` 责任域：表设计属 mimo）。",
+
+  "routes": {
+    "_authority": "★ 权威源＝`spec/chain.json#doc_chains.GR`（`env_count = 1`）—— **本文件不得与之冲突**",
+    "single_step": "★★ **「验收入库」一步合并**（`enums.json#acceptance_groups.hard_rules` 明文）—— 即**验收与入库不是两个环节**，本单**不设多级审批**，由验收组在**到货当日**完成并提交。",
+    "why_one_step": "★ 制度第十三/十四条把「到货验收」写成流程里的**一个**环节；`acceptance_groups` 又明文「一律采用『验收入库』一步合并」⇒ ★ **再拆成「先验收、后入库」两道**，会把同一件事办两遍而**不增加任何控制**。",
+    "env_count_caveat": "★ `env_count: 1` 的具体口径（＝节点总数 / 相对基准的新增环节数）在 `chain.json#conventions` **未定义** —— ★ 该缺口已登记在 `forms/SS.json#known_gaps`，与本单无关但**同一根因**，勿在本单重复推导。",
+    "avoidance": "★★ 两条**真约束**（`R-16` 明确保留）：① **审批人不得同时担任验收人**（制度第十条）② **综合运营主管不得同时作为该笔的验收人**（`acceptance_groups.hard_rules`）。★ **审批人＝该笔业务链上的审批人**（主管领导 / 项目总经理等）⇒ 判定需要该单所属业务链的审批记录；★ 为保证「不为省事而放行」，**取不到审批记录时按可见失败处理**（见 `checks#no_approver_in_acceptance_group` 的 `note`）。",
+    "removed_rule": "★ **原「验收人 ≠ 采购经办人」口径已作废**（`R-16`）：批复 A2 把**经办人本身**纳入验收组（`P01`/`P02–P04`/`P05–P08` 三组的成员里都含「采购经办人」）⇒ ★ 若仍按旧口径拦，会把**每一个合法验收组**都挡住。"
+  },
+
+  "sections": [
+    {
+      "id": "header",
+      "label": "表头",
+      "fields": [
+        {
+          "name": "biz_no",
+          "label": "验收单号",
+          "type": "string",
+          "required": true,
+          "source": "system",
+          "immutable_after_submit": true,
+          "is_business_key": true,
+          "origin": "tool_table",
+          "origin_ref": "单据清单（GR 编号格式）",
+          "rule": "格式 GR-YYMM-####；提交后不可修改；作为本单主键，也是 `QC`／三单匹配的引用目标"
+        },
+        {
+          "name": "applicant",
+          "label": "申请人（提交人）",
+          "type": "person",
+          "required": true,
+          "source": "system",
+          "immutable": true,
+          "origin": "code",
+          "origin_ref": "通用表头（同 PR）＋ 代码侧 GR",
+          "rule": "取当前登录人，不可手改；★ 通常为**采购经办人**（他也是验收组成员之一）"
+        },
+        {
+          "name": "applicant_department",
+          "label": "所属部门",
+          "type": "department",
+          "required": true,
+          "source": "system",
+          "immutable": true,
+          "origin": "code",
+          "origin_ref": "通用表头（同 PR）",
+          "note": "★ 用于留痕与统计；本单**无审批链**，不参与分支判定"
+        },
+        {
+          "name": "related_order_or_record_no",
+          "label": "关联订单或备案单号",
+          "type": "string",
+          "required": true,
+          "source": "system",
+          "immutable": true,
+          "origin": "tool_table",
+          "origin_ref": "表单字段清单 R35（「关联订单号或报备单号」）＋ `L07.fields[related_order_or_record_no]`",
+          "rule": "★ 取值为 **`CT` 单号（合同／简式订单）或 `BA` 单号（采一档备案单）** —— ★ **两条通道都合法**：采一档不签合同（制度第十三条），只有备案单可关联",
+          "critical_note": "★★ 这是**采一档与采二/三档的唯一分叉点**：若本字段只允许合同号，**采一档的验收就永远录不进来**（而采一档恰恰是唯一「不签合同」的档位）。★ 检索一律**等值匹配**（禁止前缀，`README` 定案 #15/#28）。",
+          "known_gap": "★ 工具表原文写「关联订单号**或报备单号**」，但**未说明如何判定取值类型** ⇒ 本表按**单据号前缀**判定（`CT-` / `BA-`），见 `known_gaps` 第 1 条。"
+        },
+        {
+          "name": "arrival_date",
+          "label": "到货日期",
+          "type": "date",
+          "required": true,
+          "source": "user",
+          "origin": "tool_table",
+          "origin_ref": "表单字段清单 R38（「验收人 / **验收日期**」）",
+          "rule": "★ 默认取当天；★ 是 `L07` 之外**必须留痕**的时间锚（台账未设该列，但验收日期是制度要求的信息）",
+          "critical_note": "★ **验收日期**：`L07` **没有**这一列，但工具表 R38 明确要求 ⇒ ★ **字段存在于单据、不必落台账** —— 两者不是一回事，勿因台账无此列而删字段。"
+        },
+        {
+          "name": "acceptance_group",
+          "label": "验收组类别",
+          "type": "computed",
+          "required": true,
+          "source": "system",
+          "computed_from": "关联单据的**用途分类（一级）**：`P01` ⇒ 原辅料类；`P02–P04` ⇒ 设备耗材类；`P05–P08` ⇒ 其他类",
+          "immutable": true,
+          "origin": "chain",
+          "origin_ref": "`chain.json#doc_chains.GR.acceptance_groups` ＋ `enums.json#acceptance_groups.by_category_prefix`",
+          "rule": "★ **由品类自动推导，不可手选**（手选＝把「该谁验收」交给填表人决定）",
+          "critical_note": "★★ **本字段存在的理由**：三组的**成员构成不同**（3 人 / 2 人 / 2 人）⇒ 必须先确定组别，才谈得上「成员齐不齐」。★ 但组别不是独立信息 —— 它**完全由用途分类决定** ⇒ **不单独采集，只计算**。"
+        }
+      ]
+    },
+
+    {
+      "id": "members",
+      "label": "验收组（按品类三组）",
+      "fields": [
+        {
+          "name": "member_purchaser",
+          "label": "采购经办人",
+          "type": "person",
+          "required": true,
+          "source": "system",
+          "origin": "chain",
+          "origin_ref": "`acceptance_groups` **三组的成员均含**「采购经办人」",
+          "rule": "★ 三组**必含**；默认从关联单据的「采购经办人」带入",
+          "critical_note": "★★ **与旧口径直接冲突，故必须写明**：`R-16` 已裁定 **「验收人 ≠ 采购经办人」作废** —— 经办人**本身就是验收人之一**（批复 A2）。★ 若实现里还留着旧拦截，**每一个合法验收组都会被挡住**。"
+        },
+        {
+          "name": "member_qc",
+          "label": "质检技术部",
+          "type": "person",
+          "required": false,
+          "source": "system",
+          "origin": "chain",
+          "origin_ref": "`acceptance_groups`：`P01` 与 `P02–P04` 两组**含**「质检技术部」；`P05–P08` **不含**",
+          "rule": "★ **`P01` / `P02–P04` 必填；`P05–P08` 不填**（填了即组构成错误）",
+          "critical_note": "★ **组别决定本字段是否必填** ⇒ 「成员齐不齐」不能只数人数，**还要看是哪几个人**（见 `checks#acceptance_group_members_complete`）。"
+        },
+        {
+          "name": "member_warehouse",
+          "label": "库管",
+          "type": "person",
+          "required": false,
+          "source": "system",
+          "origin": "chain",
+          "origin_ref": "`acceptance_groups`：**仅 `P01` 含**「库管」",
+          "rule": "★ **仅 `P01` 必填**；其余组不填",
+          "critical_note": "★ 这是三组里**唯一的三方组**（`P01` 原辅料类，`size = 3`）—— ★ **原辅料要三方在场**是业务实质（数量／质量／入库三方核对），不是形式。"
+        },
+        {
+          "name": "member_ops",
+          "label": "综合运营部人员",
+          "type": "person",
+          "required": false,
+          "source": "system",
+          "origin": "chain",
+          "origin_ref": "`acceptance_groups`：**仅 `P05–P08` 含**「综合运营部人员」",
+          "rule": "★ **仅 `P05–P08` 必填**；其余组不填",
+          "critical_note": "★★ **「综合运营部人员」≠「综合运营主管」** —— `acceptance_groups.hard_rules` 明写「**综合运营主管不得同时作为该笔的验收人**」⇒ ★ 本字段选到**主管本人**时应被拒（`checks#no_ops_supervisor_as_member`）。★ 两者名称相近、极易混淆，**这是本单最容易做错的一处**。"
+        }
+      ]
+    },
+
+    {
+      "id": "quantity_conclusion",
+      "label": "数量与验收结论",
+      "fields": [
+        {
+          "name": "received_quantity",
+          "label": "实收数量",
+          "type": "number",
+          "required": true,
+          "source": "user",
+          "origin": "tool_table",
+          "origin_ref": "表单字段清单 R36（「实收数量」）＋ `L07.fields[received_quantity]`",
+          "rule": "★ 必须 **> 0**；单位为关联单据的计量单位",
+          "critical_note": "★ 参与**三单匹配**（制度第三十四条：合同／订单 · 到货验收单 · 发票 三者一致）⇒ ★ 本字段是三方比对的**分子之一**，不允许留空（`checks#received_quantity_positive`）。"
+        },
+        {
+          "name": "unit",
+          "label": "计量单位",
+          "type": "constant_ref",
+          "required": true,
+          "source": "system",
+          "constant_ref": "spec/constants.json#tables[key=unit]",
+          "origin": "ledger",
+          "origin_ref": "`L07` 的同类列口径 ＋ `constants.json#tables[unit].used_by` 含本单",
+          "rule": "★ 从关联单据带入，**可改**（实收可能以不同单位计）；★ 取值为运营性常量表的 `key`，**存值快照**"
+        },
+        {
+          "name": "acceptance_conclusion",
+          "label": "验收结论",
+          "type": "enum",
+          "required": true,
+          "source": "user",
+          "enum_ref": "spec/enums.json#acceptance_conclusion",
+          "enum_size": 4,
+          "origin": "tool_table",
+          "origin_ref": "表单字段清单 R37（「验收结论」）＋ `L07.fields[acceptance_conclusion]`",
+          "rule": "4 值：**合格入库 ／ 让步接收 ／ 退货 ／ 换货**；★ 选「**让步接收**」时须**质检与使用部门双签**（见 §双签两字段）",
+          "critical_note": "★★ **「合格入库」把验收与入库合并表述** —— 这正是 `acceptance_groups.hard_rules` 说的「**一律采用『验收入库』一步合并**」在**枚举层面**的体现（没有单独的「已验收待入库」态）。★ 若有人想加一个「待入库」值，要先改 `hard_rules` 与制度，**不是加个枚举值的事**。"
+        },
+        {
+          "name": "concession_qc_signer",
+          "label": "让步接收·质检方签署人",
+          "type": "person",
+          "required": false,
+          "source": "user",
+          "origin": "enum",
+          "origin_ref": "`enums.json#acceptance_conclusion.rule`：「**让步接收须质检与使用部门双签**」",
+          "rule": "★ **`acceptance_conclusion = 让步接收` 时必填**；其余结论不填"
+        },
+        {
+          "name": "concession_user_dept_signer",
+          "label": "让步接收·使用部门签署人",
+          "type": "person",
+          "required": false,
+          "source": "user",
+          "origin": "enum",
+          "origin_ref": "同上",
+          "rule": "★ **`acceptance_conclusion = 让步接收` 时必填**（且**不得与质检方签署人同一人**——双签的意义就在于是**两方**）"
+        },
+        {
+          "name": "difference_note",
+          "label": "差异说明",
+          "type": "textarea",
+          "required": false,
+          "source": "user",
+          "origin": "ledger",
+          "origin_ref": "`L07.fields[difference_note]`（`writable: true`，`writer: 采购经办人`，`when: 到货验收当日`）",
+          "rule": "★ 实收与订单／报备**不一致**（少收、多收、规格不符）时**必填**；一致时可不填",
+          "critical_note": "★ 本字段是 `L07` 的**第 7 列**，**由本单承载**（不是 `QC`）—— ★ 依据：`writer` 是**采购经办人**，而经办人正是**本单验收组**的成员（`R-16`），不是质检岗。"
+        }
+      ]
+    },
+
+    {
+      "id": "attachment",
+      "label": "附件",
+      "fields": [
+        {
+          "name": "arrival_docs",
+          "label": "到货单据（送货单／磅单等）",
+          "type": "attachment",
+          "required": true,
+          "source": "user",
+          "origin": "code",
+          "origin_ref": "代码侧 GR（工具表未列附件要求）",
+          "rule": "★ **必填**：验收结论必须有**原始凭证**支撑；★ 也是三单匹配时与**发票**核对的凭据之一"
+        },
+        {
+          "name": "arrival_photos",
+          "label": "现场照片",
+          "type": "attachment",
+          "required": false,
+          "source": "user",
+          "origin": "code",
+          "origin_ref": "代码侧 GR",
+          "rule": "★ 可选；★ 建议在**不合规／有争议**时上传（事后追溯用），系统**不强制**"
+        }
+      ]
+    }
+  ],
+
+  "checks": [
+    {
+      "id": "related_order_or_record_must_exist",
+      "when": "submit",
+      "assert": "`related_order_or_record_no` 指向的 **`CT`（合同／简式订单）或 `BA`（采一档备案单）必须存在**，匹配方式为**等值**",
+      "else": "★ **不静默通过**：拒绝并提示「关联单据 {no} 不存在（须为 CT 或 BA 单号）」",
+      "origin": "institution",
+      "origin_ref": "制度第十三条（采一档不签合同 ⇒ 只能关联备案单）＋ `L07.fields[related_order_or_record_no]`",
+      "severity": "hard",
+      "note": "★★ **必须允许「两种单据类型」**：采一档按制度**不签合同**，其验收只能挂 `BA` 备案单 ⇒ ★ 若实现只认 `CT`，**采一档的验收永远录不进来**（这正是 `L03` 恒空那类缺陷的形态：不是报错，而是**那一档永远没有数据**）。★ 与 `QC#related_gr_must_exist` 同款：**等值匹配** ＋ **查不到不得 fail-open**。"
+    },
+    {
+      "id": "acceptance_group_members_complete",
+      "when": "submit",
+      "assert": "按 `acceptance_group` 校验成员构成**逐组精确**：`P01` ⇒ `member_purchaser` + `member_qc` + `member_warehouse` 三者齐备；`P02–P04` ⇒ `member_purchaser` + `member_qc`；`P05–P08` ⇒ `member_purchaser` + `member_ops`。★ **不属于该组的成员字段必须为空**",
+      "else": "★ 拒绝并逐项提示（缺哪个角色 / 多了哪个角色）",
+      "origin": "chain",
+      "origin_ref": "`chain.json#doc_chains.GR.acceptance_groups` ＋ `enums.json#acceptance_groups.by_category_prefix`（含 `size`）",
+      "severity": "hard",
+      "note": "★★ **本判据是双向的（＝而非⇒）**：只写「该有的要有」会放过「**不该有的也有**」（例如 `P05–P08` 却填了库管）—— 那不叫「更严格」，那叫**背离了品类对应的验收责任**。★ 与 `QC#sample_quantity_pair`、`CT#prepay_pair` 同款写法（**成对字段必须一起出现、也必须一起不出现**）。"
+    },
+    {
+      "id": "no_ops_supervisor_as_member",
+      "when": "submit",
+      "assert": "验收组成员**均不得为综合运营主管本人**（`chain.json#roles.ops_supervisor` 在岗人）",
+      "else": "★ 拒绝：综合运营主管不得同时作为该笔的验收人",
+      "origin": "enum",
+      "origin_ref": "`enums.json#acceptance_groups.hard_rules`（第 2 条）",
+      "severity": "hard",
+      "note": "★★ **最易混淆的一处**：`P05–P08` 组的成员写的是「**综合运营部人员**」，而受限的是「**综合运营主管**」—— 两者名称相近，★ 若实现把限制写成「不得是综合运营部的人」，会把**正常成员全部挡住**（误拦）；★ 若实现只按名字模糊匹配，又会**放过主管本人**（漏拦）。⇒ ★ **必须按角色判定**（`roles.ops_supervisor` 的解析结果），**不得按部门判定**。"
+    },
+    {
+      "id": "no_approver_in_acceptance_group",
+      "when": "submit",
+      "assert": "验收组成员**均不得为该笔业务链上的审批人**（主管领导 / 项目总经理等，取自该单所属业务链的审批记录）",
+      "else": "★ 拒绝：审批人不得同时担任验收人；★ 若该单**取不到审批记录** ⇒ **按可见失败处理并提示**（不得放行）",
+      "origin": "institution",
+      "origin_ref": "制度 V4.0 **第十条**「**审批人不得同时担任验收人**」",
+      "severity": "hard",
+      "note": "★★ **为什么「取不到就失败」而不是放行**：制度这条约束的意义就是「**自己批的自己不能自己验**」。★ 若写成「取不到审批记录就跳过校验」，那么**只要数据缺一条，约束就整体消失** —— 这与「这条校验根本没写」毫无区别（`N-027` 已确立的口径：**fail-open＝假校验**）。★ **代价**：早期单据数据不全时会被挡住并提示 ⇒ ★ 这是**有意为之**：**让缺数据可见**，好过让它静默失效。"
+    },
+    {
+      "id": "concession_dual_sign_when_concession",
+      "when": "submit",
+      "assert": "`acceptance_conclusion == 让步接收` ⇒ `concession_qc_signer` 与 `concession_user_dept_signer` **均非空且不为同一人**；其余结论 ⇒ 两者**均须为空**",
+      "else": "★ 拒绝：让步接收须质检与使用部门双签（且不得为同一人）",
+      "origin": "enum",
+      "origin_ref": "`enums.json#acceptance_conclusion.rule`：「让步接收须**质检与使用部门双签**」",
+      "severity": "hard",
+      "note": "★★ **本判据同时收口了 `QC` 留下的一个缺口**（`forms/QC.json#known_gaps` 第 2 条：「**让步接收的双签落在哪张单承载**」—— 当时未定）。★ **现在定了：落在本单（`GR`）**。★ 依据＝**措辞字面一致**：「让步接收」正是 `acceptance_conclusion` 的枚举值之一，而「双签」是对该结论的**加强要求** ⇒ **结论在哪张单，对结论的加强就在哪张单**。★ 若把它放到 `QC`（判定→让步使用），会出现「QC 签了、GR 判了、两张单各说一半」的缝隙。"
+    },
+    {
+      "id": "received_quantity_positive",
+      "when": "submit",
+      "assert": "`received_quantity` 非空且 > 0",
+      "else": "★ 拒绝：实收数量必须大于 0",
+      "origin": "institution",
+      "origin_ref": "制度第三十四条（三单匹配需「数量」这一方）＋ `L07.fields[received_quantity]`",
+      "severity": "hard",
+      "note": "★ 看似平凡，但它是**三单匹配能成立的前提**：三方比对里若「到货验收单」这一方数量为空，比对就无从做起 ⇒ `SUB` 的「三单匹配结论」会退化成**人说了算**。"
+    },
+    {
+      "id": "inspection_vs_conclusion_hint",
+      "when": "submit",
+      "assert": "`QC` 判定为**不合格**（`inspection_result = 不合格`）而本单判「**合格入库**」时 —— **提示**",
+      "else": "★ 提示「关联检验（{no}）判定为不合格，本单判合格入库，请在差异说明中说明理由」—— **不阻断**",
+      "origin": "code",
+      "origin_ref": "本表 `known_gaps` 第 3 条（两名 QC gap 之一，**当时未定**，现定为**提示**）",
+      "severity": "soft",
+      "note": "★★ **为什么是 `soft` 而不是 `hard`**：★ 一次到货可能「**部分合格、部分不合格**」（分批／分项检验）⇒ 用一条硬规则把「检验结论」与「验收结论」绑死，会**误拦真实业务**；★ 但两者明显冲突时**不能一声不响** ⇒ **提示 + 要求写理由**，把判断留给经办人，且**留下痕迹**。★ 与 `QC#no_duplicate_qc_for_same_batch` 同款思路：**两者表象相同、只能提示不能拦**。"
+    },
+    {
+      "id": "ledger_l07_written",
+      "when": "提交后",
+      "assert": "★ **本单提交后，`L07` 必须已写入本单的 5 列**：`biz_no` / `related_order_or_record_no` / `received_quantity` / `acceptance_conclusion` / `acceptance_members`",
+      "else": "★ **不静默通过**：标记本次落账失败并告警（不得只记日志）",
+      "origin": "ledger",
+      "origin_ref": "制度第五十九条（到货验收台账）＋ `ledger-mapping.json#ledgers.L07`（`producer` 含 `GR`）",
+      "severity": "hard",
+      "note": "★★ **为什么必须有这条**：`L07` 是**三单匹配**（第三十四条）与**付款前核对**的数据源 —— ★ 若本单提交成功而落账失败，台账会**看起来正常但没有这一行**，而「**没有数据**」与「**这批货没验收**」长得一模一样。★ 与 `SS`/`PC` 的 `ledger_l09_written`、`QC` 的 `l07_inspection_conclusion_written` 同族：**凡「某张单应产出某个值」的地方，都要一条「是否真的产出了」的自检**。★ **注意 `QC` 只补 `L07` 的一列、不落行** ⇒ 本判据校验的是**本单写的那 5 列**，不要把 `inspection_conclusion` 也算进来（它属 `QC` 的落账自检）。"
+    }
+  ],
+
+  "known_gaps": [
+    {
+      "gap": "工具表 `表单字段清单` 只给 GR **4 个字段**，`related_order_or_record_no` 未说明**如何判定取值类型**",
+      "status": "已记录（`R-22` 同族：须标注「制度未明说」）",
+      "note": "★ 本表按**单据号前缀**判定（`CT-` / `BA-`）。★ 若上游对「订单」另有独立编号体系（例如 PO 保留独立号段），需改为**按单据类型字段**判定而非按字符串前缀 —— ★ 前缀判定在编号规则变化时会静默失配。★ **建议**：由 `chain.json#doc_chains` 为每类单据补一个可机读的 `prefix` 口径（`GR`/`QC` 已有 `prefix`，可推广），届时本判据改为查表。"
+    },
+    {
+      "gap": "★ **「应收数量」无数据来源** ⇒ 「少收／多收」只能靠人判",
+      "status": "未定（**不设硬约束**）",
+      "note": "★ 工具表 GR 组**只有「实收数量」**，没有「应收数量」；「应收」在 `PR` 明细或 `CT` 明细里。★ 若要做「实收 vs 应收」的自动差异判定，需要**读关联单据的明细行**（含分项数量）⇒ 涉及跨单据取数与单位换算。★ **我方建议**：**本期不自动判差异**，改由 `difference_note`（差异说明）**人工说明**；★ 待明细取数链稳定后，再加一条 `soft` 提示（`实收 < 应收` ⇒ 提示写差异说明）。★ **刻意不设 hard**：单位不一致／分批到货／分批结算是常态，硬拦会大面积误拦。"
+    },
+    {
+      "gap": "制度提到的不合格处理方式含「**折价**」，而 `acceptance_conclusion` 枚举**无此项**",
+      "status": "★ 经判定**不构成矛盾**，但需确认是否补入（**不阻塞**）",
+      "note": "★ 制度第三十五条（合同必备条款）原文：「验收标准：验收方式、判定标准、不合格处理方式（**退换、折价、让步接收**）」。★★ **这不是同一层面的东西**：制度那句说的是「**合同里应当约定什么**」，而 `acceptance_conclusion` 是「**系统落库的验收结论枚举**」—— 合同的「不合格处理方式」可以包含折价，而系统侧只需记录**这一次验收怎么处理**。★ 但**仍需确认**：若实际业务会出现「**折价接收**」这种结论，则应把它补入枚举（属**制度性枚举改动** ⇒ 依 `R-24` 须走裁定，**不得在后台改**）。★ 我方建议：**先记录，等真实业务出现再补**（避免凭空加枚举值）。"
+    },
+    {
+      "gap": "「**让步接收**」的双签承载位点 —— ★ **已定（随本单）**",
+      "status": "★★ **已定（2026-10-01）**",
+      "decision": "落在 **`GR`**（本单）：`concession_qc_signer` ＋ `concession_user_dept_signer`，由 `checks#concession_dual_sign_when_concession` 强制。★ 依据＝**措辞字面一致**（「让步接收」就是本单的枚举值）⇒ **结论在哪张单，对结论的加强就在哪张单**。★ 本条同时关闭 `forms/QC.json#known_gaps` 第 2 条。"
+    },
+    {
+      "gap": "`QC` 判定与验收结论的**一致性约束** —— ★ **已定（随本单）**",
+      "status": "★★ **已定（2026-10-01）**",
+      "decision": "**不设硬约束**，改为 **`soft` 提示**（`checks#inspection_vs_conclusion_hint`：判定不合格而判合格入库 ⇒ 提示并说明理由）。★ 理由：一次到货可「部分合格、部分不合格」，硬绑会**误拦真实业务**。★ 本条同时关闭 `forms/QC.json#known_gaps` 第 3 条。"
+    },
+    {
+      "gap": "★ `doc_chains.GR.acceptance_groups` 与 `enums.json#acceptance_groups` **两份重复定义**",
+      "status": "已登记多次（**同义异名／重复真相**）—— ★ 建议**随本单交付一并收敛**",
+      "note": "★ 同一份「验收人按品类三组」的定义**各写了一份**（内容目前一致）。⇒ **两处必然漂移**（本项目已多次证实）。★ **收敛方案（建议）**：以 **`enums.json#acceptance_groups` 为唯一正本**，`chain.json#doc_chains.GR` 侧改为**引用**（或直接删除该键）。★ **前置条件**：先确认 Go 侧是否读 `doc_chains.GR.acceptance_groups` —— ★ 若读，则须**两侧同批**改（否则红窗）。★ 本单**不擅自改动**（避免打断消费端）。"
+    },
+    {
+      "gap": "`doc_chains.GR` 里的 `\"finalized\": \"已作废口径\"` 键名与取值**含义不明**",
+      "status": "已登记（★ 建议随本单交付一并改为具名键）",
+      "note": "★ 该键既不说明**哪条**口径被作废，键名 `finalized`（定稿）也与取值（作废）**语义相反**。★ `R-16` 另注了「旧『经办人不得验收』口径作废」⇒ ★ 建议改为具名键（如 `obsolete_rules: [\"验收人 ≠ 采购经办人（R-16 作废）\"]`）并写清原文，否则后人无法判断哪条还有效。"
+    },
+    {
+      "gap": "三单匹配（制度第三十四条）中本单的角色**已在制度中明确，但匹配容差未定**",
+      "status": "已登记（属 `Q19`，**不阻塞本单**）",
+      "note": "★ 制度第三十四条：「合同付款前应当完成三单匹配，三项相互一致：**合同（或者订单）、到货验收单、发票**」⇒ ★ 本单提供**第二方**（实收数量 ＋ 验收结论）。★ **匹配容差**（差多少算不一致）仍**待集团财务给数**（`Q19`，且**刻意不加配置键**—— 无消费端即假配置）。★ 匹配**结论**由 `SUB`（集团提交流转单）承载，**不在本单**。"
+    }
+  ]
+}
