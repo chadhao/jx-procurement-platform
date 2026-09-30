@@ -1,0 +1,113 @@
+{
+  "version": "1.0",
+  "generated_by": "WorkBuddy",
+  "date": "2026-09-30",
+
+  "sources": {
+    "user": "用户 2026-09-30 定案（A4 原话）：「系统维护一套常量表，单位、角色之类的常量信息，后台增删改。」",
+    "institution": "费用管理办法V3.0（第三十五条（1）单位 / 第三十六条 标准范本 / 第六十二条 综合运营部职责）",
+    "resolution": "spec/RESOLUTIONS.md（R-24 本条裁定 / R-20#2 角色命名 / R-21#3 资质）",
+    "related": "spec/enums.json（**制度性枚举**在此，**不在本文件**）· 飞书通讯录镜像（**人员/部门**，本文件亦不管）"
+  },
+
+  "note": "★ 本文件＝**运营性常量表**的唯一登记册：这些下拉选项**由系统管理员在后台增删改**，不写死在代码或机器规格里。★ 与之相对的两类**不在这里**：**制度性枚举**见 `spec/enums.json`（改需走裁定）、**人员与部门**由飞书通讯录镜像提供（本系统不维护）。三者的分界见 `three_way_split`。",
+
+  "three_way_split": {
+    "_why": "★★ **不是所有下拉选项都能交给后台改。** 混在一起必然出两种事故：① **制度性枚举被改** ⇒ 流程线或硬校验跟着变，而制度没变（制度与系统静默不一致）；② **运营性常量被写死** ⇒ 每加一个计量单位都要改代码发一次版。故分三类，**各有各的存放位置与改动纪律**。",
+    "decision_test": "★★ **一句话判据**：改掉这个值，**会不会改变某笔支出的审批链或校验结论**？**会 ⇒ 制度性枚举**；**不会 ⇒ 运营性常量**。",
+    "categories": [
+      {
+        "id": "institution_enum",
+        "label": "制度性枚举",
+        "store": "`spec/enums.json`",
+        "mutable_by_admin": false,
+        "change_process": "★ **不得在后台改**。改动须**新增一条裁定**（`spec/RESOLUTIONS.md`）＋ 同步制度条款 ＋ 走两侧引擎（`checks.json` 判据会跟着变）。",
+        "why": "★ 它的取值**决定流程线或硬校验** —— 例如「填用途分类即决定该笔支出走哪条流程线」（`enums.json#route_resolution`）。后台随手改一个分类，**审批链就变了**，而制度文本没变。",
+        "members": [
+          "usage_categories", "route_resolution", "requirement_types", "budget_subjects",
+          "expense_subjects", "urgent_levels", "payment_method_input", "payment_method",
+          "acceptance_conclusion", "group_status", "procure_methods", "three_way_match",
+          "acceptance_groups", "pending_enums"
+        ]
+      },
+      {
+        "id": "operational_constant",
+        "label": "运营性常量",
+        "store": "**本文件**（`spec/constants.json`），落库为可维护表，经 `/admin` 后台增删改",
+        "mutable_by_admin": true,
+        "change_process": "系统管理员在后台增删改；★ **改动留痕**（操作人 / 时间 / 表 / 条目前后值，写审计）",
+        "why": "★ 纯字典 / 名录，改了**不影响任何流程线与校验**，只影响「可选项」⇒ 交给业务自己维护，避免「加一个单位就要发版」。",
+        "members": ["unit", "role_display_name", "contract_template"]
+      },
+      {
+        "id": "external_sync",
+        "label": "外部同步（人员 / 部门）",
+        "store": "**不落 spec**；由飞书通讯录镜像表（`t_org_department` / `t_org_user`）提供",
+        "mutable_by_admin": false,
+        "change_process": "★ **本系统不维护** —— 在**飞书**里改，靠事件订阅（增量）＋ 定期对账（全量）回灌镜像",
+        "why": "★ 用户 2026-09-28 明确：「人员请保持与飞书系统里的部门和人员一致，**本系统不人工维护人员和部门信息**」。★ 自建一套人员表＝**第二份真相**，必然与飞书漂移。",
+        "members": ["department", "person"]
+      }
+    ]
+  },
+
+  "policy": {
+    "who_can_change": "系统管理员（`/admin` 后台，与「系统管理」页同权限口径）",
+    "delete_policy": "★★ **只停用（`retired`），不物理删除**",
+    "delete_reason": "★ 历史单据里存的是**值快照**；把常量删掉，会让「这个值当初从哪来」无从追溯，且历史单据列表里会出现**无法解释的空**。停用后：**新单据选不到、历史单据照旧显示**。",
+    "snapshot_rule": "★★ 单据保存时**同时存 `key` 与显示值快照**（字段名形如 `<字段>_snapshot`）—— 常量被改名 / 停用 / 调整排序后，**历史单据的显示一字不变**。★ 这是本项目「不制造第二份真相」纪律在**可变字典**上的正确形态：**字典可变，但已落单据的取值必须冻结**。",
+    "audit": "每次增删改写审计（`t_audit_log`）：操作人 / 时间 / 表 / 条目前后值",
+    "impact_on_flow": "★ **零影响** —— 运营性常量**不参与**任何流程线判定与硬校验（这正是 `three_way_split.decision_test` 的分界）。",
+    "seed_caveat": "★★ 下表 `seed` **只是可用起点，不是权威清单**。它们的依据是「业务惯例」，**制度与工具表从未给出这些候选集** ⇒ 管理员**可自由增删改**，不必走裁定。"
+  },
+
+  "tables": [
+    {
+      "key": "unit",
+      "label": "计量单位",
+      "used_by": ["`PR.unit`", "`CT.unit`", "`GR.unit`（到货验收）"],
+      "mutable": true,
+      "delete_policy": "retire_only",
+      "origin": "resolution",
+      "origin_ref": "R-24（用户 2026-09-30 定案）",
+      "seed": ["吨", "千克", "克", "米", "平方米", "立方米", "件", "套", "台", "个", "桶", "升", "卷", "箱", "包", "张", "根"],
+      "critical_note": "★★ **本表存在的理由**：此前 `PR.unit` / `CT.unit` 标记「缺候选集」—— 制度第三十五条只要求「单位」，**工具表与制度均未给候选集**。★ 我（WorkBuddy）**不自行编造一套单位**（那会变成**事实上的标准**且无依据）；正确解法就是**做成后台可维护的常量表**，由业务按实际使用增删。",
+      "downstream_note": "★ 台账汇总与同品类比价**依赖单位一致** ⇒ 建议在后台保留「单位」的合并/停用能力（把 `t` 并入 `吨`），而不是新增一个近义单位。这是**运营纪律**，系统只提供能力、不强制。"
+    },
+    {
+      "key": "role_display_name",
+      "label": "角色显示名",
+      "used_by": ["全部审批链的节点显示（`chain.json#roles.*.label` 的运行时显示名）"],
+      "mutable": true,
+      "delete_policy": "retire_only",
+      "origin": "resolution",
+      "origin_ref": "R-24（用户 2026-09-30 定案）＋ R-20#2（执行人统一名）",
+      "seed": ["申请人", "主管领导", "项目总经理", "综合运营主管", "采购经办人", "质检技术岗", "评审组", "验收人", "集团财务（仅登记）"],
+      "critical_note": "★★★ **只能改「显示名」，不能改「角色的有无」。** 角色的**存在、谁审批、几级审批**由 `spec/chain.json#roles` 与 `#doc_chains.*` **制度性地**定义（且被判据锚定）。⇒ 本表**只允许修改 `label` 一类字段，禁止新增或删除角色**。★ 为什么单列这一句：这是「运营性常量」里**最容易被越界改动**的一张表 —— 一旦后台能加角色，`chain.json` 的 10 角色口径就被绕过了。"
+    },
+    {
+      "key": "contract_template",
+      "label": "合同标准范本清单",
+      "used_by": ["`CT.is_standard_template`", "`CT.contract_file`", "`CT.non_template_reason`（判据链）"],
+      "mutable": true,
+      "delete_policy": "retire_only",
+      "origin": "institution",
+      "origin_ref": "制度第三十六条（标准范本优先）＋ 工具表待确认第 10 项（按 B4 视为已定）",
+      "seed": ["原辅料采购合同（范本）", "设备采购合同（范本）", "设备租赁合同（范本）", "工程服务合同（范本）"],
+      "critical_note": "★ 制度第三十六条建议**至少覆盖四类**（原辅料采购 / 设备采购 / 设备租赁 / 工程服务）；★ 范本**本体**（文件）由**综合运营主管牵头维护、报项目总经理批准**，可委托集团法务审核 —— **那是业务流程，本表只登记「有哪些范本可用」**。★ 用法：合同单「是否使用公司标准范本」选「是」时**须从本表选一个**；选「否」须填 `non_template_reason`。"
+    }
+  ],
+
+  "open_items": [
+    {
+      "item": "常量表**改动是否需要审批**（还是管理员改完即生效）",
+      "status": "未定",
+      "recommendation": "★ 我方建议：**改完即生效 + 留痕**，不设二次审批。理由＝运营性常量**不参与流程线判定**（`policy.impact_on_flow`），风险限于「选项多寡」；加审批会让「把 `t` 并入 `吨`」这种小事也要走流程。★ 若希望更严，可只对**停用**要求审批（停用会影响历史显示口径）。"
+    },
+    {
+      "item": "常量表的**报错口径**：单据引用了已停用的常量怎么办",
+      "status": "建议（待确认）",
+      "recommendation": "★ 我方建议：**不报错、按快照显示**，但**在单据上标注「该项已停用」**；**新单据**提交时若选了停用项 ⇒ 拒绝（因为选不到）。★ 宁可显示旧值也不许报错 —— 报错会让历史单据打不开。"
+    }
+  ]
+}

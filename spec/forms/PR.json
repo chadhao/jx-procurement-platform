@@ -180,10 +180,11 @@
           "rule": "建议**关联物料编码库**；关联后自动带出库存量"
         },
         {
-          "name": "unit", "label": "单位", "type": "enum", "required": true, "source": "user",
-          "origin": "tool_table", "origin_ref": "表单字段清单 R17",
+          "name": "unit", "label": "单位", "type": "constant_ref", "required": true, "source": "user",
+          "constant_ref": "spec/constants.json#tables[key=unit]",
+          "origin": "resolution", "origin_ref": "A4（2026-09-30 定案）＋ 表单字段清单 R17",
           "note": "★ 原表为一行「单位 / 数量」（类型 文本 / 数字）⇒ 按类型拆为两个字段（技术归一）",
-          "rule": "从**预设选项**中选择"
+          "rule": "★ 从**系统常量表**中选取（单位字典，**后台可增删改**）"
         },
         {
           "name": "quantity", "label": "数量", "type": "number", "required": true, "source": "user",
@@ -217,7 +218,7 @@
   "checks": [
     { "id": "amount_positive",     "when": "submit", "assert": "estimated_total_cents > 0", "else": "拒绝提交", "origin": "resolution", "origin_ref": "FR-M9-03（现实现仅 Warn 不拒）" },
     { "id": "completeness_l2",     "when": "submit", "assert": "usage_category_l1 与 usage_category_l2 均已填", "else": "拒绝提交", "origin": "tool_table", "origin_ref": "用途分类表 R32" },
-    { "id": "no_self_purchaser",   "when": "approval(supervisor)", "assert": "designated_purchaser != applicant", "else": "**不拦截**，由综合运营主管人工核对", "origin": "tool_table", "origin_ref": "制度第十四条 / 第六十条；★ **平台无跨字段校验能力（已知代价）**" },
+    { "id": "no_self_purchaser",   "when": "approval(supervisor) 指定时 + 提交前", "assert": "NOT (designated_purchaser == applicant AND designated_by == applicant)", "assert_readable": "★ 经办人可以＝需求提出人（上级领导指派的情形）；★ 但「指定人」不得是需求提出人本人 —— 即不得自批自派自经办。判定＝「指定人 ≠ 需求提出人」即放行。", "else": "★ 拒绝（硬拦截）：提示「指定人不能是需求提出人本人」", "severity": "hard", "origin": "resolution", "origin_ref": "B7（2026-09-30 定案）＋ 制度第十四条 / 第六十条", "note": "★★ 口径变更：原为「不得填写需求提出人本人」，且因原生平台无跨字段校验能力只能人工核对。转向 ③ 后我方已具备该校验能力，且用户给出例外 ⇒ 升为硬拦截：禁止的不是「经办人＝需求提出人」本身，而是「自批自派自经办」。★ 无新增字段（designated_by 已在表上）。★ 必须与 CT.json 同款判据一致。" },
     { "id": "cross_dept_designation","when": "approval(supervisor)", "assert": "跨部门指定须有被指定部门主管领导同意记录", "else": "人工核对", "origin": "tool_table", "origin_ref": "D2 批复" },
     { "id": "safety_branch",       "when": "submit", "assert": "is_safety_or_special_equipment == true ⇒ 须附资质文件或说明", "else": "拒绝提交", "origin": "tool_table", "origin_ref": "表单字段清单 R13" },
     { "id": "device_tech_attachment","when": "submit", "assert": "usage_category_l1 == 'P04' ⇒ tech_attachment 非空", "else": "拒绝提交", "origin": "tool_table", "origin_ref": "表单字段清单 R21" },

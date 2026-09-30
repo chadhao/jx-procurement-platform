@@ -10,7 +10,8 @@
     "tool_table": "采购与费用审批体系配置工具表_v3.0.xlsx → `单据清单` R10（CT 在 `表单字段清单` 中【未列出】逐条字段，本表 R10 的 C6「关键字段」为次级来源）；`采购订单 PO` R30–R34（依 R-01 裁定整单并入本单）",
     "institution": "费用管理办法V3.0（第十二条 / 第十四条 / 第二十条 / 第二十二条 / 第二十三条 / **第三十四条** / **第三十五条 合同必备条款** / **第三十六条 标准范本优先** / **第三十七条 归档与提交集团** / 第四十二条）",
     "recon": "_scratch/recon-table-v3-fields.md §1.6（PO）/ §1.7（CT 次级来源）/ §1.8（制度侧可补）/ §2.4（合同审批统一两级 6 节点）/ §3（L04 台账字段）",
-    "resolution": "spec/RESOLUTIONS.md（R-01 PO 并入 / R-20#2·#8·#9·#12·#14 字段名统一 / R-21#3·#4·#5·#6·#12 制度要求补字段）"
+    "resolution": "spec/RESOLUTIONS.md（R-01 PO 并入 / R-20#2·#8·#9·#12·#14 字段名统一 / R-21#3·#4·#5·#6·#12 制度要求补字段 / ★ R-23~R-28 2026-09-30 定案）",
+    "user": "用户 2026-09-30 定案（A4 常量表 / B5 合同额容差 10% / B6 补用途分类 / B7 指派例外 / B2 有合同即对公）"
   },
   "ledger": [
     "L04"
@@ -113,6 +114,29 @@
           "origin": "institution",
           "origin_ref": "第三十六条",
           "rule": "书面说明为何不使用范本（对方提供格式合同 / 条款需实质修改），并说明**提请审批人注意的非范本条款**"
+        },
+        {
+          "name": "usage_category_l1",
+          "label": "用途分类（一级）",
+          "type": "enum",
+          "required": true,
+          "source": "system",
+          "enum_ref": "spec/enums.json#usage_categories",
+          "origin": "resolution",
+          "origin_ref": "B6（2026-09-30 定案）",
+          "rule": "★ **从关联 PR 带入**（`related_biz_no`），可改但须在审批意见中说明理由",
+          "critical_note": "★★ **合同行也必须能被按用途汇总** —— 补本字段的**唯一理由**是：否则用途汇总台账与抽查清单会缺「合同」这一块，而合同正是金额最大的一块。★ 依据＝用户 2026-09-30 定案（B6）；同时修掉了「配置映射样例给 CT 映射了用途一/二级、而 CT 上根本没有这两个控件」的错配。"
+        },
+        {
+          "name": "usage_category_l2",
+          "label": "二级明细",
+          "type": "enum",
+          "required": true,
+          "source": "system",
+          "enum_ref": "spec/enums.json#usage_categories（按 usage_category_l1 联动）",
+          "origin": "resolution",
+          "origin_ref": "B6（2026-09-30 定案）",
+          "rule": "★ 随一级分类联动从 PR 带入；★ **不得只填一级**（二级才是审计核查与价格比对的依据）"
         },
         {
           "name": "purchaser",
@@ -277,14 +301,15 @@
         {
           "name": "unit",
           "label": "单位",
-          "type": "enum",
+          "type": "constant_ref",
           "required": true,
           "source": "user",
           "clause_group": 1,
-          "origin": "institution",
-          "origin_ref": "第三十五条（1）",
-          "rule": "从预设选项中选择",
-          "known_gap": "★ 单位候选集**工具表与制度均未给出**，`enums.json` 亦无 `units` 组 ⇒ 见 `known_gaps`"
+          "origin": "resolution",
+          "origin_ref": "A4（2026-09-30 定案）＋ 第三十五条（1）",
+          "rule": "★ 从**系统常量表**中选取（单位字典，**后台可增删改**）",
+          "constant_ref": "spec/constants.json#tables[key=unit]",
+          "critical_note": "★★ 此处**不是硬编码枚举** —— 单位从来就是**业务字典**（制度第三十五条只要求「写明单位」，**制度与工具表均未给候选集**）。★ 我（WorkBuddy）**刻意不自行编造一套单位**（那会变成**事实上的标准**且无依据），改为**后台可维护的常量表**（`spec/constants.json#tables.unit`），由业务按实际使用增删 —— 这正是用户 2026-09-30 定案（A4）的口径。★ 划界：单位是**运营性常量**（改了不影响审批链），故**不进** `spec/enums.json`。"
         },
         {
           "name": "unit_price_cents",
@@ -790,22 +815,24 @@
     {
       "id": "amount_vs_pr",
       "when": "submit",
-      "assert": "contract_amount_cents <= PR.estimated_total_cents",
-      "else": "★ **不静默通过**：超出时须走采购变更（PC）后方可签约；若允许在合同额内浮动，浮动阈值须由我方明确（见 known_gaps）",
-      "origin": "institution",
-      "origin_ref": "第四十二条（精神：超原金额须先走变更）",
-      "severity": "soft",
-      "note": "★ 制度第四十二条只明确「**付款额**超**原合同金额**」的处置，**未明说「合同额超 PR 预估额」** ⇒ 本条暂列 soft，阈值待我方定"
+      "assert": "contract_amount_cents <= PR.estimated_total_cents * (1 + spec/params.json#params[\"contract.amount_over_pr_tolerance_percent\"].value / 100)",
+      "else": "★ **拒绝进入合同审批**，并提示「已超出容差，请先行采购变更（PC）」",
+      "origin": "resolution",
+      "origin_ref": "B5（2026-09-30 定案）＋ 第四十二条（精神）",
+      "severity": "hard",
+      "note": "★ 阈值**不写死在本文件**，取 `spec/params.json` 的 `contract.amount_over_pr_tolerance_percent`（＝10）。★ 与制度第四十二条的「**付款额**超**原合同金额**」**不是同一场景、不得混用**（那条走 PC，这条是签约前的闸门）。★ 本条同时关闭「先报低价拿审批、再签高价合同」的通道。",
+      "assert_readable": "合同金额 **≤ PR 预估金额 × 1.10**（容差 10%）⇒ 直接放行（须在合同单写说明）；**超出 10% ⇒ 必须先走采购变更（PC）后方可签约**"
     },
     {
       "id": "no_self_purchaser",
       "when": "submit",
-      "assert": "purchaser != 需求提出人",
-      "else": "**不拦截**，由综合运营主管在三单匹配初审环节人工核对",
-      "origin": "institution",
-      "origin_ref": "第十四条 / 第六十条",
-      "severity": "info",
-      "note": "★ 批 1 沿用 PR 的同款处置（原生平台无跨字段校验能力）；★ 转向 ③ 后我方**已具备**该校验能力，是否升级为硬拦截见 `known_gaps`"
+      "assert": "NOT (purchaser == 需求提出人 AND designated_by == 需求提出人)",
+      "else": "★ **拒绝**（硬拦截）：提示「指定人不能是需求提出人本人」",
+      "origin": "resolution",
+      "origin_ref": "B7（2026-09-30 定案）＋ 制度第十四条 / 第六十条",
+      "severity": "hard",
+      "note": "★★ **口径变更记录（重要）**：原为「**经办人不得＝需求提出人**」（PR 侧因原生平台**无跨字段校验**只能人工核对）。用户 2026-09-30 定案：**上级领导指派的，经办人可以是需求提出人** ⇒ 本条改为「**禁止的是「自批自派自经办」，而不是「经办人＝需求提出人」本身**」。★ **无新增字段**：`designated_by`（指定人）本就在 PR 上，取审批节点操作人 —— 「是不是上级领导指派」用「**指定人是否等于需求提出人**」即可机判，不必另加勾选框。★ 采一档仍豁免（第十八条）。★ **必须与 `PR.json` 的同款判据保持一致**（两处口径同改）。",
+      "assert_readable": "★ **经办人可以＝需求提出人**（**上级领导指派**的情形）；★ **但「指定人」不得是需求提出人本人** —— 即**不得自批、自派、自经办**。判定＝只要「指定人 ≠ 需求提出人」（说明是**别人（上级领导）指派的**）即放行。"
     },
     {
       "id": "idempotency_key",
@@ -818,11 +845,6 @@
     }
   ],
   "known_gaps": [
-    {
-      "gap": "`unit`（单位）缺候选集",
-      "status": "未定",
-      "note": "第三十五条（1）要求「单位」，但**工具表与制度均未给出候选集**，`enums.json` 亦无 `units` 组。★ 不得由我凭空造一套单位（会变成事实上的标准）⇒ 需用户或集团给出，或明确延用 PR 的「预设选项」口径"
-    },
     {
       "gap": "「质保金」与 L04「质保金余额」的字段边界",
       "status": "已在本文件显式区分，字段层面无缺口",
@@ -839,16 +861,6 @@
       "note": "`R-21#6` 原文括注为「标的与规格 / 价格与含税口径 / 交付与工期 / 违约责任与争议解决」＝**8 组里的 4 组**（疑为简写）。★ **以制度第三十五条的 8 组为准**（本表单按 8 组落字段与硬拦截）。建议回填 `RESOLUTIONS.md#R-21` 加注，避免后人以为只有 4 组"
     },
     {
-      "gap": "「合同额超 PR 预估额」的处置口径",
-      "status": "未定",
-      "note": "制度第四十二条只覆盖「**付款额**超**原合同金额**」；**「合同额超 PR 预估额」未明说**。当前 `checks#amount_vs_pr` 列 soft。★ 需我方定：是硬拦截走 PC、还是给一个浮动容差（如 ≤10% 允许、>10% 走 PC）"
-    },
-    {
-      "gap": "`no_self_purchaser` 在合同单上是否升级为**硬拦截**",
-      "status": "未定",
-      "note": "PR 侧因原生平台无跨字段校验而只能人工核对；转向 ③ 后我方**已具备**该校验能力。★ 若升级为硬拦截，须同步改 `PR.json` 的同款 check（两处口径必须一致，否则又是一处漂移）"
-    },
-    {
       "gap": "★ 配置映射样例 `ledger_field` 未登记 L04 的 3 个运营列 ⇒ 台账页无写入入口",
       "status": "本轮已修样例（`docs/reference/config-mapping.sample.json`，已在 COLLAB 登记）",
       "note": "`R-21#12` 依制度第三十七条把『履约状态』/『集团付款状态』/『提交集团日期』补进 `ledger-mapping.json#ledgers.L04.fields`（`writable:true`），但**样例的 `ledger_field` 白名单没有同步登记这三项**。★ 后果：`PATCH /api/ledger/L04/{id}` 的键名白名单不认它们 ⇒ **台账页没有写入入口，制度第三十七条要求的列永远填不上，且不报错** —— 与 `B47`『恒空 ≡ 无违规』同族。★ 同理 `L06` 还在用 `R-20#13` 已否定的旧名（`集团受理编号` → 应为 `集团流程编号`；`提交日期` → `提交集团日期`）。本次一并修正。"
@@ -862,6 +874,16 @@
       "gap": "★『合同金额』的两个名字必须显式桥接（高危）",
       "status": "已在本表单以 `spec_bridge` 显式声明",
       "note": "**规范列名是 `amount`**（`bizfields.go#BizFieldAmount`，可抽取到 `t_instance`），**L04 台账列名是 `contract_amount_cents`** —— 二者**不同名**。★ `bizfields.go` 头注已警告：映射名写错一个字母的后果**不是报错，而是金额列恒空**，进而看板金额、防拆分『同供应商当月累计』、800–1000 元抽查清单**全部失效**。⇒ 本表单在 `contract_amount_cents` 上以 `spec_bridge.biz_field` 显式指向 `amount`，**不靠名字相似来推断**。"
+    },
+    {
+      "gap": "★ 合同台账「付款路径」须按新口径重述（B2）",
+      "status": "已落 `chain.json#payment_route_rule`（2026-09-30 定案）",
+      "note": "用户定案：**凡签有合同，不论金额一律公户（走集团）**。★ 影响本单＝「付款条件」条款必须与**付款路径**一致：有合同 ⇒ 付款走公对公（集团执行）；★ 与「采一档 <1,000 元不签合同、备付金直接支出」**不冲突**（那条不签合同）。★ 边界（我方判定并已落库）：**<1,000 元但签了合同的**，付款走公户，且**合同审批统一两级照走**（不因金额减免）。"
+    },
+    {
+      "gap": "★ 报销时限口径已变更 ⇒ 制度 V4.0 第三十九条须改写（A2）",
+      "status": "参数已落 `spec/params.json`（个人报销每月 25 日截止；备付金不设时限）",
+      "note": "★ 制度原文（`审批阈值矩阵` R7 C7）写「业务完成后 **15 个工作日**内提交报销」—— 该数字**不采用**，已由 2026-09-30 定案取代。★ 待办＝制度 V4.0 改写 ＋ 附录 C-2 第 16 项标注取代关系。"
     }
   ]
 }
