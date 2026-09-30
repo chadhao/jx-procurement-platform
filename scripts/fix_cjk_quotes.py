@@ -19,10 +19,15 @@
   ★ 报错**只告诉你"有错"**，不告诉你改哪；本工具就是补这一步。
 
 用法：
-    python scripts/fix_cjk_quotes.py            # 扫描 spec/**/*.json，报告"当前不合法的文件 + 能否修好"（不改动）
-    python scripts/fix_cjk_quotes.py --fix      # 就地修复（**修完再次 json.loads 校验，不过则不写**）
+    python scripts/fix_cjk_quotes.py            # 扫描 spec/**/*.json ＋ scripts/*.py，报告"当前不合法的文件 + 能否修好"（不改动）
+    python scripts/fix_cjk_quotes.py --fix      # 就地修复（**修完再次校验，不过则不写**）
     python scripts/fix_cjk_quotes.py --fix spec/forms/SUB.json
 退出码：0 = 无坏文件 / 全部修好；1 = 有坏文件且未能修好
+
+★ v4（2026-10-01）：扩展支持 `.py`（Python 的合法定界符上下文与 JSON 不同：`= ( [ { , : +`
+  之后 / `) ] } , : +` 之前才是定界位）。★ **校验器与 `except` 必须配套** ——
+  `.py` 抛 `SyntaxError`，故统一走 `syntax_ok()` 并以 `except Exception` 承接；
+  否则异常会抛穿 `main()`，表现为「修了但没生效」。
 """
 import json
 import os
@@ -31,18 +36,34 @@ import sys
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 
+def syntax_ok(path, text):
+    """按扩展名选**语法校验器**：`.py` 用 `ast.parse`，其余按 JSON 校验。
+
+    ★ 单一入口的理由（本轮 bug）：校验器与 `except` 子句**必须配套** ——
+      `.py` 抛的是 `SyntaxError`（不是 `json.JSONDecodeError`），
+      配错 ⇒ 异常**直接抛穿** `main()`，工具报 `rc=1` 却显示的是**原始 traceback**
+      （★ 表现为「修了但没生效」，实际是根本没走到修复那一步）。
+    """
+    if path.endswith(".py"):
+        import ast
+        ast.parse(text)
+    else:
+        json.loads(text)
+
+
 def target_files(argv):
     explicit = [a for a in argv if not a.startswith("--")]
     if explicit:
         return [a if os.path.isabs(a) else os.path.join(ROOT, a) for a in explicit]
     out = []
-    for dirpath, dirnames, filenames in os.walk(os.path.join(ROOT, "spec")):
-        dirnames[:] = [d for d in dirnames if not d.startswith(".")]
-        out += [os.path.join(dirpath, f) for f in filenames if f.endswith(".json")]
+    for sub, exts in (("spec", (".json",)), ("scripts", (".py",))):
+        for dirpath, dirnames, filenames in os.walk(os.path.join(ROOT, sub)):
+            dirnames[:] = [d for d in dirnames if not d.startswith(".")]
+            out += [os.path.join(dirpath, f) for f in filenames if f.endswith(exts)]
     return sorted(out)
 
 
-def repair(text, eol):
+def repair(text, eol, py_mode=False):
     """修「JSON 字符串内部误用 ASCII 引号」→ (新文本, 修正数)。
 
     ★★ 判据（v2，已修正 v1 的错位缺陷）：一个引号是**合法定界符**，当且仅当
@@ -56,6 +77,10 @@ def repair(text, eol):
     out_lines, n = [], 0
     struct_before = set("{[,:")
     struct_after = set(",:]}")
+    if py_mode:
+        # ★ Python 的合法定界符上下文（= ( [ { , : + 前 / ) ] } , : + 后）
+        struct_before = set("=([{,:+")
+        struct_after = set(")]},:+")
     for line in text.split(eol):
         res, esc, mis = [], False, 0
         for i, c in enumerate(line):
@@ -99,17 +124,17 @@ def main() -> int:
             print(f"  ! 读取失败 {rel}: {e}")
             continue
         try:
-            json.loads(s)
+            syntax_ok(f, s)
             continue                       # ★ 合法的直接跳过 —— 「零假阳性」的关键
-        except json.JSONDecodeError as e:
+        except Exception as e:
             broken.append(rel)
-            why = str(e)
+            why = e
 
         eol = "\r\n" if "\r\n" in s else "\n"
-        new, n = repair(s, eol)
+        new, n = repair(s, eol, py_mode=f.endswith(".py"))
         try:
-            json.loads(new)
-        except json.JSONDecodeError as e2:
+            syntax_ok(f, new)
+        except Exception as e2:
             unfixable.append(f"{rel}: 修后仍不合法 —— {e2}")
             continue
         print(f"  {rel}: 当前不合法（{why}）→ 状态机可修 {n} 处引号，**修后合法** ✓")
@@ -118,7 +143,7 @@ def main() -> int:
             fixed.append(rel)
 
     if not broken:
-        print("OK 无「当前不合法的 JSON」（已扫 %d 个文件）—— ★ 合法的不进修复流程，故不存在假阳性" % len(files))
+        print("OK 无「当前不合法的 JSON / Python」（已扫 %d 个文件）—— ★ 合法的不进修复流程，故不存在假阳性" % len(files))
         return 0
 
     print()
