@@ -188,5 +188,8 @@ func (d Deps) handlePettyCashMonthlyClose(c echo.Context) error {
 		"balance_cents":  req.BalanceCents,
 		"amount_display": submission.FormatCents(req.BalanceCents),
 		"remark":         req.Remark,
+		// T1 参数消费：备付金报销时限（type=none ⇒ 随时报销、不设时限、零阻断）——
+		// 与个人报销的 25 日截止**分列两套**（params.json#petty_cash.reimburse_deadline）。
+		"reimburse_deadline": d.pettyCashDeadlinePolicy(),
 	})
 }

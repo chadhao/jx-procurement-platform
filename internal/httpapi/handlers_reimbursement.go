@@ -1,9 +1,11 @@
 package httpapi
 
 import (
+	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/labstack/echo/v4"
 
@@ -84,11 +86,17 @@ func (d Deps) handleCreateReimbursement(c echo.Context) error {
 		Resource: "api:reimbursement", TargetID: strings.TrimSpace(req.SrcBizNo), Result: "allow",
 		DetailJSON: `{"actual_cents":` + strconv.FormatInt(req.ActualCents, 10) + `,"invoice_count":` + strconv.Itoa(req.InvoiceCount) + `}`,
 	})
+	// T1 参数消费：月度截止日归集 + 超期处置（pending 按建议值运行）——
+	// 消费函数＝params_consumers.reimbursementReportingView（读 spec/params.json，不写死）。
+	if d.Spec == nil {
+		return fail(c, http.StatusServiceUnavailable, codeNotReady, "参数登记册未装配")
+	}
 	return ok(c, map[string]any{
 		"id":             id,
 		"src_biz_no":     strings.TrimSpace(req.SrcBizNo),
 		"actual_cents":   req.ActualCents,
 		"amount_display": formatCents(req.ActualCents),
+		"reporting":      d.reimbursementReportingView(time.Now()),
 	})
 }
 
@@ -121,7 +129,38 @@ func (d Deps) handleListReimbursements(c echo.Context) error {
 		ActorOpenID: idn.OpenID, ActorRole: idn.Role, Action: "view",
 		Resource: "api:reimbursement", Result: "allow",
 	})
-	return ok(c, map[string]any{"items": items, "total": total, "page": page, "page_size": size})
+	// T1 参数消费：「连续跨 2 个自然月未报 ⇒ 提示综合运营主管」——
+	// 批次按 cutoff 归集后与当前批次比对（读 spec/params.json，不写死 25）。
+	nudge := map[string]any{"over_2_months_count": 0}
+	if d.Spec != nil {
+		cutoff, _ := d.Spec.ParamInt("reporting.monthly_cutoff_day")
+		cur, _ := batchPeriod(time.Now(), cutoff)
+		n := 0
+		for _, e := range rows {
+			p, _ := batchPeriod(e.CreatedAt, cutoff)
+			if monthsBetween(p, cur) >= 2 {
+				n++
+			}
+		}
+		nudge["over_2_months_count"] = n
+		nudge["cutoff_day"] = cutoff
+		if n > 0 {
+			nudge["hint"] = fmt.Sprintf("有 %d 笔登记的报销已连续跨 2 个自然月未闭环，请综合运营主管确认", n)
+		}
+	}
+	return ok(c, map[string]any{"items": items, "total": total, "page": page, "page_size": size, "nudge": nudge})
+}
+
+// monthsBetween 计算 YYYY-MM 批次之间的自然月差（a→b）；解析失败返回 0。
+func monthsBetween(a, b string) int {
+	var ay, am, by, bm int
+	if _, err := fmt.Sscanf(a, "%04d-%02d", &ay, &am); err != nil {
+		return 0
+	}
+	if _, err := fmt.Sscanf(b, "%04d-%02d", &by, &bm); err != nil {
+		return 0
+	}
+	return (by-ay)*12 + (bm - am)
 }
 
 // handlePatchReimbursement PATCH /api/reimbursement/:id（FR-M1-02）。

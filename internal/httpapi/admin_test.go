@@ -47,6 +47,7 @@ func newAdminTestApp(t *testing.T) (*echo.Echo, *store.DB, *access.Authenticator
 		Metrics: metrics, Health: observ.NewHealth("test"),
 		Inbox: inboxSvc, Worker: wk, Subscriber: sub,
 		Perm: perm, Auth: auth, Maps: maps, WebUI: nil, Version: "test",
+		Spec: metaTestBundle(t),
 	})
 	return e, db, auth, perm
 }

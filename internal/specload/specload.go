@@ -33,6 +33,7 @@ type Bundle struct {
 	Forms       map[string]FormDoc // key = doc_type（BA/PR/SA/…）
 	Enums       EnumsDoc
 	Ledger      LedgerDoc
+	Params      *ParamsDoc
 	ProblemsRaw map[string][]byte // 全部 spec/**/*.json 原始字节（键 "spec/xxx.json"，测试/诊断用）
 }
 
@@ -308,6 +309,16 @@ func loadFiles(files map[string][]byte) (*Bundle, error) {
 	}
 	if err := decode("spec/ledger-mapping.json", &b.Ledger); err != nil {
 		return nil, err
+	}
+	// params.json：类型化解析 + [P1]-[P3] 自检（README #24：每个参数必须声明 consumer）
+	params, err := decodeParams(files)
+	if err != nil {
+		return nil, err
+	}
+	b.Params = params
+	if p := validateParams(params); len(p) > 0 {
+		return nil, fmt.Errorf("specload: spec/params.json 校验失败 %d 处:\n  %s",
+			len(p), strings.Join(p, "\n  "))
 	}
 
 	// forms：任何 spec/forms/*.json（M1 期为 BA/PR/SA，随 WorkBuddy 产出增多自动纳入）
