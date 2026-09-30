@@ -2,10 +2,13 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
+	"sort"
 	"strings"
 
+	specfs "github.com/chadhao/jx-procurement-platform"
 	"github.com/chadhao/jx-procurement-platform/internal/config"
 	"github.com/chadhao/jx-procurement-platform/internal/seed"
 	"github.com/chadhao/jx-procurement-platform/internal/store"
@@ -57,6 +60,8 @@ func runImportConfig(checkOnly bool, path string) error {
 		return err
 	}
 	reportNonExtractable(payload)
+	// T5 / N-024：可写台账列未登记进 ledger_field ⇒ 非阻断可见提示（label ↔ field_key 口径）
+	reportUnregisteredWritableLedgerFields(payload)
 	reportReservedBizFields(payload)
 	reportUnconsumedThresholds(payload)
 	if checkOnly {
@@ -213,4 +218,87 @@ func inListStr(v string, list []string) bool {
 		}
 	}
 	return false
+}
+
+// unregisteredWritableLedgerFields T5 / N-024：找出 `spec/ledger-mapping.json` 中
+// `writable: true` 但**未登记**进本次导入载荷 `ledger_field` 的可写列。
+//
+// ★ 比对口径＝**`label` ↔ `field_key`**（不是 `name` —— 首版拿 name 比 field_key 全部误报，
+//
+//	N-024 已踩过）。★ 非阻断：未登记不等于错（业务可能真要新增），但必须**可见** ——
+//	后果是「台账页没有写入入口、制度要求的列永远填不上，而且不报错」（同族：L03 恒空）。
+//
+// ★ 形态照抄 reportNonExtractable 家族：让「配了但没生效」可见。
+func unregisteredWritableLedgerFields(p *config.ImportPayload, ledgerMappingJSON []byte) []string {
+	if p == nil || len(ledgerMappingJSON) == 0 {
+		return nil
+	}
+	var lm struct {
+		Ledgers map[string]struct {
+			Fields []struct {
+				Label    string `json:"label"`
+				Writable bool   `json:"writable"`
+			} `json:"fields"`
+		} `json:"ledgers"`
+	}
+	if err := json.Unmarshal(ledgerMappingJSON, &lm); err != nil {
+		return nil // spec 解析失败由 specload 侧（启动拒启）负责，此处不重复报
+	}
+	// 本次载荷已登记的 (ledger_type → field_key 集合)
+	registered := map[string]map[string]bool{}
+	for _, e := range p.LedgerField {
+		lt := strings.TrimSpace(e.LedgerType)
+		if registered[lt] == nil {
+			registered[lt] = map[string]bool{}
+		}
+		registered[lt][strings.TrimSpace(e.FieldKey)] = true
+	}
+	var out []string
+	for _, lt := range sortedLedgerKeys(lm.Ledgers) {
+		def := lm.Ledgers[lt]
+		for _, f := range def.Fields {
+			if !f.Writable {
+				continue
+			}
+			label := strings.TrimSpace(f.Label)
+			if label == "" || registered[lt][label] {
+				continue
+			}
+			out = append(out, fmt.Sprintf("台账 %s 的可写列 `%s` 未登记 ⇒ 台账页将无写入入口", lt, label))
+		}
+	}
+	return out
+}
+
+// sortedLedgerKeys 稳定排序（L01..L12 字典序即自然序）。
+func sortedLedgerKeys(m map[string]struct {
+	Fields []struct {
+		Label    string `json:"label"`
+		Writable bool   `json:"writable"`
+	} `json:"fields"`
+}) []string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	return keys
+}
+
+// reportUnregisteredWritableLedgerFields 打印 T5 提示（非阻断；与 reportNonExtractable 同族）。
+func reportUnregisteredWritableLedgerFields(p *config.ImportPayload) {
+	specBytes, err := specfs.FS.ReadFile("spec/ledger-mapping.json")
+	if err != nil {
+		return // 内嵌缺失属构建级错误（启动加载已拒启），导入提示不重复报
+	}
+	missing := unregisteredWritableLedgerFields(p, specBytes)
+	if len(missing) == 0 {
+		return
+	}
+	fmt.Fprintf(os.Stderr, "注意：以下 %d 个**可写台账列**未登记进 ledger_field 白名单（N-024，非阻断）：\n", len(missing))
+	for _, m := range missing {
+		fmt.Fprintf(os.Stderr, "      · %s\n", m)
+	}
+	fmt.Fprintf(os.Stderr, "      后果：%s；请补 ledger_field 条目（field_key＝列的 label）后重新导入。\n",
+		"该列在台账页没有写入入口，制度要求的数据永远填不上且系统不报错")
 }
