@@ -74,10 +74,14 @@ type Result struct {
 }
 
 // Chart 图表序列（key/type/series）。
+// Status/Message 为指标级可用性守卫（global_rules.r6）：源空且须守卫时
+// 输出 status=not_connected 而非空序列 —— 空图与「没接上」不得同形。
 type Chart struct {
-	Key    string           `json:"key"`
-	Type   string           `json:"type"`
-	Series []map[string]any `json:"series"`
+	Key     string           `json:"key"`
+	Type    string           `json:"type"`
+	Series  []map[string]any `json:"series"`
+	Status  string           `json:"status,omitempty"`
+	Message string           `json:"message,omitempty"`
 }
 
 // Query 行级过滤条件（SQL 片段 + 参数），由接入层用 permission.RowFilter 生成后注入。
@@ -198,6 +202,15 @@ func (b *Builder) Build(ctx context.Context, id int, period string, q Query) (re
 		res.SourceNote = board.SourceNote
 		res.SpecVersion = b.dash.Version
 		for _, ind := range board.Indicators {
+			// ★ global_rules.r7 第三态：口径未定 ≠ 数据未接入（"标准没给"与"没接上"
+			//   成因不同、渲染必须互不相同 —— 否则读成「没有异常科目」）。
+			if formulaUndefined(ind.Formula) {
+				res.Alerts = append(res.Alerts, map[string]any{
+					"key": ind.Key, "label": ind.Label,
+					"status": "undefined_criteria", "message": "口径未定 —— 待财务/集团给判定标准",
+				})
+				continue
+			}
 			res.Alerts = append(res.Alerts, map[string]any{
 				"key": ind.Key, "label": ind.Label,
 				"status": "not_connected", "message": "数据未接入",
@@ -206,18 +219,51 @@ func (b *Builder) Build(ctx context.Context, id int, period string, q Query) (re
 		res.Supervision = map[string]any{"status": "not_connected", "message": "数据未接入"}
 		return res, nil
 	}
+	var berr error
 	switch id {
 	case DashboardBudget:
 		// 本期预算不启用：空态，不报错（docs/05-API.md §3.3）。
-		return res, nil
 	case DashboardPurchase:
-		return b.buildPurchase(ctx, res, period, q)
+		res, berr = b.buildPurchase(ctx, res, period, q)
 	case DashboardExpense:
-		return b.buildExpense(ctx, res, period, q)
+		res, berr = b.buildExpense(ctx, res, period, q)
 	case DashboardAnomaly:
-		return b.buildAnomaly(ctx, res, period, q)
+		res, berr = b.buildAnomaly(ctx, res, period, q)
 	default:
 		return res, fmt.Errorf("dashboard: 未知看板 id %d", id)
+	}
+	if berr != nil {
+		return res, berr
+	}
+	// ★ 指标 key/label 的**唯一真相是 spec**（known_gaps 第 7 条：两份真相须收敛）——
+	//   key 已在实现侧对齐；label 按 spec 回填（spec 注入时以 spec 为准，
+	//   实现侧 desc 只作未注入时的兜底，避免「label 又成第二份真相」）。
+	b.applySpecIndicatorMeta(&res, id)
+	return res, nil
+}
+
+// formulaUndefined 指标 formula 声明「未定义」（global_rules.r7 的判据形态：
+// formula 为「未定义」⇒ availability_guard 须声明 undefined_criteria）。
+func formulaUndefined(formula string) bool {
+	return strings.Contains(formula, "未定义")
+}
+
+// applySpecIndicatorMeta 把 spec 看板指标的 label 回填到聚合产出的 alerts
+// （key 已对齐 spec；未注入 spec 或 key 不在 spec 中则保留原样 —— 便于发现错位）。
+func (b *Builder) applySpecIndicatorMeta(res *Result, id int) {
+	board := b.dash.Board(id)
+	if board == nil {
+		return
+	}
+	byKey := make(map[string]specload.IndicatorDoc, len(board.Indicators))
+	for _, ind := range board.Indicators {
+		byKey[ind.Key] = ind
+	}
+	for i := range res.Alerts {
+		k, _ := res.Alerts[i]["key"].(string)
+		if ind, ok := byKey[k]; ok {
+			res.Alerts[i]["label"] = ind.Label
+		}
 	}
 }
 
@@ -245,6 +291,7 @@ func (b *Builder) buildPurchase(ctx context.Context, res Result, period string, 
 			inFlight++
 		}
 	}
+	// in_flight_orders **可不守卫**（connected_requires 14：无在途订单 ＝ 真的没有）。
 	res.Cards = append(res.Cards, card("in_flight_orders", "在途订单数", inFlight))
 
 	// 平均采购周期：订单日期 → 运营表「完成日期（回退实际到货）」，单位天。
@@ -256,11 +303,8 @@ func (b *Builder) buildPurchase(ctx context.Context, res Result, period string, 
 			n++
 		}
 	}
-	if n > 0 {
-		res.Cards = append(res.Cards, card("avg_cycle_days", "平均采购周期", round1(sumDays/float64(n))))
-	} else {
-		res.Cards = append(res.Cards, map[string]any{"key": "avg_cycle_days", "label": "平均采购周期", "value": nil})
-	}
+	// avg_cycle_days **须守卫**（connected_requires 14：无完成日期时恒空/0 会被误读为「周期为 0」）。
+	res.Cards = append(res.Cards, guardedValue("avg_cycle_days", "平均采购周期", round1(sumDays/float64(n)), n, true))
 
 	// 延期订单 TOP5（运营表「延期天数」> 0）。
 	type delay struct {
@@ -286,7 +330,14 @@ func (b *Builder) buildPurchase(ctx context.Context, res Result, period string, 
 	for _, d := range delays {
 		delaySeries = append(delaySeries, countPoint(d.biz, d.days))
 	}
-	res.Charts = append(res.Charts, Chart{Key: "delay_top5", Type: "bar", Series: delaySeries})
+	// delay_top5 **须守卫**：0 与「延期天数列没人填」同形 ⇒ 源＝有延期天数值的行数。
+	delaySrc := 0
+	for _, r := range r11 {
+		if _, ok := r.OpsInt(keyDelayDays); ok {
+			delaySrc++
+		}
+	}
+	res.Charts = append(res.Charts, guardedChart("delay_top5", "bar", delaySeries, delaySrc, true))
 
 	// 月度采购金额趋势（近 N 月）。
 	sumByMonth := map[string]int64{}
@@ -300,6 +351,8 @@ func (b *Builder) buildPurchase(ctx context.Context, res Result, period string, 
 	for _, m := range months {
 		trend = append(trend, moneyPoint(m, sumByMonth[m]))
 	}
+	// monthly_amount_trend **可不守卫**（connected_requires 14 明示：某月无采购 ＝ 真的没有，
+	// 0 是真实语义、无空源歧义 —— 「不守卫」是登记在 spec 的决定，不是遗漏）。
 	res.Charts = append(res.Charts, Chart{Key: "monthly_amount_trend", Type: "line", Series: trend})
 
 	// 同供应商当月累计 TOP（本期，**按归一分组键**聚合；Q20）。
@@ -319,7 +372,10 @@ func (b *Builder) buildPurchase(ctx context.Context, res Result, period string, 
 			supName[k] = r.Supplier // 展示用：取该组**首个出现的原名**
 		}
 	}
-	res.Charts = append(res.Charts, Chart{Key: "top_supplier_month", Type: "bar", Series: topMoneyBarsNamed(supSum, supName, 5)})
+	// supplier_monthly_accum_top **须守卫**（spec key 对齐 known_gaps 第 7 条的同族收口：
+	// 无累计时 0 与「没有拆分」同形）。
+	res.Charts = append(res.Charts, guardedChart("supplier_monthly_accum_top", "bar",
+		topMoneyBarsNamed(supSum, supName, 5), len(r11), true))
 
 	// ★ 监督指标（FR-M5-07）：需求提出人任经办人的笔数（应恒为 0） + 经办人指定集中度。
 	res.Supervision = buildSupervision(r03, period, q, b)
@@ -372,8 +428,13 @@ func (b *Builder) buildExpense(ctx context.Context, res Result, period string, q
 	}
 	res.Charts = append(res.Charts, Chart{Key: "expense_monthly_trend", Type: "line", Series: trend})
 
-	// 异常科目提示：某二级明细当月金额 > 全部有值科目均值的 3 倍（离群）。
-	res.Alerts = append(res.Alerts, alert("abnormal_subject", "异常科目提示", abnormalSubjects(periodRows, cat)))
+	// 异常科目提示：★ spec 明令「口径未定 —— 我方不编」（known_gaps 第 3 条：
+	// 工具表只给五个字、无判定标准）⇒ 输出**第三态 undefined_criteria**，
+	// 不得显示任何数字（自编的离群公式已删除 —— 编了就是无依据的"事实标准"）。
+	res.Alerts = append(res.Alerts, map[string]any{
+		"key": "abnormal_subject_hint", "label": "异常科目提示",
+		"status": "undefined_criteria", "message": "口径未定 —— 待财务/集团给判定标准",
+	})
 
 	return res, nil
 }
@@ -390,42 +451,57 @@ func (b *Builder) buildAnomaly(ctx context.Context, res Result, period string, q
 	byType := splitByType(rows, types...)
 	r01, r03, r08, r09, r12 := byType["L01"], byType["L03"], byType["L08"], byType["L09"], byType["L12"]
 
+	// ★ 11 个指标**每个各自**带可用性守卫（connected_requires 16① / global_rules.r6）——
+	//   看板级只有一个 source_status，而 11 个指标分布在 7 个台账上。
+	srcInst, err := b.countInstanceRows(ctx, q)
+	if err != nil {
+		return res, err
+	}
+	srcSubm, err := b.countSubmissionRows(ctx, q)
+	if err != nil {
+		return res, err
+	}
+
 	// ① 超时未审：t_instance 处于 PENDING 且创建时间早于 3 个工作日（近似 72 小时）。
 	overdueReview, err := b.countOverduePending(ctx, q)
 	if err != nil {
 		return res, err
 	}
 	res.Alerts = append(res.Alerts,
-		alert("overdue_review", "超时未审", overdueReview),
+		guardedAlert("overdue_unapproved", "超时未审", overdueReview, srcInst, true),
 
-		// ② 超预算：预算执行台账（L12）「预警状态」含「超支」；本期预算不启用 → 恒为 0。
-		alert("over_budget", "超预算", countOpsContains(r12, keyOverBudget, "超支")),
+		// ② 超预算：L12「预警状态」含「超支」；L12 未启用 ⇒ 源恒 0 ⇒ 恒显「数据未接入」而非 0
+		//   （正是 r1 批评的「显示 0 让人以为预算执行率为 0%」的形态）。
+		guardedAlert("over_budget", "超预算", countOpsContains(r12, keyOverBudget, "超支"), len(r12), true),
 
 		// ③ 紧急采购：例外事项台账（L09）采购方式含「紧急」。
-		alert("emergency_purchase", "紧急采购", countOpsContains(r09, keyMethod, "紧急")),
+		guardedAlert("emergency_purchase", "紧急采购", countOpsContains(r09, keyMethod, "紧急"), len(r09), true),
 
 		// ④ 单一来源：例外事项台账（L09）采购方式含「单一来源」或「独家」。
-		alert("single_source", "单一来源", countOpsContainsAny(r09, keyMethod, "单一来源", "独家")),
+		guardedAlert("sole_source", "单一来源", countOpsContainsAny(r09, keyMethod, "单一来源", "独家"), len(r09), true),
 
-		// ⑤ 账户变更：供应商档案与绩效表（L08）标记账户变更。
-		alert("account_change", "账户变更", countTruthy(r08, keyAcctChange)),
+		// ⑤ 账户变更：现读 L08 标记（★ 数据源与 spec fields「L04.收款账户」的差异已登记议题）。
+		guardedAlert("account_changed", "账户变更", countTruthy(r08, keyAcctChange), len(r08), true),
 
 		// ⑥ 拆分嫌疑：同供应商 + 同品类月累计 ≥ 1,000 元（且 ≥2 笔）。
-		alert("split_suspect", "拆分嫌疑", b.countSplitSuspect(r01)),
+		guardedAlert("split_suspicion", "拆分嫌疑", b.countSplitSuspect(r01), len(r01), true),
 	)
 
 	// ⑦ 经办超期未完成：采购经办登记台账（L03）未完成且无完成日期。
-	res.Alerts = append(res.Alerts, alert("handler_overdue", "经办超期未完成", countHandlerIncomplete(r03)))
+	res.Alerts = append(res.Alerts,
+		guardedAlert("purchaser_overdue", "经办超期未完成", countHandlerIncomplete(r03), len(r03), true))
 
 	// ⑧ 紧急采购超 24 小时未补录或未核销闭合。
-	res.Alerts = append(res.Alerts, alert("emergency_unclosed_over_24h", "紧急采购超 24 小时未闭合", b.countEmergencyUnclosed(r09)))
+	res.Alerts = append(res.Alerts,
+		guardedAlert("emergency_not_closed_24h", "紧急采购超 24 小时未闭合", b.countEmergencyUnclosed(r09), len(r09), true))
 
 	// ⑨ 集团驳回后未处置：报送登记 grp_state 含「驳回」且无驳回原因/处置。
 	rej, err := b.countGroupRejectedUndisposed(ctx, q)
 	if err != nil {
 		return res, err
 	}
-	res.Alerts = append(res.Alerts, alert("group_rejected_undisposed", "集团驳回后未处置", rej))
+	res.Alerts = append(res.Alerts,
+		guardedAlert("group_rejected_unhandled", "集团驳回后未处置", rej, srcSubm, true))
 
 	// ★ 监督指标（FR-M5-07）：单独成项。
 	sup := buildSupervision(r03, period, q, b)
@@ -435,10 +511,10 @@ func (b *Builder) buildAnomaly(ctx context.Context, res Result, period string, q
 	// ★ r3：L03 过滤后 0 行 ⇒ 不得报 0（0 与「没接上」同形）—— 显示「数据未接入」。
 	if sup["source_status"] == "not_connected" {
 		res.Alerts = append(res.Alerts, map[string]any{
-			"key": "requester_as_handler", "status": "not_connected", "message": "数据未接入",
+			"key": "self_purchaser_count", "status": "not_connected", "message": "数据未接入",
 		})
 		res.Alerts = append(res.Alerts, map[string]any{
-			"key": "handler_concentration", "status": "not_connected", "message": "数据未接入",
+			"key": "purchaser_concentration", "status": "not_connected", "message": "数据未接入",
 		})
 	} else {
 		level := "warn"
@@ -446,11 +522,11 @@ func (b *Builder) buildAnomaly(ctx context.Context, res Result, period string, q
 			level = "high"
 		}
 		res.Alerts = append(res.Alerts, map[string]any{
-			"key": "requester_as_handler", "level": level, "count": requesterCount,
+			"key": "self_purchaser_count", "level": level, "count": requesterCount,
 		})
 		// ⑪ 经办人指定集中度（异常信号判读：零违规 + 长期固定指定同一人）。
 		res.Alerts = append(res.Alerts, map[string]any{
-			"key": "handler_concentration", "level": "warn",
+			"key": "purchaser_concentration", "level": "warn",
 			"count": intFromAny(sup["concentration_max_count"]),
 		})
 	}
@@ -842,30 +918,73 @@ func countHandlerIncomplete(rows []Row) int {
 	return n
 }
 
-// abnormalSubjects 统计离群科目数：某科目金额 > 有值科目均值的 3 倍。
-func abnormalSubjects(rows []Row, cat func(Row) string) int {
-	sums := map[string]int64{}
-	var total int64
-	for _, r := range rows {
-		k := strings.TrimSpace(cat(r))
-		if k == "" || r.AmountCents <= 0 {
-			continue
-		}
-		sums[k] += r.AmountCents
-		total += r.AmountCents
-	}
-	if len(sums) < 2 {
-		return 0
-	}
-	mean := float64(total) / float64(len(sums))
-	th := mean * 3
-	n := 0
-	for _, v := range sums {
-		if float64(v) > th {
-			n++
+// ---------- 指标级可用性守卫（global_rules.r6 / connected_requires 逐条落地） ----------
+//
+// ★ 语义：`connected` 的判据是「每个指标都能自证有没有数据」——守卫在**指标层**：
+//   needGuard=false ⇒ 0 是真实语义，直接出数（14 的 in_flight_orders / monthly_amount_trend）；
+//   needGuard=true 且源行=0 ⇒ 输出 not_connected「数据未接入」，绝不显示 0
+//   （0 与「没接上」同形 —— r3 的逐指标化，r6 要求「每个指标各自声明」）。
+
+const notConnectedMsg = "数据未接入"
+
+// guardedAlert 带守卫的告警指标。
+func guardedAlert(key, desc string, count, srcRows int, needGuard bool) map[string]any {
+	if needGuard && srcRows == 0 {
+		return map[string]any{
+			"key": key, "label": desc,
+			"status": "not_connected", "message": notConnectedMsg,
 		}
 	}
-	return n
+	return alert(key, desc, count)
+}
+
+// guardedValue 带守卫的指标卡（守卫时无 value —— 前端按 status 渲染文案）。
+func guardedValue(key, label string, v any, srcRows int, needGuard bool) map[string]any {
+	if needGuard && srcRows == 0 {
+		return map[string]any{
+			"key": key, "label": label,
+			"status": "not_connected", "message": notConnectedMsg,
+		}
+	}
+	return card(key, label, v)
+}
+
+// guardedChart 带守卫的图表（守卫时 series 不给 —— 空图与没接上不得同形）。
+func guardedChart(key, chartType string, series []map[string]any, srcRows int, needGuard bool) Chart {
+	if needGuard && srcRows == 0 {
+		return Chart{Key: key, Type: chartType, Status: "not_connected", Message: notConnectedMsg}
+	}
+	return Chart{Key: key, Type: chartType, Series: series}
+}
+
+// countInstanceRows 实例行数（overdue_unapproved 守卫源 —— 行级过滤同 SQL 层）。
+func (b *Builder) countInstanceRows(ctx context.Context, q Query) (int, error) {
+	where := "1=1"
+	var args []any
+	if strings.TrimSpace(q.InstanceRowSQL) != "" {
+		where = "(" + q.InstanceRowSQL + ")"
+		args = append(args, q.InstanceRowArgs...)
+	}
+	var n int
+	if err := b.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM t_instance a WHERE `+where, args...).Scan(&n); err != nil {
+		return 0, err
+	}
+	return n, nil
+}
+
+// countSubmissionRows 报送行数（group_rejected_unhandled 守卫源，别名 s 同 RowFilter）。
+func (b *Builder) countSubmissionRows(ctx context.Context, q Query) (int, error) {
+	where := "1=1"
+	var args []any
+	if strings.TrimSpace(q.SubmissionRowSQL) != "" {
+		where = "(" + q.SubmissionRowSQL + ")"
+		args = append(args, q.SubmissionRowArgs...)
+	}
+	var n int
+	if err := b.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM t_submission s WHERE `+where, args...).Scan(&n); err != nil {
+		return 0, err
+	}
+	return n, nil
 }
 
 func card(key, label string, v any) map[string]any {

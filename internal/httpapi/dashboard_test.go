@@ -462,19 +462,19 @@ func TestDashboardGroupRejectedScopedByRowScope(t *testing.T) {
 
 	// ALL：项目总经理看到全量 3 条。
 	_, envPM := doRequest(e, http.MethodGet, url, auth.Establish("ou_pm"), "")
-	if got := alertCount(t, mustData(t, envPM), "group_rejected_undisposed"); got != 3 {
+	if got := alertCount(t, mustData(t, envPM), "group_rejected_unhandled"); got != 3 {
 		t.Errorf("项目总经理(ALL) 集团驳回未处置 = %v, 期望 3", got)
 	}
 
 	// SELF：申请人只统计本人登记的 1 条（不得拿全量 3）。
 	_, envApp := doRequest(e, http.MethodGet, url, auth.Establish("ou_app"), "")
-	if got := alertCount(t, mustData(t, envApp), "group_rejected_undisposed"); got != 1 {
+	if got := alertCount(t, mustData(t, envApp), "group_rejected_unhandled"); got != 1 {
 		t.Errorf("申请人(SELF) 集团驳回未处置 = %v, 期望 1（行级越权：不应看到他人报送的聚合值）", got)
 	}
 
 	// DEPT：运营部主管只统计运营部的 1 条（QAB35 的部门令牌断言，迁自灰态 HTTP 路径）。
 	_, envLead := doRequest(e, http.MethodGet, url, auth.Establish("ou_lead"), "")
-	if got := alertCount(t, mustData(t, envLead), "group_rejected_undisposed"); got != 1 {
+	if got := alertCount(t, mustData(t, envLead), "group_rejected_unhandled"); got != 1 {
 		t.Errorf("运营部主管(DEPT) 集团驳回未处置 = %v, 期望 1（部门令牌命中）", got)
 	}
 	// DEPT 负向：他部门再加一条 → 运营部主管仍 1（不得越权拿全量）。
@@ -485,7 +485,7 @@ func TestDashboardGroupRejectedScopedByRowScope(t *testing.T) {
 		t.Fatalf("写入他部门报送失败: %v", err)
 	}
 	_, envLead2 := doRequest(e, http.MethodGet, url, auth.Establish("ou_lead"), "")
-	if got := alertCount(t, mustData(t, envLead2), "group_rejected_undisposed"); got != 1 {
+	if got := alertCount(t, mustData(t, envLead2), "group_rejected_unhandled"); got != 1 {
 		t.Errorf("他部门加条后 DEPT = %v, 期望仍 1（行级越权）", got)
 	}
 
@@ -550,11 +550,13 @@ func TestDashboardR1NotConnectedHTTP(t *testing.T) {
 		}
 		for _, a := range as {
 			m, _ := a.(map[string]any)
-			if m["status"] != "not_connected" {
-				t.Errorf("看板 %d 指标 %v status=%v, 期望 not_connected", id, m["key"], m["status"])
+			// r7 第三态（口径未定）优先于 r1 灰态 —— 两者都不得带数字
+			st, _ := m["status"].(string)
+			if st != "not_connected" && st != "undefined_criteria" {
+				t.Errorf("看板 %d 指标 %v status=%v, 期望 not_connected/undefined_criteria", id, m["key"], st)
 			}
 			if v, has := m["count"]; has {
-				t.Errorf("看板 %d 指标 %v 带 count=%v —— r1 禁止非 connected 显示数字",
+				t.Errorf("看板 %d 指标 %v 带 count=%v —— 非 connected 禁止显示数字",
 					id, m["key"], v)
 			}
 		}

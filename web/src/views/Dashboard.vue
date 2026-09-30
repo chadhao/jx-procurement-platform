@@ -141,12 +141,14 @@ function buildOption(ch, series, values) {
 }
 
 function cardText(c) {
+  if (c.status === 'not_connected') return c.message || '数据未接入'
   if (c.amount_display !== undefined && c.amount_display !== null) return c.amount_display
   if (c.value !== undefined && c.value !== null) return c.value
   return '—'
 }
 
 function cardHint(c) {
+  if (c.status === 'not_connected') return ''
   if (c.amount_display === undefined && c.amount_cents === undefined && c.value === undefined) {
     return '金额列对当前角色不可见'
   }
@@ -156,6 +158,18 @@ function cardHint(c) {
 function pct(ratio) {
   const n = typeof ratio === 'number' ? ratio : 0
   return `${(n * 100).toFixed(1)}%`
+}
+
+function alertStatusClass(a) {
+  if (a.status === 'undefined_criteria') return 'undefined-criteria'
+  if (a.status === 'not_connected') return 'disconnected'
+  return alertClass(a.level)
+}
+
+function alertStatusText(a) {
+  if (a.status === 'undefined_criteria') return a.message || '口径未定'
+  if (a.status === 'not_connected') return a.message || '数据未接入'
+  return a.count
 }
 
 function alertClass(level) {
@@ -228,8 +242,13 @@ onBeforeUnmount(() => {
       <div v-for="ch in charts" :key="ch.key" class="panel">
         <!-- ★ 标题用中文映射（chartLabels.js）；裸 key 只留在 title 便于排查漏配。 -->
         <h2 :title="ch.key">{{ chartLabel(ch.key) }}</h2>
-        <div v-if="chartEmpty[ch.key]" class="empty">无可用数值（金额列无权限或暂无数据）</div>
-        <div v-show="!chartEmpty[ch.key]" :ref="(el) => setChartRef(ch.key, el)" class="chart"></div>
+        <div v-if="ch.status === 'not_connected'" class="empty">{{ ch.message || '数据未接入' }}</div>
+        <div v-else-if="chartEmpty[ch.key]" class="empty">无可用数值（金额列无权限或暂无数据）</div>
+        <div
+          v-show="ch.status !== 'not_connected' && !chartEmpty[ch.key]"
+          :ref="(el) => setChartRef(ch.key, el)"
+          class="chart"
+        ></div>
       </div>
 
       <!-- ★ 监督指标（FR-M5-07）：单独成项 -->
@@ -276,14 +295,16 @@ onBeforeUnmount(() => {
       <div v-if="alerts.length" class="panel alerts">
         <h2>异常预警（红标）</h2>
         <div class="grid">
+          <!-- 三种态文案互不相同（global_rules.r1/r3/r7）：
+               未接入(看板级) / 未接入(指标源空) / 口径未定(标准没给) -->
           <div
             v-for="a in alerts"
             :key="a.key"
             class="stat"
-            :class="a.status === 'not_connected' ? 'disconnected' : alertClass(a.level)"
+            :class="alertStatusClass(a)"
           >
             <div class="k">{{ a.label || a.key }}</div>
-            <div class="v">{{ a.status === 'not_connected' ? '数据未接入' : a.count }}</div>
+            <div class="v">{{ alertStatusText(a) }}</div>
           </div>
         </div>
       </div>
@@ -298,6 +319,17 @@ onBeforeUnmount(() => {
   border: 1px solid var(--border);
   border-radius: 6px;
   color: var(--primary);
+}
+.alerts .stat.undefined-criteria {
+  background: #fffbe6;
+  border-color: #ffe58f;
+}
+.alerts .stat.undefined-criteria .k,
+.alerts .stat.undefined-criteria .v {
+  color: #ad8b00;
+}
+.alerts .stat.undefined-criteria .v {
+  font-size: 14px;
 }
 .alerts .stat.disconnected {
   background: #f5f5f5;

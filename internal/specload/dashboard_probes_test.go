@@ -138,3 +138,52 @@ func TestDashboardLoaded(t *testing.T) {
 		}
 	}
 }
+
+// TestDashboardD6Probes [D6]：connected 看板的每个指标必须声明 availability_guard。
+//
+//	变异① 16 置 connected + 指标缺守卫 ⇒ 必报 [D6]（把 r6 的口头判据变成拦得住人的东西）；
+//	变异② 16 置 connected + 全指标带守卫 ⇒ 必须通过（守卫齐全即可推进，不等数据到齐）。
+func TestDashboardD6Probes(t *testing.T) {
+	runProbes(t, []probe{
+		{
+			name:   "D6-connected缺守卫",
+			expect: "[D6]",
+			mutate: func(t *testing.T, files map[string][]byte) {
+				mutateJSON(t, files, "spec/dashboard.json", func(m map[string]any) {
+					boards, _ := m["dashboards"].([]any)
+					for _, b := range boards {
+						bm, _ := b.(map[string]any)
+						if id, _ := bm["id"].(float64); int(id) == 16 {
+							bm["source_status"] = "connected" // 现 spec 无 connected ⇒ 手工造
+							// 指标不加 availability_guard ⇒ 必须报 [D6]
+						}
+					}
+				})
+			},
+		},
+	})
+}
+
+// TestDashboardD6GuardedPasses 正向：connected + 每指标带 availability_guard ⇒ 加载通过
+// （r6 的语义：判据是「守卫齐全」而不是「数据到齐」—— 带齐守卫就允许推进）。
+func TestDashboardD6GuardedPasses(t *testing.T) {
+	base := loadReal(t).ProblemsRaw
+	files := cloneFiles(base)
+	mutateJSON(t, files, "spec/dashboard.json", func(m map[string]any) {
+		boards, _ := m["dashboards"].([]any)
+		for _, b := range boards {
+			bm, _ := b.(map[string]any)
+			if id, _ := bm["id"].(float64); int(id) == 16 {
+				bm["source_status"] = "connected"
+				inds, _ := bm["indicators"].([]any)
+				for _, i := range inds {
+					im, _ := i.(map[string]any)
+					im["availability_guard"] = "源行数 > 0，否则显示「数据未接入」"
+				}
+			}
+		}
+	})
+	if _, err := loadFiles(files); err != nil {
+		t.Fatalf("connected + 守卫齐全应通过（r6 判据＝守卫齐全，不是数据到齐）: %v", err)
+	}
+}

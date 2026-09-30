@@ -478,7 +478,7 @@ func TestQAB37Dashboard14DerivedNonEmptyAndIgnoresFakeL11(t *testing.T) {
 	}
 
 	// ⑤ 同供应商当月累计 TOP：含供应商甲/乙，不含「脏供应商」。
-	sup := seriesOf("top_supplier_month")
+	sup := seriesOf("supplier_monthly_accum_top")
 	seen := map[string]bool{}
 	for _, it := range sup {
 		seen[it.(map[string]any)["x"].(string)] = true

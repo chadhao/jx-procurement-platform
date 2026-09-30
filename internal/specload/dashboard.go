@@ -39,12 +39,14 @@ type DashboardBoard struct {
 }
 
 // IndicatorDoc 看板指标（key/label/formula 三要素缺一不可 —— 机读规格必须可机检）。
+// AvailabilityGuard 指标级自证声明（global_rules.r6）：connected 看板的每个指标必填。
 type IndicatorDoc struct {
-	Key     string   `json:"key"`
-	Label   string   `json:"label"`
-	Formula string   `json:"formula"`
-	Fields  []string `json:"fields"`
-	Note    string   `json:"note"`
+	Key               string   `json:"key"`
+	Label             string   `json:"label"`
+	Formula           string   `json:"formula"`
+	Fields            []string `json:"fields"`
+	Note              string   `json:"note"`
+	AvailabilityGuard string   `json:"availability_guard"`
 }
 
 // DashboardStatusConnected source_status 的唯一"接通"值。
@@ -87,6 +89,8 @@ func decodeDashboard(files map[string][]byte) (*DashboardDoc, error) {
 //	D2 global_rules r1/r2/r3 必填非空（三条纪律是骨架，缺一条=纪律失传）
 //	D3 每张看板 key/label/source_ledgers 非空，source_status ∈ 值域
 //	D4 每张指标 key/label/formula 非空，且看板内 key 唯一（重复 key＝渲染撞车）
+//	D6 source_status==connected 的看板 ⇒ 每个指标必须声明 availability_guard
+//	   （r6 的「守卫齐全」判据机检化 —— 否则 connected 只是口头约定，没数据的指标会显示 0）
 func validateDashboard(doc *DashboardDoc) []string {
 	if doc == nil {
 		return []string{"[D1] dashboard.json 未加载"}
@@ -153,6 +157,16 @@ func validateDashboard(doc *DashboardDoc) []string {
 				problems = append(problems, fmt.Sprintf("[D4] 看板 %d 指标 key %q 重复", b.ID, ind.Key))
 			}
 			keys[ind.Key] = true
+		}
+		// D6
+		if b.SourceStatus == DashboardStatusConnected {
+			for _, ind := range b.Indicators {
+				if ind.AvailabilityGuard == "" {
+					problems = append(problems, fmt.Sprintf(
+						"[D6] 看板 %d 已 connected 但指标 %q 未声明 availability_guard（r6 判据＝守卫齐全；缺守卫的指标没数据时会显示 0）",
+						b.ID, ind.Key))
+				}
+			}
 		}
 	}
 	return problems
