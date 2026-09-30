@@ -14,6 +14,7 @@ package httpapi
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"regexp"
 	"strings"
@@ -47,6 +48,16 @@ var submitHardChecks = map[string]hardCheckFn{
 	"special_explanation_required":      checkPCSpecialExplanation,
 	"tech_opinion_for_engineering":      checkPCTechOpinionEngineering,
 	"new_supplier_when_supplier_change": checkPCNewSupplier,
+	// ---- GR（到货验收单）----
+	"related_order_or_record_must_exist":   checkGRRelatedOrderOrRecord,
+	"acceptance_group_members_complete":    checkGRAcceptanceGroupMembers,
+	"no_ops_supervisor_as_member":          checkGRNoOpsSupervisorMember,
+	"no_approver_in_acceptance_group":      checkGRNoApproverInGroup,
+	"concession_dual_sign_when_concession": checkGRConcessionDualSign,
+	"received_quantity_positive":           checkGRReceivedQuantityPositive,
+	// "ledger_l07_written"：when=提交后 ⇒ verifyGRPostSubmitL07 承载（5 列自检）
+	// soft: inspection_vs_conclusion_hint —— 只提示不阻断（N-017；提示基础设施随 acceptance.csv）
+
 	// ---- QC（来料检验报告）----
 	"related_gr_must_exist":            checkQCRelatedGRExists,
 	"inspection_result_required":       checkQCInspectionResult,
@@ -538,6 +549,208 @@ func checkNoSelfPurchaser(_ context.Context, _ Deps, _ specload.FormDoc, body *a
 	designatedBy := hStr(provided, "designated_by")
 	if designatedBy != "" && designatedBy == strings.TrimSpace(applicantOpenID) {
 		return fmt.Errorf("指定人不能是需求提出人本人（禁止自批、自派、自经办 —— R-27）")
+	}
+	return nil
+}
+
+// ---------------------------------------------------------------------------
+// GR（到货验收单 · 判据见 spec/forms/GR.json#checks）
+// ---------------------------------------------------------------------------
+
+// grGroupKind 把 acceptance_group 归为三组：1=P01 三方 / 2=P02–P04 双方 / 3=P05–P08 双方。
+// ★ 兼容连接符变体（`P02-P04` 与 `P02–P04`）；未知取值 ⇒ (0,false) 可见失败。
+func grGroupKind(s string) (int, bool) {
+	u := strings.ReplaceAll(strings.TrimSpace(s), "–", "-")
+	switch {
+	case strings.HasPrefix(u, "P01"):
+		return 1, true
+	case strings.HasPrefix(u, "P02"):
+		return 2, true
+	case strings.HasPrefix(u, "P05"):
+		return 3, true
+	default:
+		return 0, false
+	}
+}
+
+// checkGRRelatedOrderOrRecord 关联单须为 **CT 或 BA** 且等值存在。
+// ★★ 必须同时接受两种前缀：采一档不签合同 ⇒ 只认 CT 会让采一档验收永远录不进来
+//
+//	（「那一档永远没有数据」= L03 恒空同族缺陷）。
+func checkGRRelatedOrderOrRecord(ctx context.Context, d Deps, _ specload.FormDoc, body *approvalSubmitBody, _ string) error {
+	provided := hbProvided(body)
+	related := hStr(provided, "related_order_or_record_no")
+	if related == "" {
+		return fmt.Errorf("related_order_or_record_no 不能为空")
+	}
+	inst, err := d.DB.GetInstanceByBizNo(ctx, related)
+	if err != nil || inst == nil {
+		return fmt.Errorf("关联单 %q 不存在 —— 不静默通过（fail-open＝假校验）", related)
+	}
+	if inst.DocType != "CT" && inst.DocType != "BA" {
+		return fmt.Errorf("关联单 %q 类型为 %s，只接受 CT（合同）或 BA（采一档备案单）", related, inst.DocType)
+	}
+	return nil
+}
+
+// checkGRAcceptanceGroupMembers 成员构成**逐组精确、双向**（该有的要有、不该有的必须为空）。
+func checkGRAcceptanceGroupMembers(_ context.Context, _ Deps, _ specload.FormDoc, body *approvalSubmitBody, _ string) error {
+	provided := hbProvided(body)
+	kind, ok := grGroupKind(hStr(provided, "acceptance_group"))
+	if !ok {
+		return fmt.Errorf("acceptance_group 取值 %q 无法识别（应为 P01 / P02-P04 / P05-P08）", hStr(provided, "acceptance_group"))
+	}
+	// 三组的成员矩阵（spec 断言原文）
+	memberOf := map[string]bool{ // 字段 → 是否属该组
+		"member_purchaser": true,
+		"member_qc":        kind == 1 || kind == 2,
+		"member_warehouse": kind == 1,
+		"member_ops":       kind == 3,
+	}
+	for field, required := range memberOf {
+		present := hHas(provided, field)
+		if required && !present {
+			return fmt.Errorf("验收组 %s 缺少成员字段 %s", hStr(provided, "acceptance_group"), field)
+		}
+		if !required && present {
+			return fmt.Errorf("验收组 %s 不得包含成员字段 %s（双向精确：不该有的必须为空）", hStr(provided, "acceptance_group"), field)
+		}
+	}
+	return nil
+}
+
+// checkGRNoOpsSupervisorMember 成员**均不得为综合运营主管本人**。
+// ★★ 必须**按角色判定**（roles.ops_supervisor 的在岗人），不得按部门 ——
+//
+//	P05–P08 组的「综合运营部人员」是正常成员，按部门判会把他们全部挡住（误拦）。
+func checkGRNoOpsSupervisorMember(ctx context.Context, d Deps, _ specload.FormDoc, body *approvalSubmitBody, _ string) error {
+	provided := hbProvided(body)
+	ops, err := d.DB.ChainRoleCandidates(ctx, "综合运营主管", "", false)
+	if err != nil {
+		return fmt.Errorf("角色解析失败: %w", err)
+	}
+	blocked := map[string]bool{}
+	for _, o := range ops {
+		blocked[o.OpenID] = true
+		blocked[o.Name] = true // 成员字段可能携带显示名
+	}
+	for _, f := range []string{"member_purchaser", "member_qc", "member_warehouse", "member_ops"} {
+		v := hStr(provided, f)
+		if v != "" && blocked[v] {
+			return fmt.Errorf("验收组成员 %s 不得为综合运营主管本人（%s）", f, v)
+		}
+	}
+	return nil
+}
+
+// checkGRNoApproverInGroup 成员均不得为**该单所属业务链**的审批人。
+// ★★ 取不到审批记录 ⇒ **可见失败**（fail-open＝假校验 —— 数据缺一条就让约束整体消失，
+//
+//	与没写这条校验毫无区别；有意为之：让缺数据可见）。
+func checkGRNoApproverInGroup(ctx context.Context, d Deps, _ specload.FormDoc, body *approvalSubmitBody, _ string) error {
+	provided := hbProvided(body)
+	related := hStr(provided, "related_order_or_record_no")
+	if related == "" {
+		return fmt.Errorf("related_order_or_record_no 为空 —— 无法核对审批人回避（fail-closed）")
+	}
+	tasks, err := d.DB.ListFlowTasks(ctx, related)
+	if err != nil {
+		return fmt.Errorf("读取业务链审批记录失败: %w", err)
+	}
+	if len(tasks) == 0 {
+		return fmt.Errorf("关联单 %q 取不到任何审批记录 —— 不放行（fail-open＝假校验）", related)
+	}
+	// 审批人集合：open_id ＋ 姓名（成员字段可能携带任一形态）
+	blocked := map[string]bool{}
+	var ids []string
+	for _, tk := range tasks {
+		if tk.AssigneeOpenID != "" {
+			blocked[tk.AssigneeOpenID] = true
+			ids = append(ids, tk.AssigneeOpenID)
+		}
+	}
+	if len(ids) > 0 {
+		byID, err := d.DB.MapUserRolesByOpenIDs(ctx, ids)
+		if err == nil {
+			for _, ur := range byID {
+				if ur.Name != "" {
+					blocked[ur.Name] = true
+				}
+			}
+		}
+	}
+	for _, f := range []string{"member_purchaser", "member_qc", "member_warehouse", "member_ops"} {
+		v := hStr(provided, f)
+		if v != "" && blocked[v] {
+			return fmt.Errorf("验收组成员 %s 是该单业务链上的审批人（自己批的不能自己验）", f)
+		}
+	}
+	return nil
+}
+
+// checkGRConcessionDualSign 让步接收 ⇒ 双签（两人且不同人）；其余结论 ⇒ 双签必须为空。
+func checkGRConcessionDualSign(_ context.Context, _ Deps, _ specload.FormDoc, body *approvalSubmitBody, _ string) error {
+	provided := hbProvided(body)
+	conclusion := hStr(provided, "acceptance_conclusion")
+	qcSign := hStr(provided, "concession_qc_signer")
+	deptSign := hStr(provided, "concession_user_dept_signer")
+	if conclusion == "让步接收" {
+		if qcSign == "" || deptSign == "" {
+			return fmt.Errorf("让步接收须双签（质检与使用部门签署人）均非空")
+		}
+		if qcSign == deptSign {
+			return fmt.Errorf("让步接收双签不得为同一人")
+		}
+		return nil
+	}
+	if qcSign != "" || deptSign != "" {
+		return fmt.Errorf("非「让步接收」结论不得填写让步双签（concession_* 须为空）")
+	}
+	return nil
+}
+
+// checkGRReceivedQuantityPositive 实收数量非空且 >0（三单匹配的前提）。
+func checkGRReceivedQuantityPositive(_ context.Context, _ Deps, _ specload.FormDoc, body *approvalSubmitBody, _ string) error {
+	provided := hbProvided(body)
+	qty, ok := hNum(provided, "received_quantity")
+	if !ok || qty <= 0 {
+		return fmt.Errorf("实收数量（received_quantity）必须为大于 0 的数")
+	}
+	return nil
+}
+
+// verifyGRPostSubmitL07 GR#ledger_l07_written（when=提交后）：本单的 L07 行
+// **5 列**必须已产出：biz_no + related_order_or_record_no + received_quantity +
+// acceptance_conclusion + acceptance_members（★ 不含 inspection_conclusion —— 那是 QC 的）。
+// 失败可见（错误带 biz_no）——「台账看起来正常但没有这一行」＝三单匹配数据源静默缺失。
+//
+// ★ 时点观察（随 GR 发起批对齐，已在 COLLAB 回执登记）：现有架构**落账在终态**
+// （finalize），而本判据 when=提交后 —— GR 的链形态/落账时点以其发起批的口径为准；
+// 函数自检逻辑不变（行与 5 列是否真的产出）。
+func (d Deps) verifyGRPostSubmitL07(ctx context.Context, bizNo string) error {
+	var related, extRaw string
+	var qty any
+	err := d.DB.QueryRowContext(ctx, `
+SELECT biz_no, COALESCE(ext_json,'{}'), COALESCE(amount_cents,'') FROM t_ledger_archive
+WHERE ledger_type='L07' AND biz_no = ?`, bizNo).Scan(&related, &extRaw, &qty)
+	if err != nil {
+		return fmt.Errorf("GR 提交后 L07 自检失败：行不存在或读取失败（biz_no=%s）: %w", bizNo, err)
+	}
+	ext := map[string]any{}
+	if extRaw != "" && extRaw != "{}" {
+		if err := json.Unmarshal([]byte(extRaw), &ext); err != nil {
+			return fmt.Errorf("GR 提交后 L07 自检失败：ext_json 损坏（biz_no=%s）: %w", bizNo, err)
+		}
+	}
+	// 5 列逐项非空（biz_no 即行键；其余 4 列在 ext）
+	for _, k := range []string{"related_order_or_record_no", "received_quantity", "acceptance_conclusion", "acceptance_members"} {
+		v, exists := ext[k]
+		if !exists || v == nil {
+			return fmt.Errorf("GR 提交后 L07 自检失败：列 %s 未产出（biz_no=%s）——「没有数据」不得与「没有验收」一样", k, bizNo)
+		}
+		if s, isStr := v.(string); isStr && strings.TrimSpace(s) == "" {
+			return fmt.Errorf("GR 提交后 L07 自检失败：列 %s 为空（biz_no=%s）——「没有数据」不得与「没有验收」一样", k, bizNo)
+		}
 	}
 	return nil
 }

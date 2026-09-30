@@ -653,6 +653,13 @@ func (d Deps) handleApprovalSubmit(c echo.Context) error {
 				return fail(c, http.StatusInternalServerError, codeInternal, verr.Error())
 			}
 		}
+		// GR#ledger_l07_written（when=提交后）：本单 L07 行 5 列产出自检；
+		// 失败可见（500 带 biz_no）—— 台账缺行/缺列 ≠ 没有验收
+		if hasFormCheck(form, "ledger_l07_written") {
+			if verr := d.verifyGRPostSubmitL07(ctx, bizNo); verr != nil {
+				return fail(c, http.StatusInternalServerError, codeInternal, verr.Error())
+			}
+		}
 	}
 	d.audit(ctx, &store.AuditLogRow{ActorOpenID: idn.OpenID, ActorRole: idn.Role,
 		Action: "submit", Resource: "approval", TargetID: bizNo, Result: "allow"})
