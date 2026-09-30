@@ -9,33 +9,93 @@
     "recon": "_scratch/recon-table-v3-fields.md §3 · _scratch/recon-institution-fields.md §2",
     "resolution": "spec/RESOLUTIONS.md（R-02 / R-04 / R-12 / R-13 / R-21）"
   },
-
   "note": "★★ 本文件是**单据 → 台账映射**与**台账字段/写入者**的唯一权威源。`spec/forms/*.json` 的 `ledger` 字段必须与本文件 `doc_to_ledger` 一致；不一致即门禁报错。",
-
   "mapping_rules": {
     "cardinality": "★★ **一对多**（R-02）—— 一张单据可落多张台账。原实现 `doc_type → ledger_type` 为**一对一**，导致 `PR` 只落 `L02`、`L03` 恒空",
     "cardinality_reason": "工具表 `台账与看板设计` E5/E6 同源（L02 与 L03 均由「物资采购申请单」派生）⇒ 一对一**是实现的偏差、不是设计意图**",
     "validation": "唯一约束必须是 **`UNIQUE(doc_type, ledger_type)`**，不是 `UNIQUE(doc_type)`",
     "consequence_of_flaw": "★ L03 恒空 ⇒ 看板 16 的指标「**需求提出人任经办人的笔数**」**恒为 0，而 0 恰是该指标的期望值** ⇒ 「没有违规」与「没有数据」在界面上完全一样，**永远发现不了违规**",
-    "target_whitelist": ["L01", "L02", "L03", "L04", "L05", "L06", "L07", "L09"],
-    "forbidden_targets": ["L08", "L10", "L11", "L12"],
+    "target_whitelist": [
+      "L01",
+      "L02",
+      "L03",
+      "L04",
+      "L05",
+      "L06",
+      "L07",
+      "L09"
+    ],
+    "forbidden_targets": [
+      "L08",
+      "L10",
+      "L11",
+      "L12"
+    ],
     "forbidden_reason": "`README` 定案 **#20**：可落账的只有实例级 `L01–L07` + `L09`；`L08`（手工主数据）/`L10`（只读汇总）/`L11`（派生）/`L12`（未启用）**禁止**作落账目标，导入层硬拦"
   },
-
   "doc_to_ledger": {
-    "BA":  { "ledger": ["L01"],        "note": "采购报备单 → 采购备案台账" },
-    "PR":  { "ledger": ["L02", "L03"], "note": "★ **一对多**（R-02）：采购需求与审批台账 ＋ 采购经办登记台账" },
-    "SA":  { "ledger": ["L05"],        "note": "费用事前申请台账（含结算补录）" },
-    "RFQ": { "ledger": [],             "note": "★ **不落账** —— 无独立审批链；作为采三档「询比价」环节产生，随主单 PR 留痕" },
-    "BJ":  { "ledger": [],             "note": "★ **不落账** —— 同上" },
-    "SS":  { "ledger": ["L09"],        "note": "例外事项台账（独家采购）" },
-    "CT":  { "ledger": ["L04"],        "note": "合同台账（R-01 裁定后，PO 的字段并入本单）" },
-    "PC":  { "ledger": ["L09"],        "note": "例外事项台账（采购变更）" },
-    "GR":  { "ledger": ["L07"],        "note": "到货验收台账（QC 结论并入本表）" },
-    "QC":  { "ledger": [],             "note": "★ **不落账** —— 结论并入 L07；★ 须配 `related_biz_no → GR 单号`，否则 L07「检验结论」列恒空" },
-    "SUB": { "ledger": ["L06"],        "note": "集团提交与付款衔接台账" }
+    "BA": {
+      "ledger": [
+        "L01"
+      ],
+      "note": "采购报备单 → 采购备案台账"
+    },
+    "PR": {
+      "ledger": [
+        "L02",
+        "L03"
+      ],
+      "note": "★ **一对多**（R-02）：采购需求与审批台账 ＋ 采购经办登记台账"
+    },
+    "SA": {
+      "ledger": [
+        "L05"
+      ],
+      "note": "费用事前申请台账（含结算补录）"
+    },
+    "RFQ": {
+      "ledger": [],
+      "note": "★ **不落账** —— 无独立审批链；作为采三档「询比价」环节产生，随主单 PR 留痕"
+    },
+    "BJ": {
+      "ledger": [],
+      "note": "★ **不落账** —— 同上"
+    },
+    "SS": {
+      "ledger": [
+        "L09"
+      ],
+      "note": "例外事项台账（独家采购）"
+    },
+    "CT": {
+      "ledger": [
+        "L04"
+      ],
+      "note": "合同台账（R-01 裁定后，PO 的字段并入本单）"
+    },
+    "PC": {
+      "ledger": [
+        "L09"
+      ],
+      "note": "例外事项台账（采购变更）"
+    },
+    "GR": {
+      "ledger": [
+        "L07"
+      ],
+      "note": "到货验收台账（QC 结论并入本表）"
+    },
+    "QC": {
+      "ledger": [],
+      "note": "★ **不落账** —— 结论并入 L07；★ 须配 `related_biz_no → GR 单号`，否则 L07「检验结论」列恒空"
+    },
+    "SUB": {
+      "ledger": [
+        "L06"
+      ],
+      "note": "集团提交与付款衔接台账"
+    }
   },
-
   "storage_pattern": {
     "_note": "★ 工具表 G 列给出的拆分口径 —— 「审批自动写入（只读）」与「审批后人工补录（可写）」性质不同，**该拆的必须拆**",
     "single_table": "单表即可（字段全部在审批内产生 ⇒ 只读不影响使用）",
@@ -45,247 +105,905 @@
     "derived_view": "★ **派生视图，不物化落行**（R-13）",
     "not_enabled": "本期未启用，仅保留结构"
   },
-
   "ledgers": {
     "L01": {
-      "code": "L01", "label": "采购备案台账", "storage": "single_table_or_split",
-      "producer": ["BA"], "institution_ref": "费用管理办法V3.0 第五十九条",
-      "fields": [
-        { "name": "biz_no", "label": "备案单号", "writable": false },
-        { "name": "applicant", "label": "需求人", "writable": false },
-        { "name": "department", "label": "部门", "writable": false },
-        { "name": "usage_category_l1", "label": "分类", "writable": false },
-        { "name": "usage_category_l2", "label": "二级明细", "writable": false },
-        { "name": "amount_cents", "label": "金额", "writable": false },
-        { "name": "supplier", "label": "供应商", "writable": false },
-        { "name": "record_date", "label": "日期", "writable": false },
-        { "name": "petty_cash_approver", "label": "审批人（备付金）", "writable": false },
-        { "name": "approval_conclusion", "label": "审批结论", "writable": false },
-        { "name": "petty_cash_receiver", "label": "备付金签领人", "writable": false },
-        { "name": "petty_cash_received_cents", "label": "备付金签领金额", "writable": false },
-        { "name": "petty_cash_received_at", "label": "备付金签领日期", "writable": false },
-        { "name": "payment_receipt_no", "label": "付款凭据号", "writable": true, "writer": "综合运营主管", "when": "付款完成后" },
-        { "name": "sample_status", "label": "抽查状态", "writable": true, "writer": "综合运营主管", "when": "月度核销时" },
-        { "name": "is_key_sample_range", "label": "是否落入 800–1,000 元重点抽查区间", "writable": false },
-        { "name": "petty_cash_balance_after_close_cents", "label": "核销后余额", "writable": true, "writer": "综合运营主管", "when": "月度核销时", "resolution": "R-21#11：★ 备付金「不设定额」之后，这是**唯一可被外部核对的锚点**" }
+      "code": "L01",
+      "label": "采购备案台账",
+      "storage": "single_table_or_split",
+      "producer": [
+        "BA"
       ],
-      "extra_views": ["「同供应商当月累计」（★ 视图，**不另建台账**）"],
+      "institution_ref": "费用管理办法V3.0 第五十九条",
+      "fields": [
+        {
+          "name": "biz_no",
+          "label": "备案单号",
+          "writable": false
+        },
+        {
+          "name": "applicant",
+          "label": "需求人",
+          "writable": false
+        },
+        {
+          "name": "department",
+          "label": "部门",
+          "writable": false
+        },
+        {
+          "name": "usage_category_l1",
+          "label": "分类",
+          "writable": false
+        },
+        {
+          "name": "usage_category_l2",
+          "label": "二级明细",
+          "writable": false
+        },
+        {
+          "name": "amount_cents",
+          "label": "金额",
+          "writable": false
+        },
+        {
+          "name": "supplier",
+          "label": "供应商",
+          "writable": false
+        },
+        {
+          "name": "record_date",
+          "label": "日期",
+          "writable": false
+        },
+        {
+          "name": "petty_cash_approver",
+          "label": "审批人（备付金）",
+          "writable": false
+        },
+        {
+          "name": "approval_conclusion",
+          "label": "审批结论",
+          "writable": false
+        },
+        {
+          "name": "petty_cash_receiver",
+          "label": "备付金签领人",
+          "writable": false
+        },
+        {
+          "name": "petty_cash_received_cents",
+          "label": "备付金签领金额",
+          "writable": false
+        },
+        {
+          "name": "petty_cash_received_at",
+          "label": "备付金签领日期",
+          "writable": false
+        },
+        {
+          "name": "payment_receipt_no",
+          "label": "付款凭据号",
+          "writable": true,
+          "writer": "综合运营主管",
+          "when": "付款完成后"
+        },
+        {
+          "name": "sample_status",
+          "label": "抽查状态",
+          "writable": true,
+          "writer": "综合运营主管",
+          "when": "月度核销时"
+        },
+        {
+          "name": "is_key_sample_range",
+          "label": "是否落入 800–1,000 元重点抽查区间",
+          "writable": false
+        },
+        {
+          "name": "petty_cash_balance_after_close_cents",
+          "label": "核销后余额",
+          "writable": true,
+          "writer": "综合运营主管",
+          "when": "月度核销时",
+          "resolution": "R-21#11：★ 备付金「不设定额」之后，这是**唯一可被外部核对的锚点**"
+        }
+      ],
+      "extra_views": [
+        "「同供应商当月累计」（★ 视图，**不另建台账**）"
+      ],
       "split_note": "★ 「付款凭据号 + 抽查状态」属**审批后字段** ⇒ 若平台同步表只读，则须另建运营表"
     },
-
     "L02": {
-      "code": "L02", "label": "采购需求与审批台账", "storage": "single_table",
-      "producer": ["PR"], "institution_ref": "费用管理办法V3.0 第五十九条",
+      "code": "L02",
+      "label": "采购需求与审批台账",
+      "storage": "single_table",
+      "producer": [
+        "PR"
+      ],
+      "institution_ref": "费用管理办法V3.0 第五十九条",
       "fields": [
-        { "name": "biz_no", "label": "需求单号（PR）", "writable": false },
-        { "name": "applicant", "label": "需求人", "writable": false },
-        { "name": "department", "label": "部门", "writable": false },
-        { "name": "usage_category_l1", "label": "分类", "writable": false },
-        { "name": "amount_cents", "label": "金额", "writable": false },
-        { "name": "tier", "label": "档位", "writable": false },
-        { "name": "supervisor", "label": "主管领导", "writable": false },
-        { "name": "designated_purchaser", "label": "指定经办人", "writable": false },
-        { "name": "approval_status", "label": "审批状态", "writable": false },
-        { "name": "contract_approval_status", "label": "合同审批状态", "writable": false },
-        { "name": "submit_group_date", "label": "提交日期", "writable": false },
-        { "name": "current_node", "label": "当前节点", "writable": false }
+        {
+          "name": "biz_no",
+          "label": "需求单号（PR）",
+          "writable": false
+        },
+        {
+          "name": "applicant",
+          "label": "需求人",
+          "writable": false
+        },
+        {
+          "name": "department",
+          "label": "部门",
+          "writable": false
+        },
+        {
+          "name": "usage_category_l1",
+          "label": "分类",
+          "writable": false
+        },
+        {
+          "name": "amount_cents",
+          "label": "金额",
+          "writable": false
+        },
+        {
+          "name": "tier",
+          "label": "档位",
+          "writable": false
+        },
+        {
+          "name": "supervisor",
+          "label": "主管领导",
+          "writable": false
+        },
+        {
+          "name": "designated_purchaser",
+          "label": "指定经办人",
+          "writable": false
+        },
+        {
+          "name": "approval_status",
+          "label": "审批状态",
+          "writable": false
+        },
+        {
+          "name": "contract_approval_status",
+          "label": "合同审批状态",
+          "writable": false
+        },
+        {
+          "name": "submit_group_date",
+          "label": "提交日期",
+          "writable": false
+        },
+        {
+          "name": "current_node",
+          "label": "当前节点",
+          "writable": false
+        }
       ],
       "split_note": "★ 字段**全部在审批内产生** ⇒ 只读不影响使用，**单表即可**（Q14 亦记 NA）"
     },
-
     "L03": {
-      "code": "L03", "label": "采购经办登记台账", "storage": "split_required",
-      "producer": ["PR"], "institution_ref": "费用管理办法V3.0 第六十条（第 707–714 行）",
+      "code": "L03",
+      "label": "采购经办登记台账",
+      "storage": "split_required",
+      "producer": [
+        "PR"
+      ],
+      "institution_ref": "费用管理办法V3.0 第六十条（第 707–714 行）",
       "writer_raw_text": "工具表 `台账与看板设计` E6 原文：「**「物资采购申请单」审批节点指定经办人后自动写入**」",
       "fields": [
-        { "name": "biz_no", "label": "PR 号（业务主键）", "writable": false },
-        { "name": "request_department", "label": "需求部门", "writable": false },
-        { "name": "requester", "label": "需求提出人", "writable": false },
-        { "name": "designated_purchaser", "label": "指定经办人", "writable": false },
-        { "name": "designated_by", "label": "指定人（即审批人）", "writable": false },
-        { "name": "designated_at", "label": "指定时间", "writable": false },
-        { "name": "designation_basis", "label": "指定依据", "writable": false, "resolution": "R-17 / R-21#1" },
-        { "name": "tier_at_designation", "label": "指定时的档位", "writable": false },
-        { "name": "amount_at_designation_cents", "label": "指定时的金额", "writable": false },
-        { "name": "is_self_designated", "label": "经办人是否＝提出人", "writable": false, "type": "computed_formula_flag", "note": "★★ **公式列红标** —— 看板 16 的「需求提出人任经办人的笔数」即统计本列" },
-        { "name": "contract_signed", "label": "是否签订合同", "writable": false },
-        { "name": "handling_status", "label": "经办状态", "writable": true, "writer": "采购经办人", "when": "审批通过后即时" },
-        { "name": "completed_at", "label": "完成日期", "writable": true, "writer": "采购经办人", "when": "经办完成后" },
-        { "name": "is_on_time", "label": "是否按期", "writable": true, "writer": "采购经办人", "when": "经办完成后" },
-        { "name": "is_rollover_warned", "label": "是否落入当月同供应商累计 ≥1,000 元的转档预警", "writable": false }
+        {
+          "name": "biz_no",
+          "label": "PR 号（业务主键）",
+          "writable": false
+        },
+        {
+          "name": "request_department",
+          "label": "需求部门",
+          "writable": false
+        },
+        {
+          "name": "requester",
+          "label": "需求提出人",
+          "writable": false
+        },
+        {
+          "name": "designated_purchaser",
+          "label": "指定经办人",
+          "writable": false
+        },
+        {
+          "name": "designated_by",
+          "label": "指定人（即审批人）",
+          "writable": false
+        },
+        {
+          "name": "designated_at",
+          "label": "指定时间",
+          "writable": false
+        },
+        {
+          "name": "designation_basis",
+          "label": "指定依据",
+          "writable": false,
+          "resolution": "R-17 / R-21#1"
+        },
+        {
+          "name": "tier_at_designation",
+          "label": "指定时的档位",
+          "writable": false
+        },
+        {
+          "name": "amount_at_designation_cents",
+          "label": "指定时的金额",
+          "writable": false
+        },
+        {
+          "name": "is_self_designated",
+          "label": "经办人是否＝提出人",
+          "writable": false,
+          "type": "computed_formula_flag",
+          "note": "★★ **公式列红标** —— 看板 16 的「需求提出人任经办人的笔数」即统计本列"
+        },
+        {
+          "name": "contract_signed",
+          "label": "是否签订合同",
+          "writable": false
+        },
+        {
+          "name": "handling_status",
+          "label": "经办状态",
+          "writable": true,
+          "writer": "采购经办人",
+          "when": "审批通过后即时"
+        },
+        {
+          "name": "completed_at",
+          "label": "完成日期",
+          "writable": true,
+          "writer": "采购经办人",
+          "when": "经办完成后"
+        },
+        {
+          "name": "is_on_time",
+          "label": "是否按期",
+          "writable": true,
+          "writer": "采购经办人",
+          "when": "经办完成后"
+        },
+        {
+          "name": "is_rollover_warned",
+          "label": "是否落入当月同供应商累计 ≥1,000 元的转档预警",
+          "writable": false
+        }
       ],
       "resolution_note": "★★ **R-02（最高优先）**：本台账原实现**恒空**（`doc_type → ledger_type` 一对一使 PR 只落 L02）⇒ 已裁定**放宽为一对多**。不修则「需求提出人任经办人的笔数」恒为 0 —— **而 0 恰是期望值，永远发现不了违规**。",
       "split_note": "★ **必拆两张**：① 同步存档表（只读，作凭证：指定经办人 / 指定人 / 指定时间 / 档位金额 / 指定依据）；② 运营表（可写：经办状态 / 完成日期 / 是否按期）",
       "extra_note": "★ 制度第六十条另要求登记「**冲突核对**」「**可指定范围核对**」两列（由综合运营主管在三单匹配初审环节填）—— 属**运营表**字段（R-21#8）",
       "extra_fields": [
-        { "name": "conflict_check_result", "label": "冲突核对结论", "writable": true, "writer": "综合运营主管", "when": "三单匹配初审", "resolution": "R-21#8" },
-        { "name": "scope_check_result", "label": "可指定范围核对结论", "writable": true, "writer": "综合运营主管", "when": "三单匹配初审", "resolution": "R-21#8" }
+        {
+          "name": "conflict_check_result",
+          "label": "冲突核对结论",
+          "writable": true,
+          "writer": "综合运营主管",
+          "when": "三单匹配初审",
+          "resolution": "R-21#8"
+        },
+        {
+          "name": "scope_check_result",
+          "label": "可指定范围核对结论",
+          "writable": true,
+          "writer": "综合运营主管",
+          "when": "三单匹配初审",
+          "resolution": "R-21#8"
+        }
       ]
     },
-
     "L04": {
-      "code": "L04", "label": "合同台账", "storage": "split_suggested",
-      "producer": ["CT"], "institution_ref": "费用管理办法V3.0 第三十七条（第 472 行）",
+      "code": "L04",
+      "label": "合同台账",
+      "storage": "split_suggested",
+      "producer": [
+        "CT"
+      ],
+      "institution_ref": "费用管理办法V3.0 第三十七条（第 472 行）",
       "fields": [
-        { "name": "contract_no", "label": "合同编号", "writable": false, "naming": "R-20#8：统一名 `合同编号`" },
-        { "name": "related_biz_no", "label": "关联需求单", "writable": false },
-        { "name": "supplier", "label": "供应商", "writable": false },
-        { "name": "contract_amount_cents", "label": "合同金额", "writable": false },
-        { "name": "payment_terms", "label": "付款条件", "writable": false },
-        { "name": "approval_levels", "label": "审批层级", "writable": false },
-        { "name": "prepay_ratio", "label": "预付比例", "writable": true, "writer": "采购经办人", "when": "审批通过后即时", "note": "★ 制度第三十七条要求「单列预付比例（便于统计与抽查核对）」" },
-        { "name": "signed_at", "label": "签署日期", "writable": false },
-        { "name": "performance_status", "label": "履约状态", "writable": true, "writer": "综合运营主管" },
-        { "name": "warranty_balance_cents", "label": "质保金余额", "writable": true, "writer": "综合运营主管", "when": "手工维护·不定期" },
-        { "name": "group_payment_status", "label": "集团付款状态", "writable": true, "writer": "综合运营主管", "when": "依集团人工反馈", "resolution": "R-21#12：★ 工具表 L04 **无此项**（仅 L06 有近似项），但制度第三十七条明确要求合同台账含「集团付款状态」⇒ 补入。不补则「合同台账看不出付没付」" },
-        { "name": "submit_group_at", "label": "提交集团日期", "writable": true, "writer": "综合运营主管", "resolution": "R-21#12 同源（制度第三十七条）" }
+        {
+          "name": "contract_no",
+          "label": "合同编号",
+          "writable": false,
+          "naming": "R-20#8：统一名 `合同编号`"
+        },
+        {
+          "name": "related_biz_no",
+          "label": "关联需求单",
+          "writable": false
+        },
+        {
+          "name": "supplier",
+          "label": "供应商",
+          "writable": false
+        },
+        {
+          "name": "contract_amount_cents",
+          "label": "合同金额",
+          "writable": false
+        },
+        {
+          "name": "payment_terms",
+          "label": "付款条件",
+          "writable": false
+        },
+        {
+          "name": "approval_levels",
+          "label": "审批层级",
+          "writable": false
+        },
+        {
+          "name": "prepay_ratio",
+          "label": "预付比例",
+          "writable": true,
+          "writer": "采购经办人",
+          "when": "审批通过后即时",
+          "note": "★ 制度第三十七条要求「单列预付比例（便于统计与抽查核对）」"
+        },
+        {
+          "name": "signed_at",
+          "label": "签署日期",
+          "writable": false
+        },
+        {
+          "name": "performance_status",
+          "label": "履约状态",
+          "writable": true,
+          "writer": "综合运营主管"
+        },
+        {
+          "name": "warranty_balance_cents",
+          "label": "质保金余额",
+          "writable": true,
+          "writer": "综合运营主管",
+          "when": "手工维护·不定期"
+        },
+        {
+          "name": "group_payment_status",
+          "label": "集团付款状态",
+          "writable": true,
+          "writer": "综合运营主管",
+          "when": "依集团人工反馈",
+          "resolution": "R-21#12：★ 工具表 L04 **无此项**（仅 L06 有近似项），但制度第三十七条明确要求合同台账含「集团付款状态」⇒ 补入。不补则「合同台账看不出付没付」"
+        },
+        {
+          "name": "submit_group_at",
+          "label": "提交集团日期",
+          "writable": true,
+          "writer": "综合运营主管",
+          "resolution": "R-21#12 同源（制度第三十七条）"
+        }
       ],
       "split_note": "★ 承接原「预付款例外」的全部留痕；D8 简式订单等一并入本表并标注「视为已签合同」；建议拆两张"
     },
-
     "L05": {
-      "code": "L05", "label": "费用事前申请台账", "storage": "split_suggested",
-      "producer": ["SA"], "institution_ref": "费用管理办法V3.0 第五十九条",
+      "code": "L05",
+      "label": "费用事前申请台账",
+      "storage": "split_suggested",
+      "producer": [
+        "SA"
+      ],
+      "institution_ref": "费用管理办法V3.0 第五十九条",
       "fields": [
-        { "name": "biz_no", "label": "SA 号", "writable": false, "note": "★ 报销单已取消（A4）" },
-        { "name": "applicant", "label": "申请人", "writable": false },
-        { "name": "department", "label": "部门", "writable": false },
-        { "name": "expense_subject", "label": "费用科目", "writable": false },
-        { "name": "usage_category_l1", "label": "用途分类", "writable": false },
-        { "name": "usage_category_l2", "label": "二级明细", "writable": false },
-        { "name": "purpose", "label": "事由", "writable": false },
-        { "name": "counterparty", "label": "对象", "writable": false },
-        { "name": "estimated_amount_cents", "label": "预计金额", "writable": false },
-        { "name": "actual_amount_cents", "label": "实际金额", "writable": false },
-        { "name": "invoice_count_and_numbers", "label": "票据张数与号码", "writable": false },
-        { "name": "payment_method_input", "label": "支付方式（垫付 / 对公）", "writable": false },
-        { "name": "handler", "label": "经办人（可空）", "writable": false, "note": "批复 C2" },
-        { "name": "settlement_status", "label": "结算状态", "writable": true, "writer": "综合运营主管", "when": "付款完成后" },
-        { "name": "handover_group_at", "label": "移交集团日期", "writable": true, "writer": "综合运营主管", "when": "提交集团当日" }
+        {
+          "name": "biz_no",
+          "label": "SA 号",
+          "writable": false,
+          "note": "★ 报销单已取消（A4）"
+        },
+        {
+          "name": "applicant",
+          "label": "申请人",
+          "writable": false
+        },
+        {
+          "name": "department",
+          "label": "部门",
+          "writable": false
+        },
+        {
+          "name": "expense_subject",
+          "label": "费用科目",
+          "writable": false
+        },
+        {
+          "name": "usage_category_l1",
+          "label": "用途分类",
+          "writable": false
+        },
+        {
+          "name": "usage_category_l2",
+          "label": "二级明细",
+          "writable": false
+        },
+        {
+          "name": "purpose",
+          "label": "事由",
+          "writable": false
+        },
+        {
+          "name": "counterparty",
+          "label": "对象",
+          "writable": false
+        },
+        {
+          "name": "estimated_amount_cents",
+          "label": "预计金额",
+          "writable": false
+        },
+        {
+          "name": "actual_amount_cents",
+          "label": "实际金额",
+          "writable": false
+        },
+        {
+          "name": "invoice_count_and_numbers",
+          "label": "票据张数与号码",
+          "writable": false
+        },
+        {
+          "name": "payment_method_input",
+          "label": "支付方式（垫付 / 对公）",
+          "writable": false
+        },
+        {
+          "name": "handler",
+          "label": "经办人（可空）",
+          "writable": false,
+          "note": "批复 C2"
+        },
+        {
+          "name": "settlement_status",
+          "label": "结算状态",
+          "writable": true,
+          "writer": "综合运营主管",
+          "when": "付款完成后"
+        },
+        {
+          "name": "handover_group_at",
+          "label": "移交集团日期",
+          "writable": true,
+          "writer": "综合运营主管",
+          "when": "提交集团当日"
+        }
       ],
       "split_note": "建议拆两张：`结算状态`、`移交集团日期` ⇒ 放运营表"
     },
-
     "L06": {
-      "code": "L06", "label": "集团提交与付款衔接台账（含「集团报销跟踪表」职能）", "storage": "split_required",
-      "producer": ["SUB"], "institution_ref": "费用管理办法V3.0 第五十九条（★ 制度侧为 #6 与 #10 **两条**，工具表合并为本表 —— 见 R-04）",
+      "code": "L06",
+      "label": "集团提交与付款衔接台账（含「集团报销跟踪表」职能）",
+      "storage": "split_required",
+      "producer": [
+        "SUB"
+      ],
+      "institution_ref": "费用管理办法V3.0 第五十九条（★ 制度侧为 #6 与 #10 **两条**，工具表合并为本表 —— 见 R-04）",
       "fields": [
-        { "name": "biz_no", "label": "SUB 号", "writable": false },
-        { "name": "related_docs", "label": "关联单据", "writable": false },
-        { "name": "item_type", "label": "事项类型", "writable": false },
-        { "name": "amount_cents", "label": "金额", "writable": false },
-        { "name": "payment_method", "label": "付款方式", "writable": false, "note": "派生自 `payment_method_input`（R-10）" },
-        { "name": "hunan_completed_at", "label": "湖南侧完成日期", "writable": false },
-        { "name": "submit_group_at", "label": "提交集团日期", "writable": true, "writer": "综合运营主管", "when": "提交集团当日" },
-        { "name": "handover_receipt", "label": "移交凭证（签收）", "writable": true, "writer": "综合运营主管", "note": "★ **无凭证视为未提交**" },
-        { "name": "group_process_no", "label": "集团流程编号", "writable": true, "writer": "综合运营主管", "when": "依集团人工反馈", "naming": "R-20#13：★ 制度写「集团流程编号」、工具表写「集团受理编号」⇒ **统一用制度名**" },
-        { "name": "group_status", "label": "集团流程状态", "writable": true, "writer": "综合运营主管", "when": "依集团人工反馈" },
-        { "name": "payment_completed_at", "label": "付款 / 报销完成日期", "writable": true, "writer": "综合运营主管", "when": "依集团人工反馈" },
-        { "name": "reject_reason_and_disposition", "label": "驳回原因与处置", "writable": true, "writer": "综合运营主管", "note": "取消 / 驳回重走" }
+        {
+          "name": "biz_no",
+          "label": "SUB 号",
+          "writable": false
+        },
+        {
+          "name": "related_docs",
+          "label": "关联单据",
+          "writable": false
+        },
+        {
+          "name": "item_type",
+          "label": "事项类型",
+          "writable": false
+        },
+        {
+          "name": "amount_cents",
+          "label": "金额",
+          "writable": false
+        },
+        {
+          "name": "payment_method",
+          "label": "付款方式",
+          "writable": false,
+          "note": "派生自 `payment_method_input`（R-10）"
+        },
+        {
+          "name": "hunan_completed_at",
+          "label": "湖南侧完成日期",
+          "writable": false
+        },
+        {
+          "name": "submit_group_at",
+          "label": "提交集团日期",
+          "writable": true,
+          "writer": "综合运营主管",
+          "when": "提交集团当日"
+        },
+        {
+          "name": "handover_receipt",
+          "label": "移交凭证（签收）",
+          "writable": true,
+          "writer": "综合运营主管",
+          "note": "★ **无凭证视为未提交**"
+        },
+        {
+          "name": "group_process_no",
+          "label": "集团流程编号",
+          "writable": true,
+          "writer": "综合运营主管",
+          "when": "依集团人工反馈",
+          "naming": "R-20#13：★ 制度写「集团流程编号」、工具表写「集团受理编号」⇒ **统一用制度名**"
+        },
+        {
+          "name": "group_status",
+          "label": "集团流程状态",
+          "writable": true,
+          "writer": "综合运营主管",
+          "when": "依集团人工反馈"
+        },
+        {
+          "name": "payment_completed_at",
+          "label": "付款 / 报销完成日期",
+          "writable": true,
+          "writer": "综合运营主管",
+          "when": "依集团人工反馈"
+        },
+        {
+          "name": "reject_reason_and_disposition",
+          "label": "驳回原因与处置",
+          "writable": true,
+          "writer": "综合运营主管",
+          "note": "取消 / 驳回重走"
+        }
       ],
       "critical_note": "★★ 工具表原文：「它仍是全表里**唯一「没有人工维护就会完全失去意义」的台账**」",
       "split_note": "★ **必拆两张**：① 同步存档表（只读：SUB 号 / 关联单据 / 金额 / 付款方式 / 湖南侧完成日期）；② 运营表（可写：提交集团日期 / 集团流程编号 / 集团流程状态 / 付款完成日期 —— ★ **四个字段全部人工登记**，B8 定案「非系统回填、不作数据对齐」）",
-      "institution_mapping": { "制度第五十九条 #6": "集团报销跟踪表", "制度第五十九条 #10": "集团提交与付款衔接台账", "resolution": "R-04：制度侧分立两条、工具表合并为本表 ⇒ 机读侧主键用 L06，**附制度条号映射**" }
+      "institution_mapping": {
+        "制度第五十九条 #6": "集团报销跟踪表",
+        "制度第五十九条 #10": "集团提交与付款衔接台账",
+        "resolution": "R-04：制度侧分立两条、工具表合并为本表 ⇒ 机读侧主键用 L06，**附制度条号映射**"
+      }
     },
-
     "L07": {
-      "code": "L07", "label": "到货验收台账", "storage": "split_suggested",
-      "producer": ["GR", "QC"], "institution_ref": "费用管理办法V3.0 第五十九条（第 698 行）",
+      "code": "L07",
+      "label": "到货验收台账",
+      "storage": "split_suggested",
+      "producer": [
+        "GR",
+        "QC"
+      ],
+      "institution_ref": "费用管理办法V3.0 第五十九条（第 698 行）",
       "fields": [
-        { "name": "biz_no", "label": "GR 号", "writable": false },
-        { "name": "related_order_or_record_no", "label": "关联订单或备案单", "writable": false },
-        { "name": "received_quantity", "label": "实收数量", "writable": false },
-        { "name": "acceptance_conclusion", "label": "验收结论", "writable": false },
-        { "name": "acceptance_members", "label": "验收人（按品类三组）", "writable": false, "note": "★ 须能区分三组构成：P01 三方 / P02–P04 双方 / P05–P08 双方" },
-        { "name": "inspection_conclusion", "label": "检验结论", "writable": true, "writer": "质检技术部", "when": "到货验收当日", "naming": "R-20#6：★ 制度写「检验结论」、工具表写「判定结论」⇒ **统一用制度名**；★ 来源 QC，须配 `related_biz_no → GR 单号`，否则本列**恒空**" },
-        { "name": "difference_note", "label": "差异说明", "writable": true, "writer": "采购经办人", "when": "到货验收当日" }
+        {
+          "name": "biz_no",
+          "label": "GR 号",
+          "writable": false
+        },
+        {
+          "name": "related_order_or_record_no",
+          "label": "关联订单或备案单",
+          "writable": false
+        },
+        {
+          "name": "received_quantity",
+          "label": "实收数量",
+          "writable": false
+        },
+        {
+          "name": "acceptance_conclusion",
+          "label": "验收结论",
+          "writable": false
+        },
+        {
+          "name": "acceptance_members",
+          "label": "验收人（按品类三组）",
+          "writable": false,
+          "note": "★ 须能区分三组构成：P01 三方 / P02–P04 双方 / P05–P08 双方"
+        },
+        {
+          "name": "inspection_conclusion",
+          "label": "检验结论",
+          "writable": true,
+          "writer": "质检技术部",
+          "when": "到货验收当日",
+          "naming": "R-20#6：★ 制度写「检验结论」、工具表写「判定结论」⇒ **统一用制度名**；★ 来源 QC，须配 `related_biz_no → GR 单号`，否则本列**恒空**"
+        },
+        {
+          "name": "difference_note",
+          "label": "差异说明",
+          "writable": true,
+          "writer": "采购经办人",
+          "when": "到货验收当日"
+        }
       ],
       "split_note": "建议拆两张：`检验结论` 与 `差异说明` 由质检/经办后续补充 ⇒ 放运营表；★ 验收人列须能区分三组构成"
     },
-
     "L08": {
-      "code": "L08", "label": "供应商档案与绩效表", "storage": "manual_master",
-      "producer": [], "is_ledger_target": false,
+      "code": "L08",
+      "label": "供应商档案与绩效表",
+      "storage": "manual_master",
+      "producer": [],
+      "is_ledger_target": false,
       "fields": [
-        { "name": "supplier_name", "label": "供应商名称", "writable": true, "writer": "综合运营主管" },
-        { "name": "unified_social_credit_code", "label": "统一社会信用代码", "writable": true, "writer": "综合运营主管" },
-        { "name": "account_info", "label": "账户信息", "writable": true, "writer": "综合运营主管" },
-        { "name": "admission_date", "label": "准入日期", "writable": true, "writer": "综合运营主管" },
-        { "name": "on_time_rate", "label": "准交率", "writable": false, "note": "由订单验收数据自动汇总" },
-        { "name": "inspection_pass_rate", "label": "检验合格率", "writable": false },
-        { "name": "price_deviation", "label": "价格偏离度", "writable": false },
-        { "name": "rating", "label": "评级", "writable": true, "writer": "综合运营主管" },
-        { "name": "affiliation_declaration", "label": "关联关系申报", "writable": true, "writer": "综合运营主管", "note": "★ 对应制度第二十条「报价单位之间不得存在关联关系」" }
+        {
+          "name": "supplier_name",
+          "label": "供应商名称",
+          "writable": true,
+          "writer": "综合运营主管"
+        },
+        {
+          "name": "unified_social_credit_code",
+          "label": "统一社会信用代码",
+          "writable": true,
+          "writer": "综合运营主管"
+        },
+        {
+          "name": "account_info",
+          "label": "账户信息",
+          "writable": true,
+          "writer": "综合运营主管"
+        },
+        {
+          "name": "admission_date",
+          "label": "准入日期",
+          "writable": true,
+          "writer": "综合运营主管"
+        },
+        {
+          "name": "on_time_rate",
+          "label": "准交率",
+          "writable": false,
+          "note": "由订单验收数据自动汇总"
+        },
+        {
+          "name": "inspection_pass_rate",
+          "label": "检验合格率",
+          "writable": false
+        },
+        {
+          "name": "price_deviation",
+          "label": "价格偏离度",
+          "writable": false
+        },
+        {
+          "name": "rating",
+          "label": "评级",
+          "writable": true,
+          "writer": "综合运营主管"
+        },
+        {
+          "name": "affiliation_declaration",
+          "label": "关联关系申报",
+          "writable": true,
+          "writer": "综合运营主管",
+          "note": "★ 对应制度第二十条「报价单位之间不得存在关联关系」"
+        }
       ],
       "resolution_note": "R-12：★ 工具表 `台账与看板设计` R2 说第 8 号「建议拆」，而 R11 C7 又写「手工维护表，本身可写，**无拆分问题**」⇒ **按后者**（与 PRD §5.5、架构 §3.4 一致）。",
       "split_note": "手工主数据，**本身可写，无拆分问题**"
     },
-
     "L09": {
-      "code": "L09", "label": "例外事项台账", "storage": "single_table",
-      "producer": ["SS", "PC"], "institution_ref": "费用管理办法V3.0 第五十条（第 613 行）· 第五十二条",
+      "code": "L09",
+      "label": "例外事项台账",
+      "storage": "single_table",
+      "producer": [
+        "SS",
+        "PC"
+      ],
+      "institution_ref": "费用管理办法V3.0 第五十条（第 613 行）· 第五十二条",
       "fields": [
-        { "name": "exception_type", "label": "例外类型", "writable": false, "values_ref": "独家采购 / 紧急采购 / 采购变更" },
-        { "name": "biz_no", "label": "单据号", "writable": false },
-        { "name": "amount_cents", "label": "金额", "writable": false },
-        { "name": "reason", "label": "理由", "writable": false },
-        { "name": "approval_record", "label": "审批记录", "writable": false },
-        { "name": "is_emergency_closed", "label": "紧急单是否已核销闭合", "writable": true, "writer": "采购经办人", "when": "手工维护·不定期", "note": "★ B6 批复；**未核销的紧急单保持「未闭合」并进入月度报送**" },
-        { "name": "uniqueness_reason", "label": "唯一性理由", "writable": false, "note": "★ A6 批复新增（独家采购）" },
-        { "name": "quarterly_share", "label": "季度金额占比", "writable": false, "note": "★ A6 批复新增；占比 > 20% 须专项说明" },
-        { "name": "change_chain", "label": "变更链（历次变更次数 / 累计金额 / 所取档位）", "writable": false, "resolution": "R-21#7：★ 制度第五十二条要求「台账须能按合同号查看历次变更的次数、累计金额与所取档位」⇒ 补入；不补则「档位就高」缺数据支撑、化整为零难发现" }
+        {
+          "name": "exception_type",
+          "label": "例外类型",
+          "writable": false,
+          "values_ref": "独家采购 / 紧急采购 / 采购变更"
+        },
+        {
+          "name": "biz_no",
+          "label": "单据号",
+          "writable": false
+        },
+        {
+          "name": "amount_cents",
+          "label": "金额",
+          "writable": false
+        },
+        {
+          "name": "reason",
+          "label": "理由",
+          "writable": false
+        },
+        {
+          "name": "approval_record",
+          "label": "审批记录",
+          "writable": false
+        },
+        {
+          "name": "is_emergency_closed",
+          "label": "紧急单是否已核销闭合",
+          "writable": true,
+          "writer": "采购经办人",
+          "when": "手工维护·不定期",
+          "note": "★ B6 批复；**未核销的紧急单保持「未闭合」并进入月度报送**"
+        },
+        {
+          "name": "uniqueness_reason",
+          "label": "唯一性理由",
+          "writable": false,
+          "note": "★ A6 批复新增（独家采购）"
+        },
+        {
+          "name": "quarterly_share",
+          "label": "季度金额占比",
+          "writable": false,
+          "note": "★ A6 批复新增；占比 > 20% 须专项说明"
+        },
+        {
+          "name": "change_chain",
+          "label": "变更链（历次变更次数 / 累计金额 / 所取档位）",
+          "writable": false,
+          "resolution": "R-21#7：★ 制度第五十二条要求「台账须能按合同号查看历次变更的次数、累计金额与所取档位」⇒ 补入；不补则「档位就高」缺数据支撑、化整为零难发现"
+        }
       ],
       "split_note": "实例级台账，单表"
     },
-
     "L10": {
-      "code": "L10", "label": "用途分类汇总台账", "storage": "derived_view",
-      "producer": [], "is_ledger_target": false,
+      "code": "L10",
+      "label": "用途分类汇总台账",
+      "storage": "derived_view",
+      "producer": [],
+      "is_ledger_target": false,
       "fields": [
-        { "name": "category_monthly_amount", "label": "按一级分类逐月汇总金额与笔数", "writable": false },
-        { "name": "department_summary", "label": "按部门汇总", "writable": false },
-        { "name": "supplier_ranking", "label": "按供应商金额排序", "writable": false }
+        {
+          "name": "category_monthly_amount",
+          "label": "按一级分类逐月汇总金额与笔数",
+          "writable": false
+        },
+        {
+          "name": "department_summary",
+          "label": "按部门汇总",
+          "writable": false
+        },
+        {
+          "name": "supplier_ranking",
+          "label": "按供应商金额排序",
+          "writable": false
+        }
       ],
       "split_note": "★ **只读汇总（公式列 / 仪表盘）**，不随单据产生行"
     },
-
     "L11": {
-      "code": "L11", "label": "订单执行台账", "storage": "derived_view",
-      "producer": [], "is_ledger_target": false,
+      "code": "L11",
+      "label": "订单执行台账",
+      "storage": "derived_view",
+      "producer": [],
+      "is_ledger_target": false,
       "fields": [
-        { "name": "order_no", "label": "订单号", "writable": false },
-        { "name": "related_biz_no", "label": "关联 PR", "writable": false },
-        { "name": "supplier", "label": "供应商", "writable": false },
-        { "name": "amount_cents", "label": "金额", "writable": false },
-        { "name": "delivery_date", "label": "交期", "writable": false },
-        { "name": "actual_arrival", "label": "实际到货", "writable": true, "writer": "库管", "when": "到货验收当日" },
-        { "name": "delay_days", "label": "延期天数", "writable": true, "writer": "库管", "when": "到货验收当日" },
-        { "name": "order_status", "label": "订单状态", "writable": false }
+        {
+          "name": "order_no",
+          "label": "订单号",
+          "writable": false
+        },
+        {
+          "name": "related_biz_no",
+          "label": "关联 PR",
+          "writable": false
+        },
+        {
+          "name": "supplier",
+          "label": "供应商",
+          "writable": false
+        },
+        {
+          "name": "amount_cents",
+          "label": "金额",
+          "writable": false
+        },
+        {
+          "name": "delivery_date",
+          "label": "交期",
+          "writable": false
+        },
+        {
+          "name": "actual_arrival",
+          "label": "实际到货",
+          "writable": false,
+          "readonly_reason": "★ **派生视图，不物化落行 ⇒ 无写入口**（与 `internal/config/bizfields.go#ReadOnlyLedgerTypes` = L10/L11/L12 同口径）。原文 `split_note` 已写明「派生视图，不物化落行；机读规格中不配 `ledger_type` 写入」，本项与之一致。"
+        },
+        {
+          "name": "delay_days",
+          "label": "延期天数",
+          "writable": false,
+          "readonly_reason": "★ **派生视图，不物化落行 ⇒ 无写入口**（与 `internal/config/bizfields.go#ReadOnlyLedgerTypes` = L10/L11/L12 同口径）。原文 `split_note` 已写明「派生视图，不物化落行；机读规格中不配 `ledger_type` 写入」，本项与之一致。"
+        },
+        {
+          "name": "order_status",
+          "label": "订单状态",
+          "writable": false
+        }
       ],
       "resolution_note": "★★ **R-13**：工具表 R14 C5 写「采购订单自动写入」，而代码侧 Q14-B 认定「L11 数据源＝**CT + GR**」且建议「**派生视图（不落行）**」。裁定**按派生视图** —— 与 R-01（PO 不单列）一致：PO 既已并入 CT/GR，L11 自然只能由二者合成；且「派生不落行」避免维护第二份真相。",
       "split_note": "★ **派生视图，不物化落行**；机读规格中 **不配 `ledger_type` 写入**（与 RFQ / BJ / QC 同处理）"
     },
-
     "L12": {
-      "code": "L12", "label": "预算执行台账", "storage": "not_enabled",
-      "producer": [], "is_ledger_target": false,
+      "code": "L12",
+      "label": "预算执行台账",
+      "storage": "not_enabled",
+      "producer": [],
+      "is_ledger_target": false,
       "fields": [
-        { "name": "budget_subject", "label": "预算科目", "writable": true },
-        { "name": "annual_budget_cents", "label": "年度预算额", "writable": true },
-        { "name": "preoccupied_cents", "label": "已预占", "writable": true },
-        { "name": "actual_spent_cents", "label": "已实耗", "writable": true },
-        { "name": "available_balance_cents", "label": "可用余额", "writable": true },
-        { "name": "execution_rate", "label": "执行率", "writable": true },
-        { "name": "warning_status", "label": "预警状态", "writable": true }
+        {
+          "name": "budget_subject",
+          "label": "预算科目",
+          "writable": false,
+          "readonly_reason": "★ **本期未启用**（PRD N9：不做预算拦截）⇒ **无写入口**（同 `ReadOnlyLedgerTypes`）。启用时再行确定可写列。"
+        },
+        {
+          "name": "annual_budget_cents",
+          "label": "年度预算额",
+          "writable": false,
+          "readonly_reason": "★ **本期未启用**（PRD N9：不做预算拦截）⇒ **无写入口**（同 `ReadOnlyLedgerTypes`）。启用时再行确定可写列。"
+        },
+        {
+          "name": "preoccupied_cents",
+          "label": "已预占",
+          "writable": false,
+          "readonly_reason": "★ **本期未启用**（PRD N9：不做预算拦截）⇒ **无写入口**（同 `ReadOnlyLedgerTypes`）。启用时再行确定可写列。"
+        },
+        {
+          "name": "actual_spent_cents",
+          "label": "已实耗",
+          "writable": false,
+          "readonly_reason": "★ **本期未启用**（PRD N9：不做预算拦截）⇒ **无写入口**（同 `ReadOnlyLedgerTypes`）。启用时再行确定可写列。"
+        },
+        {
+          "name": "available_balance_cents",
+          "label": "可用余额",
+          "writable": false,
+          "readonly_reason": "★ **本期未启用**（PRD N9：不做预算拦截）⇒ **无写入口**（同 `ReadOnlyLedgerTypes`）。启用时再行确定可写列。"
+        },
+        {
+          "name": "execution_rate",
+          "label": "执行率",
+          "writable": false,
+          "readonly_reason": "★ **本期未启用**（PRD N9：不做预算拦截）⇒ **无写入口**（同 `ReadOnlyLedgerTypes`）。启用时再行确定可写列。"
+        },
+        {
+          "name": "warning_status",
+          "label": "预警状态",
+          "writable": false,
+          "readonly_reason": "★ **本期未启用**（PRD N9：不做预算拦截）⇒ **无写入口**（同 `ReadOnlyLedgerTypes`）。启用时再行确定可写列。"
+        }
       ],
       "note": "★ **本期未启用，仅保留结构**（PRD N9：不做预算拦截）⇒ 看板 13 随之空转",
       "split_note": "本期不启用；启用后「扣减动作」需人工或定时执行 ⇒ 届时建运营表"
     }
   },
-
   "open_items": [
-    { "id": "R-21#15", "item": "集团衔接字段（是否需报集团流程 / 本流程完成日期 / 集团流程编号 / 集团流程状态 / 集团付款日期与金额）", "status": "已裁定补入 SUB（L06 有、7 张单据字段表均无）—— 制度第四十七条" },
-    { "id": "GAP-1", "item": "「发票验真」接口", "status": "本期不做（PRD N8）；建议接入（工具表 R49 原文）" },
-    { "id": "GAP-2", "item": "12 张台账在飞书免费版下的**合并为 3–4 个多维表格**方案", "status": "待确认事项第 26 项（待填）；★ 若最终自建（转向 ③ 已定），此项可能作废 —— 需开议题确认" }
-  ]
+    {
+      "id": "R-21#15",
+      "item": "集团衔接字段（是否需报集团流程 / 本流程完成日期 / 集团流程编号 / 集团流程状态 / 集团付款日期与金额）",
+      "status": "已裁定补入 SUB（L06 有、7 张单据字段表均无）—— 制度第四十七条"
+    },
+    {
+      "id": "GAP-1",
+      "item": "「发票验真」接口",
+      "status": "本期不做（PRD N8）；建议接入（工具表 R49 原文）"
+    },
+    {
+      "id": "GAP-2",
+      "item": "12 张台账在飞书免费版下的**合并为 3–4 个多维表格**方案",
+      "status": "待确认事项第 26 项（待填）；★ 若最终自建（转向 ③ 已定），此项可能作废 —— 需开议题确认"
+    }
+  ],
+  "_invariants": {
+    "readonly_ledgers_have_no_writable_fields": "★★ **不变量**：`storage ∈ {derived_view, not_enabled, readonly}` 的台账（＝ L10 / L11 / L12，与 `internal/config/bizfields.go#ReadOnlyLedgerTypes` 同口径）**无写入口** ⇒ 其 `fields[*].writable` **必须为 false**。★ 依据＝2026-09-30 实测：`N-024` 的导入层提示会在真 spec 上报出 19 条「可写但未登记」，其中 **9 条（L11×2 + L12×7）是噪声** —— 这两个台账根本没有写入口，报出来只会**淹没真正的信号**。★ 判据（待做）：表达式需要「按台账条件判断其字段」⇒ 现有 9 个原语表达不了，记于此以免遗忘。"
+  }
 }
