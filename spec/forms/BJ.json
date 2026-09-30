@@ -1,0 +1,320 @@
+{
+  "doc_type": "BJ",
+  "label": "比价表",
+  "prefix": "BJ",
+  "number_format": "BJ-YYMM-####",
+  "version": "1.0",
+  "date": "2026-10-01",
+  "generated_by": "WorkBuddy",
+
+  "sources": {
+    "tool_table": "★★ **关键权威源＝工具表 `采购方式与留痕`**（不是 `表单字段清单` —— 该表**未列 BJ 字段组**）：**R6**（采三档 >5,000 元：采购方式「询比价（不少于 3 家有效报价）」· 强制留痕材料「询价单、**比价表**、**选定理由**、主管领导 ＋ 项目总经理审批单、合同、验收记录、集团提交流转单」· 内控要点「★ **三家报价须独立获取，报价单位不得相互关联**；★ **比价表须含技术符合性评价栏**」）＋ **R19**「★ **采购方式的选择由采购经办人在比价表「选定理由」栏说明，不得事后补写**」。",
+    "chain": "spec/chain.json#doc_chains.BJ —— `label: 比价表` · `prefix: BJ` · `ledger: []` · `env_count: 0` · ★ note：「**无独立审批链、不落账**（**嵌入采三档询比价环节**）」；★ 同环节的 `RFQ`（询价单）带 `parent: \"PR@rfq\"`。",
+    "ledger": "spec/ledger-mapping.json#doc_to_ledger.BJ = `[]` —— ★ **不落账、无落账自检**（判据 `S12` 锚定，本文件**必须**写空数组）。",
+    "enum": "spec/enums.json#procure_methods（5 值：直采／询比价／招标／竞争性谈判／单一来源）＋ `rule`「**单一来源须附理由书；不得事后补写**」。",
+    "institution": "费用管理办法V4.0 —— **第二十条**（采三档：询比价**不少于 3 家**，并**编制比价表**）· **第二十三条**（报价与资质审查）· 第三十四条（三单匹配）",
+    "resolution": "spec/RESOLUTIONS.md（**R-22**：`RFQ`／`QC` 侧字段以工具表 C6 ＋ 代码侧为准，须标注「制度未明说」/ **R-20#14** 采购方式取并集 5 值 / **R-09** 采三档加强链节点顺序）"
+  },
+
+  "ledger": [],
+
+  "ledger_resolution": "★★ **本单不落台账、也没有落账自检** —— 这一点必须说清，免得后人以为漏了一条 check：\n· `ledger-mapping.json#doc_to_ledger.BJ = []`（判据 `S12` 锚定，本文件**必须**写空数组）；\n· `chain.json#doc_chains.BJ` 明写「**无独立审批链、不落账**（**嵌入采三档询比价环节**）」；\n· ★ **但它的数据不能丢**：工具表 R6 把「询价单、比价表、选定理由」列为**强制留痕材料**，并明写「**无留存即视为未执行程序**」 ⇒ ★ 留存靠**附件与随主单引用**（同环节 `RFQ` 的 `parent = PR@rfq`，即随主单 `PR` 留痕）。\n· ⇒ ★ **故本单无 `ledger_*_written` 判据**；而与之相对，`SS`／`PC`／`QC`／`GR`／`SUB` **都各有落账自检** —— ★ **区别不在有没有用，而在「该不该落账」**。★ 判据的存在与否，本身就是规格的一部分。",
+
+  "routes": {
+    "_authority": "★ 权威源＝`spec/chain.json#doc_chains.BJ`（`env_count = 0`）—— **本文件不得与之冲突**",
+    "no_chain": "★★ **无独立审批链、不落账**：本单**不是一张要审批的单据**，而是**采三档「询比价」环节的产出物** —— 由**采购经办人**在组织询价时一并编制。",
+    "where_it_lives": "★ 承载环节＝`chain.json#routes.purchase_tier3.nodes[1]`（`rfq` —— **询比价（≥3 家）**，`actor: purchaser`）＋ `nodes[3]`（`pgm_confirm` —— **项目总经理确认拟成交单位**）⇒ ★ **本单的结论要在节点 ③ 被审批使用**。",
+    "why_no_chain": "★ 理由：比价是**执行动作**（谁去问、问了几家、为什么选这家），**不是审批动作** ⇒ 给它单设审批链等于**同一件事审两遍**；★ 真正需要把关的是「**跟谁买、什么价**」（`pgm_confirm`）与「**付款条件**」（合同两级审批）⇒ 那两处已有节点。",
+    "role": "★★ **本单在制度里的真正身份**：工具表 R19 写「**采购方式的选择由采购经办人在比价表「选定理由」栏说明**」 ⇒ ★ **它是「为什么选这家、为什么用这个采购方式」的唯一正本说明**；★ 而且**不得事后补写**（同一句明文）⇒ ★ 故本单的 `selection_reason` **提交后不可修改**（见 `checks#selection_reason_immutable`）。"
+  },
+
+  "sections": [
+    {
+      "id": "header",
+      "label": "表头",
+      "fields": [
+        {
+          "name": "biz_no",
+          "label": "比价表号",
+          "type": "string",
+          "required": true,
+          "source": "system",
+          "immutable_after_submit": true,
+          "is_business_key": true,
+          "origin": "code",
+          "origin_ref": "代码侧 `data_templates.py` BJ ＋ `chain.json#doc_chains.BJ.prefix`",
+          "rule": "格式 BJ-YYMM-####；提交后不可修改"
+        },
+        {
+          "name": "applicant",
+          "label": "采购经办人",
+          "type": "person",
+          "required": true,
+          "source": "system",
+          "immutable": true,
+          "origin": "chain",
+          "origin_ref": "`routes.purchase_tier3.nodes[1].actor = purchaser`",
+          "rule": "取当前登录人；★ 应为**该 PR 的采购经办人**（由主管领导在审批时指定，见第十条）",
+          "critical_note": "★★ 制度第十条已把「**审批人不得同时担任验收人**」定为回避规则，而本单是**执行动作** ⇒ ★ 本单**不重复设「经办人回避」校验**：经办人本来就**必须是**需求提出人以外的人（或上级指派时可为提出人本人，见 `R-27`）—— 那条判据的落点在 `PR`／`CT`（`no_self_purchaser`），**不在此处**。★ 同一规则两处实现＝漂移。"
+        },
+        {
+          "name": "applicant_department",
+          "label": "所属部门",
+          "type": "department",
+          "required": true,
+          "source": "system",
+          "immutable": true,
+          "origin": "code",
+          "origin_ref": "通用表头（同 PR）",
+          "note": "★ 用于留痕与统计；本单无审批链，不参与分支判定"
+        },
+        {
+          "name": "related_biz_no",
+          "label": "关联采购申请单号（PR）",
+          "type": "string",
+          "required": true,
+          "source": "system",
+          "immutable": true,
+          "origin": "chain",
+          "origin_ref": "`doc_chains.RFQ.parent = \"PR@rfq\"`（同环节的询价单挂在 PR 的 rfq 节点）",
+          "rule": "★ 从关联 PR 带入；★ 对应关系为**一对多**（同一 PR 可分标段／分品类多次比价）",
+          "critical_note": "★★ 按 **Q14 定稿**，单据间关联一律用单一键 `related_biz_no`（透传 `ext_json`）。★ 检索**等值匹配、绝不前缀**（`README` 定案 #15/#28）。"
+        },
+        {
+          "name": "procure_method",
+          "label": "采购方式",
+          "type": "enum",
+          "required": true,
+          "source": "user",
+          "enum_ref": "spec/enums.json#procure_methods",
+          "origin": "tool_table",
+          "origin_ref": "工具表 R19（采购方式的选择**在本单「选定理由」栏说明**）",
+          "rule": "★ 本单存在 ⇒ 取值应为 **询比价 ／ 招标 ／ 竞争性谈判**；★ **不得为「单一来源」**（见 `checks#not_single_source`）",
+          "critical_note": "★★ **本单与该字段是「谁说明谁」的关系**：工具表 R19 把「采购方式的选择」**指派给本单的选定理由栏** ⇒ ★ 故 `CT` 上的 `procure_method` **在口径上应源自本单**（而不是两个地方各写一遍、各自为政）。★ 这也是本项目「不制造第二份真相」的落点之一。"
+        },
+        {
+          "name": "procurement_subject",
+          "label": "比价标的",
+          "type": "string",
+          "required": true,
+          "source": "user",
+          "origin": "code",
+          "origin_ref": "代码侧 BJ",
+          "rule": "一句话说清在比什么（品名／规格概要）；明细见关联 PR"
+        }
+      ]
+    },
+
+    {
+      "id": "quotes",
+      "label": "报价明细（≥3 家有效报价）",
+      "fields": [
+        {
+          "name": "quote_count",
+          "label": "有效报价家数",
+          "type": "number",
+          "required": true,
+          "source": "system",
+          "computed_from": "本单 `quotes` 明细中「是否有效 = 是」的条数",
+          "origin": "tool_table",
+          "origin_ref": "工具表 R6（「询比价（**不少于 3 家有效报价**）」）",
+          "rule": "★ **系统计数、不可手填**（手填＝给自己一个说「够了」的机会）",
+          "critical_note": "★★ 制度第二十条与工具表 R6 都写「**不少于 3 家**」⇒ ★ 这是**采三档的成立条件**，不是「尽量多问几家」。★ 而 `quote_count` 必须由**明细自动计数** —— ★ 否则会出现「表上写着 3 家、明细里只有 2 家」这种**表格自己骗自己**的情形。"
+        },
+        {
+          "name": "quotes",
+          "label": "报价明细",
+          "type": "textarea",
+          "required": true,
+          "source": "user",
+          "origin": "tool_table",
+          "origin_ref": "工具表 R6（强制留痕材料「询价单、比价表」）",
+          "rule": "★ 逐家列出：**报价单位 · 报价金额 · 报价日期 · 是否有效 · 与本项目其他报价单位是否存在关联关系**；★ 明细条数须与 `quote_count` 一致",
+          "critical_note": "★★ **本字段用文本承载结构，是妥协而不是选择**：`forms/*.json` 现有的字段类型里**没有「明细表」**（只有 `string`／`enum`／`number`／`money_cents`／`textarea`／`attachment` 等）⇒ ★ 逐家报价若要真正机读，需要**新增一个明细行类型**（属 `spec/` 的**结构扩展**，**须两侧同批**）。★ 故本版**先用文本 ＋ 逐项判据兜住关键约束**（家数、独立性声明、选定单位必须在报价内），★ 并把「结构化明细」记为 `known_gaps` 第 1 条。★ **代价已说清**：文本明细下，系统只能校验「能解析出来的部分」，**不能校验「漏写的那几家」**。"
+        },
+        {
+          "name": "all_quotes_independent",
+          "label": "报价单位相互独立（声明）",
+          "type": "boolean",
+          "required": true,
+          "source": "user",
+          "origin": "tool_table",
+          "origin_ref": "工具表 R6 内控要点「★ **三家报价须独立获取，报价单位不得相互关联**」",
+          "rule": "★ 采购经办人**逐家核对后声明**；★ 若存在关联关系 ⇒ **必须为「否」并剔除关联报价**（或改走招标／竞争性谈判）",
+          "critical_note": "★★ **这是本单最重要、也最容易被绕过的一条**：工具表把它列为**内控要点**（不是建议）—— ★ 三家关联单位一起报价，本质是**围标**，比价就完全失效了。★ **而系统无法核验**（没有工商股权数据源）⇒ ★ 唯一能做的是把它变成**一条明确的、留痕的、为假的后果自负的声明**：`checks#quotes_must_be_independent` 会在本字段为「否」时**拒绝提交**。★ 与 `SUB` 的「收款账户回拨确认」同族：**系统管不了事实，就管住「必须做过这个动作且留下痕迹」**。"
+        }
+      ]
+    },
+
+    {
+      "id": "evaluation",
+      "label": "技术符合性与选定",
+      "fields": [
+        {
+          "name": "technical_compliance",
+          "label": "技术符合性评价",
+          "type": "textarea",
+          "required": true,
+          "source": "user",
+          "origin": "tool_table",
+          "origin_ref": "工具表 R6 内控要点「★ **比价表须含技术符合性评价栏**」",
+          "rule": "★ 逐家给出**技术符合性判断**（符合／不符合，及理由）；★ 不符合者即使报价最低也**不得被选定**",
+          "critical_note": "★★ **为什么工具表要单列这一栏**：只比价格会选出**最便宜但用不了**的东西 ⇒ ★ 技术符合性是**先决条件**，价格是**在合格者中比较**。★ 故本栏**必填**，且与 `selected_quote` 之间有约束（见 `checks#selected_must_be_compliant`）。"
+        },
+        {
+          "name": "selected_supplier",
+          "label": "选定单位",
+          "type": "string",
+          "required": true,
+          "source": "user",
+          "origin": "chain",
+          "origin_ref": "`routes.purchase_tier3.nodes[3]`（`pgm_confirm` —— **项目总经理确认拟成交单位**）",
+          "rule": "★ **必须是报价明细中「有效」且「技术符合」的一家**（见 `checks`）",
+          "critical_note": "★★ **本字段是「比价表」之所以有用的原因** —— 没有它，比价表只是一份报价清单（「问了价」，但没「选谁」）。★ 它随后要被 `pgm_confirm` 节点审批确认 ⇒ ★ **本单的结论是下游审批的输入**，故其取值必须**可追溯到本单明细内**（不能填一个没报过价的单位）。"
+        },
+        {
+          "name": "selected_reason",
+          "label": "选定理由",
+          "type": "textarea",
+          "required": true,
+          "source": "user",
+          "origin": "tool_table",
+          "origin_ref": "工具表 R6「**选定理由**」＋ ★★ **R19**「采购方式的选择由采购经办人在比价表「选定理由」栏说明，**不得事后补写**」",
+          "rule": "★ 写清**两件事**：① **为什么选这家**（价格／技术／交期／服务的取舍）；② **为什么用这个采购方式**（R19 明文要求）。★ **提交后不可修改**",
+          "critical_note": "★★★ **本字段是全案「不得事后补写」这一纪律的唯一落地位点**：`enums.json#procure_methods.rule` 也写着「单一来源须附理由书；**不得事后补写**」⇒ ★ 两句分开的规则，**指向同一个动作：理由必须在事前形成、且不能回头改**。⇒ ★ 实现上必须**提交后不可改**，否则「不得事后补写」**在系统里不成立**（用户随时能改，事后补写就变成了事后编辑）。"
+        },
+        {
+          "name": "non_price_factors",
+          "label": "非价格因素说明",
+          "type": "textarea",
+          "required": false,
+          "source": "user",
+          "origin": "code",
+          "origin_ref": "代码侧 BJ（工具表未单列）",
+          "rule": "★ 当**未选最低价**时**必填**（说明价差之外的理由：交期／质保／工艺适配／既往履约）",
+          "critical_note": "★ 这条**不是形式要求**：工具表 R6 只说「须含技术符合性评价栏」，但既然允许「选贵的」，就必须**留下为什么选贵的** —— ★ 否则事后复核时，「合理取舍」与「有猫腻」**长得一模一样**。"
+        }
+      ]
+    },
+
+    {
+      "id": "attachment",
+      "label": "附件",
+      "fields": [
+        {
+          "name": "rfq_files",
+          "label": "询价单（RFQ）",
+          "type": "attachment",
+          "required": true,
+          "source": "user",
+          "origin": "tool_table",
+          "origin_ref": "工具表 R6 强制留痕材料「**询价单**」",
+          "rule": "★ **必填**：比价的「过程证据」（问了谁、问什么、什么时候问）",
+          "critical_note": "★ 工具表明写「**无留存即视为未执行程序**」 ⇒ ★ 附件不是「佐证材料」，而是**程序是否执行过的唯一证据**。"
+        },
+        {
+          "name": "quote_files",
+          "label": "报价单原件",
+          "type": "attachment",
+          "required": true,
+          "source": "user",
+          "origin": "tool_table",
+          "origin_ref": "工具表 R6（「报价单或框架协议价、报价依据须可追溯」）",
+          "rule": "★ **必填**：各家报价的原始凭据（邮件／传真／盖章报价单）",
+          "critical_note": "★★ **为什么必须传原件而不是只填一个金额**：「三家报价须**独立获取**」这条要点，**只有原件才能看出是否独立**（同一笔迹／同一邮箱／同一天传真 ⇒ 手工围标）。★ 系统核验不了，但**原件留下来，事后人能查**。"
+        }
+      ]
+    }
+  ],
+
+  "checks": [
+    {
+      "id": "min_three_valid_quotes",
+      "when": "submit",
+      "assert": "`quote_count`（**由明细自动计数**）≥ 3",
+      "else": "★ 拒绝：「采三档询比价须不少于 3 家有效报价，当前 N 家」",
+      "origin": "institution",
+      "origin_ref": "制度**第二十条**（询比价**不少于 3 家**，并编制比价表）＋ 工具表 R6（「不少于 3 家有效报价」）",
+      "severity": "hard",
+      "note": "★★ **两条要点**：① **门槛是制度明文**（不是建议），且采三档的**内控强度就建立在「有得挑」之上** ⇒ 少于 3 家时正确出路是**改走竞争性谈判或单一来源通道**，而不是「就这两家选一个」；② ★ **家数必须由明细自动计数** —— 若让填写人手填，它必然被填成 3（★ **表格会自己骗自己**）。★ 与 `GR#acceptance_group_members_complete` 同款：**成员/家数一律由明细推导，不接受声明**。"
+    },
+    {
+      "id": "quotes_must_be_independent",
+      "when": "submit",
+      "assert": "`all_quotes_independent == true`",
+      "else": "★ 拒绝：「报价单位之间存在关联关系时不得按比价结果选定 —— 请剔除关联报价并补足 3 家独立报价，或改走招标／竞争性谈判」",
+      "origin": "tool_table",
+      "origin_ref": "工具表 R6 内控要点「★ **三家报价须独立获取，报价单位不得相互关联**」",
+      "severity": "hard",
+      "note": "★★★ **本判据的性质必须写清，否则会被误读**：★ **系统核验不了「两家公司是否关联」**（没有工商股权数据源）⇒ 本判据校验的**不是事实，而是声明** —— 它的价值在于：**让人必须显式回答这个问题，并为「是」付出代价**（走不了比价、必须改通道）。★ **这仍然是有效的内控**：围标的典型形态是「没人被问过这个问题」；一旦要签字声明，风险就从「系统不知道」变成「有人明知故犯」。★ 与 `SUB#payee_change_requires_callback` **同族**：**系统管不了事实，就管住「必须做过这个动作且留下痕迹」**。★ 关联关系若**真实存在但声明为「否」** ⇒ ★ 属**违规**（制度层面处理），**不在系统可判定范围内** —— 这一点必须如实写明，不得暗示系统能发现围标。"
+    },
+    {
+      "id": "technical_compliance_filled",
+      "when": "submit",
+      "assert": "`technical_compliance` 非空，且**逐家**（按报价明细的条数）给出符合性判断",
+      "else": "★ 拒绝：「比价表须含技术符合性评价栏（工具表 R6 内控要点）」",
+      "origin": "tool_table",
+      "origin_ref": "工具表 R6 内控要点「★ **比价表须含技术符合性评价栏**」",
+      "severity": "hard",
+      "note": "★ **本判据只要求「填了」，不要求「结论正确」** —— ★ 与 `SUB#tolerance_note_when_over` 同款：**技术判断是人的专业判断，系统的职责是让它必须发生且留痕**。★ 若把它写成「必须判为符合」，就变成系统替技术部门下结论。"
+    },
+    {
+      "id": "selected_must_be_valid_and_compliant",
+      "when": "submit",
+      "assert": "`selected_supplier` **必须出现在报价明细中**，且该家在明细里同时标注为「**有效**」与「**技术符合**」",
+      "else": "★ 拒绝：「选定单位 X 不在有效且技术符合的报价之列」",
+      "origin": "chain",
+      "origin_ref": "工具表 R6（「询比价（不少于 3 家**有效**报价）」＋「技术符合性评价栏」）＋ `routes.purchase_tier3.nodes[3]`（项目总经理确认**拟成交单位**）",
+      "severity": "hard",
+      "note": "★★ **这条防的是最典型的「比价做样子」**：**找了 3 家来陪标，最后选了一家没报价的（或已判技术不符合的）** ⇒ ★ 若没有这条，前面所有判据都白做（家数够了、也独立了、技术栏也填了，**结论却跟它们无关**）。★ 与 `GR#acceptance_group_members_complete` 的**双向**思路同源：**不仅「该有的要有」，还要「用的必须是清单里的」**。★ 实现上须**从 `quotes` 文本明细中解析**（见 `quotes.critical_note` 已说明其局限）。"
+    },
+    {
+      "id": "selection_reason_immutable",
+      "when": "提交后",
+      "assert": "★ `selected_reason` **提交后不得修改**（与其同时保护的还有 `procure_method` 与 `selected_supplier`）",
+      "else": "★ **不静默通过**：拒绝修改并提示「选定理由不得事后补写（工具表 R19）」",
+      "origin": "tool_table",
+      "origin_ref": "★★ 工具表 **R19**：「采购方式的选择由采购经办人在比价表「选定理由」栏说明，**不得事后补写**」＋ `enums.json#procure_methods.rule`（「不得事后补写」）",
+      "severity": "hard",
+      "note": "★★★ **本判据是本单的立身之本**：工具表把「选定理由」定为**强制留痕材料**，两处明文都强调「**不得事后补写**」—— ★ 而「不得事后补写」在系统里的**唯一可执行形态就是「提交后不可改」**：★ 否则用户随时可以改，**「事前形成」这件事在系统上根本不成立**（改完就是事后补写的）。⇒ ★ 这不是「字段只读」这种界面细节，而是**一条纪律能否成立的技术前提**。★ 类：`chain.json#conventions.naming` 之外的**「不可变」也是契约**。"
+    },
+    {
+      "id": "not_single_source",
+      "when": "submit",
+      "assert": "`procure_method != 单一来源`",
+      "else": "★ 拒绝：「采购方式为『单一来源』时不得使用比价表通道 —— 请走单一来源理由书（SS）」",
+      "origin": "institution",
+      "origin_ref": "制度**第五十条**（独家采购单列通道）＋ 工具表 R8（单一来源为「任何金额（例外）」独立行）＋ ★ **本条同时关闭 `SS.json#known_gaps` 的「与 BJ／RFQ 互斥未表达」**",
+      "severity": "hard",
+      "note": "★★★ **本条就是 `SS` 交付时留下的那个缺口，现在关闭**：`SS.json#known_gaps` 原文——「★ 「单一来源」意味着**没有询比价** ⇒ 逻辑上本单与 `BJ`／`RFQ` 互斥。★ 但 `chain.json` 未表达该互斥，本表单也未加判据（因缺少『该 PR 是否已存在 BJ』的查法）。⇒ **建议在 `BJ` 交付时一并定义**」。★ **现在定了**：互斥的判定**不需要在 `chain.json` 里表达**，也不需要跨单据查询 —— ★ **同一张比价表自己就知道**：它要求选定的单位来自**≥3 家独立报价**，而单一来源的**前提正是「凑不出 3 家」** ⇒ ★ 两者在**语义上**不可能同时成立，且**在数据上**表现为 `procure_method` 这一个字段。⇒ **判据只需一句**：本单存在 ⇒ 方式不得为「单一来源」。★ 这是「**表面冲突 ⇒ 找到一个字段就知道答案**」的一个实例（同族：`R-30`「证明不可达」优于「裁定谁对」）。★ **反向的一半**（`SS` 存在 ⇒ 不得再有 `BJ`）：★ 由 `SS#fixed_asset_conflict` 的 `soft` 口径与实际业务决定，**不在本单设**（避免两处各判一半）。"
+    }
+  ],
+
+  "known_gaps": [
+    {
+      "gap": "★★ ★ **`quotes`（报价明细）目前只能用文本承载，无法真正机读**",
+      "status": "★ 已知限制（**我方主动写明，不是没发现**）",
+      "note": "★ 根因：`forms/*.json` 现有字段类型**没有「明细行」**（只有 `string`／`enum`／`number`／`money_cents`／`textarea`／`attachment`／`date`／`boolean` 等）—— ★ 而比价表**天然是明细表**（N 家 × 若干列）。\n★ **后果（如实说清）**：① `min_three_valid_quotes` 与 `selected_must_be_valid_and_compliant` 只能**从文本里解析**（「能解析出来的部分」），★ **核不出「漏写的那几家」**；② `quote_count` 的「由明细自动计数」在文本形态下**只能做到形式上的解析计数**。\n★ **正解（建议）**：★ **新增一个「明细行」字段类型**（如 `table`／`rows`），承载「逐家报价」与「合同明细／PR 明细」等**所有明细类字段** —— ★ 属 **`spec/` 的结构扩展 ⇒ 须两侧同批**（我方改类型定义与判据，mimo 改加载器与表单渲染）。★ 建议**随 `CT`／`PR` 明细的同类需求一并做**（`CT.json#known_gaps` 已登记「合同含**多标的**时的字段结构」，**同一个根因**）。"
+    },
+    {
+      "gap": "「**有效**报价」的**判定标准**未给",
+      "status": "未定（不阻塞本单）",
+      "note": "★ 制度与工具表都只说「**不少于 3 家有效报价**」，**未定义「有效」**（是「在报价有效期内」？「资质满足」？「技术符合」？还是三者都要？）。★ 现行：由采购经办人在明细里**逐家标注**「是否有效」。★ 建议随「报价有效期」字段（`RFQ` 侧）一并明确 —— ★ **`RFQ`（询价单）交付时应一并定**：报价有效期属于询价单的要求。"
+    },
+    {
+      "gap": "「报价单位**不得相互关联**」**无从核验**（只有声明）",
+      "status": "★ 已如实写进判据的 `note`（**不阻塞**）",
+      "note": "★ 系统**没有**工商股权／实际控制人数据源 ⇒ 只能记录**声明**。★ **不得让这条看起来像「系统能发现围标」** —— ★ 判据 `quotes_must_be_independent` 的 `note` 已明写这一点。★ 若日后接入企业信息查询服务（如 `qcc` 类），可**升级为真核验**（结构不变，加一次外部查询即可）。"
+    },
+    {
+      "gap": "本单与 `RFQ`（询价单）的**字段分工**未细化",
+      "status": "未定（**随 `RFQ` 交付时定**，不阻塞）",
+      "note": "★ 两者同属采三档的 `rfq` 环节（工具表 R6 的强制留痕材料同时列了「**询价单**、**比价表**」）⇒ ★ **天然是一对**：`RFQ` 记**问了什么、向谁问、何时问**（过程），`BJ` 记**收到了什么、怎么选**（结果）。★ 建议 `RFQ` 交付时：① 由 `BJ` 引用 `RFQ` 单号（而不是各写一遍报价信息）；② 「报价有效期」落 `RFQ`。★ 本单**先不引用** `RFQ` 单号（`RFQ` 尚未交付），★ 记为 `known_gaps` 而非臆造一个字段。"
+    },
+    {
+      "gap": "本单**不落台账**，但工具表把它列为**强制留痕材料**",
+      "status": "★ 已裁定（**不是矛盾**）",
+      "note": "★ 工具表 R2 明写「强制留痕材料」是「**审计核查时唯一被认可的证据，无留存即视为未执行程序**」⇒ ★ 「留痕」的载体是**单据与附件**，**不等于「落台账」** —— 台账是**汇总视图**，单据是**原始凭证**。⇒ ★ 本单**不落账**（`ledger: []`）但**必须留存**（`rfq_files` ＋ `quote_files` **必填**）✓。★ 这一条把这层区分写清，免得后人以为「不落账＝不用存」。"
+    }
+  ]
+}
