@@ -151,7 +151,8 @@ func TestQAMigrationFreshAndIdempotent(t *testing.T) {
 	//   0015 审批提交幂等键唯一索引（M4/d9，action='approval_submit_idem'，照 0002 款式）。
 	//   0016 附件暂存表 t_attachment_staging（M6/D4：提交前上传 → 事务内绑定）。
 	//   0017 运营性常量表 t_constant（T2/R-24：只停用不删 + 值快照）。
-	const wantMigrations = 17
+	//   0018 角色代理人 t_role_agent（N-028：每角色至多 1 条 active + 只停用不删）。
+	const wantMigrations = 18
 	if total != wantMigrations {
 		t.Errorf("迁移版本总数 = %d, 期望 %d（重复执行不得重复登记）", total, wantMigrations)
 	}
