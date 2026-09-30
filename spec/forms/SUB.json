@@ -1,0 +1,409 @@
+{
+  "doc_type": "SUB",
+  "label": "集团提交流转单",
+  "prefix": "SUB",
+  "number_format": "SUB-YYMM-####",
+  "version": "1.0",
+  "date": "2026-10-01",
+  "generated_by": "WorkBuddy",
+
+  "sources": {
+    "tool_table": "★★ **本组是工具表 `表单字段清单` 给得最全的一组**（R39–R47，**9 个字段且逐条带校验说明**）—— 与 `QC`／`GR`（工具表未列／只给骨架）不同，本表**字段与规则均以工具表原文为准**，我方只做**结构化与来源标注**。",
+    "chain": "spec/chain.json#doc_chains.SUB —— `prefix: SUB` · `ledger: [L06]` · `env_count: 1` · `nodes`（**6 个节点**）· ★ `hard_prerequisite`：「**1,000 元以上采购必须已完成合同审批**」· ★ `deadline_workdays: 3`。",
+    "ledger": "spec/ledger-mapping.json#ledgers.L06（`storage: split_required`，`producer: [SUB]`）—— ★★ 工具表原文：「它仍是全表里**唯一「没有人工维护就会完全失去意义」的台账**」；★ `split_note`：**必拆两张**。",
+    "enum": "spec/enums.json#group_status（5 值）· `#three_way_match`（3 值）· `#payment_method`（2 值，★ `derived_from: payment_method_input` —— `R-10`）",
+    "institution": "费用管理办法V4.0 —— **第三十四条**（合同付款前应当完成**三单匹配**）· **第五十九条**（台账；★ 制度侧为 #6 与 #10 **两条**，工具表合并为一，见 `R-04`）；★ **批复 B8**（集团受理编号／流程状态／付款完成日期**三字段不再要求系统回填，改由综合运营主管依集团人工反馈登记**）；★ **批复 A3／A5**（**只处理湖南的问题**：范围**止于「提交集团」**）；★ **D5**（**已执行的操作不撤回**）。",
+    "resolution": "spec/RESOLUTIONS.md（**R-04** L06 制度两条 ↔ 工具表一条 · **R-10** 付款方式输入源与派生只读 · **R-20#13** 制度写「集团流程编号」、工具表写「集团受理编号」⇒ **统一用制度名** · **R-28** 范围止于提交集团）"
+  },
+
+  "ledger": ["L06"],
+
+  "ledger_resolution": "★★ **本单是 `L06` 的唯一生产者**，而 `L06` 是**全系统里唯一「没有人工维护就会完全失去意义」的台账**（工具表原文）—— ★ 因为它的 **4 个可写字段全部依赖人工登记**（集团那边发生了什么，湖南侧不会自动知道）。\n★★ **必拆两张**（`L06.split_note`）：\n· **① 同步存档表（只读）**：`biz_no` · `related_docs` · `item_type` · `amount_cents` · `payment_method` · `hunan_completed_at` —— 由**本单提交时一次性写入**；\n· **② 运营表（可写，4 列全部人工登记）**：`submit_group_at`（提交集团日期）· `group_process_no`（集团流程编号）· `group_status`（集团流程状态）· `payment_completed_at`（付款／报销完成日期）；\n· ★ 另有 2 个可写列由本单承载：`handover_receipt`（移交凭证）与 `reject_reason_and_disposition`（驳回原因与处置）。\n★★ **为什么要把「拆两张」写进规格**：只读列与人工列**混在一张表**里，会出现「**同一个页面上，有的格子系统管、有的格子人管**」—— 而 ★ **这正是「假配置」的温床**：运维改了一个系统字段却毫无效果，改了一个人工字段却以为系统会填。⇒ **物理拆开，让「谁负责」一眼可见**。★ 具体表名／DDL 归 mimo（`COLLAB §2` 责任域）。",
+
+  "routes": {
+    "_authority": "★ 权威源＝`spec/chain.json#doc_chains.SUB`（`env_count = 1`，`nodes` 6 个）—— **本文件不得与之冲突**",
+    "six_nodes": "① **判断可提交**（综合运营主管）→ ② **归口移交** → ③ **取得移交凭证**（★ **无凭证视为未提交**）→ ④ **时限（3 个工作日）** → ⑤ **人工登记集团侧回执**（★ 仅人工登记，**不要求系统回填、不作数据对齐**）→ ⑥ **驳回处置**（采购经办人 ／ 项目总经理）。",
+    "hard_prerequisite": "★★ **1,000 元以上采购，必须先完成合同审批**（`doc_chains.SUB.hard_prerequisite`）⇒ 见 `checks#contract_approved_when_over_1000`。★ 这也是「**有合同即走对公**」这条付款口径（`R-26`）的**流程落点**：合同没批完，谈不上付款。",
+    "scope_declaration": "★★ **湖南侧的范围止于「提交集团」**（批复 A3／A5，`R-28`）：**集团内部怎么走、什么时候付款，不是本办法的范围，系统也不去管**。⇒ ★ 本单只做两件事：**把该齐的东西交出去**（关联单据齐全 ＋ 移交凭证），**把集团反馈记回来**（4 个人工字段）。",
+    "deadline": "★ **湖南侧流程完成后 3 个工作日内提交**（`deadline_workdays: 3`，工具表 R44 同）。★ **工作日口径**＝**不含法定节假日、只跳周六日**（`Q18` 定案，见 `submission.HolidayChecker` 的可注入挂点）。"
+  },
+
+  "sections": [
+    {
+      "id": "header",
+      "label": "表头",
+      "fields": [
+        {
+          "name": "biz_no",
+          "label": "流转单号",
+          "type": "string",
+          "required": true,
+          "source": "system",
+          "immutable_after_submit": true,
+          "is_business_key": true,
+          "origin": "tool_table",
+          "origin_ref": "表单字段清单 R39（「流转单号」，格式 SUB-YYMM-####）",
+          "rule": "格式 SUB-YYMM-####；提交后不可修改",
+          "critical_note": "★★ 工具表原文称其为「**湖南侧与集团侧的双向对应键**」 ⇒ ★ 本单号是**跨系统唯一可对齐的东西**（`group_process_no` 是集团方编号、可能迟迟拿不到）⇒ ★ **对外沟通、移交、事后核对一律引用本单号**。"
+        },
+        {
+          "name": "applicant",
+          "label": "提交人",
+          "type": "person",
+          "required": true,
+          "source": "system",
+          "immutable": true,
+          "origin": "chain",
+          "origin_ref": "`doc_chains.SUB.nodes` 全部 6 个节点 actor 均为 `ops_supervisor`（末节点另有 `purchaser | project_general_manager`）",
+          "rule": "取当前登录人；★ 本单**由综合运营主管提交**（不是申请人）"
+        },
+        {
+          "name": "applicant_department",
+          "label": "所属部门",
+          "type": "department",
+          "required": true,
+          "source": "system",
+          "immutable": true,
+          "origin": "code",
+          "origin_ref": "通用表头（同 PR）",
+          "note": "★ 用于留痕与统计；本单**无审批链**，不参与分支判定"
+        },
+        {
+          "name": "related_biz_no",
+          "label": "主关联单号",
+          "type": "string",
+          "required": true,
+          "source": "system",
+          "immutable": true,
+          "origin": "resolution",
+          "origin_ref": "**Q14 定稿**：单据间关联一律用单一键 `related_biz_no`（透传 `ext_json`）",
+          "rule": "★ 取该笔业务的**主单号**（合同 `CT` 或申请 `PR`／`SA`）；★ **明细清单见 `related_docs`**（本字段只承担「这笔是哪个业务」的锚点）",
+          "critical_note": "★ 检索一律**等值匹配、绝不前缀**（`README` 定案 #15/#28）。"
+        },
+        {
+          "name": "item_type",
+          "label": "事项类型",
+          "type": "enum",
+          "required": true,
+          "source": "user",
+          "origin": "ledger",
+          "origin_ref": "`L06.fields[item_type]`",
+          "rule": "该笔提交集团的事项类型（采购付款 ／ 费用报销 …）",
+          "known_gap": "★★ **本字段在 `spec/enums.json` 里没有对应枚举** —— `L06` 列了它，但**没有任何权威来源给出取值集**。⇒ 见 `known_gaps` 第 1 条。★ **我方不自行编造枚举**（编了就是「事实上的标准」且无依据）。"
+        },
+        {
+          "name": "amount_cents",
+          "label": "金额",
+          "type": "money_cents",
+          "required": true,
+          "source": "system",
+          "origin": "ledger",
+          "origin_ref": "`L06.fields[amount_cents]`",
+          "rule": "★ 从关联单据带入（合同额 或 申请额）；单位为**分**（`chain.json#conventions.money_unit`）",
+          "critical_note": "★ 是「**1,000 元以上必须先完成合同审批**」这条前置判据的**输入**（`checks#contract_approved_when_over_1000`）⇒ ★ 金额取自单据、**不手填**（手填即给前置判据留后门）。"
+        },
+        {
+          "name": "payment_method",
+          "label": "付款方式",
+          "type": "enum",
+          "required": true,
+          "source": "system",
+          "enum_ref": "spec/enums.json#payment_method",
+          "readonly": true,
+          "origin": "enum",
+          "origin_ref": "表单字段清单 R42（来源＝**系统带入**）＋ `R-10`（派生自 `payment_method_input`）",
+          "rule": "**垫付报销 ／ 公户转账**；★ **系统带入、只读**（来源是 `SA` 的「支付方式」输入）",
+          "critical_note": "★★ 工具表原文：「**决定该项能否提前支出：垫付类不受集团进度约束，公户转账类必须等集团**」 ⇒ ★ 它**不是**一个展示字段，而是**付款时序的开关**。★ 但请注意：湖南侧**止于提交**（`R-28`）⇒ ★ **「必须等集团」这句话约束的是「什么时候能付款」，不是「能不能提交」**；本单**不据此拦截提交**（见 `known_gaps` 第 3 条：谁是该约束的消费端，待随集团侧口径明确）。"
+        }
+      ]
+    },
+
+    {
+      "id": "docs_prereq",
+      "label": "关联单据与提交前置",
+      "fields": [
+        {
+          "name": "related_docs",
+          "label": "关联单据清单",
+          "type": "textarea",
+          "required": true,
+          "source": "user",
+          "origin": "tool_table",
+          "origin_ref": "表单字段清单 R40（「关联单据清单（PR / 合同 / GR / 发票 / 比价表）」）＋ `L06.fields[related_docs]`",
+          "rule": "★ **提交集团时须齐全，缺项不得提交** —— 按业务实际应齐的清单逐项列出（例：`PR-2609-0001` / `CT-2609-0003` / `GR-2609-0002` / 发票号 / 比价表）",
+          "critical_note": "★★ **本字段是「能不能提交」的核心**（见 `checks#related_docs_complete`）。★ 工具表另注「**清单由集团确认后固化**」 —— ★ 那句话说的是**哪种业务要交哪些单据的清单本身**由集团确认后固定下来，**不是**说本字段可以后改 ⇒ ★ 本字段**提交后不可修改**（`immutable_after_submit`）。",
+          "known_gap": "★ 「清单由集团确认后固化」里的**固化动作由谁执行**（湖南侧维护 ／ 集团回复后录入）**未定** ⇒ 见 `known_gaps` 第 4 条。"
+        },
+        {
+          "name": "contract_approved",
+          "label": "合同审批已完成",
+          "type": "boolean",
+          "required": true,
+          "source": "system",
+          "computed_from": "关联合同单（`CT`）的审批状态",
+          "origin": "chain",
+          "origin_ref": "`doc_chains.SUB.hard_prerequisite`：「**1,000 元以上采购必须已完成合同审批**（合同审批为提交集团的硬性前置）」",
+          "rule": "★ **系统判定、不可手改**：金额 ≥ 1,000 元 ⇒ 必须取到关联合同的**已完成审批**证据；< 1,000 元 ⇒ 本字段不适用（采一档不签合同，见第十八条）",
+          "critical_note": "★★ **为什么必须由系统判定而不是让提交人勾选**：这一条是**前置条件**（「没批完不许交」），★ 若做成一个勾选框，则**唯一的效果是让人多勾一下** —— 前置条件变成了声明。★ 与 `BA` 的「防拆分」同款口径：**有系统就不该让人来声明**。"
+        }
+      ]
+    },
+
+    {
+      "id": "payee",
+      "label": "收款账户核验",
+      "fields": [
+        {
+          "name": "payee_account_verified",
+          "label": "收款账户已核验",
+          "type": "boolean",
+          "required": true,
+          "source": "user",
+          "origin": "tool_table",
+          "origin_ref": "表单字段清单 R41（「收款账户核验」，布尔）",
+          "rule": "★ 是否**与合同预留账户一致**；★ 默认取「是」，**变更过则必须改为「否」并走回拨确认**",
+          "critical_note": "★★ **这是全案里唯一一条「反欺诈」性质的校验**：工具表原文「**变更过的必须电话回拨确认**」—— ★ **改收款账户是典型的诈骗手法**（冒充供应商改账户），而系统**无法自动发现「这个账户是不是骗子给的」** ⇒ ★ 唯一能做的就是把「**必须电话回拨**」变成一条**留痕的、绕不过去的动作**。"
+        },
+        {
+          "name": "callback_confirmed",
+          "label": "已电话回拨确认",
+          "type": "boolean",
+          "required": false,
+          "source": "user",
+          "origin": "code",
+          "origin_ref": "★ **我方从 R41 的校验说明推导**（工具表只给了「收款账户核验」**一个**布尔）",
+          "rule": "★ `payee_account_verified = 否`（即**账户与合同预留不一致 / 变更过**）⇒ **本字段必填且必须为「是」**；一致时**不填**",
+          "known_gap": "★ 工具表只给了一个布尔字段，「变更过」与「已回拨确认」**两个语义**挤在一条说明里 ⇒ ★ 本字段与上一字段是**我方拆出来的**（见 `known_gaps` 第 2 条）。"
+        },
+        {
+          "name": "callback_note",
+          "label": "回拨确认备注",
+          "type": "textarea",
+          "required": false,
+          "source": "user",
+          "origin": "code",
+          "origin_ref": "同上（我方推导）",
+          "rule": "★ `callback_confirmed = 是` 时**必填**：写明**与谁、用什么号码、何时**确认（例：`与供应商张××经合同预留电话 138****1234 于 3 月 12 日 10:20 确认`）",
+          "critical_note": "★★ **为什么必须写清「与谁、什么号码」**：只勾一个「已确认」不留痕，事后**无法复核也没法追责** ⇒ ★ 这条留痕本身就是它的全部价值（同族：本项目反复出现「**没有数据**与**没有违规**不可区分」）。"
+        }
+      ]
+    },
+
+    {
+      "id": "match",
+      "label": "三单匹配结论",
+      "fields": [
+        {
+          "name": "three_way_match",
+          "label": "三单匹配结论",
+          "type": "enum",
+          "required": true,
+          "source": "user",
+          "enum_ref": "spec/enums.json#three_way_match",
+          "enum_size": 3,
+          "origin": "tool_table",
+          "origin_ref": "表单字段清单 R43（「三单匹配结论（合同 + GR + 发票）」）",
+          "rule": "**一致 ／ 差异在容差内 ／ 差异超容差**",
+          "critical_note": "★★ **制度第三十四条把「三单匹配」设为合同付款的前置**：「三项相互一致：合同（或者订单）、到货验收单、发票」⇒ ★ **本字段是该要求唯一的落地位点**：匹配动作在湖南侧做（综合运营主管），★ 匹配所需的第二方数据正是 `GR`（见 `forms/GR.json`），第三方是发票。★ **超容差的最终复核权在集团财务**（工具表原文），**不在湖南侧** ⇒ 本单只**声明结论**，不替集团下判断。"
+        },
+        {
+          "name": "tolerance_note",
+          "label": "超容差说明",
+          "type": "textarea",
+          "required": false,
+          "source": "user",
+          "origin": "tool_table",
+          "origin_ref": "表单字段清单 R43 的校验说明（「超容差须说明」）",
+          "rule": "★ `three_way_match = 差异超容差` ⇒ **必填**；其余结论**不填**（双向）",
+          "known_gap": "★★ **容差数值未定**（`Q19`，**待集团财务给数**）⇒ ★ 本单**因此无法自动判定「是否超容差」**，只能由填写人依据当前口径选择。★ 我方**刻意不加配置键**（无消费端即假配置，`README` 定案 #24）—— 待集团给数后再一并实现。"
+        }
+      ]
+    },
+
+    {
+      "id": "handover_register",
+      "label": "移交与集团侧登记",
+      "fields": [
+        {
+          "name": "submit_group_at",
+          "label": "提交集团日期",
+          "type": "date",
+          "required": true,
+          "source": "system",
+          "origin": "tool_table",
+          "origin_ref": "表单字段清单 R44（「提交日期」，来源＝系统生成）＋ `L06.fields[submit_group_at]`（`writable: true`，`writer: 综合运营主管`）",
+          "rule": "★ 默认取提交当日；★ **湖南侧流程完成后 3 个工作日内**提交，**超期计入异常预警**（见 `checks#submit_deadline_warning`）",
+          "critical_note": "★★ **「超期计入异常预警」≠「超期不予受理」** —— ★ 工具表写的是**预警**；而预警与拒绝**在实现上长得非常像**（都会弹提示）⇒ ★ 本单把它落为 **`soft`**，**绝不阻断提交**（见那条 `checks` 的 `note`）。"
+        },
+        {
+          "name": "handover_receipt",
+          "label": "移交凭证（签收记录）",
+          "type": "attachment",
+          "required": true,
+          "source": "user",
+          "origin": "ledger",
+          "origin_ref": "`L06.fields[handover_receipt]`（`writable: true`）＋ `doc_chains.SUB.nodes[2].note`",
+          "rule": "★ **必填**：签收记录即可；★★ **无凭证视为未提交**（`doc_chains.SUB.nodes[2].note` 原文）",
+          "critical_note": "★★ **「无凭证视为未提交」是一条很硬的规则**：`L06` 上「已提交」这件事**只有凭证能证明**。★ 若允许无凭证提交，则「**交没交**」将**无法与「没交但系统里有一行」区分** —— ★ 又是那句话：**没有数据与没有违规长得一样**。⇒ 见 `checks#handover_receipt_required`（`hard`）。"
+        },
+        {
+          "name": "group_process_no",
+          "label": "集团流程编号",
+          "type": "string",
+          "required": false,
+          "source": "user",
+          "origin": "resolution",
+          "origin_ref": "表单字段清单 R45（工具表写「集团受理编号」）＋ **`R-20#13`**：★ 制度写「**集团流程编号**」⇒ **统一用制度名**",
+          "rule": "★ **非必填**（提交时通常还没有）；★ **依集团人工反馈登记**（批复 B8：**不要求系统回填、不作数据对齐**）",
+          "critical_note": "★★ **同义异名已裁定**（`R-20#13`）：工具表叫「集团受理编号」、制度叫「集团流程编号」⇒ ★ 字段名用 `group_process_no`、标签用**制度口径**「集团流程编号」。★ 这段必须写清，否则后人会去找一个并不存在的第二个字段。"
+        },
+        {
+          "name": "group_status",
+          "label": "集团流程状态",
+          "type": "enum",
+          "required": false,
+          "source": "user",
+          "enum_ref": "spec/enums.json#group_status",
+          "enum_size": 5,
+          "origin": "tool_table",
+          "origin_ref": "表单字段清单 R46（5 值）",
+          "rule": "**未提交 ／ 已提交 ／ 办理中 ／ 已付款 ／ 已驳回**；★ **依集团人工反馈登记**（B8）",
+          "critical_note": "★★ **驳回的处置只有两条路**（工具表原文 + `D5`）：① **由经办人取消该单**；② **由最终审批人（项目总经理）驳回流程重走**；★ 并明写「**已执行的操作不撤回**」。⇒ ★ 「**已付款**」与「**已驳回**」都是**终态**，登记后**不得再改**（见 `checks` 的 `group_status` 相关约束 —— ★ 本单**不设**该硬约束，理由见 `known_gaps` 第 6 条）。"
+        },
+        {
+          "name": "payment_completed_at",
+          "label": "付款完成日期",
+          "type": "date",
+          "required": false,
+          "source": "user",
+          "origin": "tool_table",
+          "origin_ref": "表单字段清单 R47（「付款完成日期」）＋ `L06.fields[payment_completed_at]`",
+          "rule": "★ **依集团人工反馈登记**；★ 用于 `L06` 计算**在途时长与超期预警**",
+          "critical_note": "★ **在途时长 ＝ `payment_completed_at` − `submit_group_at`** ⇒ ★ 这个指标**只有在这个字段被人工填上之后才存在**。★ 即：**该指标恒为空的唯一原因，就是没人来登记** —— 这正是工具表说 `L06` 是「**唯一『没有人工维护就会完全失去意义』的台账**」的意思。⇒ ★ 本单**不设该字段的硬校验**（它是事后登记、提交时不可能有值），但**必须在 `L06` 侧具备「该登记而未登记」的可见提示**（见 `known_gaps` 第 5 条）。"
+        },
+        {
+          "name": "reject_reason_and_disposition",
+          "label": "驳回原因与处置",
+          "type": "textarea",
+          "required": false,
+          "source": "user",
+          "origin": "ledger",
+          "origin_ref": "`L06.fields[reject_reason_and_disposition]`（`writable: true`，`note: 取消 / 驳回重走`）",
+          "rule": "★ `group_status = 已驳回` ⇒ **必填**（写明集团驳回原因 与 采用哪条处置：取消 ／ 驳回重走）；其余状态**不填**（双向）"
+        }
+      ]
+    }
+  ],
+
+  "checks": [
+    {
+      "id": "related_docs_complete",
+      "when": "submit",
+      "assert": "`related_docs` 非空，且其中引用的单据号**逐个存在**（等值匹配），**缺项不得提交**",
+      "else": "★ **不静默通过**：拒绝并**逐项列出缺失／不存在的单据**",
+      "origin": "tool_table",
+      "origin_ref": "表单字段清单 R40（「提交集团时须齐全，缺项不得提交」）",
+      "severity": "hard",
+      "note": "★★ **要点在「逐项校验」而不是「非空」**：本字段是**文本清单**，只校验非空等于没校验（写一句「已齐」也能过）。★ 正确做法＝**解析其中的单据号并逐个查存在**（`PR-` / `CT-` / `GR-` 等前缀）⇒ ★ 这样它才真的能挡住「缺一项」；★ 若某类单据本期无编号体系（如发票号是外部编号），则该类**只做非空要求**并在 `note` 里说明。★ **查不到时不得 fail-open**（`N-027` 口径：**fail-open＝假校验**）。"
+    },
+    {
+      "id": "contract_approved_when_over_1000",
+      "when": "submit",
+      "assert": "`amount_cents` ≥ 100,000（＝1,000 元）⇒ 关联合同的审批**必须已完成**；< 100,000 ⇒ 本判据不适用",
+      "else": "★ 拒绝：「1,000 元以上采购必须先完成合同审批，当前合同尚未审批完成」",
+      "origin": "chain",
+      "origin_ref": "`doc_chains.SUB.hard_prerequisite`：「★ 1,000 元以上采购**必须已完成合同审批**（合同审批为提交集团的硬性前置）」",
+      "severity": "hard",
+      "note": "★★ **门槛 1,000 元不是随手写的**：它与「**≥1,000 元必须签合同 + 公户付款**」是同一条线的两端（采一档 <1,000 元**不签合同**，见第十八条）⇒ ★ **判据取 `≥ 100,000 分`（含）**，与 `chain.json#thresholds.purchase.bands` 的闭区间口径一致（★ 边界一律用**「分」整数**，禁止浮点元）。★ 若把门槛写成 `>100000`（不含），则**恰好 1,000 元的单据会漏拦** —— ★ 边界含不含本数，是这类判据最常见的错。"
+    },
+    {
+      "id": "payee_change_requires_callback",
+      "when": "submit",
+      "assert": "`payee_account_verified == false`（账户与合同预留不一致／变更过）⇒ `callback_confirmed == true` **且** `callback_note` 非空；`== true` ⇒ 两者**均为空**",
+      "else": "★ 拒绝：「收款账户与合同预留不一致时，必须电话回拨确认并写明与谁、用什么号码、何时确认」",
+      "origin": "tool_table",
+      "origin_ref": "表单字段清单 R41（「变更过的**必须电话回拨确认**」）",
+      "severity": "hard",
+      "note": "★★ **这是全案唯一的「反欺诈」校验**（改收款账户是典型诈骗手法）：系统**无法判断**账户是不是骗子给的 ⇒ ★ 能做的是把「**必须电话回拨**」变成一条**绕不过去且留痕**的动作。★ 双向（一致时不得填回拨）同样重要：否则会出现「账户没变也勾了已回拨」的**假留痕**，反而稀释了这个动作的信号。"
+    },
+    {
+      "id": "tolerance_note_when_over",
+      "when": "submit",
+      "assert": "`three_way_match == 差异超容差` ⇒ `tolerance_note` 非空；其余结论 ⇒ `tolerance_note` **为空**（双向）",
+      "else": "★ 拒绝：差异超容差须说明",
+      "origin": "tool_table",
+      "origin_ref": "表单字段清单 R43（「超容差须说明，由集团财务最终复核」）",
+      "severity": "hard",
+      "note": "★ **注意本判据只要求「说明」，不要求「合格」** —— ★ 因为**最终复核权在集团财务**（工具表原文），**不在湖南侧** ⇒ 湖南侧的义务是**如实声明并给出说明**，**不是自己下结论**。★ 若把它写成「超容差不许提交」，就**替集团做了判断**，而且会把真实差异**逼成「一致」**（人为了让单子过会改结论）—— ★ 那是**把数据变干净、把问题埋起来**。"
+    },
+    {
+      "id": "handover_receipt_required",
+      "when": "submit",
+      "assert": "`handover_receipt` 非空（已上传签收记录）",
+      "else": "★ 拒绝：「未取得移交凭证不得提交（**无凭证视为未提交**）」",
+      "origin": "chain",
+      "origin_ref": "`doc_chains.SUB.nodes[2].note`：「★ **无凭证视为未提交**」＋ `L06.fields[handover_receipt]`",
+      "severity": "hard",
+      "note": "★★ **这条规则的性质要看清**：它不是在「提高材料完整性」，而是**定义了「提交」这件事成立的条件** —— ★ 没有凭证，**湖南侧就不能主张自己交过了**。⇒ ★ 若允许无凭证提交，`L06` 里会出现「**看起来已提交、实际没交**」的行，而后**对账时无法区分**它和真的交了。★ 与 `handover_receipt` 的 `critical_note` 同源：**没有数据与没有违规不可区分**。"
+    },
+    {
+      "id": "submit_deadline_warning",
+      "when": "submit",
+      "assert": "`submit_group_at` 距「湖南侧流程完成日」**超过 3 个工作日** ⇒ **提示**",
+      "else": "★ 提示「已超 3 个工作日未提交集团，将计入异常预警」—— **不阻断**",
+      "origin": "tool_table",
+      "origin_ref": "表单字段清单 R44（「湖南侧流程完成后 3 个工作日内提交；**超期计入异常预警**」）＋ `doc_chains.SUB.deadline_workdays: 3`",
+      "severity": "soft",
+      "note": "★★ **必须 `soft`，且这一点很关键**：工具表写的是「**计入异常预警**」，**不是「不予受理」**。★ 预警与拒绝在实现上极易混淆（都是弹提示），但后果完全不同：★ **拒绝会把「交晚了」逼成「改成不晚」**（人改日期），**预警才会留下真实的超期数据**。⇒ ★ 超期是**要被统计的问题**，不是**要被拦住的错误**。★ 工作日口径＝**不含法定节假日、只跳周六日**（`Q18`）。"
+    },
+    {
+      "id": "ledger_l06_written",
+      "when": "落账后（★ 顺序＝提交 → 落账 → 本自检；★ 本单**无审批链**，提交即终态）",
+      "order_requirement": "★★ **执行顺序（2026-10-01 立，与 `GR`／`QC` 同款）**：本判据必须在**落账动作之后**执行，★ **顺序颠倒会拦住所有提交**（行还没写，自检必然失败）⇒ 属**误拦**，与漏拦同样致命。",
+      "assert": "★ **本单提交后，`L06` 的两张表都必须已写入**：① 同步存档表 —— `biz_no` / `related_docs` / `item_type` / `amount_cents` / `payment_method` / `hunan_completed_at`；② 运营表 —— 至少 `submit_group_at` 与 `handover_receipt` 两列已有值",
+      "else": "★ **不静默通过**：标记本次落账失败并告警（不得只记日志）",
+      "origin": "ledger",
+      "origin_ref": "制度第五十九条（台账）＋ `ledger-mapping.json#ledgers.L06`（`storage: split_required`）",
+      "severity": "hard",
+      "note": "★★ **本判据对 `L06` 特别重要的原因**：`L06` 是**唯一「没有人工维护就会完全失去意义」的台账**（工具表原文）⇒ ★ 它本来就**高度依赖人工**，如果**连系统该写的那几列也漏了**，这条台账就**彻底没有数据来源**了。★ 校验范围**只覆盖提交时能确定的列**（存档 6 列 ＋ 运营 2 列）；★ **集团侧 4 列（编号／状态／付款完成日／驳回处置）是事后人工登记**，提交时**必然为空** ⇒ ★ **不得把它们算进本自检**（否则每次提交都失败 —— 这是本判据最容易写错的地方）。"
+    }
+  ],
+
+  "known_gaps": [
+    {
+      "gap": "★ `item_type`（事项类型）**没有权威取值集**",
+      "status": "未定（★ 我方**不自行编造枚举**）",
+      "note": "★ `L06.fields` 里有 `item_type`，但 `spec/enums.json` **没有对应枚举**，制度与工具表也**都没给取值集**。★ 若我自行编一套（如「采购付款／费用报销」），那就成了**事实上的标准且无依据** —— ★ 这正是 `A4`（单位清单）当初的教训，而当时的正解是**做成后台可维护的常量表**。⇒ ★ **建议同款处理**：把「事项类型」放进 `spec/constants.json`（运营性常量，后台可增删改），而非制度性枚举。★ **待定**：属**追加一张常量表**（须同步 `constants.json` ＋ Go 侧白名单 ＋ `/admin` 页签）⇒ ★ 建议**随 `SUB` 发起批一并落**。"
+    },
+    {
+      "gap": "「收款账户**变更过**」的判定与「已回拨」的载体 —— 工具表只给了**一个布尔**",
+      "status": "★ 我方**推导补入**（已标 `origin: code`）",
+      "note": "★ 工具表 R41 只有「收款账户核验（布尔）」，而校验说明里含**两个语义**：「是否为合同预留账户」＋「**变更过的必须电话回拨确认**」。★ 我方拆为三字段：`payee_account_verified`（是否与预留一致）＋ `callback_confirmed` ＋ `callback_note`。★ **为何不合成一个布尔**：一个布尔**无法区分**「账户一致（无需回拨）」与「账户变更但没回拨」—— 而后者正是**要拦住的情形**。★ 若上游另有口径（例如「变更记录」由合同侧维护），**替换即可**（结构不变）。"
+    },
+    {
+      "gap": "「**公户转账类必须等集团**」这条约束的**消费端在哪**",
+      "status": "未定（不阻塞本单）",
+      "note": "★ 工具表原文：「垫付类**不受集团进度约束**，公户转账类**必须等集团**」⇒ ★ 它约束的是「**什么时候能付款**」。★ 而湖南侧**止于提交集团**（批复 A3／A5，`R-28`）⇒ ★ **本单不据此拦截提交**（拦了就是替集团管流程）。★ **待明确**：该约束是否需在我方系统**某个环节**体现（例如台账上的可见提示、或对账时的判定）⇒ ★ 若无消费端，**就不要做成配置项**（`README` 定案 #24）。★ 建议**随对账／看板批次**一并定。"
+    },
+    {
+      "gap": "「关联单据清单**由集团确认后固化**」的**固化动作由谁执行**",
+      "status": "未定（不阻塞本单）",
+      "note": "★ 工具表原文如此。★ 我理解为「**哪种业务应提交哪些单据**的清单本身，由集团确认后固定」；★ 但**没说明**：这份清单存哪里（系统配置 ／ 制度附件 ／ 集团回复邮件）、由谁录入、变更走什么流程。⇒ ★ **待定**：若要做成系统可校验的清单，需要**新增一张配置表**（同 `item_type` 的处境）；★ 现行做法＝`related_docs` 由提交人按实际填写、系统**逐项校验单据存在性**（见 `related_docs_complete`）。"
+    },
+    {
+      "gap": "`L06` 的**集团侧 4 列「该登记而未登记」如何可见**",
+      "status": "未定（属 `L06` 侧，**建议随对账／看板批次定**）",
+      "note": "★★ 工具表称 `L06` 是「**唯一『没有人工维护就会完全失去意义』的台账**」⇒ ★ 那么**最有价值的守卫**不是「拦住提交」，而是「**让'该登记却没登记'看得见**」（例如：`submit_group_at` 已过 30 天而 `group_status` 仍为「未提交」⇒ 看板提示）。★ 本单**提交时无法判定**（那时还没有集团反馈）⇒ ★ 故**不在本单设校验**，改由**看板指标**承担。★ **这条若不落，`L06` 会变成「有很多行但没有在途时长」** —— 而「**没有数据**」与「**都在办理中**」一模一样。"
+    },
+    {
+      "gap": "`group_status` 终态（已付款／已驳回）登记后**是否允许再改**",
+      "status": "未定（★ **本单刻意不设硬约束**）",
+      "note": "★ `D5` 明定「**已执行的操作不撤回**」，且 `group_status` 由**人工依集团反馈登记** ⇒ ★ 理论上终态登记后不应再改。★ **但本单不设「终态不可改」的硬校验**，理由：① 人工登记**必然有填错的时点**（把「已付款」填成「已提交」）；⇒ ★ 若禁止修改，**纠错只能靠后台改库** —— 那更糟（无留痕）。★ 建议改为：★ **终态后再改须填理由并留审计**（可改、但要留痕），由 `L06` 的运营表侧承担（属台账写入规则，**归 mimo 的 `t_permission_rule` 口径**）。"
+    },
+    {
+      "gap": "**三单匹配容差数值**未定 ⇒ 本单只能「人判」是否超容差",
+      "status": "已登记（`Q19`，**待集团财务给数**，不阻塞）",
+      "note": "★ 工具表 R43 给了三值枚举，但**没有容差数值**。⇒ ★ 现行：「差异在容差内／超容差」由综合运营主管**依据当时口径判断**。★ 我方**刻意不加配置键**（无消费端即假配置 —— `README` 定案 #24），待集团给数后再一并实现。★ 与 `GR` 的「实收 vs 应收不自动判差异」是同一处克制：**口径未定时，宁可不做，也不做一个会误导人的假自动**。"
+    }
+  ]
+}
