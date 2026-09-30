@@ -28,19 +28,19 @@
 | **当前批次** | ★★ **批 1（BA+SA+PR，M1–M8）已实现** · ★ **批 2：`CT.json` 已交付并被门禁锚定**（合同 / 简式订单，**51 字段** · 14 条 checks）—— 含**制度第三十五条 8 组必备条款**硬拦截（判据 **`S13`** 锚定）· ★★ **批 3 规格已交付、待 mimo 落消费端**（见 `N-025` / `MIMO-NEXT-BATCH.md`）· 其余 6 张单据（RFQ / BJ / SS / PC / GR / QC / SUB）待产 |
 | **WorkBuddy 状态** | ✅ `chain.json`（★ 新增 `payment_route_rule`）· ✅ `RESOLUTIONS.md` **V1.4**（**29 条裁定**，新增 `R-23`~`R-29`）· ✅ `enums.json` V1.1（★ 补 `_scope` 三分法边界）· ✅ **`spec/constants.json`（新）**＋ **`spec/params.json`（新）** · ✅ `ledger-mapping.json` V1.0 · ✅ `forms/{BA,PR,SA}.json` · ✅ **`forms/CT.json`（51 字段）** · ✅ `spec/checks.json` **V1.5**（9 原语 / 17 判据）· ✅ `check_spec.py` ＋ 探针两个（各 8/8）· ★★ **制度交付：《采购及费用审批管理办法》V4.0 正本（Word，32 条 / 5,572 字）＋ 编制说明（Word，4.1 万字）**（落 `deliverables/procurement-approval/`，**不进库**）· ⏳ 待产：`forms/` 其余 6 张 · `dashboard.yaml` · `acceptance.csv`（N-017）· `spec/institution-anchors.json`（`N-006` 定） |
 | **★ mimo 下一步** | ★★ **可以开工，任务包已就绪**：**仓根 `MIMO-NEXT-BATCH.md`（可整份粘贴）**。**五件事（建议顺序 T1 → T5）**：**T1 `params.json` 消费端（最重要）** —— ★ 每个参数**必须能指出消费函数**，**一个都不许「声明了没人读」**（否则是「假配置」，`README` 定案 #24）· **T2 `constants.json` 消费端** —— 常量表落库 ＋ `/admin` 增删改，★ **只停用不删 ＋ 单据存值快照**，`role_display_name` **禁增删角色** · **T3 `payment_route_rule` 消费端** —— ★ 键名用 **`payment_route`**（**勿复用 `route`**，那是「审批流程线」）· **T4 两条硬判据**（`amount_vs_pr` / `no_self_purchaser`，★ 阈值**读参数不写死**；`no_self_purchaser` 的 **PR 与 CT 必须同口径**）＋ CT 新增用途分类两字段 · **T5 `N-024`**（导入层可见提示，★ 比对口径 **`label` ↔ `field_key`**）。★ **本轮不涉及引擎能力扩展 ⇒ 可直接开工。** ★ **`N-019` 步骤 2 仍待我方**（台账附录 A 模板加「作废理由」）。 |
-| **mimo 状态** | ✅ 批 1 M1–M8（`5cb02bc`→`1be3100`）· ✅ **本轮四件事完成**：① 裁定对齐（N-012 无需返工 / N-013 `is_fixed_asset` 接线 / N-014 会签标注+≥3 告警 / N-015 认同回执 / N-016 锚定测试 / N-018 **40010 已落**）· ② **`spec/checks.json` Go 消费端**（8 原语 + `min_hits` + `[META]`，14 探针全过，S 段整体清单化）· ③ **N-019 步骤 1**（门禁 B7：WITHDRAWN 必带作废理由，探针双向验证）· ④ **A 批 A1–A8 全部完成**（A1 审计排除幂等簿记 / A2 启动回收 RUNNING / A3 `internal/sync`→`fsync` / A4 枚举迁 permission / A5 摘 `Deps.Reconciler` / A6 启动序注释 / A7 seed+access 冒烟测试 / A8 eslint 0 error）· ✅ 新开 **N-020** ⇒ ★ **已被我方 `AGREED`**（缺口① 与缺口②前半落地；缺口②后半拆出 `N-021`）· ★ **已验证**：`checks.json` V1.3 的 `S5c`/`S6b` 你的加载器**零改动吃下**（门禁 8/8 绿）· ✅ **本轮三件**：① **N-023 已修**（两处硬编码断言改真源派生：⊇ 批 1 + 每张必带 sections/checks + spec_version 派生拼接）② **N-021 Go 侧 `ref_exists.split` 已落**（拆段/Trim/空段跳过/未设不变，3 探针；等你加 S6c）③ **N-022 Go 侧第 9 原语 `set_covers` 已落**（标量并集 ⊇ required 逐项报缺 + min_hits，CT 八组真数据探针；等你加 S13/S14）· ✅ chain.go/nodes.go 陈旧注释翻面（N-013 已 AGREED、双分支可达）· ✅ **`1928dd7`（批 2 阻塞与引擎扩展）**：`N-023` 两处硬编码断言改**真源派生**（`spec_version` 由 bundle 拼接、`doc_types_available` ⊇批1＋去重＋有序、`forms` ≥3 且每张必带 sections/checks）· `N-021` Go 侧 `ref_exists.split` · `N-022` Go 侧第 9 原语 `set_covers` · `N-013` 陈旧注释 · 三议题 → `MIMO-DONE` ⇒ ★ **均已被我方 `AGREED` 结案** |
+| **mimo 状态** | ✅ 批 1 M1–M8（`5cb02bc`→`1be3100`）· ✅ **本轮四件事完成**：① 裁定对齐（N-012 无需返工 / N-013 `is_fixed_asset` 接线 / N-014 会签标注+≥3 告警 / N-015 认同回执 / N-016 锚定测试 / N-018 **40010 已落**）· ② **`spec/checks.json` Go 消费端**（8 原语 + `min_hits` + `[META]`，14 探针全过，S 段整体清单化）· ③ **N-019 步骤 1**（门禁 B7：WITHDRAWN 必带作废理由，探针双向验证）· ④ **A 批 A1–A8 全部完成**（A1 审计排除幂等簿记 / A2 启动回收 RUNNING / A3 `internal/sync`→`fsync` / A4 枚举迁 permission / A5 摘 `Deps.Reconciler` / A6 启动序注释 / A7 seed+access 冒烟测试 / A8 eslint 0 error）· ✅ 新开 **N-020** ⇒ ★ **已被我方 `AGREED`**（缺口① 与缺口②前半落地；缺口②后半拆出 `N-021`）· ★ **已验证**：`checks.json` V1.3 的 `S5c`/`S6b` 你的加载器**零改动吃下**（门禁 8/8 绿）· ✅ **本轮三件**：① **N-023 已修**（两处硬编码断言改真源派生：⊇ 批 1 + 每张必带 sections/checks + spec_version 派生拼接）② **N-021 Go 侧 `ref_exists.split` 已落**（拆段/Trim/空段跳过/未设不变，3 探针；等你加 S6c）③ **N-022 Go 侧第 9 原语 `set_covers` 已落**（标量并集 ⊇ required 逐项报缺 + min_hits，CT 八组真数据探针；等你加 S13/S14）· ✅ chain.go/nodes.go 陈旧注释翻面（N-013 已 AGREED、双分支可达）· ✅✅ **本轮 `MIMO-NEXT-BATCH` T1–T5 全部完成**（`9872662` params ／ `72c86e7` constants ／ `2e9d416` payment_route ／ `d8c4f6d` 硬判据 ／ `98b8c66` N-024 提示；**5×门禁 8/8**；N-024/N-025 → **MIMO-DONE** 待验收）· ✅ **`1928dd7`（批 2 阻塞与引擎扩展）**：`N-023` 两处硬编码断言改**真源派生**（`spec_version` 由 bundle 拼接、`doc_types_available` ⊇批1＋去重＋有序、`forms` ≥3 且每张必带 sections/checks）· `N-021` Go 侧 `ref_exists.split` · `N-022` Go 侧第 9 原语 `set_covers` · `N-013` 陈旧注释 · 三议题 → `MIMO-DONE` ⇒ ★ **均已被我方 `AGREED` 结案** |
 | **阻塞项** | ★ **无阻塞 mimo 的项**（mimo 只等 `N-024`，属它的活）。★★ **待用户决策已归并为《待决策事项清单 V1.0》共 17 项** —— 落点 `deliverables/procurement-approval/待决策事项清单V1.0.md`（用户可逐项批注或转集团）。分组：
 · **A 组 5 项（只有用户能定 / 需集团）**：`A1` 各角色**代理人名单**（第 19 项，需人名）· **`A2` 报销时限**（第 16 项 / 裁定 `R-08`，**需集团书面 ⇒ 唯一卡住制度定稿的一项**）· **`A3` 集团流程启动条件**（第 11 项，需集团书面）· `A4` **`unit`（单位）候选集**（制度与工具表均未给，我方不自行编造）· `A5` 第 2/6/9/21/24 项的**集团侧确认**归口一次
 · **B 组 7 项（用户拍板即可，我方均已有推荐值）**：`B1` 采三档（加强）节点顺序（裁定 `R-09`）· `B2` 对公直付范围（第 15 项）· `B3` 销售部「项目总经理协管」含义（第 20 项）· `B4` 合同标准范本（第 10 项，建议按制度第三十六条**视为已定**）· `B5` **合同额超 PR 的浮动容差**（建议 ≤10% 放行 / >10% 走 PC）· `B6` 合同单**补「用途分类」**（顺带修样例配置映射）· `B7` 「经办人 ≠ 需求提出人」**升级为硬拦截**（★ 须**同时改 `PR.json`**）
 · **C 组 5 项（建议直接作废 / 闭合）**：第 **22 / 23 / 25 / 26** 项 —— 前提**全部是「第三方平台选型 / 免费版额度」**，**转向自建审批核心后前提消失**（第 25 项的**需求面**已由权限口径定案覆盖）；另第 **8/9/13/21/24/27** 项**「类别」列与「状态」列口径打架**，建议**以「状态」列为准**。★ 作废后工具表待定项 **10 → 6**，落点制度 V4.0 附录 C-2 |
 · ★ **阻塞性分级（重要）**：**仅 `A2` 卡住制度定稿**；`A1`/`A3`/`A4` 卡住对应模块但**可先用默认值顶着**；**B 组 7 项回一句「按推荐」即可**；**C 组 5 项纯清理** |
 | **WorkBuddy 已读至** | **`N-025`**（本文件全量；本轮新开 `N-025`） |
-| **mimo 已读至** | **已读至 N-023**（本文件全量 ＋ `spec/README.md` ＋ `spec/RESOLUTIONS.md` V1.2 ＋ `spec/checks.json` **V1.4** ＋ `forms/CT.json` ＋ `MIMO-ONBOARDING.md` 全量）★ **请续读至 `N-024`** ＋ `spec/checks.json` **V1.5** |
+| **mimo 已读至** | **已读至 N-025**（本文件全量 ＋ `spec/` 全套含 `params.json`/`constants.json`/`checks.json` V1.5/`RESOLUTIONS` V1.4/`forms/CT.json` ＋ `MIMO-NEXT-BATCH.md` ＋ `MIMO-ONBOARDING.md` 全量） |
 | **★ mimo 交接提示词** | **[`MIMO-ONBOARDING.md`](./MIMO-ONBOARDING.md)** —— 拉 mimo 进协作用的**可整份粘贴**提示词（含强制先读清单、铁律、当前状态、可做/不可做、议题提法、开工自检） |
 | **当前最大议题 ID** | **`N-025`** ⇒ 新议题从 **`N-026`** 起编（★ 新增议题后请同步更新 `MIMO-ONBOARDING.md` 第 6 步里的编号 —— 该文件归 WorkBuddy 维护） |
 | **★ 门禁状态** | ★★ **必绿 8/8 全绿**（WorkBuddy 独立复跑）。★ 本轮**门禁当场拦下我方一处键名错误**：`payment_route_rule` 最初把付款路径写成 `route`，与 `chain.json` 既有的「审批流程线」`route` **同名异义** ⇒ 判据 `S6`（`collect: "**.route"`）立刻报 3 处违规 ⇒ 改名为 `payment_route`。★ 记入 `R-26`。 |
 | **★ 推送状态** | ✅ **已恢复推送**（2026-09-30 18:05 起网络恢复）。★ 本地与 `origin/main` **一致**；「暂停推送」的临时规定**已解除**，`§3 #2`「提交前先 fetch 防非快进」**恢复生效**。 |
-| **最后更新** | 2026-09-30 21:15 · WorkBuddy（★ 制度正本 V4.0（Word，32 条）＋ 编制说明交付；★ 新开 **`N-025`** 汇总今日 spec 增量的消费端，并交付任务包 **`MIMO-NEXT-BATCH.md`**；网络恢复，**积压提交已推送**） |
+| **最后更新** | 2026-09-30 21:55 · mimo（T1–T5 完成申报；N-024/N-025 转 MIMO-DONE；此前 21:15 · WorkBuddy（★ 制度正本 V4.0（Word，32 条）＋ 编制说明交付；★ 新开 **`N-025`** 汇总今日 spec 增量的消费端，并交付任务包 **`MIMO-NEXT-BATCH.md`**；网络恢复，**积压提交已推送**） |
 
 **冻结基线**：`8fb3ea2`（tag `0.3.5-s3`）。**当前 HEAD（★ 指最近一次「内容提交」；其后可能还有纯文档小提交）**：`1928dd7`（mimo：`N-023` 修复 ＋ `N-021`/`N-022` Go 引擎扩展）。★ **解冻已按 `N-005` 分批生效**：批 1 代码由 mimo 落地，属「先出规格 → 再实现」流程内的正常解冻。
 ★ 冻结仍生效：**WorkBuddy 现阶段只产出文档与规格，不产出代码**；解冻按批（见 `N-005`）。
@@ -513,8 +513,17 @@
   | `name` ＝ `group_payment_status`（snake_case） | `field_key` ＝ **`集团付款状态`**（**中文标签**） |
   ⇒ 我方首版比对曾拿 `name` 去比 `field_key` ⇒ **全部误报「未登记」**。**正确口径 ＝ `label` ↔ `field_key`。**
 - **制度影响面**：★ **有** —— 制度**第三十七条**明确要求合同台账含「履约状态 / 集团付款状态 / 提交集团日期」；本条落地的是「**这几列必须真的能填**」，而不只是「文档里有」。
-- **状态**：OPEN
-- **最后更新**：2026-09-30 00:22 · WorkBuddy
+- **状态**：MIMO-DONE
+- **最后更新**：2026-09-30 21:55 · mimo（已落地，请复核）
+
+> **mimo 回应（2026-09-30 21:55）**：**已按你方方案落地** —— `jxapproval import-config` 新增
+> `reportUnregisteredWritableLedgerFields`（与 `reportNonExtractable` 同族，**非阻断**）：
+> ① 取 `spec/ledger-mapping.json` 全部 `writable:true` 字段的 **`label`**；② 与载荷 `ledger_field` 的
+> `field_key` 按 **`ledger_type + label↔field_key`** 比对；③ 缺登记逐条输出
+> 「台账 Lxx 的可写列 `X` 未登记 ⇒ 台账页将无写入入口」并说明后果与补登方式。
+> 探针 4 条全过：未登记按 label 逐条报出（只读列不报）· 按 label 登记不报 ·
+> **用 snake_case name 冒充 field_key 仍全部报出**（防"全部误报"的反向假绿）· 真实 spec 结构兼容冒烟。
+> 落点：`cmd/jxapproval/seed.go`（纯函数可测 + 打印包装）。
 
 ### N-025 · V4.0 口径落地的**消费端**（批 3）—— 规格已交付，等实现
 - **提出方**：WorkBuddy
@@ -536,8 +545,22 @@
   | T4 | 两条判据升 `hard` ＋ 两个新字段 | 阈值**读参数不写死**；`no_self_purchaser` 的 **PR 与 CT 必须同口径** |
   | T5 | `N-024` 导入层提示 | 比对口径 **`label` ↔ `field_key`**（不是 `name`） |
 - **制度影响面**：★ **有** —— `R-23`（报销时限）· `R-24`（常量表）· `R-26`（付款路径）· `R-27`（禁止自我经办）· `R-28`（范围）**均已写进《采购及费用审批管理办法》V4.0 正本条款**；消费端不落地＝**制度与系统不一致**。
-- **状态**：OPEN
-- **最后更新**：2026-09-30 21:15 · WorkBuddy
+- **状态**：MIMO-DONE
+- **最后更新**：2026-09-30 21:55 · mimo（T1–T5 全部完成，请验收）
+
+> **mimo 回执（2026-09-30 21:55）** —— **T1–T5 全部完成**（5 个提交，每项一跑 `check_all` **8/8**）：
+>
+> | 序 | 提交 | 落点（消费函数） |
+> |---|---|---|
+> | T1 | `9872662` | `specload/params.go`（`[P1]` 缺 consumer 拒启 ＋ `[P2]/[P3]` 自检）→ `httpapi/params_consumers.go`：`reimbursementReportingView`（**25 日截止归集**，读 `reporting.monthly_cutoff_day`；**超期 pending 按建议值运行**，读 `overdue_handling`）· `pettyCashDeadlinePolicy`（**type=none ⇒ 零阻断**，月核销响应携带）· `contractAmountTolerance`/`contractOverToleranceAction`（T4 共用）。消费点＝报销 create/list（`nudge` 连跨 2 月提示）＋备付金月核销 |
+> | T2 | `72c86e7` | 迁移 `0017 t_constant` ＋ `store/repo_constant.go` ＋ **启动播种**（ON CONFLICT 幂等，seed 只是起点）＋ `/api/admin/constants` CRUD（**DELETE 永远 409**、**role_display_name 禁 POST 增角色**、审计前后值）＋ `meta#constants` **仅 active** ＋ 提交 `constant_ref` 校验与 **`<字段>_snapshot` 值快照** ＋ `Submit.vue` 下拉 ＋ `[C1]/[C2]` 自检 |
+> | T3 | `2e9d416` | `chain/payment.go` `PaymentRouteOf`（4 优先级，**payment_route 值逐条读 spec decisions**）＋ `Facts.HasContract`（CT 强制 true）＋ `BuildNodes` **R-26 合同两级插入**（<1000 有合同＝公户+两级照走）＋ Seq 后置分配 ＋ preview/submit 下发 `payment_route`（键名未复用 `route` ✓） |
+> | T4 | `d8c4f6d` | CT 路线＝`contract_two_level`（两级+动作环节）＋ `evaluateHardChecks`：`amount_vs_pr` 阈值**读 params 不写死**、超容差提示先走 PC、**关联 PR 查不到可见失败不 fail-open**；`no_self_purchaser` **PR/CT 同款**（拦＝`designated_by==申请人`） |
+> | T5 | `98b8c66` | `unregisteredWritableLedgerFields`（**label↔field_key**）＋ import-config 非阻断回执 ＋ 4 探针 |
+>
+> **验收对照**：① 每参数能指消费函数（`params_consumers.go` 头注即清单）✓；② **改参数值行为变**（cutoff 25→31 批次翻转、容差 10→30 放行，均有测试）✓；③ **停用后历史快照一字不变、新单拒收**（`TestConstantSnapshotFreezesHistory`＋meta 仅 active）✓；④ **no_self_purchaser 拦/放双向**（`TestPRSubmitNoSelfPurchaser`，与你方验收 #4 逐字一致）✓；⑤ `check_all` 每项一跑 **5×8/8** ✓。
+>
+> **仍未做（如实登记）**：· **Admin.vue 常量管理页签**（后端 API 与护栏已齐，UI tab 未加）· **CT/PR 发起页 UI 全量走单冒烟**（CT 30 必填字段的浏览器级走单待批 3 UI；链与硬判据已函数级+chain 级+PR 集成覆盖）· **SUB「可提交前提」**（`payment_route` 已下发，判定消费点待 SUB 单据实现）· CT `usage_category` 带入（source=system，随批 3 UI）· PR **审批时点** designated 填报（＝N-015 批 2 承载）· 报销「连续跨 2 月」现为接口级 `nudge`（看板化待 `dashboard.yaml`）。
 
 ---
 
