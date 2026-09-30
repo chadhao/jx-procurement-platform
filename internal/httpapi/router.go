@@ -212,6 +212,11 @@ func NewRouter(d Deps) *echo.Echo {
 	admin.POST("/constants", d.handleAdminConstantsCreate)
 	admin.PUT("/constants/:id", d.handleAdminConstantsUpdate)
 	admin.DELETE("/constants/:id", d.handleAdminConstantsDeleteRefused)
+	// ---- 角色代理人（N-028 · 授权配置，docs/05-API §3.9）：只停用不删 + feature_enabled=false ----
+	admin.GET("/role-agents", d.handleAdminRoleAgentsList)
+	admin.POST("/role-agents", d.handleAdminRoleAgentsCreate)
+	admin.PUT("/role-agents/:id", d.handleAdminRoleAgentsUpdate)
+	admin.DELETE("/role-agents/:id", d.handleAdminRoleAgentsDelete)
 	// ---- 三方审批定义装载（docs/16 §2-C 通道①：主通道）----
 	// ★ 清单源＝`t_config_mapping(map_kind='approval_code')`（清单正本＝
 	//   docs/reference/config-mapping.sample.json 的 approval_code 节，11 类）；

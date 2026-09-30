@@ -35,6 +35,7 @@ type Bundle struct {
 	Ledger      LedgerDoc
 	Params      *ParamsDoc
 	Constants   *ConstantsDoc
+	Authority   *AuthorityDoc
 	ProblemsRaw map[string][]byte // 全部 spec/**/*.json 原始字节（键 "spec/xxx.json"，测试/诊断用）
 }
 
@@ -349,6 +350,17 @@ func loadFiles(files map[string][]byte) (*Bundle, error) {
 	b.Constants = constants
 	if p := validateConstants(constants); len(p) > 0 {
 		return nil, fmt.Errorf("specload: spec/constants.json 校验失败 %d 处:\n  %s",
+			len(p), strings.Join(p, "\n  "))
+	}
+
+	// authority.json：类型化解析 + [A1]/[A2] 自检（N-028 授权配置）
+	authority, err := decodeAuthority(files)
+	if err != nil {
+		return nil, err
+	}
+	b.Authority = authority
+	if p := validateAuthority(authority); len(p) > 0 {
+		return nil, fmt.Errorf("specload: spec/authority.json 校验失败 %d 处:\n  %s",
 			len(p), strings.Join(p, "\n  "))
 	}
 
