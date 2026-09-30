@@ -1,5 +1,5 @@
 {
-  "version": "1.0",
+  "version": "1.1",
   "generated_by": "WorkBuddy",
   "date": "2026-10-01",
 
@@ -19,7 +19,9 @@
     "r2_source_must_be_ops_table": "★★ **看板数据源必须指向「运营表」（可写表），不得指向「同步存档表」（只读表）**。★ 依据：工具表 R29 明文；★ 若指向存档表，则「**经办人指定集中度**」「**付款完成日期**」这类**审批后产生的字段永远为空** ⇒ ★ 看板会**长期静默地少一半指标**。★ 涉及其中的台账：`L03`（R6 必须拆）、`L11`（R14 建议拆）、`L05`（R8 建议拆）、`L06`（R9 必须拆）、`L07`（R10 建议拆）、`L04`（R7 建议拆）。",
     "r3_zero_expected_needs_nonempty_guard": "★★★ **凡「应恒为 0」类指标，必须带「数据源非空」前置断言**。★ 依据：`RESOLUTIONS.md` 已裁定，且 `R-02` 就是**实证**——`L03` 恒空时，指标「需求提出人任经办人的笔数」**恒为 0**，而**「恒为 0」与「数据没接上」完全同形**，**无人发现**。★ 落地形态：该指标在渲染前先断言「数据源行数 > 0」；不满足 ⇒ 显示「**数据未接入**」而**不是 0**。★ **这是本文件最重要的一条**：没有它，看板 16 的多个指标会**看起来一切正常**。",
     "r4_annual_archive": "★ 看板依赖的流水型台账须配**年度归档**（每年导出上年、表内只留近 12 个月）；★ 行数上限依据见工具表 R31（★ **该限制属「平台」层，本项目已自建，故仅作历史参照**）。",
-    "r5_automation_quota": "★ 工具表 R19/R34 提到的**自动化额度**是**平台方案**的瓶颈；★ 本项目**已自建**（`04a` 架构转向 ③）⇒ ★ **额度与限流不再构成约束**，但★ **「把实时预警降级为公式列标红」这条纪律仍适用** —— 它降低的是**耦合与噪声**，与额度无关。"
+    "r5_automation_quota": "★ 工具表 R19/R34 提到的**自动化额度**是**平台方案**的瓶颈；★ 本项目**已自建**（`04a` 架构转向 ③）⇒ ★ **额度与限流不再构成约束**，但★ **「把实时预警降级为公式列标红」这条纪律仍适用** —— 它降低的是**耦合与噪声**，与额度无关。",
+    "r6_source_status_transition": "★★★ **`source_status` 由 `pending` 推进到 `connected` 的判据＝「本看板每个指标都具备自证能力」，不是「数据源全部接上」**。★ 理由：`source_status` 是**看板级**字段，而数据源是**指标级**的（看板 16 有 7 个台账、11 个指标）—— ★ **等全部到齐才置 `connected`** ⇒ 已经把能用的指标一起关掉（`r1` 的**反向误伤**）；★ **任一数据到达就置 `connected`** ⇒ 还没接通的指标显示 0（正是 `r3` 要防的形态）。⇒ ★ **唯一自洽的判据是「守卫齐全」**：置 `connected` 后，**没有数据的指标自己会显示「数据未接入」**（由该指标自己的 `availability_guard` 保证）。★★ **故 `connected` 的正确含义不是「数据已经有了」，而是「本看板每个指标都能自证自己有没有数据」**。★ **例外**：`not_enabled`（看板 13）是**制度性未启用**，**不参与本推进** —— 它与 `pending` 的区别就是「`pending` 会推进、`not_enabled` 不会」。★ 推进前必须先满足该看板的 `connected_requires`（逐板列出，见各看板同名字段）。",
+    "r7_third_state_undefined_criteria": "★★ **除 `connected` / `not_enabled` / `pending` 之外，指标层还需要第三种态：口径未定（`undefined_criteria`）**。★ 依据：看板 15 的「异常科目提示」—— ★ **数据源接得通、但「什么算异常」的标准没给**（工具表只有五个字）⇒ ★ 若置 `connected` 后它显示 `0`，会被读成「**没有异常科目**」；★ 而真相是「**还没有判定标准**」。⇒ ★ **「口径未定」与「没有违规」必须长得不一样**（同 `r1`/`r3` 的哲学，但**成因不同**：`r1` 是数据没接上、`r3` 是源为空、本条是**标准没给**）。★ 渲染文案必须互不相同：`数据未接入` / `数据未接入` / **`口径未定`**。★ 判据形态：该指标的 `formula` 若为「未定义」⇒ 其 `availability_guard` 必须声明 `undefined_criteria`。"
   },
 
   "dashboards": [
@@ -30,6 +32,7 @@
       "source_ledgers": ["L12"],
       "source_status": "not_enabled",
       "source_note": "★★ `L12`（预算执行台账）**本期不启用**（`ledger-mapping.json#ledgers.L12.storage = not_enabled`）⇒ ★ **本看板整体显示「数据未接入」**（依 `global_rules.r1`）。★ **这不是缺陷，是如实呈现** —— ★ 若显示 0，会让人以为「预算执行率为 0%」，而真相是「预算管控还没开」。",
+      "connected_requires": "★ **不适用** —— ★ 本看板的 `source_status` 是 `not_enabled`（**制度性**未启用），★ **不参与 `pending → connected` 推进**（`global_rules.r6`）：★ 推它的前提**不是技术**，而是**集团决定启用预算管控** —— 届时应先改 `ledger-mapping.json#ledgers.L12.storage`，再由用户决策本字段取值（★ 不得由实现单方面推进）。",
       "indicators": [
         { "key": "budget_progress_by_subject", "label": "分科目预算进度条", "formula": "已实耗 ÷ 年度预算额（按预算科目分组）", "fields": ["L12.预算科目", "L12.年度预算额", "L12.已实耗"], "note": "★ 依赖 `L12` 启用。" },
         { "key": "overspend_warning_count", "label": "超支预警数", "formula": "可用余额 < 0 的科目数", "fields": ["L12.可用余额"], "note": "★ 与看板 16 的「超预算」预警**同源**——★ **看板 13 是「看趋势」，看板 16 是「要处置」**，同一数据两种用途。" },
@@ -45,6 +48,7 @@
       "source_ledgers": ["L11", "L03"],
       "source_status": "pending",
       "source_note": "★★ **数据源必须指向 `L11`／`L03` 的「运营表」**（依 `global_rules.r2`）—— ★ 工具表 R17 原文警告：「数据源要指向运营表，不要指向只读的同步存档表 —— **否则经办人指定集中度与按期率算不出来**」。★ `L11` 的「实际到货／延期天数」与 `L03` 的「经办状态／完成日期／是否按期」**都是审批后产生的字段**，只在运营表。",
+      "connected_requires": "① `L11` 派生视图可用（`orderExecutionRows`，`Q14` 定案）；② ★★ **6 个指标各自声明 `availability_guard`**（`global_rules.r6` 的判据）—— ★ 分两类：★ **须守卫**（其 0 会被误读为「很正常」）：`avg_cycle_days`（无完成日期时恒空/0）· `delay_top5`（无延期时 0 与「延期天数列没人填」同形）· `supplier_monthly_accum_top`（无累计时 0 与「没有拆分」同形）· `purchaser_concentration`（★ `R-02` 实证的同一形态）；★ **可不守卫但须登记理由**（其 0 是**真实语义**、无空源歧义）：`in_flight_orders`（无在途订单 ＝ 真的没有）· `monthly_amount_trend`（某月无采购 ＝ 真的没有）。⇒ ★ **默认必须守卫；不守卫是一个需要写理由的决定**。",
       "indicators": [
         { "key": "in_flight_orders", "label": "在途订单数", "formula": "订单状态 ∈ 已下单、未到货 的笔数", "fields": ["L11.订单状态"], "note": "★ 依赖 `L11`。" },
         { "key": "avg_cycle_days", "label": "平均采购周期", "formula": "AVG(实际到货日 − 订单日)", "fields": ["L11.实际到货", "L11.订单状态"], "note": "★ **只在运营表**（`实际到货` 是审批后字段）⇒ ★ 指向存档表则该指标恒空。" },
@@ -62,6 +66,7 @@
       "source_ledgers": ["L05"],
       "source_status": "pending",
       "source_note": "★ 工具表 R18：数据源＝**费用事前申请台账（`L05`）的运营表**（★「结算状态」等字段取自运营表）。",
+      "connected_requires": "① `L05` 运营表可用；★★ ② **`abnormal_subject_hint` 的口径未定 ⇒ 必须有第三种态 `undefined_criteria`**（`global_rules.r7`，文案「**口径未定**」）—— ★ **这是本看板能否置 `connected` 的唯一硬前提**：★ 若口径未定却置 `connected`，该指标显示 `0` ⇒ ★ 会被读成「**没有异常科目**」，而真相是「**还没有判定标准**」（★ 与 `r1`/`r3` 同源的「静默假正常」，但成因更隐蔽：数据是通的）。★ 另：三个分布类指标（`by_department`/`by_category`/`by_supplier`）的空源表现是**空图**而非 0 ⇒ 建议同样声明守卫以统一文案。",
       "indicators": [
         { "key": "by_department", "label": "按部门的费用分布与趋势", "formula": "按 `需求部门` + 月度 SUM(金额)", "fields": ["L05.部门", "L05.预计金额", "L05.实际金额"], "note": "★ ★ **用「预计」还是「实际」必须选一个并写死在口径里**：★ 两者混用会让「趋势」失去意义（同一张图上前后月不同口径）。★ 建议：**趋势用「实际金额」、进度用「预计金额」**（★ 已按此写入 `formula`，★ 待确认）。" },
         { "key": "by_category", "label": "按类别的费用分布", "formula": "按 `用途分类（一级）` SUM(金额)", "fields": ["L05.用途分类", "L05.金额"], "note": "★ 分类口径＝`enums.json#usage_categories`（**23 类**，与制度附录一逐项核对一致）。" },
@@ -77,6 +82,7 @@
       "source_ledgers": ["L01", "L03", "L04", "L05", "L06", "L07", "L09"],
       "source_status": "pending",
       "source_note": "★★★ **本看板是四张里最重要的**：它是**「不设采购岗 + 湖南侧不上抬集团 + 例外通道」这套设计唯一的事后监督面**（工具表 R26 原文：「第 16 号看板的预警项是 V2.0 / V3.0 / 批复后**特有的风险敞口**」）。★ 数据源＝各单据状态字段聚合（★ **须读运营表**）。",
+      "connected_requires": "① ★★ **11 个指标「每个」各自声明 `availability_guard`** —— ★ **不是看板级一个**（`global_rules.r6` 的判据；看板级只有一个 `source_status`，而 11 个指标分布在 7 个台账上）；② 与看板 14 共用的 `purchaser_concentration` **必须同一实现**（`known_gaps` 第 5 条）；③ ★★ **指标 key 必须统一为 `spec` key**（`known_gaps` 第 7 条）—— ★ 现聚合路径仍用旧 key ⇒ **翻转那一刻会有 9/11 个指标改名**，★ 且 `r3` 守卫挂在**旧 key** 上；⇒ ★ **本条不解决，不得翻转**。",
       "indicators": [
         { "key": "overdue_unapproved", "label": "超时未审", "formula": "当前节点停留时长 > 该节点时限 的在办单数", "fields": ["L02.当前节点", "L02.提交日期"], "note": "★ 时限口径＝**不含法定节假日、只跳周六日**（`Q18`）＋ `submission.HolidayChecker` 可注入挂点。" },
         { "key": "over_budget", "label": "超预算", "formula": "可用余额 < 0 的科目数", "fields": ["L12.可用余额"], "note": "★★ **本期数据源未接通**（`L12` 不启用）⇒ ★ 依 `global_rules.r1` **显示「数据未接入」而非 0**。" },
@@ -123,10 +129,16 @@
       "gap": "本文件原为 `dashboard.yaml`，现为 `dashboard.json`",
       "status": "★ 已定（**改名理由见 `file_name_note`**）",
       "note": "★ 改名**唯一原因**是**门禁覆盖**（`.yaml` 不在 `check_spec.py` 的扫描范围内，本机亦无 PyYAML）⇒ ★ 本项目铁律「机读规格必须可机检」优先于文件后缀的沿用。★ 引用已同步；★ `RESOLUTIONS.md` 的历史原文保留。"
+    },
+    {
+      "gap": "★★ 看板 16 的指标 key 存在**两份真相**（灰态用 `spec` key ／ 聚合路径用旧 key）",
+      "status": "★ 已知（**当前不阻塞** —— 四张看板现均为非 `connected` ⇒ 只走灰态；★★ **但会在 `pending → connected` 翻转那一刻集中爆发**）",
+      "note": "★★ 两处来源不同：① **灰态路径**（`Build` 短路）按 `spec` 的 `indicators[*].key` 出指标；② **聚合路径**（`buildAnomaly`）用**代码里的旧 key**。★ 逐项对照（11 项中**只有 2 项同名**）：`overdue_unapproved`↔`overdue_review` · `emergency_not_closed_24h`↔`emergency_unclosed_over_24h` · `sole_source`↔`single_source` · `account_changed`↔`account_change` · `split_suspicion`↔`split_suspect` · `purchaser_overdue`↔`handler_overdue` · `self_purchaser_count`↔`requester_as_handler` · `purchaser_concentration`↔`handler_concentration` · `group_rejected_unhandled`↔`group_rejected_undisposed`；★ **同名**：`over_budget`、`emergency_purchase`。★★ **为什么这不只是「改个名字」**：① **翻转即改名**（**9/11** 个指标 key 在状态翻转时变化）⇒ 前端 `v-for :key` 会**整列重建**、任何按指标 key 做的下钻/订阅/导出会**静默错位**；② ★★★ **`r3` 守卫挂在旧 key 上** —— `buildAnomaly` 里 `requester_as_handler` / `handler_concentration` 是**唯二**带守卫的指标，★ 而 `spec` 里它们叫 `self_purchaser_count` / `purchaser_concentration` ⇒ ★ **一个按 `spec` key 写的守卫会「挂在空气上」（找不到对应指标、静默不生效）**。⇒ ★ **处置：以 `spec` 为唯一真相，聚合路径的 9 个旧 key 须改名对齐**（★ 与 `known_gaps` 第 5 条「同一指标同一实现」是同一件事）。★ 建议随 `connected` 翻转**同批**完成，并配**双向**测试（`spec` key 集合 ⊇ 实际输出 key 集合）。"
     }
   ],
 
   "change_log": [
-    { "date": "2026-10-01", "version": "1.0", "who": "WorkBuddy", "what": "首版建立：落工具表 `台账与看板设计` 的 **4 张看板（13–16）** 指标与口径；确立三条 `global_rules`（★ **未接通显示「数据未接入」而非 0** · ★ **数据源必须指向运营表** · ★★ **「应恒为 0」类指标必须带非空前置断言**——后者由 `R-02` 的实证教训催生）。★ 文件由计划的 `.yaml` 改为 **`.json`**，以纳入门禁覆盖。" }
+    { "date": "2026-10-01", "version": "1.0", "who": "WorkBuddy", "what": "首版建立：落工具表 `台账与看板设计` 的 **4 张看板（13–16）** 指标与口径；确立三条 `global_rules`（★ **未接通显示「数据未接入」而非 0** · ★ **数据源必须指向运营表** · ★★ **「应恒为 0」类指标必须带非空前置断言**——后者由 `R-02` 的实证教训催生）。★ 文件由计划的 `.yaml` 改为 **`.json`**，以纳入门禁覆盖。" },
+    { "date": "2026-10-01", "version": "1.1", "who": "WorkBuddy", "what": "★★ **回答 mimo 的待确认问题**（`f75ab0b` 回执：「`source_status` 由 `pending→connected` 的**推进时机与条件**」）。★ 新增 `global_rules.r6`（**推进判据＝「每个指标都具备自证能力」，不是「数据源全部接上」**；★ 并明确 `not_enabled` **不参与**推进）＋ `global_rules.r7`（**新增第三种态 `undefined_criteria`「口径未定」** —— 与「没接上」「源为空」**三者文案必须不同**）。★ 每张看板新增 `connected_requires`（**逐板列出推进硬前提**）。★★ 新增 `known_gaps` 第 7 条：**看板 16 的指标 key 有两份真相**（灰态用 spec key ／ 聚合路径用旧 key，**11 项里只有 2 项同名**）—— ★ 不只是改名：★ **翻转即改名（9/11）**，且 ★★ **`r3` 守卫挂在旧 key 上**（按 spec key 写的守卫会「挂在空气上」）。★ 另补 `known_gaps` 第 5 条与第 7 条的同源关系。" }
   ]
 }
