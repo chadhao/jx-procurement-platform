@@ -368,22 +368,31 @@ func TestQAB35SubmissionDeptFallbackAndDashboard16(t *testing.T) {
 		t.Fatalf("登记集团驳回: http=%d code=%d body=%s", rec.Code, env.Code, rec.Body.String())
 	}
 
-	// ④ 运营部主管（DEPT）应看到 1 条「集团驳回后未处置」，不得恒 0。
+	// ④ 看板 16 在 dashboard.json source_status≠connected 期走 **r1 灰态**：
+	//    指标显示「数据未接入」而非数字（DEPT 行级收敛的数字断言迁至
+	//    TestDashboardGroupRejectedScopedByRowScope —— 那里的 app 不注入 Spec，
+	//    聚合路径可达；本 app 镜像生产，恒注入 Spec）。
 	_, env16 := doRequest(e, http.MethodGet, "/api/dashboard/16?period=2026-09", auth.Establish("ou_lead"), "")
-	if got := alertCount(t, mustData(t, env16), "group_rejected_undisposed"); got != 1 {
-		t.Errorf("运营部主管 group_rejected_undisposed=%v, 期望 1（部门令牌命中）", got)
+	data16 := mustData(t, env16)
+	if data16["source_status"] == "connected" {
+		t.Errorf("spec source_status=pending，响应却为 connected")
 	}
-
-	// 负向：另建一条「生产部」的同类报送 → 运营部主管仍只 1（行级收敛，不得越权拿全量）。
-	if _, err := db.CreateSubmission(ctx, &store.Submission{
-		BizNo: "SUB-QA-B35-2", SubjectType: "公户付款", SubmitState: "未提交",
-		GrpState: "已驳回", Department: "生产部", ApplicantOpenID: "ou_x",
-	}); err != nil {
-		t.Fatalf("写入他部门报送失败: %v", err)
+	as, _ := data16["alerts"].([]any)
+	var hit map[string]any
+	for _, a := range as {
+		m, _ := a.(map[string]any)
+		if m["key"] == "group_rejected_unhandled" {
+			hit = m
+		}
 	}
-	_, env16b := doRequest(e, http.MethodGet, "/api/dashboard/16?period=2026-09", auth.Establish("ou_lead"), "")
-	if got := alertCount(t, mustData(t, env16b), "group_rejected_undisposed"); got != 1 {
-		t.Errorf("运营部主管在他部门有同类数据后 = %v, 期望仍为 1（行级越权）", got)
+	if hit == nil {
+		t.Fatalf("灰态告警清单缺 spec 指标 key group_rejected_unhandled: %v", as)
+	}
+	if hit["status"] != "not_connected" {
+		t.Errorf("group_rejected_unhandled status=%v, 期望 not_connected（r1）", hit["status"])
+	}
+	if _, has := hit["count"]; has {
+		t.Errorf("灰态指标携带 count —— r1 禁止显示数字: %v", hit)
 	}
 }
 

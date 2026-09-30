@@ -22,6 +22,7 @@ import (
 	"time"
 
 	"github.com/chadhao/jx-procurement-platform/internal/jsonutil"
+	"github.com/chadhao/jx-procurement-platform/internal/specload"
 	"github.com/chadhao/jx-procurement-platform/internal/store"
 )
 
@@ -65,6 +66,11 @@ type Result struct {
 	// ★ 为什么要有：坏行原先只是"少几个字段"，指标**偏低却不报错**。
 	//   有了它，"数字不对"至少有一个可追的线索（静默审计 C6）。
 	Warnings []string `json:"warnings,omitempty"`
+	// SourceStatus/SourceNote/SpecVersion 来自 spec/dashboard.json（global_rules.r1：
+	// 非 connected 的看板全部指标显示「数据未接入」而非 0 —— 响应须如实带上状态与理由）。
+	SourceStatus string `json:"source_status,omitempty"`
+	SourceNote   string `json:"source_note,omitempty"`
+	SpecVersion  string `json:"spec_version,omitempty"`
 }
 
 // Chart 图表序列（key/type/series）。
@@ -115,6 +121,8 @@ type Builder struct {
 	splitCents int64
 	// corruptRows 本次构建中 ext_json / ops_json 解析失败的行数（见 Result.Warnings）。
 	corruptRows int
+	// dash 看板规格（r1 灰态由其 source_status 驱动；nil = 不启用灰态，仅测试直造时出现）。
+	dash *specload.DashboardDoc
 }
 
 // New 构造聚合器（默认时钟 time.Now，默认拆分阈值 1,000 元）。
@@ -127,6 +135,12 @@ func (b *Builder) WithNow(fn func() time.Time) *Builder {
 	if fn != nil {
 		b.now = fn
 	}
+	return b
+}
+
+// WithDashboard 注入看板规格（spec/dashboard.json）—— global_rules.r1 的灰态判据。
+func (b *Builder) WithDashboard(dash *specload.DashboardDoc) *Builder {
+	b.dash = dash
 	return b
 }
 
@@ -175,6 +189,22 @@ func (b *Builder) Build(ctx context.Context, id int, period string, q Query) (re
 		ID: id, Name: DashboardName(id), Period: period,
 		Cards: []map[string]any{}, Charts: []Chart{}, Alerts: []map[string]any{},
 		Supervision: emptySupervision(),
+	}
+	// ★ global_rules.r1（灰态短路）：source_status 非 connected ⇒ 本看板**全部指标**
+	//   显示「数据未接入」而非 0 —— "一旦显示 0，半年后没人说得清那是真 0 还是没接上"。
+	//   指标清单（key/label）由 spec/dashboard.json 驱动，不走下面的聚合计算。
+	if board := b.dash.Board(id); board != nil && board.SourceStatus != specload.DashboardStatusConnected {
+		res.SourceStatus = board.SourceStatus
+		res.SourceNote = board.SourceNote
+		res.SpecVersion = b.dash.Version
+		for _, ind := range board.Indicators {
+			res.Alerts = append(res.Alerts, map[string]any{
+				"key": ind.Key, "label": ind.Label,
+				"status": "not_connected", "message": "数据未接入",
+			})
+		}
+		res.Supervision = map[string]any{"status": "not_connected", "message": "数据未接入"}
+		return res, nil
 	}
 	switch id {
 	case DashboardBudget:
@@ -402,19 +432,28 @@ func (b *Builder) buildAnomaly(ctx context.Context, res Result, period string, q
 	requesterCount := intFromAny(sup["requester_as_handler_count"])
 
 	// ⑩ 需求提出人任经办人的笔数（应恒为 0，异常信号 → 红标 high）。
-	level := "warn"
-	if requesterCount > 0 {
-		level = "high"
+	// ★ r3：L03 过滤后 0 行 ⇒ 不得报 0（0 与「没接上」同形）—— 显示「数据未接入」。
+	if sup["source_status"] == "not_connected" {
+		res.Alerts = append(res.Alerts, map[string]any{
+			"key": "requester_as_handler", "status": "not_connected", "message": "数据未接入",
+		})
+		res.Alerts = append(res.Alerts, map[string]any{
+			"key": "handler_concentration", "status": "not_connected", "message": "数据未接入",
+		})
+	} else {
+		level := "warn"
+		if requesterCount > 0 {
+			level = "high"
+		}
+		res.Alerts = append(res.Alerts, map[string]any{
+			"key": "requester_as_handler", "level": level, "count": requesterCount,
+		})
+		// ⑪ 经办人指定集中度（异常信号判读：零违规 + 长期固定指定同一人）。
+		res.Alerts = append(res.Alerts, map[string]any{
+			"key": "handler_concentration", "level": "warn",
+			"count": intFromAny(sup["concentration_max_count"]),
+		})
 	}
-	res.Alerts = append(res.Alerts, map[string]any{
-		"key": "requester_as_handler", "level": level, "count": requesterCount,
-	})
-
-	// ⑪ 经办人指定集中度（异常信号判读：零违规 + 长期固定指定同一人）。
-	res.Alerts = append(res.Alerts, map[string]any{
-		"key": "handler_concentration", "level": "warn",
-		"count": intFromAny(sup["concentration_max_count"]),
-	})
 
 	res.Supervision = sup
 	return res, nil
@@ -470,6 +509,14 @@ func buildSupervision(r03 []Row, period string, _ Query, b *Builder) map[string]
 	out["handler_concentration"] = conc
 	out["concentration_max_count"] = maxCount
 	out["handler_total"] = total
+	// ★ global_rules.r3：「应恒为 0」类指标必须带数据源非空前置断言 ——
+	//   过滤后 0 行时「真的 0」与「数据没接上」完全同形（R-02 实证：L03 恒空时
+	//   requester_as_handler 恒 0 而无人发现）。渲染层据此显示「数据未接入」。
+	if total == 0 {
+		out["source_status"] = "not_connected"
+	} else {
+		out["source_status"] = "connected"
+	}
 	if b != nil {
 		out["split_threshold_cents"] = b.splitCents
 	}

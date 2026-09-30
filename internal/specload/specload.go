@@ -36,6 +36,7 @@ type Bundle struct {
 	Params      *ParamsDoc
 	Constants   *ConstantsDoc
 	Authority   *AuthorityDoc
+	Dashboard   *DashboardDoc
 	ProblemsRaw map[string][]byte // 全部 spec/**/*.json 原始字节（键 "spec/xxx.json"，测试/诊断用）
 }
 
@@ -366,6 +367,17 @@ func loadFiles(files map[string][]byte) (*Bundle, error) {
 	b.Authority = authority
 	if p := validateAuthority(authority); len(p) > 0 {
 		return nil, fmt.Errorf("specload: spec/authority.json 校验失败 %d 处:\n  %s",
+			len(p), strings.Join(p, "\n  "))
+	}
+
+	// dashboard.json：类型化解析 + [D1]-[D4] 自检（看板三纪律的机读骨架）
+	dashboard, err := decodeDashboard(files)
+	if err != nil {
+		return nil, err
+	}
+	b.Dashboard = dashboard
+	if p := validateDashboard(dashboard); len(p) > 0 {
+		return nil, fmt.Errorf("specload: spec/dashboard.json 校验失败 %d 处:\n  %s",
 			len(p), strings.Join(p, "\n  "))
 	}
 

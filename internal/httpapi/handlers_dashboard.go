@@ -101,6 +101,11 @@ func (d Deps) buildDashboard(c echo.Context, idn permission.Identity, rule permi
 	}
 
 	builder := dashboard.New(d.DB).WithNow(func() time.Time { return time.Now().UTC() })
+	// ★ global_rules.r1：灰态判据来自 spec/dashboard.json（source_status 非 connected
+	//   ⇒ 全部指标「数据未接入」而非 0）。
+	if d.Spec != nil {
+		builder = builder.WithDashboard(d.Spec.Dashboard)
+	}
 	if d.Maps != nil {
 		if t, ok := d.Maps.ThresholdCents("split_supplier_month"); ok && t > 0 {
 			builder = builder.WithSplitThresholdCents(t)

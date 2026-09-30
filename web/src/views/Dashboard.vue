@@ -35,6 +35,11 @@ const charts = computed(() => (data.value && Array.isArray(data.value.charts) ? 
 const alerts = computed(() => (data.value && Array.isArray(data.value.alerts) ? data.value.alerts : []))
 const supervision = computed(() => (data.value && data.value.supervision) || null)
 
+// ★ global_rules.r1：source_status 非 connected ⇒ 全部指标显示「数据未接入」（灰色），
+//   不得显示 0 —— 一旦显示 0，半年后没人说得清那是真 0 还是没接上。
+const sourceStatus = computed(() => (data.value && data.value.source_status) || '')
+const notConnected = computed(() => sourceStatus.value !== '' && sourceStatus.value !== 'connected')
+
 // 预算看板（13）本期不启用：返回空序列。
 const budgetEmpty = computed(() => activeId.value === 13)
 const hasContent = computed(() => cards.value.length > 0 || charts.value.some((c) => (c.series || []).length > 0))
@@ -200,6 +205,7 @@ onBeforeUnmount(() => {
       <div v-if="err" class="error">加载失败：{{ err }}</div>
       <div v-else-if="loading" class="empty">加载中…</div>
       <div v-else-if="budgetEmpty" class="empty">本期未启用（预算执行看板保留结构，暂不启用）</div>
+      <div v-else-if="notConnected" class="empty">数据未接入（数据源状态：{{ sourceStatus }}）</div>
       <div v-else-if="!hasContent" class="empty">暂无数据</div>
     </div>
 
@@ -227,7 +233,11 @@ onBeforeUnmount(() => {
       </div>
 
       <!-- ★ 监督指标（FR-M5-07）：单独成项 -->
-      <div v-if="supervision" class="panel">
+      <div v-if="supervision && supervision.status === 'not_connected'" class="panel">
+        <h2>监督指标</h2>
+        <div class="empty">数据未接入（该指标依赖人工维护的运营表字段，未接入前不显示 0）</div>
+      </div>
+      <div v-else-if="supervision" class="panel">
         <h2>监督指标</h2>
         <div class="grid">
           <div class="stat">
@@ -266,9 +276,14 @@ onBeforeUnmount(() => {
       <div v-if="alerts.length" class="panel alerts">
         <h2>异常预警（红标）</h2>
         <div class="grid">
-          <div v-for="a in alerts" :key="a.key" class="stat" :class="alertClass(a.level)">
+          <div
+            v-for="a in alerts"
+            :key="a.key"
+            class="stat"
+            :class="a.status === 'not_connected' ? 'disconnected' : alertClass(a.level)"
+          >
             <div class="k">{{ a.label || a.key }}</div>
-            <div class="v">{{ a.count }}</div>
+            <div class="v">{{ a.status === 'not_connected' ? '数据未接入' : a.count }}</div>
           </div>
         </div>
       </div>
@@ -283,6 +298,17 @@ onBeforeUnmount(() => {
   border: 1px solid var(--border);
   border-radius: 6px;
   color: var(--primary);
+}
+.alerts .stat.disconnected {
+  background: #f5f5f5;
+  border-color: #d9d9d9;
+}
+.alerts .stat.disconnected .k,
+.alerts .stat.disconnected .v {
+  color: #999;
+}
+.alerts .stat.disconnected .v {
+  font-size: 14px;
 }
 .alerts .stat.danger {
   border-color: var(--danger);

@@ -10,6 +10,7 @@ import (
 
 	"github.com/labstack/echo/v4"
 
+	"github.com/chadhao/jx-procurement-platform/internal/dashboard"
 	"github.com/chadhao/jx-procurement-platform/internal/seed"
 	"github.com/chadhao/jx-procurement-platform/internal/store"
 )
@@ -157,28 +158,32 @@ func TestC6DashboardReportsCorruptRows(t *testing.T) {
 	// 看板 14 会读 L03（buildSupervision）与 L04/L07（订单执行派生）。
 	seedArchiveExt(t, db, "L03", "PR-C6-1", "ou_a", "生产部", 100, `{"broken":`)
 
-	rec, env := doRequest(e, http.MethodGet, "/api/dashboard/14?period=2026-09", auth.Establish("ou_pm"), "")
-	if rec.Code != http.StatusOK {
-		t.Fatalf("看板应 200，实际 %d: %s", rec.Code, rec.Body.String())
+	// ★ 灰态期（dashboard.json source_status≠connected）HTTP 层短路、不跑聚合 ⇒
+	//   本 C6 断言走**聚合路径直调**（不注入 dash = connected 行为）——
+	//   warnings 语义属于"算出来的指标可能偏低"，只在聚合跑时才存在。
+	res, err := dashboard.New(db).Build(ctx, 14, "2026-09", dashboard.Query{})
+	if err != nil {
+		t.Fatalf("聚合构建失败: %v", err)
 	}
-	data := mustData(t, env)
-	ws, _ := data["warnings"].([]any)
-	if len(ws) == 0 {
-		t.Fatal("存在坏行时看板必须给出 warnings（否则指标偏低无从察觉）")
+	if len(res.Warnings) == 0 {
+		t.Fatal("存在坏行时聚合必须给出 warnings（否则指标偏低无从察觉）")
 	}
-	joined := ""
-	for _, w := range ws {
-		joined += w.(string)
-	}
+	joined := strings.Join(res.Warnings, " | ")
 	if !strings.Contains(joined, "无法解析") {
 		t.Errorf("warnings 未说明原因，实际: %s", joined)
+	}
+	// HTTP 层同时验证 r1 灰态（本 app 注入了 Spec）：
+	_, env := doRequest(e, http.MethodGet, "/api/dashboard/14?period=2026-09", auth.Establish("ou_pm"), "")
+	data := mustData(t, env)
+	if data["source_status"] == "connected" {
+		t.Error("spec source_status 非 connected，响应却报 connected")
 	}
 }
 
 // TestC6DashboardNoWarningsWhenClean 反向断言：数据干净时**不得**出现 warnings
 // （否则 warnings 沦为噪声，等于没有）。
 func TestC6DashboardNoWarningsWhenClean(t *testing.T) {
-	e, db, auth, _ := newAdminTestApp(t)
+	_, db, _, _ := newAdminTestApp(t)
 	ctx := context.Background()
 	if _, err := seed.SeedQ3Defaults(ctx, db); err != nil {
 		t.Fatalf("播种默认口径失败: %v", err)
@@ -186,12 +191,12 @@ func TestC6DashboardNoWarningsWhenClean(t *testing.T) {
 	seedRole(t, db, "ou_pm", "项目总经理", "")
 	seedArchiveExt(t, db, "L03", "PR-C6-2", "ou_a", "生产部", 100, `{"assigned_open_id":"ou_h"}`)
 
-	rec, env := doRequest(e, http.MethodGet, "/api/dashboard/14?period=2026-09", auth.Establish("ou_pm"), "")
-	if rec.Code != http.StatusOK {
-		t.Fatalf("看板应 200，实际 %d: %s", rec.Code, rec.Body.String())
+	// 反向断言走聚合直调（同上：warnings 属聚合路径语义）。
+	res, err := dashboard.New(db).Build(ctx, 14, "2026-09", dashboard.Query{})
+	if err != nil {
+		t.Fatalf("聚合构建失败: %v", err)
 	}
-	data := mustData(t, env)
-	if ws, ok := data["warnings"].([]any); ok && len(ws) > 0 {
-		t.Errorf("数据干净时不应有 warnings，实际: %v", ws)
+	if len(res.Warnings) > 0 {
+		t.Errorf("数据干净时不应有 warnings，实际: %v", res.Warnings)
 	}
 }

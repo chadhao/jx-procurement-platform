@@ -439,17 +439,20 @@ func TestDashboardGroupRejectedScopedByRowScope(t *testing.T) {
 	seedRole(t, db, "ou_pm", "项目总经理", "")
 	seedRole(t, db, "ou_app", "申请人", "")
 	seedRole(t, db, "ou_fin", "集团财务", "")
+	seedRole(t, db, "ou_lead", roleDeptLead, "运营部")
 
-	// 两条「集团已驳回但未处置」的报送，申请人分别是他俩（Q14-B 第 5 项后 SELF 按
-	// applicant_open_id 收敛，故这里必须写真实身份列，而不是只看 created_by）。
-	for _, r := range []struct{ bizNo, by string }{
-		{"SUB-SC-1", "ou_app"},
-		{"SUB-SC-2", "ou_pm"},
+	// 三条「集团已驳回但未处置」的报送（前两条生产部；第三条运营部 = DEPT 令牌样本；
+	// Q14-B 第 5 项后 SELF 按 applicant_open_id 收敛，故必须写真实身份列）。
+	type scRow struct{ bizNo, by, dept string }
+	for _, r := range []scRow{
+		{"SUB-SC-1", "ou_app", "生产部"},
+		{"SUB-SC-2", "ou_pm", "生产部"},
+		{"SUB-SC-3", "ou_lead", "运营部"},
 	} {
 		if _, err := db.CreateSubmission(ctx, &store.Submission{
 			BizNo: r.bizNo, SubjectType: "公户付款", SubmitState: "未提交",
 			GrpState: "已驳回", RejectReason: "", CreatedBy: r.by,
-			ApplicantOpenID: r.by, Department: "生产部",
+			ApplicantOpenID: r.by, Department: r.dept,
 		}); err != nil {
 			t.Fatalf("写入报送失败: %v", err)
 		}
@@ -457,16 +460,33 @@ func TestDashboardGroupRejectedScopedByRowScope(t *testing.T) {
 
 	const url = "/api/dashboard/16?period=2026-09"
 
-	// ALL：项目总经理看到全量 2 条。
+	// ALL：项目总经理看到全量 3 条。
 	_, envPM := doRequest(e, http.MethodGet, url, auth.Establish("ou_pm"), "")
-	if got := alertCount(t, mustData(t, envPM), "group_rejected_undisposed"); got != 2 {
-		t.Errorf("项目总经理(ALL) 集团驳回未处置 = %v, 期望 2", got)
+	if got := alertCount(t, mustData(t, envPM), "group_rejected_undisposed"); got != 3 {
+		t.Errorf("项目总经理(ALL) 集团驳回未处置 = %v, 期望 3", got)
 	}
 
-	// SELF：申请人只统计本人登记的 1 条（不得拿全量 2）。
+	// SELF：申请人只统计本人登记的 1 条（不得拿全量 3）。
 	_, envApp := doRequest(e, http.MethodGet, url, auth.Establish("ou_app"), "")
 	if got := alertCount(t, mustData(t, envApp), "group_rejected_undisposed"); got != 1 {
 		t.Errorf("申请人(SELF) 集团驳回未处置 = %v, 期望 1（行级越权：不应看到他人报送的聚合值）", got)
+	}
+
+	// DEPT：运营部主管只统计运营部的 1 条（QAB35 的部门令牌断言，迁自灰态 HTTP 路径）。
+	_, envLead := doRequest(e, http.MethodGet, url, auth.Establish("ou_lead"), "")
+	if got := alertCount(t, mustData(t, envLead), "group_rejected_undisposed"); got != 1 {
+		t.Errorf("运营部主管(DEPT) 集团驳回未处置 = %v, 期望 1（部门令牌命中）", got)
+	}
+	// DEPT 负向：他部门再加一条 → 运营部主管仍 1（不得越权拿全量）。
+	if _, err := db.CreateSubmission(ctx, &store.Submission{
+		BizNo: "SUB-SC-4", SubjectType: "公户付款", SubmitState: "未提交",
+		GrpState: "已驳回", Department: "生产部", ApplicantOpenID: "ou_x",
+	}); err != nil {
+		t.Fatalf("写入他部门报送失败: %v", err)
+	}
+	_, envLead2 := doRequest(e, http.MethodGet, url, auth.Establish("ou_lead"), "")
+	if got := alertCount(t, mustData(t, envLead2), "group_rejected_undisposed"); got != 1 {
+		t.Errorf("他部门加条后 DEPT = %v, 期望仍 1（行级越权）", got)
 	}
 
 	// DENY：集团财务无该看板权限。
@@ -495,5 +515,57 @@ func TestDashboardInvalidPeriodRejected(t *testing.T) {
 	rec, env := doRequest(e, http.MethodGet, "/api/dashboard/15?period=2026-09", auth.Establish("ou_pm"), "")
 	if rec.Code != http.StatusOK || env.Code != codeOK {
 		t.Errorf("合法账期被拒: http=%d code=%d body=%s", rec.Code, env.Code, rec.Body.String())
+	}
+}
+
+// TestDashboardR1NotConnectedHTTP 生产装配（d.Spec 注入 dashboard.json）下，
+// source_status≠connected 的看板在 HTTP 层必须呈现 r1 灰态：
+// 每个指标 status=not_connected、无 count、source_status 如实回传。
+// （本文件其余聚合用例用 newDashboardApp —— 不注入 Spec，直测聚合路径；
+//
+//	灰态与聚合的分界即 Spec 注入与否，两条路径各有覆盖。）
+func TestDashboardR1NotConnectedHTTP(t *testing.T) {
+	e, db, auth, _ := newAdminTestApp(t)
+	ctx := context.Background()
+	if _, err := seed.SeedQ3Defaults(ctx, db); err != nil {
+		t.Fatalf("播种默认口径失败: %v", err)
+	}
+	seedRole(t, db, "ou_pm", "项目总经理", "")
+
+	for _, id := range []int{14, 15, 16} {
+		rec, env := doRequest(e, http.MethodGet,
+			"/api/dashboard/"+itoaTest(int64(id))+"?period=2026-09", auth.Establish("ou_pm"), "")
+		if rec.Code != http.StatusOK {
+			t.Fatalf("看板 %d: http=%d body=%s", id, rec.Code, rec.Body.String())
+		}
+		data := mustData(t, env)
+		// dashboard.json 当前 14/15/16 = pending（由 WorkBuddy 维护；若已改 connected，
+		// 本断言随之演进 —— 判据是「spec 说没接通就不许显示数字」本身）。
+		if ss, _ := data["source_status"].(string); ss == "connected" || ss == "" {
+			t.Errorf("看板 %d source_status=%v, 期望 pending（spec 声明）且必带", id, data["source_status"])
+		}
+		as, _ := data["alerts"].([]any)
+		if len(as) == 0 {
+			t.Fatalf("看板 %d 灰态告警清单为空 —— 指标清单应来自 spec", id)
+		}
+		for _, a := range as {
+			m, _ := a.(map[string]any)
+			if m["status"] != "not_connected" {
+				t.Errorf("看板 %d 指标 %v status=%v, 期望 not_connected", id, m["key"], m["status"])
+			}
+			if v, has := m["count"]; has {
+				t.Errorf("看板 %d 指标 %v 带 count=%v —— r1 禁止非 connected 显示数字",
+					id, m["key"], v)
+			}
+		}
+		// cards 不得以 0 值充数
+		if cs, ok := data["cards"].([]any); ok {
+			for _, c := range cs {
+				cm, _ := c.(map[string]any)
+				if cm["status"] != "not_connected" {
+					t.Errorf("看板 %d 卡片 %v 无灰态标记: %v", id, cm["key"], cm)
+				}
+			}
+		}
 	}
 }
