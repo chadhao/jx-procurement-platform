@@ -503,11 +503,11 @@
     ]
   },
   "pending_enums": {
-    "_note": "★ 以下枚举**尚未取得权威取值**，不得凭空填充；规格中引用时须标 `status: pending`",
+    "_note": "★ 以下枚举**尚未取得权威取值**，不得凭空填充；规格中引用时须标 `status: pending`。★★ **本表条目必须随决策落地而清理** —— 已定的项要改标或移出，否则会出现「**用户早就定了、规格里还挂着待定**」（2026-10-01 即发现 1 例：报销时限）。",
     "reporting_deadline_workdays": {
-      "status": "pending",
-      "reason": "待确认事项第 16 项「报销时限」**待填**，以集团确认为准（R-08）",
-      "must_not_hardcode": true
+      "status": "★★ **已定（2026-09-30 · 用户）**",
+      "reason": "★ 用户定案：**个人报销每月 25 日截止；备付金随时报销、不设时限** ⇒ 已落 `spec/params.json#reporting.monthly_cutoff_day = 25` 与 `#petty_cash.reimburse_deadline = none`。★★ **取代** `R-08` 的原建议值「15 个工作日」（`R-23`）。★ 工作日口径另见 `Q18`：**不含法定节假日、只跳周六日**。",
+      "must_not_hardcode": false
     },
     "institution_field_gaps": {
       "_note": "R-21：制度要求登记、而工具表字段清单**没有**的 15 项，已裁定一律补入 `spec/forms/*.json`（逐项落点见 spec/RESOLUTIONS.md R-21）",
