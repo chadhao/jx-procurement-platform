@@ -109,10 +109,23 @@ func TestReimbursementReportingWired(t *testing.T) {
 	if got, _ := reporting["rolled_to_next"].(bool); got != wantRolled {
 		t.Errorf("rolled_to_next = %v，应为 %v", got, wantRolled)
 	}
-	// 超期处置：待定 ⇒ pending + 建议值行为
+	// 超期处置（N-029）：已定案 ⇒ 按**行为**断言，不锁瞬态的 pending 标志 ——
+	//   ① status=已定；② in_effect=auto_next_month；③ 超期**不阻断**（请求 200 即证）
+	//   且归次月标注自洽（rolled ⇒ batch_period 为次月）。断言"待定与否"注定在定案日转红、
+	//   且没守住任何业务不变量（N-026 同族）。
 	overdue, _ := reporting["overdue_handling"].(map[string]any)
-	if overdue == nil || overdue["pending"] != true || overdue["in_effect"] != "auto_next_month" {
-		t.Errorf("overdue_handling = %v（应 pending=true 且按建议值运行）", overdue)
+	if overdue == nil || overdue["status"] != "已定" || overdue["in_effect"] != "auto_next_month" {
+		t.Errorf("overdue_handling = %v（应 status=已定 / in_effect=auto_next_month）", overdue)
+	}
+	if overdue["pending"] == true {
+		t.Errorf("overdue_handling 已定案，pending 不应为 true：%v", overdue)
+	}
+	if rolled, _ := reporting["rolled_to_next"].(bool); rolled {
+		// 超期场景（今天 >25）：批次必须已归次月（「已归入次月批次」标注的数据基础）
+		thisMonth, _ := batchPeriod(time.Now(), 0) // cutoff=0 ⇒ 永不跨月＝本月
+		if got, _ := reporting["batch_period"].(string); got == thisMonth {
+			t.Errorf("超期（rolled）时 batch_period 应归次月，仍为本月 %q", got)
+		}
 	}
 }
 
