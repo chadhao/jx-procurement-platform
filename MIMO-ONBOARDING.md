@@ -62,7 +62,7 @@
 |---|---|
 | 当前批次 | **批 0 · 规格地基** |
 | WorkBuddy 已完成 | ✅ `spec/chain.json`（9 条流程线 + 11 类单据链 + 10 角色）· ✅ `spec/RESOLUTIONS.md`（**18 条裁定**）· ✅ `spec/README.md` · ✅ `COLLAB.md` 协商机制 + 门禁 |
-| WorkBuddy 待交付 | `spec/forms/*.json`（11 张单据字段 schema）→ `ledger-mapping.json` → `dashboard.yaml` → `params.json` → 人读产品规格 → 《采购及费用审批制度》V4.0（Word）→ 第一批实施规格与验收标准 |
+| WorkBuddy 待交付 | `spec/forms/*.json`（11 张单据字段 schema）→ `ledger-mapping.json` → `dashboard.json` → `params.json` → 人读产品规格 → 《采购及费用审批制度》V4.0（Word）→ 第一批实施规格与验收标准 |
 | **阻塞你开工的** | **无**（批 1 的规格未出齐前，见第 5 步的"现在可做/不可做"） |
 | 冻结基线 | `8fb3ea2`（tag `0.3.5-s3`）。★ 当前 HEAD 已含你的 `4741dcb` 与 WorkBuddy 的 `84c3f07`、`b64f6d3` |
 

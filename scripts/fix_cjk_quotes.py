@@ -43,40 +43,44 @@ def target_files(argv):
 
 
 def repair(text, eol):
-    """逐行状态机修「字符串内部误用的引号」→ (新文本, 修正数)。
+    """修「JSON 字符串内部误用 ASCII 引号」→ (新文本, 修正数)。
 
-    ★ 处理 **反斜杠转义**：JSON 字符串里的反斜杠加引号是**内容**，不是定界符。
-    ★ 判据：字符串**内部**遇到引号时看**下一个字符** —— 是逗号/冒号/右花括号/右方括号/行尾/空白
-      ⇒ **合法收尾**；否则 ⇒ **误用**（真收尾后面必然是结构字符）。
-    ★ 逐行处理是安全的：本仓库的 JSON 是**一行一个值**，不存在跨行字符串。
+    ★★ 判据（v2，已修正 v1 的错位缺陷）：一个引号是**合法定界符**，当且仅当
+      **前邻**是结构/空白（`{ [ , :` 或行首/空白）**或** **后邻**是结构/空白（`, : } ]` 或行尾/空白）。
+      ★ 其余一律判为**误用**，并按**独立的计数器**成对替换为 `「` / `」`。
+    ★★ v1 的错：把「误用计数」与 `in_string` 状态绑在一起 ⇒ 成对误用会被**错位替换**
+      （把第二处误用当收尾、第三处当开头）⇒ 修后仍不合法。★ 因为本工具**只处理不合法文件**，
+      改进判据对合法文件**零影响**（它们根本不进修复流程）。
+    ★ 处理**反斜杠转义**：`\"` 是内容，不是定界符。
     """
     out_lines, n = [], 0
+    struct_before = set("{[,:")
+    struct_after = set(",:]}")
     for line in text.split(eol):
-        res, in_string, pend, esc = [], False, False, False
+        res, esc, mis = [], False, 0
         for i, c in enumerate(line):
             if esc:
-                res.append(c)
-                esc = False
-                continue
+                res.append(c); esc = False; continue
             if c == chr(92):
-                res.append(c)
-                esc = True
-                continue
+                res.append(c); esc = True; continue
             if c != '"':
+                res.append(c); continue
+            # ★ v3：跳过空格后看**前一个非空字符**是否结构字符（v2 的 `prev.isspace()` 会把
+            #   `★ **"…` 这种「空格前是星号」的误用开引号误判为合法定界符 ⇒ 错位）。
+            j = i - 1
+            while j >= 0 and line[j] in " 	":
+                j -= 1
+            before = line[j] if j >= 0 else ""
+            k = i + 1
+            while k < len(line) and line[k] in " 	":
+                k += 1
+            after = line[k] if k < len(line) else ""
+            legal = (before == "" or before in struct_before) or (after == "" or after in struct_after)
+            if legal:
                 res.append(c)
-                continue
-            if not in_string:
-                res.append(c)
-                in_string = True
-                continue
-            nxt = line[i + 1] if i + 1 < len(line) else ""
-            if nxt in ",:}]" or nxt == "" or nxt.isspace():
-                res.append(c)
-                in_string = False
-                pend = False
             else:
-                res.append("「" if not pend else "」")
-                pend = not pend
+                res.append("「" if mis % 2 == 0 else "」")
+                mis += 1
                 n += 1
         out_lines.append("".join(res))
     return eol.join(out_lines), n
