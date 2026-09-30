@@ -1,0 +1,317 @@
+{
+  "doc_type": "QC",
+  "label": "来料检验报告",
+  "prefix": "QC",
+  "number_format": "QC-YYMM-####",
+  "version": "1.0",
+  "date": "2026-09-30",
+  "generated_by": "WorkBuddy",
+
+  "sources": {
+    "tool_table": "★ **工具表 `表单字段清单` 未列 QC 字段组**（该表只到 6 组：PR／SA／PO／到货验收单／集团提交流转单／结算补录）⇒ 本表字段**由 `L07` 台账列需求 ＋ 制度 ＋ 代码侧推导**，且**逐条标注来源**（见 `known_gaps` 第 1 条）。",
+    "chain": "spec/chain.json#doc_chains.QC —— 「★ **无独立审批链、不落账**；结论并入 `L07`」＋ `required_config`：**必须配 `related_biz_no → GR 单号`，否则 `L07`「检验结论」列永远为空**；**必须配 `inspection_result`（判定结论）**。",
+    "ledger": "spec/ledger-mapping.json#ledgers.L07.fields[inspection_conclusion] —— `writable: true`，`writer: 质检技术部`，`when: 到货验收当日`，`naming: R-20#6`（制度写「检验结论」、工具表写「判定结论」⇒ **统一用制度名**）。",
+    "institution": "费用管理办法V3.0（第五十九条 到货验收台账；第三十四条 不得先付后验）＋ **2026-09-25 批复 A2**（验收人按品类分三组）",
+    "resolution": "spec/RESOLUTIONS.md（**R-22**：RFQ／QC 侧字段以工具表 C6 ＋ 代码侧为准，须标注「制度未明说」/ **R-20#6**：检验结论统一用制度名 / **R-16**：经办人已纳入验收组，旧「经办人不得验收」口径作废）"
+  },
+
+  "ledger": [],
+
+  "ledger_resolution": "★★ **本单不落台账行，但向 `L07` 写一列** —— 这一点必须说清，否则极易被误读成「QC 与台账无关」：\n· `ledger-mapping.json#doc_to_ledger.QC = []` ⇒ **不产生台账行**（判决类型 `[]`，判据 `S12` 锚定，本文件**必须**写空数组）；\n· 但 `L07.fields[inspection_conclusion]` 的 `writer` 正是**质检技术部**，**数据来源就是本单** ⇒ ★★ **QC 不交付 ⇒ `L07`「检验结论」列恒空**；\n· ★★ 而「**恒空**」在本项目里是最危险的形态之一：**「没有数据」与「没有违规」长得一模一样**（`README` 定案 #51 同族）—— 台账看上去正常，实际这一列永远读不到值，且**没有任何东西会报错**。\n· ⇒ 因此本单的**两个必配项**（`related_biz_no → GR 单号`、`inspection_result`）各配一条 `hard` 判据，见 `checks`。",
+
+  "routes": {
+    "_authority": "★ 权威源＝`spec/chain.json#doc_chains.QC`（`env_count = 0`）—— **本文件不得与之冲突**",
+    "no_chain": "★★ **无独立审批链**：本单**不设审批节点**，是**登记／补录型单据** —— 由质检技术岗在**到货验收当日**填写并提交；交付后**不回写** GR 的结论，只向 `L07` 补写「检验结论」列（见 `ledger_resolution`）。",
+    "why_no_chain": "★ 理由：制度把验收与检验放在**同一时点**（到货验收当日）完成，且 `enums.json#acceptance_groups` 的硬规则写明「一律采用『**验收入库**』一步合并」⇒ 再给 QC 单设审批链，会把同一件事拆成两次审批，**徒增环节而不增控制**。☆ 与 GR 的分工是**字段分工**（GR 出 `acceptance_conclusion`，QC 出 `inspection_conclusion`），不是流程分工。",
+    "submitter": "★ 提交人＝**质检技术岗**（`chain.json#roles.inspector_group` 一类）；★ 现状：**待总工到位**（`docs/01-PRD` 组织架构）⇒ 本单**暂由项目总经理代管**填写（与「质检技术部由总经理代管」一致）。",
+    "avoidance": "★ **综合运营主管不得同时作为该笔的验收人**（`enums.json#acceptance_groups.hard_rules`）—— ★ 该约束的**承载点在 `GR`**（验收人字段），本单**不重复设卡**（否则同一规则两处实现＝漂移）。"
+  },
+
+  "sections": [
+    {
+      "id": "header",
+      "label": "表头",
+      "fields": [
+        {
+          "name": "biz_no",
+          "label": "报告编号",
+          "type": "string",
+          "required": true,
+          "source": "system",
+          "immutable_after_submit": true,
+          "is_business_key": true,
+          "origin": "code",
+          "origin_ref": "代码侧 `data_templates.py` QC ＋ `chain.json#doc_chains.QC.prefix`",
+          "rule": "格式 QC-YYMM-####；提交后不可修改；作为本单主键"
+        },
+        {
+          "name": "applicant",
+          "label": "检验人",
+          "type": "person",
+          "required": true,
+          "source": "system",
+          "immutable": true,
+          "origin": "code",
+          "origin_ref": "代码侧 QC ＋ `L07.fields[inspection_conclusion].writer = 质检技术部`",
+          "rule": "取当前登录人，不可手改；★ 应为**质检技术岗**（现状待总工到位，暂由项目总经理代管）"
+        },
+        {
+          "name": "applicant_department",
+          "label": "所属部门",
+          "type": "department",
+          "required": true,
+          "source": "system",
+          "immutable": true,
+          "origin": "code",
+          "origin_ref": "通用表头（同 PR）",
+          "note": "★ 用于留痕与统计，**不参与本单的分支判定**（本单无审批链）"
+        },
+        {
+          "name": "related_biz_no",
+          "label": "关联验收单号（GR）",
+          "type": "string",
+          "required": true,
+          "source": "system",
+          "immutable": true,
+          "is_business_key": false,
+          "origin": "chain",
+          "origin_ref": "`chain.json#doc_chains.QC.required_config[0]`：★ **必须配 `related_biz_no → GR 单号`，否则 `L07`「检验结论」列永远为空**",
+          "rule": "★ 从**已提交的 GR** 带入；★ 对应关系为**一对多**（同一 GR 可分批／分项检验 ⇒ 允许多份 QC 指向同一 GR）",
+          "critical_note": "★★ 按 **Q14 定稿**，单据间关联一律用单一键 `related_biz_no`（透传 `ext_json`），**不再逐单据各造键名**。★ **检索一律等值匹配、绝不前缀匹配**（前缀会让 `GR-1` 捞到 `GR-1X` ＝ 串单／越权，见 `README` 定案 #15/#28 与 `PC` 的经验）。"
+        }
+      ]
+    },
+
+    {
+      "id": "inspection",
+      "label": "检验信息",
+      "fields": [
+        {
+          "name": "inspection_date",
+          "label": "检验日期",
+          "type": "date",
+          "required": true,
+          "source": "user",
+          "origin": "ledger",
+          "origin_ref": "`L07.fields[inspection_conclusion].when = 到货验收当日`",
+          "rule": "★ 默认取当天；**应当与关联 GR 的验收日期同日**（制度：验收与检验同一时点完成）",
+          "soft_note": "★ 「应当同日」列**提示**而非硬拦：允许次日补录（质检岗不在场时），但须在 `note` 说明理由。★ 硬拦会把「当天来不及录入」变成**只改日期**的假数据。"
+        },
+        {
+          "name": "inspection_method",
+          "label": "检验方式",
+          "type": "enum",
+          "required": true,
+          "source": "user",
+          "origin": "code",
+          "origin_ref": "代码侧 QC（制度未明说 ⇒ 见 `known_gaps` 第 1 条）",
+          "rule": "全检 ／ 抽检；★ 选「抽检」时 `sample_quantity` 必填（否则「抽检」等于「没检」）"
+        },
+        {
+          "name": "sample_quantity",
+          "label": "抽检数量",
+          "type": "number",
+          "required": false,
+          "source": "user",
+          "origin": "code",
+          "origin_ref": "代码侧 QC（制度未明说）",
+          "rule": "★ `inspection_method = 抽检` 时**必填**；选「全检」时**不填**（填了即自相矛盾）"
+        },
+        {
+          "name": "batch_no",
+          "label": "批号／到货批次",
+          "type": "string",
+          "required": false,
+          "source": "user",
+          "origin": "code",
+          "origin_ref": "代码侧 QC（制度未明说）",
+          "rule": "可与 GR 的实收记录对应，便于事后按批追溯"
+        },
+        {
+          "name": "specification",
+          "label": "规格型号／执行标准",
+          "type": "string",
+          "required": true,
+          "source": "user",
+          "origin": "code",
+          "origin_ref": "代码侧 QC（制度未明说）",
+          "rule": "★ **判定必须有依据**：写清据以判定的规格或执行标准（否则「判定结论」无从复核，退回「人说了算」）。★ 可从关联 PR 的「规格型号」带入后人工确认。"
+        }
+      ]
+    },
+
+    {
+      "id": "conclusion",
+      "label": "判定结论",
+      "fields": [
+        {
+          "name": "inspection_result",
+          "label": "判定结论",
+          "type": "enum",
+          "required": true,
+          "source": "user",
+          "origin": "chain",
+          "origin_ref": "`chain.json#doc_chains.QC.required_config[1]`：**必须配 `inspection_result`（判定结论）**",
+          "rule": "合格 ／ 不合格 ／ 让步使用",
+          "critical_note": "★★ **字段名用 `inspection_result`、标签用「判定结论」** —— 这是 `R-20#6` 的另一半：制度写「**检验结论**」、工具表写「**判定结论**」，**同一件事两个名字**。⇒ 本单**只保留一个字段名**（`inspection_result`，与 `chain.json` 的 `required_config` 逐字一致），**标签**取工具表口径；★ 落 `L07` 时**列名用制度口径** `inspection_conclusion`（`ledger-mapping` 已裁定）。★ 这一段必须写清，否则后人会去找一个并不存在的第二个字段。"
+        },
+        {
+          "name": "l07_inspection_conclusion",
+          "label": "写入 L07 的检验结论",
+          "type": "string",
+          "required": true,
+          "source": "system",
+          "derived_from": "`inspection_result`",
+          "origin": "ledger",
+          "origin_ref": "`L07.fields[inspection_conclusion]`（`writable: true`，`writer: 质检技术部`）",
+          "rule": "★ **由系统从 `inspection_result` 派生写入**，不单独采集（避免两个值不一致）；★ 这是本单**唯一的落账动作**",
+          "critical_note": "★★ 为什么要显式列一个「派生字段」：**要让「QC 收敛到 L07 哪一列」在规格里看得见**。若只写「结论并入 L07」，实现时极易漏掉写入 ⇒ `L07` 该列恒空而无人发现（同族：本项目 `L03` 恒空、看板 16 恒 0 两起静默缺陷）。"
+        },
+        {
+          "name": "defect_description",
+          "label": "不合格描述",
+          "type": "text",
+          "required": false,
+          "source": "user",
+          "origin": "code",
+          "origin_ref": "代码侧 QC",
+          "rule": "★ `inspection_result = 合格` 时**不填**；判定为「不合格」或「让步使用」时**必填**（否则「不合格」没有事实依据）"
+        },
+        {
+          "name": "disposition",
+          "label": "处置建议",
+          "type": "enum",
+          "required": false,
+          "source": "user",
+          "origin": "code",
+          "origin_ref": "代码侧 QC",
+          "rule": "退货 ／ 换货 ／ 让步接收 ／ 返工；★ **仅供 GR 判读参考**，最终处置以 GR 的 `acceptance_conclusion` 为准",
+          "critical_note": "★ **本字段不是结论**，不得被下游当作结论消费 —— 否则会出现「QC 建议退货、GR 判合格入库」而无人解释。★ 两者的一致性**当前不设硬约束**（见 `known_gaps` 第 3 条）。"
+        },
+        {
+          "name": "note",
+          "label": "备注",
+          "type": "text",
+          "required": false,
+          "source": "user",
+          "origin": "code",
+          "origin_ref": "通用",
+          "rule": "★ 检验日期与 GR 验收日期**不同日**时，**在此说明理由**（见 `inspection_date.soft_note`）"
+        }
+      ]
+    },
+
+    {
+      "id": "attachment",
+      "label": "附件",
+      "fields": [
+        {
+          "name": "inspection_report_file",
+          "label": "检验报告附件",
+          "type": "file",
+          "required": true,
+          "source": "user",
+          "origin": "code",
+          "origin_ref": "代码侧 QC",
+          "rule": "★ **必填**：判定结论必须**有据可查**（`specification` 给依据、本附件给原始记录）。★ 缺附件的「判定结论」等于一句话，事后无法复核。"
+        }
+      ]
+    }
+  ],
+
+  "checks": [
+    {
+      "id": "related_gr_must_exist",
+      "when": "submit",
+      "assert": "`related_biz_no` 指向的 GR **必须存在**，且匹配方式为**等值**（不得前缀匹配）",
+      "else": "★ **不静默通过**：拒绝并提示「关联验收单 {no} 不存在」",
+      "origin": "chain",
+      "origin_ref": "`chain.json#doc_chains.QC.required_config[0]`",
+      "severity": "hard",
+      "note": "★★ **三点说清**：① **必须存在** —— 否则「检验」失去了被检验的对象；② **等值不前缀** —— 前缀会让 `GR-2609-0001` 的查询命中 `GR-2609-00011`（`README` 定案 #15/#28 同族：**前缀匹配＝串单／越权**）；③ ★★ **查不到时不得 fail-open** —— 「查不到就放行」等于这条校验不存在（`N-027` 已确立的口径：**fail-open＝假校验**）。"
+    },
+    {
+      "id": "inspection_result_required",
+      "when": "submit",
+      "assert": "`inspection_result` 非空，且取值 ∈ {合格, 不合格, 让步使用}",
+      "else": "★ 拒绝：判定结论必填",
+      "origin": "chain",
+      "origin_ref": "`chain.json#doc_chains.QC.required_config[1]`",
+      "severity": "hard",
+      "note": "★ 这条看似平凡，却是**整张单存在的理由** —— QC 的产出就是「一个判定」。★ 与 `related_gr_must_exist` 合起来正好对应 `chain.json` 写明的**两个必配项**：**一个指明对象（哪张 GR），一个给出结论**。"
+    },
+    {
+      "id": "sample_quantity_pair",
+      "when": "submit",
+      "assert": "`inspection_method == 抽检` ⟺ `sample_quantity` 非空且 > 0",
+      "else": "★ 拒绝：抽检须填抽检数量；全检不得填抽检数量",
+      "origin": "code",
+      "origin_ref": "本表 `inspection_method` / `sample_quantity` 的 `rule`",
+      "severity": "hard",
+      "note": "★ **双向**约束（⟺ 而非 ⇒）：只写「抽检⇒填数量」会漏掉「全检却填了数量」这种自相矛盾。★ 与 `CT` 的 `prepay_pair` 同款写法（**成对字段必须一起出现、也必须一起不出现**）。"
+    },
+    {
+      "id": "defect_description_when_not_pass",
+      "when": "submit",
+      "assert": "`inspection_result != 合格` ⇒ `defect_description` 非空",
+      "else": "★ 拒绝：判定为非合格时须填写不合格描述",
+      "origin": "code",
+      "origin_ref": "本表 `defect_description.rule`",
+      "severity": "hard",
+      "note": "★ 判「不合格」却写不出哪里不合格 ⇒ 该判定**不可复核**。★ 注意方向：**合格时不要求**（避免让质检为了过校验写废话）。"
+    },
+    {
+      "id": "l07_inspection_conclusion_written",
+      "when": "提交后",
+      "assert": "★ **本单提交后，`L07` 对应行的 `inspection_conclusion` 必须已写入本单的 `inspection_result`**",
+      "else": "★ **不静默通过**：标记本次落账失败并告警（不得只记日志）",
+      "origin": "chain",
+      "origin_ref": "`chain.json#doc_chains.QC`（结论并入 `L07`）＋ `ledger-mapping.json#ledgers.L07.fields[inspection_conclusion]`",
+      "severity": "hard",
+      "note": "★★★ **这条是本表单最重要的一条** —— 它防的正是「**没有数据与没有违规不可区分**」（`README` 定案 #51）：\n· 若落账动作漏掉，`L07`「检验结论」列**恒空**，而台账看起来**完全正常**；\n· 事后无人能区分「这批货就是没检验」与「检验了但没写进去」—— ★ **两种情况的处置完全不同，却长得一样**。\n★ 落账自检与 `SS`／`PC` 的 `ledger_l09_written` 同款（**同一族：凡是「某张单应产出某个值」的地方，都要一条「是否真的产出了」的自检**）。"
+    },
+    {
+      "id": "no_duplicate_qc_for_same_batch",
+      "when": "submit",
+      "assert": "同一 `related_biz_no` + 同一 `batch_no` 下，**已存在未作废的 QC 时** ⇒ 仅**提示**",
+      "else": "★ 提示「该批已有检验记录（{no}），确认是否重复」—— **不阻断**",
+      "origin": "code",
+      "origin_ref": "本表 `related_biz_no.rule`（一对多）",
+      "severity": "soft",
+      "note": "★★ **为什么必须是 `soft`**：本单**允许一对多**（同一 GR 可分批／分项检验）⇒ 硬拦会**误伤合法的分批检验**。★ 这里体现的是「**允许多份**是设计，重复录入是风险」—— 两者表象相同，**只能提示、不能拦**。"
+    }
+  ],
+
+  "known_gaps": [
+    {
+      "gap": "★ **工具表 `表单字段清单` 未列 QC 字段组** ⇒ 本表字段系**推导**而来",
+      "status": "已记录（`R-22` 已预见）",
+      "note": "★ `spec/RESOLUTIONS.md#R-22` 已裁定：**RFQ／QC 侧字段以工具表 C6 ＋ 代码侧为准，须标注「制度未明说」**。⇒ 本文件**逐字段标了 `origin`／`origin_ref`**：凡标 `code` 者即「制度与工具表均未明说」。★ 影响：这些字段（`inspection_method`／`sample_quantity`／`batch_no`／`specification`／`disposition`）**集团或管理层若另有口径，替换即可**（结构不变）。"
+    },
+    {
+      "gap": "「**让步接收**」的**双签**落在哪张单承载",
+      "status": "未定（★ 影响 GR 与 QC 的字段划分）",
+      "note": "★ `enums.json#acceptance_conclusion.rule` 明写：「**让步接收须质检与使用部门双签**」。但 `L07` **没有**双签列，`acceptance_conclusion` 只是 4 值枚举 ⇒ ★ **「双签」目前没有承载位点**。\n· 候选方案：① 落在 **GR**（验收人组已含质检 —— 但那是「人是质检」，不等于「质检签字认可让步」）；② 落在 **QC**（判定＝让步使用 ⇒ 要求使用部门会签）；③ 新增字段（`concession_signers`）。★ 我方倾向 **②**（判定在哪张单，确认就挂在哪张单）。★ **建议在交付 `GR` 时一并定**（两张单的字段划分必须同时定，否则会各写一半）。"
+    },
+    {
+      "gap": "`inspection_result`（QC 判定）与 `acceptance_conclusion`（GR 验收结论）的**一致性约束**",
+      "status": "未定（★ 现行**不设硬约束**，见 `disposition.critical_note`）",
+      "note": "★ 两者理论上相关（检验不合格 ⇒ 验收难判「合格入库」），但**不设硬约束的理由**：制度把验收与检验定为**同一时点的两件事**，一次到货可能出现「部分合格、部分不合格」⇒ 用一条硬规则绑死两者会**误拦真实业务**。★ 我方建议：**先不绑**，改由 `GR` 侧**可见提示**（QC 判定为不合格时，若 `acceptance_conclusion = 合格入库` ⇒ 提示说明理由）。★ 待 `GR` 交付时一并定。"
+    },
+    {
+      "gap": "★ `doc_chains.GR.acceptance_groups` 与 `enums.json#acceptance_groups` **两份重复定义**",
+      "status": "已记录（**同义异名／重复真相**风险）",
+      "note": "★ 同一份「验收人按品类三组」的定义，在 `chain.json#doc_chains.GR.acceptance_groups` 与 `enums.json#acceptance_groups` **各写了一份**（★ 内容目前一致：`P01` 3 人／`P02–P04` 2 人／`P05–P08` 2 人）。⇒ **两处定义必然漂移**（本项目已多次证实这一形态）。★ 建议**收敛为一处**（`enums.json` 为准，`chain.json` 侧改为引用或删除）。★ **需先确认 Go 侧是否读 `doc_chains.GR.acceptance_groups`**，故**本单不擅自改动**（避免打断消费端）；★ 建议随 `GR` 交付时一并处理。"
+    },
+    {
+      "gap": "`doc_chains.GR` 里的 `finalized: \"已作废口径\"` 是个**含义不明**的键",
+      "status": "已记录（属 `GR` 侧，本单不擅改）",
+      "note": "★ `chain.json#doc_chains.GR` 有一个 `\"finalized\": \"已作废口径\"` —— 该键名（`finalized`）与取值（`已作废口径`）**都不说明它到底指哪一条被作废的口径**，`R-16` 另注了「旧『经办人不得验收』口径作废」。⇒ ★ 建议在交付 `GR` 时改成具名键（如 `obsolete_rules`）并写清原文，否则后人无从判断哪条还有效。"
+    },
+    {
+      "gap": "本单的**提交人**在「总工到位前」由谁承担",
+      "status": "已记录（组织侧，不阻塞）",
+      "note": "★ 现行组织架构：**质检技术部由项目总经理代管**（总工未到位）⇒ 本单的实际填写人是项目总经理。★ 系统**不做校验**（`applicant` 取登录人即可），但这会影响**「谁对判定负责」**的追溯 —— ★ 建议总工到位后在 `/admin` 的角色映射里落实，**无需改本规格**。"
+    }
+  ]
+}

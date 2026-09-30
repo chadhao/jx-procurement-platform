@@ -1,5 +1,5 @@
 {
-  "version": "1.5",
+  "version": "1.6",
   "generated_by": "WorkBuddy",
   "date": "2026-09-29",
   "scope": "spec/",
@@ -200,7 +200,7 @@
     {
       "id": "S5b",
       "severity": "must-green",
-      "desc": "forms/*.json 内全部 ledger 取值必须 ⊆ L01–L12",
+      "desc": "forms/*.json 内全部 ledger 取值必须 ⊆ L01–L12 —— ★ 2026-09-30 起 **`min_hits: 0`**（原为 1），原因见 `S5d`",
       "primitive": "enum_subset",
       "args": {
         "file": "spec/forms/*.json",
@@ -219,7 +219,27 @@
           "L11",
           "L12"
         ],
-        "min_hits": 1
+        "min_hits": 0
+      }
+    },
+    {
+      "id": "S5d",
+      "severity": "must-green",
+      "desc": "★★ 每张 forms/*.json 必须**显式声明**关键顶层键（**含 `ledger`**）—— ★ 承接 `S5b` 原先的「命中数守栏」，并把它升级为更有意义的断言：**「没声明 ledger」与「声明 ledger 为空数组」必须可区分**",
+      "primitive": "required_keys",
+      "args": {
+        "file": "spec/forms/*.json",
+        "scope": "",
+        "keys": [
+          "doc_type",
+          "label",
+          "prefix",
+          "number_format",
+          "version",
+          "ledger",
+          "sections",
+          "checks"
+        ]
       }
     },
     {
@@ -409,6 +429,11 @@
     "on_emitting_a_violation": "★★ **两侧引擎在报违规时，必须把「当前判据的真实 `id`」写进消息前缀** —— 例如 `[S5c] …`，**不得硬编码某个 ID 字面量、也不得写原语名**。★ 理由（实测事故）：同一原语会被**多条判据**复用（现 16 条判据复用 8 个原语），一旦硬编码，`S5c` 报出来的会是 `[S8/S11]` —— **排查者照错误 ID 去查，必然被带偏；这比『不报错』更坏**。Python 侧实现＝执行器注入 `args[\"__cid__\"]` ＋ `_self_audit_cid_literals()` 源码自审（禁止回潮）；Go 侧请同口径实现。"
   },
   "change_log": [
+    {
+      "version": "1.6",
+      "date": "2026-09-30",
+      "change": "★★ **修掉两条判据互相矛盾（我方规格侧，零引擎改动）** —— 起因是交付 `forms/QC.json` 时 `S5b` 报红：`forms/*.json` 的 `ledger[*]`「仅命中 0 处（要求 ≥1）」。\n\n**根因**：`S5b` 的 `min_hits` 是**每文件**语义（`_hits_guard` 写在**每个文件**的循环体内），而 **「有的单据确实不落账」是合法事实** —— `ledger-mapping.json#doc_to_ledger` 里 `QC` / `RFQ` / `BJ` 的 `ledger` 就是 `[]`，且 `S12`（`cross_equal_by_key`）**要求** `forms/*.json` 的 `ledger` 与映射**逐字相同** ⇒ ★ 不落账的单据**同时**触发「`S5b` 要求 ≥1」与「`S12` 要求 = `[]`」⇒ **两条判据不可能同时满足**。★ 这不是 QC 一个文件的毛病：**`RFQ` / `BJ` 交付时会同样撞上**（故在交付前修掉，而不是绕过）。\n\n**修法**：① `S5b` 的 `min_hits` **1 → 0**（★ **显式写 0**：两侧 `min_hits` 缺省都是 1，省略不写等于没改）；② 新增 **`S5d`**（`required_keys`）承接原守栏，并把它**升级**为：**每张表单必须显式声明关键顶层键（含 `ledger`）** ⇒ ★ 把「**没声明 `ledger`**」与「**声明 `ledger` 为空数组**」区分开 —— 前者是**漏写**（该报错），后者是**事实**（不落账）。★ 这与本项目反复出现的那句话同源：**「没有数据」与「没有这个字段」不可区分**，正是最难查的缺陷形态。\n\n★ **零引擎改动**：`S5d` 只用已有原语 `required_keys`（`S2` 同款）⇒ 两侧行为自动一致，**无需「你先我后」**、无红窗。★ 判据 17 → **18** 条，原语仍 **9** 个。★ 该 `min_hits` 的**每文件语义**本身是既有设计（`S5c` 等同款），**本轮不改语义、只改参数** —— 若日后需要「全局命中数」守栏，那是**引擎扩展**，须两侧同批（记入 `COLLAB.md`）。"
+    },
     {
       "version": "1.5",
       "date": "2026-09-30",
