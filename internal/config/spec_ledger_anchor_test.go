@@ -137,6 +137,18 @@ func TestSpecR02DualLedger(t *testing.T) {
 	}
 }
 
+// TestExceptionDocsLedgerL09 SS（独家）与 PC（变更）同落 L09（README 定案 #23 /
+// N-027 终态判据 ledger_l09_written 的配置前提）——缺映射＝终态不落账、无报错。
+func TestExceptionDocsLedgerL09(t *testing.T) {
+	spec := specDocToLedger(t)
+	for _, doc := range []string{"SS", "PC"} {
+		ledgers := spec[doc]
+		if len(ledgers) != 1 || ledgers[0] != "L09" {
+			t.Errorf("%s 落账 = %v，应恰为 [L09]", doc, ledgers)
+		}
+	}
+}
+
 // TestFormsLedgerAnchored forms/*.json 的 ledger 与 doc_to_ledger 完全一致
 // （与 specload S12 同判据、不同层 —— Python 门禁 / Go 加载器 / 本锚定三方互锁）。
 func TestFormsLedgerAnchored(t *testing.T) {

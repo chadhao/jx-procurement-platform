@@ -257,6 +257,8 @@ type FieldDoc struct {
 	EnumRef             string   `json:"enum_ref"`
 	Values              []string `json:"values"`
 	IsAmountBasis       bool     `json:"is_amount_basis"`
+	// ClauseGroup 合同必备条款分组（1..8，CT 专用；制度第三十五条硬拦截的分组键）。
+	ClauseGroup int `json:"clause_group"`
 }
 
 type CheckDoc struct {

@@ -151,11 +151,11 @@ VALUES ('I-PR-2609-0007','code-pr','PR','PR-2609-0007','PENDING','ou_app',100000
 	}
 
 	// ① 合同 105000 ≤ 100000×1.10 ⇒ 放行（容差 10% 来自 params）
-	if err := d.evaluateHardChecks(ctx, form, mkBody(105000), "ou_app"); err != nil {
+	if err := checkCTAmountVsPR(ctx, d, form, mkBody(105000), "ou_app"); err != nil {
 		t.Errorf("10%% 容差内应放行: %v", err)
 	}
 	// ② 合同 120000 ⇒ 超容差，提示先走 PC（require_purchase_change）
-	err := d.evaluateHardChecks(ctx, form, mkBody(120000), "ou_app")
+	err := checkCTAmountVsPR(ctx, d, form, mkBody(120000), "ou_app")
 	if err == nil || !strings.Contains(err.Error(), "采购变更") {
 		t.Fatalf("超容差应拒并提示 PC: %v", err)
 	}
@@ -169,13 +169,13 @@ VALUES ('I-PR-2609-0007','code-pr','PR','PR-2609-0007','PENDING','ou_app',100000
 	e.Value = json.RawMessage("30")
 	mutated.Params.Params["contract.amount_over_pr_tolerance_percent"] = e
 	d2 := Deps{Spec: &mutated, DB: db}
-	if err := d2.evaluateHardChecks(ctx, form, mkBody(120000), "ou_app"); err != nil {
+	if err := checkCTAmountVsPR(ctx, d2, form, mkBody(120000), "ou_app"); err != nil {
 		t.Errorf("容差改 30 后 120000 应放行（参数驱动）: %v", err)
 	}
 	// ④ 关联 PR 缺失 ⇒ 可见失败（不 fail-open）
 	bad := mkBody(100000)
 	bad.Fields["related_biz_no"] = "PR-NOT-EXIST"
-	if err := d.evaluateHardChecks(ctx, form, bad, "ou_app"); err == nil {
+	if err := checkCTAmountVsPR(ctx, d, form, bad, "ou_app"); err == nil {
 		t.Error("关联 PR 不存在必须可见失败（fail-open＝假校验）")
 	}
 }

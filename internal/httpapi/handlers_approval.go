@@ -641,6 +641,12 @@ func (d Deps) handleApprovalSubmit(c echo.Context) error {
 	case err != nil:
 		return d.approvalError(c, err)
 	}
+	// N-027：提交后 hard 自检（contract_no_format —— 需生成后的 biz_no；失败=内部一致性破坏，可见 500）
+	if hasForm {
+		if verr := d.verifyPostSubmitHard(form, bizNo); verr != nil {
+			return fail(c, http.StatusInternalServerError, codeInternal, verr.Error())
+		}
+	}
 	d.audit(ctx, &store.AuditLogRow{ActorOpenID: idn.OpenID, ActorRole: idn.Role,
 		Action: "submit", Resource: "approval", TargetID: bizNo, Result: "allow"})
 	inst, err := d.DB.GetInstanceByBizNo(ctx, bizNo)
