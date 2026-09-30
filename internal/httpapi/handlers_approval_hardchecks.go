@@ -18,6 +18,7 @@ import (
 	"fmt"
 	"regexp"
 	"strings"
+	"time"
 
 	"github.com/chadhao/jx-procurement-platform/internal/specload"
 )
@@ -55,6 +56,13 @@ var submitHardChecks = map[string]hardCheckFn{
 	"selected_must_be_valid_and_compliant": checkBJSelectedValidCompliant,
 	"not_single_source":                    checkBJNotSingleSource,
 	// "selection_reason_immutable"：when=提交后 ⇒ verifyBJPostSubmitImmutability 承载
+
+	// ---- RFQ（询价单）----
+	// ★ not_single_source 与 BJ **同名同款共用**；related_pr_must_exist 已在 PR/SS
+	// 段注册（共用；RFQ/SS 语义差异＝函数内按 DocType 分流，见该函数注释）。
+	"invited_min_by_tier":    checkRFQInvitedMinByTier,
+	"deadline_after_send":    checkRFQDeadlineAfterSend,
+	"send_evidence_required": checkRFQSendEvidence,
 
 	// ---- SUB（集团提交流转单）----
 	"related_docs_complete":            checkSUBRelatedDocsComplete,
@@ -382,6 +390,13 @@ func checkRelatedPRMustExist(ctx context.Context, d Deps, _ specload.FormDoc, bo
 	}
 	if pr.DocType != "PR" {
 		return fmt.Errorf("关联单 %q 不是 PR（当前 doc_type=%s）", related, pr.DocType)
+	}
+	// ★ 同名判据两语义（spec 逐单写明）：RFQ#related_pr_must_exist 只要求「存在」——
+	// RFQ 是 PR 审批链 seq2 的产物（doc_chains.RFQ.parent=PR@rfq），提交时 PR 必然
+	// 还在审批中，查 APPROVED 会**拦掉全部合法 RFQ**（误拦）。
+	// SS#related_pr_must_exist 才要求「存在且已批准」。
+	if body.DocType == "RFQ" {
+		return nil
 	}
 	if pr.Status != "APPROVED" {
 		return fmt.Errorf("关联 PR %q 状态为 %s，必须已批准（APPROVED）方可继续", related, pr.Status)
@@ -1116,6 +1131,103 @@ func (d Deps) verifyBJPostSubmitImmutability(ctx context.Context, body *approval
 		frozen, _ := ext[k].(string)
 		if submitted != "" && frozen != submitted {
 			return fmt.Errorf("BJ 提交后不可改自检失败：%s 冻结值与提交值不一致（biz_no=%s）", k, bizNo)
+		}
+	}
+	return nil
+}
+
+// ---------------------------------------------------------------------------
+// RFQ（询价单 · 判据见 spec/forms/RFQ.json#checks；★ 唯一带 parent 的单据：
+// doc_chains.RFQ.parent = "PR@rfq"；★ ledger=[] 不落账 ⇒ 存在证明全在附件）
+// ---------------------------------------------------------------------------
+
+// rfqThresholdOf 按档位取邀请家数门槛（★ 易错点①：不是一律 3 家）。
+// 询比价（采三档）⇒ ≥3（制度第二十条/工具表 R6）；
+// 直采（采二档「报价比选」语境，R5「≥1 家」）⇒ ≥1；
+// 单一来源 ⇒ 返回 (0,false)：本条放行，由 not_single_source 专拦（报错更准）；
+// 其余值（招标/竞争性谈判/未知）⇒ fail-closed：RFQ 通道不适用这些方式，不静默放行。
+func rfqThresholdOf(procureMethod string) (int, bool) {
+	switch procureMethod {
+	case "询比价":
+		return 3, true
+	case "直采":
+		return 1, true
+	case "单一来源":
+		return 0, false
+	default:
+		return -1, false // 不可判定 ⇒ fail-closed
+	}
+}
+
+// checkRFQInvitedMinByTier ★ 门槛随档位 + 家数由明细计数（BJ 同款，不接受手填）。
+// 明细 invited_suppliers 逐行/分号/逗号计数，与 system 声明的 invited_count 交叉核对。
+func checkRFQInvitedMinByTier(_ context.Context, _ Deps, _ specload.FormDoc, body *approvalSubmitBody, _ string) error {
+	provided := hbProvided(body)
+	threshold, applicable := rfqThresholdOf(hStr(provided, "procure_method"))
+	if threshold == 0 && !applicable {
+		return nil // 单一来源：本条放行，not_single_source 专拦
+	}
+	if threshold < 0 {
+		return fmt.Errorf("采购方式 %q 不适用于询价通道，无法判定邀请家数门槛（RFQ 只接受 询比价/直采）",
+			hStr(provided, "procure_method"))
+	}
+	detail := hStr(provided, "invited_suppliers")
+	if strings.TrimSpace(detail) == "" {
+		return fmt.Errorf("邀请单位明细（invited_suppliers）必填 —— 家数由明细自动计数，不接受手填")
+	}
+	derived := countBJQuotes(detail)
+	if derived < threshold {
+		if threshold == 3 {
+			return fmt.Errorf("采三档询比价须邀请不少于 3 家，明细计数 %d 家", derived)
+		}
+		return fmt.Errorf("报价比选须不少于 1 家，明细计数 %d 家", derived)
+	}
+	if ic, ok := hNum(provided, "invited_count"); ok && int(ic) != derived {
+		return fmt.Errorf("invited_count=%d 与明细实际家数 %d 不一致（家数以明细为准，不接受手填）", int(ic), derived)
+	}
+	return nil
+}
+
+// checkRFQDeadlineAfterSend quote_deadline 必须晚于 send_date（date 折算当日 00:00）。
+// ★ 防回溯性数据：「截止早于发出」现实成因只有事后倒填（与 BJ#selection_reason_immutable
+// 同族：一个防「改」一个防「补」）。解析失败 ⇒ fail-closed（假格式不得绕过比较）。
+func checkRFQDeadlineAfterSend(_ context.Context, _ Deps, _ specload.FormDoc, body *approvalSubmitBody, _ string) error {
+	provided := hbProvided(body)
+	deadlineStr := hStr(provided, "quote_deadline")
+	sendStr := hStr(provided, "send_date")
+	if deadlineStr == "" || sendStr == "" {
+		return fmt.Errorf("报价截止时间与询价发出日期均必填")
+	}
+	var deadline time.Time
+	var err error
+	for _, layout := range []string{time.RFC3339, "2006-01-02T15:04:05", "2006-01-02T15:04", "2006-01-02 15:04:05", "2006-01-02 15:04"} {
+		if deadline, err = time.Parse(layout, deadlineStr); err == nil {
+			break
+		}
+	}
+	if err != nil {
+		return fmt.Errorf("报价截止时间 %q 无法解析（解析失败不放行 —— 防倒填用假格式绕过比较）", deadlineStr)
+	}
+	sendStart, err := time.Parse("2006-01-02", sendStr)
+	if err != nil {
+		return fmt.Errorf("询价发出日期 %q 无法解析（解析失败不放行）", sendStr)
+	}
+	if !deadline.After(sendStart) {
+		return fmt.Errorf("报价截止时间 %s 不得早于询价发出日期 %s（防事后倒填）",
+			deadlineStr, sendStr)
+	}
+	return nil
+}
+
+// checkRFQSendEvidence rfq_file 与 send_evidence 均非空。
+// ★★ 本单不落台账（ledger=[]）⇒ 这条判据是它唯一的「存在证明」：
+// 工具表 R2「无留存即视为未执行程序」—— 两项可空则本单与「根本没询价」无法区分。
+func checkRFQSendEvidence(_ context.Context, _ Deps, _ specload.FormDoc, body *approvalSubmitBody, _ string) error {
+	provided := hbProvided(body)
+	for _, k := range []string{"rfq_file", "send_evidence"} {
+		v, _ := provided[k].(string)
+		if strings.TrimSpace(v) == "" {
+			return fmt.Errorf("未留存询价单与发出证据不得提交（%s 为空 —— 工具表：无留存即视为未执行程序）", k)
 		}
 	}
 	return nil
