@@ -1,0 +1,467 @@
+{
+  "doc_type": "PC",
+  "label": "采购变更单",
+  "prefix": "PC",
+  "number_format": "PC-YYMM-####",
+  "version": "1.0",
+  "date": "2026-09-30",
+  "generated_by": "WorkBuddy",
+
+  "sources": {
+    "tool_table": "采购与费用审批体系配置工具表_v3.0.xlsx → `单据清单` R11（PC 在 `表单字段清单` 中【未列出】逐条字段，本表 R11 的 C6「关键字段」为次级来源）：关联合同号、变更原因、原金额、变更后金额、差额、变更依据",
+    "institution": "费用管理办法V3.0（**第五十二条 采购变更** / 第五十三条 例外事项的统计与复盘 / 第四十二条 付款额超过原合同金额 / 第十八条 采一档不签合同）＋ 2026-09-25 批复 A8（档位就高）",
+    "recon": "_scratch/recon-table-v3-fields.md §1.7（PC 次级来源）/ §3（L09 台账字段）",
+    "resolution": "spec/RESOLUTIONS.md（**R-20#7**：变更理由统一名为「变更原因」`change_reason` / **R-20#8**：`contract_no` 与 `related_biz_no` 另列 / **R-21#7**：变更链字段 / **R-15**：150% 与 30% 不是冲突，分别挂到不同规则）"
+  },
+
+  "ledger": ["L09"],
+  "ledger_resolution": "PC 是 `L09 例外事项台账` 的**两个生产者之一**（另一个是 SS），`exception_type` 取值为「采购变更」。★ 与 `ledger-mapping.json#ledgers.L09.producer` 一致（判据 `S12` 锚定）。★ L09 的 `change_chain`（历次变更次数 / 累计金额 / 所取档位）**唯一数据源就是本单**（`R-21#7`）",
+
+  "routes": {
+    "_authority": "★ 权威源＝`spec/chain.json#doc_chains.PC.route` ＝ `change`（**本文件不得与之冲突**）",
+    "four_nodes": {
+      "_authority": "`chain.json#routes.change.nodes`（4 个节点）",
+      "①": "提交变更（采购经办人 —— ★ **必填「关联合同号」**）",
+      "②": "档位判定（系统 —— ★ **档位就高**，见下）",
+      "③": "按该档位审批（主管领导 → 项目总经理）",
+      "④": "台账留痕 ＋ 提交集团（综合运营主管，落 `L09`）"
+    },
+    "tier_formula": {
+      "formula": "applicable_tier = tier_of( max(change_amount_cents, original_contract_amount_cents) )",
+      "label": "★★ **档位就高**",
+      "why": "**关闭化整为零通道**：一份 4,000 元（采二档）的合同要加价 4,000 元，若「仅就差额审批」，可拆成 5 次各 800 元 ⇒ 每次差额 <1,000 元即落进采一档，只需一道备付金审批。⇒ 改为「取差额与原合同金额中的**较高档**」后，**拆多少笔都一样**，审批层级不再因拆分而下降",
+      "boundary_semantics": "★ 取档位用 `chain.json#thresholds.purchase.bands` 的**闭区间**（1000 与 5000 均含在采二档）"
+    },
+    "two_thresholds_are_different_rules": {
+      "_resolution": "R-15：★ **150% 与 30% 不是冲突** —— 它们**分别挂到不同规则**，不得混用",
+      "reset_as_new_purchase": {
+        "when": "new_total_cents > original_contract_amount_cents * 1.5",
+        "effect": "★ 视为**新采购**，须**重走全套流程**"
+      },
+      "special_explanation": {
+        "when": "total_change_cents > original_contract_amount_cents * 0.3",
+        "effect": "须**专项说明**"
+      },
+      "relationship": "★ 本文件把两个量**显式定义**，二者**不可混用**：`total_change_cents` ＝ 该合同**历次变更差额的累计（含本次）**；`new_total_cents` ＝ `original_contract_amount_cents + total_change_cents`。⇒ 二者单调对应（`new_total > 原额×1.5` ⟺ `累计变更 > 原额×0.5`），故 **30% 与 50% 是两级门槛，互相不矛盾**"
+    },
+    "anomaly_list": {
+      "when": "same contract changes >= 2 times within 90 days",
+      "effect": "进**异常清单** ＋ 月度报送专项说明（制度第五十三条）"
+    },
+    "tech_opinion": {
+      "when": "engineering category",
+      "effect": "须由**质检技术岗或工程负责人**出具技术意见（制度第五十二条最后一段）"
+    },
+    "resubmit_to_group": "★ 制度第五十二条：**变更后的合同须重新归口提交集团**",
+    "_unreachable_branch": {
+      "issue": "★ 制度第五十二条列举「按正常采购分档补／重审批」时含「**采一档由综合运营主管审批备付金**」，而 `chain.json#routes.change.nodes[2]` 的 actor 是「主管领导 → 项目总经理」⇒ **表面看是冲突**",
+      "proof": "★★ **实际不冲突，采一档分支不可达 —— 可证**：PC 的**前提是「合同签订后」发生变更**（制度第五十二条首句），而**采一档（<1,000 元）按第十八条不签合同** ⇒ 存在合同 ⇒ `original_contract_amount_cents ≥ 100000 分`；又「档位就高」取 `max(变更差额, 原合同金额)` ⇒ 档位 **≥ 采二档**。⇒ **采一档分支在本单中不可达**，故 `chain.json` 的 actor 与制度**并无矛盾**。★ 该证明留于此，**免得后人再当成冲突报一次**"
+    },
+    "change_chain_lookup": "★★ **变更链检索必须按 `contract_no` 等值匹配，绝不使用前缀匹配（`LIKE '%x%'`）** —— 前缀匹配会让 `CT-1` 捞到 `CT-1X`，属**越权/串链**原型（代码侧 `internal/flow/finalize_test.go` 已有对应断言）。★ 本单是变更链的**生产者**，`contract_no` 是**唯一键**（`bizfields.go#BizFieldContractNo`，Q14 定稿）"
+  },
+
+  "sections": [
+    {
+      "id": "header",
+      "label": "表头",
+      "fields": [
+        {
+          "name": "biz_no", "label": "单据号", "type": "string", "required": true, "source": "system",
+          "immutable_after_submit": true, "is_business_key": true,
+          "origin": "tool_table", "origin_ref": "单据清单 R11（PC 编号）",
+          "rule": "格式 PC-YYMM-####；提交后不可修改；作为全流程主键"
+        },
+        {
+          "name": "applicant", "label": "申请人", "type": "person", "required": true, "source": "system",
+          "immutable": true,
+          "origin": "tool_table", "origin_ref": "通用表头（同 PR）",
+          "note": "★ 本单的提交人是**采购经办人**（`chain.json#routes.change.nodes[0].actor = purchaser`）",
+          "rule": "取当前登录人，不可手改"
+        },
+        {
+          "name": "applicant_department", "label": "所属部门", "type": "department", "required": true, "source": "system",
+          "immutable": true,
+          "origin": "tool_table", "origin_ref": "通用表头（同 PR）",
+          "critical_note": "★★ 本字段**用于条件分支判定** —— 决定「主管领导」是谁（综合运营部／质检技术部 → 项目总经理；生产部／销售部 → 副总）。见 `chain.json#roles.supervisor`（`N-016` 已结构化）"
+        },
+        {
+          "name": "contract_no", "label": "关联合同号", "type": "string", "required": true, "source": "user",
+          "immutable": true, "is_change_chain_key": true,
+          "origin": "resolution", "origin_ref": "R-20#8 ＋ R-21#7 ＋ 制度第五十二条",
+          "rule": "★ 填写本次变更所指向的合同编号（合同台账 `L04.contract_no`）",
+          "critical_note": "★★★ **本字段是变更链回溯的唯一键**（`internal/config/bizfields.go#BizFieldContractNo`，**Q14 定稿**：合同链用 `contract_no`）。★ 制度第五十二条明文「变更单须**关联合同号**，保留完整变更链」；★ 变更链检索一律**等值匹配**，**绝不前缀匹配**（否则 `CT-1` 会捞到 `CT-1X` —— **串链/越权**）。★ `chain.json#routes.change.nodes[0].required_fields = [\"关联合同号\"]` —— 它是**提交节点的必填项**，缺则**不可提交**（无源变更）"
+        },
+        {
+          "name": "related_biz_no", "label": "关联需求单号", "type": "string", "required": false, "source": "system",
+          "immutable": true,
+          "origin": "resolution", "origin_ref": "R-20#8",
+          "rule": "★ 由 `contract_no` 反查合同台账得到原合同对应的需求单号，系统带入",
+          "critical_note": "★ `R-20#8` 明确：**`合同编号`（`contract_no`）与 `关联需求单号`（`related_biz_no`）另列** —— 二者**不得合并**（一个是本单回溯合同的键，一个是指向需求链的键）"
+        },
+        {
+          "name": "original_supplier", "label": "原合同供应商", "type": "string", "required": true, "source": "system",
+          "immutable": true,
+          "origin": "code", "origin_ref": "代码侧补充",
+          "rule": "★ 从合同台账 `L04.supplier` 带入，用于与 `new_supplier` 比对（供应商变更时二者不同）"
+        },
+        {
+          "name": "new_supplier", "label": "变更后供应商", "type": "string", "required": false, "source": "user",
+          "required_when": "change_type == 供应商变更",
+          "origin": "tool_table", "origin_ref": "单据清单 R11（供应商变更属触发情形）",
+          "rule": "★ 仅「供应商变更」时填写；★ 变更供应商须**重新走合同审批**（合同主体变了）"
+        },
+        {
+          "name": "change_type", "label": "变更类型", "type": "enum", "required": true, "source": "user",
+          "enum_inline": ["金额增加", "工期顺延", "范围调整", "供应商变更", "付款条件修改"],
+          "origin": "institution", "origin_ref": "制度第五十二条首句（逐字列举）",
+          "rule": "★ 制度原文列举的**五类**触发情形，逐字取用；★ 可多选时**拆为多张变更单**（同一事项的变更应在一张单里说清）",
+          "critical_note": "★ 本字段决定后续分支：选「供应商变更」⇒ `new_supplier` 必填；选「范围调整」⇒ 建议附变更依据附件"
+        }
+      ]
+    },
+
+    {
+      "id": "amount",
+      "label": "金额与档位（节点②·档位就高）",
+      "filled_at": "node2_tier_judge",
+      "institution_ref": "制度第五十二条 ＋ 批复 A8 ＋ `chain.json#routes.change.rules`",
+      "hard_rule": "★★ **审批档位 ＝ `tier_of( max(变更差额, 原合同金额) )`** —— **拆多少笔都一样**，审批层级不因拆分而下降",
+      "fields": [
+        {
+          "name": "original_contract_amount_cents", "label": "原合同金额", "type": "money_cents", "required": true,
+          "source": "system", "immutable": true,
+          "origin": "tool_table", "origin_ref": "单据清单 R11「原金额」",
+          "rule": "★ 从合同台账 `L04.contract_amount_cents` 带入，不可手改",
+          "critical_note": "★★ **本值是「档位就高」的两个输入之一**，且**决定采一档分支不可达**（有合同 ⇒ ≥1,000 元 ⇒ 档位 ≥ 采二档）。★ 篡改本值即可降档 ⇒ 故必须 `immutable` 且系统带入"
+        },
+        {
+          "name": "change_amount_cents", "label": "变更差额", "type": "money_cents", "required": true,
+          "source": "user",
+          "origin": "tool_table", "origin_ref": "单据清单 R11「差额」",
+          "rule": "★ 本次变更的金额差额（**可为负**：减项、工期缩短导致的价款调整）；**不得为 0**",
+          "critical_note": "★★ **本值是「档位就高」的另一输入**。★ 制度原文强调「取档位时**不看变更被拆成几笔**，只看单笔差额与原合同金额两者中的较高者」—— 故本字段是**单笔**差额，**不是累计**（累计见 `total_change_cents`）"
+        },
+        {
+          "name": "total_change_cents", "label": "累计变更额（含本次）", "type": "money_cents", "required": true,
+          "source": "computed", "immutable": true,
+          "origin": "resolution", "origin_ref": "R-15 ＋ chain.json#routes.change.rules.special_explanation",
+          "rule": "★ ＝ 该合同（`contract_no`）**历次变更差额的累计 ＋ 本次差额**，系统按变更链算出",
+          "critical_note": "★★ **与 `change_amount_cents` 是两个不同的量**：本字段用于**30% 专项说明**门槛（`special_explanation`）；★ 二者**不得混用**（`R-15`：150% 与 30% **不是冲突**，分别挂到不同规则）"
+        },
+        {
+          "name": "new_total_cents", "label": "变更后总额", "type": "money_cents", "required": true,
+          "source": "computed", "immutable": true,
+          "origin": "resolution", "origin_ref": "R-15 ＋ chain.json#routes.change.rules.reset_as_new_purchase",
+          "rule": "★ ＝ `original_contract_amount_cents + total_change_cents`（系统算，禁止手填）",
+          "critical_note": "★★ 用于 **150% 视为新采购** 门槛。★ 本字段与 `total_change_cents` **单调对应**（`new_total > 原额×1.5` ⟺ `累计变更 > 原额×0.5`）⇒ 与 30% 门槛构成**两级阶梯**，**不矛盾**"
+        },
+        {
+          "name": "applicable_tier", "label": "适用档位（档位就高）", "type": "enum", "required": true,
+          "source": "computed", "immutable": true,
+          "origin": "resolution", "origin_ref": "R-22 ＋ 批复 A8（`tier_formula`）",
+          "rule": "★ ＝ `tier_of(max(change_amount_cents, original_contract_amount_cents))`，系统算出、**不得手选**",
+          "critical_note": "★★ **本字段是「按该档位审批」这条规则的执行载体** —— 没有它，节点③就不知道按哪一档走；★ 判据侧的守卫见 `checks#tier_by_max_formula`"
+        },
+        {
+          "name": "change_count_to_date", "label": "该合同历次变更次数", "type": "number", "required": true,
+          "source": "computed", "immutable": true,
+          "origin": "resolution", "origin_ref": "R-21#7 ＋ 制度第五十二条（变更链可回溯）",
+          "rule": "★ 按 `contract_no` 统计（等值匹配），含本次",
+          "critical_note": "★ 本字段是「90 天内 ≥2 次入异常清单」的**数据基础**，也是 L09 `change_chain` 的组成部分"
+        },
+        {
+          "name": "last_change_at", "label": "上次变更时间", "type": "datetime", "required": false,
+          "source": "computed", "immutable": true,
+          "origin": "code", "origin_ref": "代码侧（90 天窗口计算所需）",
+          "rule": "★ 按 `contract_no` 取该合同上一次变更的时间；**无历次变更时为空**",
+          "known_gap": "★ 「90 天窗口」的**起点口径**制度未明说（从首次变更算？从上次变更算？）⇒ 本字段按「上次变更时间」实现（滚动窗口），见 `known_gaps`"
+        }
+      ]
+    },
+
+    {
+      "id": "reason",
+      "label": "变更原因与依据",
+      "institution_ref": "工具表 单据清单 R11「变更原因 / 变更依据」＋ `R-20#7`",
+      "_naming_note": "★★ **字段名纪律**：工具表写「**变更依据**」、制度写「**变更原因**」—— `R-20#7` 裁定**统一名为「变更原因」（`change_reason`）**。⇒ **只保留一个字段**，不得本单同时出现 `change_reason` 与 `change_basis`（那就是 `R-20` 要治的**同义异名**）",
+      "fields": [
+        {
+          "name": "change_reason", "label": "变更原因", "type": "textarea", "required": true, "source": "user",
+          "origin": "resolution", "origin_ref": "R-20#7（以制度为准）",
+          "rule": "★ 说清「**为什么必须变**」：对方来函、设计变更、现场条件变化、不可抗力、法规要求等",
+          "critical_note": "★ 本字段是 L09 台账 `reason`（通用「理由」列）的**唯一数据源**；★ 制度第五十二条要求变更「须提交采购变更单」—— 理由是变更单存在的意义，**不接受「领导让改」这类理由**"
+        },
+        {
+          "name": "change_basis_attachment", "label": "变更依据附件", "type": "attachment", "required": false, "source": "user",
+          "origin": "tool_table", "origin_ref": "单据清单 R11「变更依据」（作为**附件**保留，不另立同义字段）",
+          "rule": "对方来函、设计变更通知、现场签证、法规文件等",
+          "critical_note": "★ 注意区分：**「变更依据」的内容写进 `change_reason`**（按 `R-20#7` 统一名）；**依据的原始文件作为附件**放本字段 —— 二者是**内容与载体**的关系，**不是两个同义字段**"
+        },
+        {
+          "name": "scope_change_detail", "label": "范围调整明细", "type": "textarea", "required": false, "source": "user",
+          "required_when": "change_type == 范围调整",
+          "origin": "institution", "origin_ref": "制度第五十二条（范围调整属触发情形）",
+          "rule": "★ 增加／减少的具体标的与数量（对照原合同）"
+        },
+        {
+          "name": "payment_terms_change_detail", "label": "付款条件修改明细", "type": "textarea", "required": false, "source": "user",
+          "required_when": "change_type == 付款条件修改",
+          "origin": "institution", "origin_ref": "制度第五十二条（付款条件修改属触发情形）",
+          "rule": "★ 修改前后的付款节点／比例／账期对照",
+          "critical_note": "★ 付款条件是**合同审批的审查要点**之一（第三十四条）⇒ 修改付款条件须在本单中显式对照，否则审批人无从判断"
+        }
+      ]
+    },
+
+    {
+      "id": "thresholds",
+      "label": "两级门槛与异常清单（节点②产出）",
+      "filled_at": "node2_tier_judge",
+      "_note": "★★ `R-15` 定案：**150% 与 30% 不是冲突** —— 前者管「**重走全套流程**」，后者管「**专项说明**」，分别挂到不同规则，**不得混用**",
+      "fields": [
+        {
+          "name": "special_explanation_required", "label": "是否须专项说明（累计变更 > 30%）", "type": "boolean",
+          "required": true, "source": "computed", "immutable": true,
+          "origin": "resolution", "origin_ref": "R-15 ＋ chain.json#routes.change.rules.special_explanation",
+          "rule": "★ ＝ `total_change_cents > original_contract_amount_cents * 0.3`（制度第五十三条同口径）"
+        },
+        {
+          "name": "special_explanation", "label": "专项说明", "type": "textarea", "required": false, "source": "user",
+          "required_when": "special_explanation_required == true",
+          "origin": "institution", "origin_ref": "制度第五十二条 / 第五十三条",
+          "rule": "★ 说明累计变更已超原合同金额 30% 的原因与合理性",
+          "critical_note": "★ 缺此项 ⇒ **审批人看不到累计偏离**（单笔看都不大，合起来很大）—— 这正是「化整为零」的另一条通道"
+        },
+        {
+          "name": "is_reset_as_new_purchase", "label": "是否视为新采购（变更后总额 > 150%）", "type": "boolean",
+          "required": true, "source": "computed", "immutable": true,
+          "origin": "resolution", "origin_ref": "R-15 ＋ chain.json#routes.change.rules.reset_as_new_purchase",
+          "rule": "★ ＝ `new_total_cents > original_contract_amount_cents * 1.5`（制度第五十二条 150% 口径）",
+          "critical_note": "★★ 为真时**本单不能作为采购通道** —— 须**重走全套流程**（询比价 → 拟成交审批 → 合同两级审批）。判据落点 `checks#reset_as_new_purchase_block`"
+        },
+        {
+          "name": "is_anomaly_listed", "label": "是否进入异常清单（90 天内 ≥2 次变更）", "type": "boolean",
+          "required": true, "source": "computed", "immutable": true,
+          "origin": "institution", "origin_ref": "制度第五十三条 ＋ chain.json#routes.change.rules.anomaly_list",
+          "rule": "★ 同一合同 90 天内变更 ≥2 次（含本次）⇒ 标记并进月度报送",
+          "critical_note": "★ 与采一档的「拆分嫌疑清单」同源（制度第五十三条把两者并列）—— **两条口子（采一档拆分、变更拆分）须一并执行，缺一不可**"
+        }
+      ]
+    },
+
+    {
+      "id": "tech_opinion",
+      "label": "技术意见（工程类变更·条件必填）",
+      "institution_ref": "制度第五十二条（「工程类变更须由质检技术岗或工程负责人出具技术意见」）",
+      "fields": [
+        {
+          "name": "is_engineering_category", "label": "是否属工程类", "type": "boolean", "required": true,
+          "source": "computed", "immutable": true,
+          "origin": "resolution", "origin_ref": "我方判定（制度未明说判定依据）",
+          "rule": "★ 按用途分类判定：`usage_category_l1 ∈ {P05 设备与周转设施租赁, P06 工程与安装}`（从关联合同／需求单带入）",
+          "known_gap": "★★ **制度只说「工程类」，未给判定依据** ⇒ 本判定为我方补入（取 P05／P06，因其为「工程与安装」及其相邻品类）⇒ 见 `known_gaps`；★ 若集团对「工程类」有既定口径，**应以集团口径替换**"
+        },
+        {
+          "name": "usage_category_l1", "label": "用途分类（一级）", "type": "enum", "required": true, "source": "system",
+          "enum_ref": "spec/enums.json#usage_categories", "enum_size": 23,
+          "origin": "resolution", "origin_ref": "R-05",
+          "rule": "★ 从关联合同／需求单带入（用于 `is_engineering_category` 判定）"
+        },
+        {
+          "name": "tech_opinion", "label": "技术意见", "type": "textarea", "required": false, "source": "inspector_at_node",
+          "required_when": "is_engineering_category == true",
+          "origin": "institution", "origin_ref": "制度第五十二条",
+          "rule": "★ 由**质检技术岗或工程负责人**出具；须回答本次工程类变更在技术上是否可行／是否必要"
+        },
+        {
+          "name": "tech_opinion_by", "label": "意见人", "type": "person", "required": false, "source": "system",
+          "required_when": "is_engineering_category == true",
+          "immutable": true,
+          "origin": "code", "origin_ref": "代码侧（通用留痕）",
+          "rule": "取节点操作人，不可手改"
+        },
+        {
+          "name": "tech_opinion_at", "label": "意见时间", "type": "datetime", "required": false, "source": "system",
+          "required_when": "is_engineering_category == true",
+          "immutable": true,
+          "origin": "code", "origin_ref": "代码侧（通用留痕）",
+          "rule": "取节点审批时间，不可手改"
+        }
+      ]
+    },
+
+    {
+      "id": "approval_and_filing",
+      "label": "审批记录与归档（节点③④）",
+      "filled_at": "node3_approval_and_node4_ledger",
+      "institution_ref": "chain.json#routes.change.nodes[2..3] ＋ 制度第五十二条末段",
+      "fields": [
+        {
+          "name": "tier_approval_record", "label": "档位审批记录", "type": "string", "required": true, "source": "system",
+          "origin": "institution", "origin_ref": "制度第五十二条（按正常采购分档补／重审批）",
+          "rule": "系统自动关联本单按所取档位走的审批实例与结论（含审批人／时间／意见）",
+          "critical_note": "★ 本字段为空则**该档位实际未经审批却无从发现** ⇒ L09 台账「审批记录」列取本字段"
+        },
+        {
+          "name": "resubmitted_to_group_at", "label": "变更后重新提交集团日期", "type": "date", "required": true,
+          "source": "user",
+          "origin": "institution", "origin_ref": "制度第五十二条末段（变更后的合同须重新归口提交集团）",
+          "rule": "★ 综合运营主管登记实际提交日期",
+          "critical_note": "★ 本字段不是可选项：制度明文「**变更后的合同须重新归口提交集团**」—— 变更了却不重新提交，等于集团拿到的是旧合同"
+        }
+      ]
+    }
+  ],
+
+  "checks": [
+    {
+      "id": "contract_no_required_and_exists",
+      "when": "submit",
+      "assert": "contract_no 非空 且 在合同台账 L04 中**等值命中**一行",
+      "else": "★ **拒绝提交**（可见失败）—— 提示「关联合同号不存在，无法建立变更链」",
+      "origin": "resolution", "origin_ref": "chain.json#routes.change.nodes[0].required_fields ＋ 制度第五十二条",
+      "severity": "hard",
+      "note": "★★ **必须等值匹配，绝不前缀匹配** —— 前缀匹配会让 `CT-1` 命中 `CT-1X`（串链/越权）。★ 代码侧已有对应断言（`internal/flow/finalize_test.go`），本判据是规格侧的同口径声明"
+    },
+    {
+      "id": "tier_by_max_formula",
+      "when": "算链",
+      "assert": "applicable_tier == tier_of( max(change_amount_cents, original_contract_amount_cents) )",
+      "else": "★ **拒绝**（档位被改）",
+      "origin": "resolution", "origin_ref": "批复 A8（`tier_formula`）",
+      "severity": "hard",
+      "note": "★★ 这是「**档位就高**」的**执行守卫** —— 没有它，把档位改回「仅就差额」不会被发现，而那条通道正是 A8 要堵的"
+    },
+    {
+      "id": "tier_never_tier1",
+      "when": "算链",
+      "assert": "applicable_tier != 'purchase_tier1'",
+      "else": "★ 拒绝（配置被改）",
+      "origin": "resolution", "origin_ref": "本文件 `routes._unreachable_branch`（可证）",
+      "severity": "hard",
+      "note": "★★ **可证的不变量**：PC 前提是「合同签订后」⇒ 采一档（<1,000 元）**不签合同** ⇒ `original_contract_amount_cents ≥ 100000` ⇒ `max(...) ≥ 100000` ⇒ **档位恒 ≥ 采二档**。★ 制度第五十二条列举的「采一档由综合运营主管审批」在本单中**不可达**（与 `chain.json` 的 actor 不构成冲突）"
+    },
+    {
+      "id": "change_amount_nonzero",
+      "when": "submit",
+      "assert": "change_amount_cents != 0",
+      "else": "拒绝提交",
+      "origin": "code", "origin_ref": "代码侧（无差额的变更无意义）",
+      "severity": "hard"
+    },
+    {
+      "id": "reset_as_new_purchase_block",
+      "when": "submit",
+      "assert": "NOT (new_total_cents > original_contract_amount_cents * 1.5)",
+      "else": "★ **拒绝**，提示「变更后总额已超原合同 150%，须重走全套流程（询比价 → 拟成交审批 → 合同两级审批）」",
+      "origin": "institution", "origin_ref": "制度第五十二条（150%）",
+      "severity": "hard",
+      "note": "★ 与 30% 门槛**不是同一条规则**（`R-15`）：本判据管「**重走全套**」，30% 管「**专项说明**」"
+    },
+    {
+      "id": "special_explanation_required",
+      "when": "submit",
+      "assert": "total_change_cents > original_contract_amount_cents * 0.3 ⇒ special_explanation 非空",
+      "else": "拒绝提交",
+      "origin": "institution", "origin_ref": "制度第五十二条 / 第五十三条（30%）",
+      "severity": "hard"
+    },
+    {
+      "id": "anomaly_list_and_report",
+      "when": "终态",
+      "assert": "90 天内同一 contract_no 变更 ≥2 次 ⇒ is_anomaly_listed = true，且进月度报送专项说明",
+      "else": "★ 告警（未标记异常）",
+      "origin": "institution", "origin_ref": "制度第五十三条",
+      "severity": "hard"
+    },
+    {
+      "id": "tech_opinion_for_engineering",
+      "when": "submit",
+      "assert": "is_engineering_category == true ⇒ tech_opinion 非空 且 tech_opinion_by 非空",
+      "else": "拒绝提交",
+      "origin": "institution", "origin_ref": "制度第五十二条（工程类变更须质检技术岗／工程负责人出技术意见）",
+      "severity": "hard"
+    },
+    {
+      "id": "new_supplier_when_supplier_change",
+      "when": "submit",
+      "assert": "change_type == '供应商变更' ⇒ new_supplier 非空 且 new_supplier != original_supplier",
+      "else": "拒绝提交",
+      "origin": "institution", "origin_ref": "制度第五十二条（供应商变更属触发情形）",
+      "severity": "hard",
+      "note": "★ 供应商变更 = **合同主体变了** ⇒ 除本单外**须重新走合同审批**（第三十四条）；本判据只保证「填了」，无法替代合同审批"
+    },
+    {
+      "id": "resubmit_to_group",
+      "when": "终态",
+      "assert": "resubmitted_to_group_at 非空",
+      "else": "★ **不得标记为已闭环**（提示「变更后的合同须重新归口提交集团」）",
+      "origin": "institution", "origin_ref": "制度第五十二条末段",
+      "severity": "hard"
+    },
+    {
+      "id": "ledger_l09_written",
+      "when": "终态",
+      "assert": "落 L09 一行，`exception_type` = '采购变更' 且 `change_chain` 有值",
+      "else": "★ 告警（落账自检）",
+      "origin": "resolution", "origin_ref": "ledger-mapping.json#ledgers.L09.producer ＋ R-21#7",
+      "severity": "hard",
+      "note": "★ 与 `flow.finalize` 落账后自检同口径 —— **「没有数据」不得与「没有违规」长得一样**"
+    },
+    {
+      "id": "no_self_purchaser",
+      "when": "submit",
+      "assert": "NOT (applicant == 需求提出人 AND designated_by == 需求提出人)",
+      "else": "拒绝（硬拦截）",
+      "origin": "resolution", "origin_ref": "R-27（B7 定案）＋ 制度第十四条",
+      "severity": "hard",
+      "note": "★ **必须与 `PR.json` / `CT.json` / `SS.json` 同款判据一致**（四处同口径）"
+    },
+    {
+      "id": "idempotency_key",
+      "when": "submit",
+      "assert": "读取 Idempotency-Key",
+      "else": "无幂等保护",
+      "origin": "code", "origin_ref": "mimo 审计：submit 须照抄 submission 的「占位 + 指纹 + 40900」模式",
+      "severity": "hard"
+    }
+  ],
+
+  "known_gaps": [
+    {
+      "gap": "★ `total_change_cents` / `new_total_cents` 的**口径**（是否含历次变更）",
+      "status": "我方按最合理口径定义，**请确认**",
+      "note": "★ `chain.json#routes.change.rules` 用了两个量：`new_total_cents`（150% 门槛）与 `total_change_cents`（30% 门槛），但**未定义它们是否含历次**。⇒ 本文件显式定义为：`total_change_cents` ＝ **历次差额累计（含本次）**；`new_total_cents` ＝ `原合同金额 + total_change_cents`。★ 依据＝字段名含 `total`，且制度第五十三条的「同一合同 90 天内 ≥2 次」也要求**按合同累计**看。★ **若口径相反（只看本次），两个门槛都会失真** —— 请确认。"
+    },
+    {
+      "gap": "★ 「工程类」的**判定依据**（制度未给）",
+      "status": "我方补入（P05／P06），**请确认或替换为集团口径**",
+      "note": "★ 制度第五十二条只说「工程类变更须质检技术岗／工程负责人出技术意见」，**未给判定依据**。⇒ 本表单按 `usage_category_l1 ∈ {P05 设备与周转设施租赁, P06 工程与安装}` 判定。★ 风险：若把「设备采购（P04）+ 安装」也视为工程类，则本判定会**漏判**。★ 需用户／集团确认。"
+    },
+    {
+      "gap": "「90 天窗口」的**起点口径**",
+      "status": "我方按滚动窗口实现",
+      "note": "★ 制度第五十三条写「同一合同 **90 天内**发生 2 次及以上变更」，**未说 90 天从何时起算**（首次变更？上次变更？自然季？）⇒ 本表单按**距上次变更 ≤90 天**（滚动窗口）实现。★ 不同口径会给出不同的异常清单 ⇒ 需明确。"
+    },
+    {
+      "gap": "「变更后总额超 150% 视为新采购」时，**本单如何处置**",
+      "status": "未定",
+      "note": "★ 制度说「须**重新走全套流程**」，但**未说本 PC 单是作废、还是保留为「已识别的变更意图」**。⇒ 现行处置＝**拒绝提交**（`checks#reset_as_new_purchase_block`），要求改走 PR。★ 是否更合适的是「保留本单并挂起到新 PR」？需定。"
+    },
+    {
+      "gap": "L09 `change_chain` 字段的**写入格式**",
+      "status": "未定",
+      "note": "★ `R-21#7` 要求台账能「按合同号查看历次变更的**次数 / 累计金额 / 所取档位**」⇒ 是三个独立列，还是一个「变更链」结构化列（如 JSON）？★ 若为结构化列，**前端如何展示**（时间线？表格？）也需定。★ 本表单已把三个量分别落为 `change_count_to_date` / `total_change_cents` / `applicable_tier`，可直接映射为三列。"
+    },
+    {
+      "gap": "「供应商变更」与**合同审批**的衔接",
+      "status": "未定",
+      "note": "★ 变更供应商 = 合同主体变了 ⇒ 除本单外**须重新走合同审批**（第三十四条：审查付款条件／验收标准／质保金）。但制度**未明说**「PC 通过后是否自动触发合同重审」。⇒ 现行只在本单判据里要求填 `new_supplier`，**合同重审须人工发起**。★ 需定是否要系统联动。"
+    },
+    {
+      "gap": "变更是否**需要附件强制**",
+      "status": "未定",
+      "note": "★ 制度与工具表均未要求变更单**必须**附依据文件（本表单把 `change_basis_attachment` 设为**非必填**）。★ 但「范围调整」「供应商变更」这类实质变更，**无附件则理由无从核实**。⇒ 是否对特定 `change_type` 强制附件？需定。"
+    }
+  ]
+}
