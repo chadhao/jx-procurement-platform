@@ -491,6 +491,9 @@ type approvalSubmitBody struct {
 	//   personal_advance / corporate_direct。
 	PaymentMethodInput string         `json:"payment_method_input"`
 	Fields             map[string]any `json:"fields"` // 已映射表单字段（键＝规范 biz_field）
+	// HasContract T3/R-26：该支出是否签了合同 —— 付款路径第 1 判据 + 合同两级触发。
+	// CT 单据恒视为已签合同（未显式传也强制 true）。
+	HasContract bool `json:"has_contract"`
 	// AttachmentIDs 提交前上传的暂存附件 id（M6）：提交事务内绑定，任一不可绑定整体回滚。
 	AttachmentIDs []string         `json:"attachment_ids"`
 	Nodes         []approvalNodeIn `json:"nodes"` // ★ 仅用于检测并拒绝（d5）
@@ -554,6 +557,13 @@ func (d Deps) handleApprovalSubmit(c echo.Context) error {
 		// N-013：forms/PR.json 已补 is_fixed_asset（申请人勾选）→ tier3_plus 的
 		// "or is_fixed_asset" 分支自本字段接线起可达。
 		IsFixedAsset: boolFromBodyField(body.Fields, "is_fixed_asset"),
+		// T3 / R-26：CT 即有合同（强制 true）；其余按请求显式值。
+		HasContract: body.HasContract || body.DocType == "CT",
+	}
+	// 付款路径（T3）：priority 1→4，值从 spec/chain.json#payment_route_rule 读。
+	paymentRoute, pErr := chain.PaymentRouteOf(d.Spec, facts)
+	if pErr != nil {
+		return fail(c, http.StatusInternalServerError, codeInternal, pErr.Error())
 	}
 	rc, err := d.Chain.Compute(ctx, facts)
 	if err != nil {
@@ -620,7 +630,7 @@ func (d Deps) handleApprovalSubmit(c echo.Context) error {
 			return fail(c, http.StatusInternalServerError, codeInternal, gErr.Error())
 		}
 		return ok(c, map[string]any{"biz_no": bizNo, "instance_id": inst.InstanceCode,
-			"status": inst.Status, "idempotent_replay": true})
+			"status": inst.Status, "idempotent_replay": true, "payment_route": paymentRoute})
 	case errors.Is(err, flow.ErrIdemConflict):
 		return fail(c, http.StatusConflict, codeConflict,
 			"Idempotency-Key 冲突：该键已用于另一次请求（请求载荷不一致）")
@@ -633,7 +643,8 @@ func (d Deps) handleApprovalSubmit(c echo.Context) error {
 	if err != nil {
 		return fail(c, http.StatusInternalServerError, codeInternal, err.Error())
 	}
-	return ok(c, map[string]any{"biz_no": bizNo, "instance_id": inst.InstanceCode, "status": inst.Status})
+	return ok(c, map[string]any{"biz_no": bizNo, "instance_id": inst.InstanceCode, "status": inst.Status,
+		"payment_route": paymentRoute})
 }
 
 // boolFromBodyField 从表单字段取布尔值（缺失/非布尔 ⇒ false）。

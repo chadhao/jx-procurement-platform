@@ -61,7 +61,24 @@ type ChainDoc struct {
 	ContractApproval ContractApprovalDoc    `json:"contract_approval"`
 	Routes           map[string]RouteDoc    `json:"routes"`
 	DocChains        map[string]DocChainDoc `json:"doc_chains"`
-	OpenItems        json.RawMessage        `json:"open_items"`
+	// PaymentRouteRule 付款路径 4 条优先级（T3 / R-26 用户 B2 定案：
+	// 判定轴＝是否签合同，**不是金额**；键名 payment_route —— 勿与审批流程线 route 混用）。
+	PaymentRouteRule PaymentRouteRule `json:"payment_route_rule"`
+	OpenItems        json.RawMessage  `json:"open_items"`
+}
+
+// PaymentRouteRule chain.json#payment_route_rule。
+type PaymentRouteRule struct {
+	Decisions []PaymentDecision `json:"decisions"`
+}
+
+// PaymentDecision 单条付款路径决策（按 priority 升序生效）。
+type PaymentDecision struct {
+	Priority     int    `json:"priority"`
+	When         string `json:"when"` // 说明性条件串（实现按 priority 语义编码，见 chain.PaymentRouteOf）
+	Label        string `json:"label"`
+	PaymentRoute string `json:"payment_route"` // group_public_account / petty_cash / personal_advance_reimburse
+	Note         string `json:"note"`
 }
 
 type RoleDoc struct {

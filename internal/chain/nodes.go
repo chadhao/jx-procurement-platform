@@ -34,11 +34,11 @@ func BuildNodes(b *specload.Bundle, routeID string, f Facts) ([]RoleNode, error)
 	}
 
 	nodes := []RoleNode{}
-	approvalSeq := 0
+	// ★ Seq **后置分配**（T3）：结构全部建完（含 R-26 合同节点插入）后统一编号，
+	//   插入中段不再造成序号碰撞（原「边建边编」在合同触发插入时会与后续节点撞号）。
 	appendApproval := func(sourceID, name, role, note string) {
-		approvalSeq++
 		nodes = append(nodes, RoleNode{
-			Seq: approvalSeq, SourceNodeID: sourceID, NodeName: name,
+			SourceNodeID: sourceID, NodeName: name,
 			ActorRole: role, IsApproval: true, BranchNote: note,
 		})
 	}
@@ -69,7 +69,7 @@ func BuildNodes(b *specload.Bundle, routeID string, f Facts) ([]RoleNode, error)
 
 		// ---- 合同 ref 展开 ----
 		if n.Ref == "contract_two_level" {
-			nodes = append(nodes, expandContract(b, f, &approvalSeq)...)
+			nodes = append(nodes, expandContract(b, f)...)
 			continue
 		}
 
@@ -97,7 +97,65 @@ func BuildNodes(b *specload.Bundle, routeID string, f Facts) ([]RoleNode, error)
 		// 未知/复合 actor（如 "supervisor → project_general_manager"）——保守不生成任务。
 		appendAction(n.ID, n.Label, fmt.Sprintf("actor=%q 未映射为审批任务", n.Actor))
 	}
+	// ---- T3 / R-26 corollary：有合同 ⇒ 统一两级合同审批（不因金额减免） ----
+	//   route 自带合同 ref 的（tier2/tier3）已展开；tier1 与费用线**无合同步骤** ——
+	//   `has_contract=true` 时在首个审批节点之后插入合同两级（boundary_decided_by_us：
+	//   「<1,000 元但签了合同 ⇒ 公户付款 **且** 合同审批两级照走」；contract_approval.trigger
+	//   同口径：触发条件＝是否签合同，不是金额）。
+	if f.HasContract && !hasContractNodes(nodes) {
+		exp := expandContract(b, f)
+		for i := range exp {
+			exp[i].BranchNote = joinBranchNote(exp[i].BranchNote,
+				"R-26：有合同 ⇒ 合同审批两级照走（触发条件＝是否签合同，非金额）")
+		}
+		pos := -1
+		for i, n := range nodes {
+			if n.IsApproval {
+				pos = i
+				break
+			}
+		}
+		if pos >= 0 {
+			rebuilt := make([]RoleNode, 0, len(nodes)+len(exp))
+			rebuilt = append(rebuilt, nodes[:pos+1]...) // 首个审批节点（含）之前原样保留
+			rebuilt = append(rebuilt, exp...)           // 合同两级紧跟其后
+			rebuilt = append(rebuilt, nodes[pos+1:]...)
+			nodes = rebuilt
+		} else {
+			nodes = append(nodes, exp...)
+		}
+	}
+
+	// Seq 后置统一编号（仅审批节点 1..N）。
+	seq := 0
+	for i := range nodes {
+		if nodes[i].IsApproval {
+			seq++
+			nodes[i].Seq = seq
+		}
+	}
 	return nodes, nil
+}
+
+// hasContractNodes 链上是否已含合同两级节点。
+func hasContractNodes(nodes []RoleNode) bool {
+	for _, n := range nodes {
+		if n.SourceNodeID == "contract_supervisor" || n.SourceNodeID == "contract_pgm" {
+			return true
+		}
+	}
+	return false
+}
+
+// joinBranchNote 拼接分支说明。
+func joinBranchNote(a, b string) string {
+	if a == "" {
+		return b
+	}
+	if b == "" {
+		return a
+	}
+	return a + "；" + b
 }
 
 // expandContract 展开合同统一两级（chain.contract_approval）。
@@ -109,7 +167,7 @@ func BuildNodes(b *specload.Bundle, routeID string, f Facts) ([]RoleNode, error)
 // ★ supervisor_is_pgm 分支：申请人部门 ∈ project_general_manager.is_also_supervisor_for
 //
 //	⇒ 一级即终审，跳过二级（chain.json contract_approval.branches.supervisor_is_pgm）。
-func expandContract(b *specload.Bundle, f Facts, approvalSeq *int) []RoleNode {
+func expandContract(b *specload.Bundle, f Facts) []RoleNode {
 	out := []RoleNode{}
 	// 分支判定：机器可读数组（roles.project_general_manager.is_also_supervisor_for）
 	pgm := b.Chain.Roles["project_general_manager"]
@@ -122,9 +180,8 @@ func expandContract(b *specload.Bundle, f Facts, approvalSeq *int) []RoleNode {
 	}
 
 	appendApproval := func(sourceID, name, role, note string) {
-		*approvalSeq++
 		out = append(out, RoleNode{
-			Seq: *approvalSeq, SourceNodeID: sourceID, NodeName: name,
+			SourceNodeID: sourceID, NodeName: name,
 			ActorRole: role, IsApproval: true, BranchNote: note,
 		})
 	}

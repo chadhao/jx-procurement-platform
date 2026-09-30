@@ -93,3 +93,33 @@ func TestPreviewBadInput(t *testing.T) {
 	}
 	_ = env
 }
+
+// TestPreviewPaymentRoute T3：preview 下发 payment_route（有无合同切换路径）。
+func TestPreviewPaymentRoute(t *testing.T) {
+	e, _, auth := newSubmitM4App(t, true)
+	cookie := auth.Establish("ou_app")
+	// 无合同采一档 → 备付金
+	code, env := postPreview(t, e, cookie,
+		`{"doc_type":"BA","amount_cents":50000,"usage_category_l1":"P01"}`)
+	if code != http.StatusOK {
+		t.Fatalf("preview 失败 %d：%s", code, env.Message)
+	}
+	d, _ := env.Data.(map[string]any)
+	if d["payment_route"] != "petty_cash" {
+		t.Errorf("无合同采一档 payment_route = %v，应为 petty_cash", d["payment_route"])
+	}
+	// 有合同 → 公户（priority 1）
+	code, env = postPreview(t, e, cookie,
+		`{"doc_type":"BA","amount_cents":50000,"usage_category_l1":"P01","has_contract":true}`)
+	if code != http.StatusOK {
+		t.Fatalf("preview 失败 %d：%s", code, env.Message)
+	}
+	d, _ = env.Data.(map[string]any)
+	if d["payment_route"] != "group_public_account" {
+		t.Errorf("有合同 payment_route = %v，应为 group_public_account", d["payment_route"])
+	}
+	// 合同两级已插入（R-26 边界）
+	if findNode(d, "contract_supervisor") == nil {
+		t.Error("有合同时链上应含合同一级节点（R-26）")
+	}
+}

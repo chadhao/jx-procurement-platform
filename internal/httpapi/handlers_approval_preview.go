@@ -32,6 +32,8 @@ type previewRequest struct {
 	Department         string `json:"department"`
 	// IsFixedAsset N-013：PR 固定资产勾选 → tier3_plus "or is_fixed_asset" 分支。
 	IsFixedAsset bool `json:"is_fixed_asset"`
+	// HasContract T3/R-26：付款路径第 1 判据 + 合同两级触发（CT 恒 true）。
+	HasContract bool `json:"has_contract"`
 }
 
 type previewNode struct {
@@ -58,8 +60,10 @@ type previewResponse struct {
 	Route           previewRoute           `json:"route"`
 	Nodes           []previewNode          `json:"nodes"`
 	UnresolvedRoles []chain.UnresolvedRole `json:"unresolved_roles"`
-	// Warnings 非阻断告警（N-014：会签人数 ≥ warn_threshold 时必须提示，但不拦业务）。
+	// Warnings 非阻断告警（N-014：会签人数 ≥ warn_threshold 时必须提示，但不拦业务）.
 	Warnings []string `json:"warnings"`
+	// PaymentRoute 付款路径（T3/R-26：group_public_account / petty_cash / personal_advance_reimburse）。
+	PaymentRoute string `json:"payment_route"`
 }
 
 type previewRoute struct {
@@ -92,7 +96,12 @@ func (d Deps) handleApprovalPreview(c echo.Context) error {
 		PaymentMethodInput:       req.PaymentMethodInput,
 		Department:               firstNonEmptyStr(req.Department, idn.Department),
 		ApplicantIsOpsSupervisor: idn.Role == "综合运营主管",
-		IsFixedAsset:             req.IsFixedAsset, // N-013
+		IsFixedAsset:             req.IsFixedAsset,                       // N-013
+		HasContract:              req.HasContract || req.DocType == "CT", // T3/R-26
+	}
+	paymentRoute, pErr := chain.PaymentRouteOf(d.Spec, facts)
+	if pErr != nil {
+		return fail(c, http.StatusInternalServerError, codeInternal, pErr.Error())
 	}
 	rc, err := d.Chain.Compute(ctx, facts)
 	if err != nil {
@@ -159,6 +168,7 @@ func (d Deps) handleApprovalPreview(c echo.Context) error {
 		Nodes:           nodes,
 		UnresolvedRoles: unresolved,
 		Warnings:        warnings,
+		PaymentRoute:    paymentRoute,
 	})
 }
 

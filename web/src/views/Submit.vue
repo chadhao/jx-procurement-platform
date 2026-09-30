@@ -208,6 +208,16 @@ async function doSubmit() {
   }
 }
 
+// 付款路径显示名（T3/R-26；值本身由 spec payment_route_rule 下发，此处仅中文标注）。
+function paymentRouteLabel(route) {
+  const map = {
+    group_public_account: '公户（集团执行）',
+    petty_cash: '备付金直接支出',
+    personal_advance_reimburse: '个人垫付 + 报销',
+  }
+  return map[route] || route || '-'
+}
+
 function genIdemKey() {
   // 会话内幂等键：uuid v4（无依赖）
   return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
@@ -264,6 +274,7 @@ watch(() => [curDocType.value, fields.amount_cents, fields.usage_category_l1, fi
         <template v-if="preview">
           <div class="preview-line">
             <span class="tag">档位</span> {{ preview.tier }}
+            <span class="tag">付款路径</span> {{ paymentRouteLabel(preview.payment_route) }}
             <span class="tag">流程线</span> {{ preview.route.label }}
             <span v-if="preview.route.payment" class="tag">付款</span>
             <span v-if="preview.route.payment">{{ preview.route.payment }}</span>

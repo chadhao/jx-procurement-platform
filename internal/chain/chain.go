@@ -64,6 +64,10 @@ type Facts struct {
 	// IsFixedAsset N-013（已 AGREED）：forms/PR.json 已补「是否属于固定资产类」布尔字段，
 	// submit/preview 从表单取值传入 —— tier3_plus 的 `or is_fixed_asset` 分支自接线起可达。
 	IsFixedAsset bool
+	// HasContract T3 / R-26：该支出**是否签了合同** —— 付款路径的第 1 优先级判据，
+	// 同时驱动「合同审批两级照走」（触发条件＝是否签合同，不是金额）。
+	// CT 单据恒为 true（handler 侧强制）；其余单据由请求显式给出（缺省 false）。
+	HasContract bool
 }
 
 // RoleNode 链计算的中间产物：角色级节点（含非审批环节，供 preview 展示全流程）。

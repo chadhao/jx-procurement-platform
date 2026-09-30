@@ -643,10 +643,10 @@ sequenceDiagram
 |---|---|
 | 用途 | 我方提交：**服务端算链** → 表单结构化校验 → **生成编号** + 建实例 + **首推飞书**（`04a §3`）；★ M4 契约收敛 |
 | 鉴权 | 免登会话（申请人本人） |
-| 请求体 | `doc_type` · `approval_code`（↔ doc_type 双向一致校验）· `amount_cents` · `usage_category_l1/l2` · `payment_method_input` · `fields{}` · `attachment_ids[]?` · `department?`；★ **`nodes` 字段一律拒绝**（非空 → `40000`，链由服务端按 `spec/chain.json` 计算，d5） |
+| 请求体 | `doc_type` · `approval_code`（↔ doc_type 双向一致校验）· `amount_cents` · `usage_category_l1/l2` · `payment_method_input` · `has_contract?`（T3；CT 恒视为已签）· `fields{}`（`constant_ref` 字段值须在常量表 active 集内，通过后写 `<字段>_snapshot` 值快照 —— T2/R-24）· `attachment_ids[]?` · `department?`；★ **`nodes` 字段一律拒绝**（非空 → `40000`，链由服务端按 `spec/chain.json` 计算，d5） |
 | 服务端校验 | 分档/路线（`chain.Service`，与 `/preview` 共算 D5）· 算不到人 → **阻断**（`40000` + `error_detail.unresolved_roles[]`，N-018 过渡）· `spec/forms` 提交期必填/条件必填（结构化子集，N-17）· **金额 > 0**（FR-M9-03）· `approval_code↔doc_type`（M2-05） |
 | 回源标记 | **实时回源一次**（2s 超时、失败告警放行，FR-M9-17/D6）→ `ext_json.org_verify`（服务端权威，客户端伪造无效） |
-| 响应 | `{ biz_no, instance_id, status }`；幂等重放附 `idempotent_replay: true` |
+| 响应 | `{ biz_no, instance_id, status, payment_route }`；幂等重放附 `idempotent_replay: true` |
 | 幂等 | `Idempotency-Key` 三态：首次 `200` / 同键同载荷 → `200` 复用首次 `biz_no` / 同键异载荷 → `40900`（事务内占位 + 指纹，迁移 `0015`）；★ **业务单号唯一**兜底 |
 | 附件 | `attachment_ids`＝提交前 `POST /api/approval/attachments` 的暂存 id；事务内绑定，任一不可绑定（非本人/已绑定/过期）⇒ 整体回滚 `40000` |
 | 错误码 | 40000、40100、40101、40900、**40901**（定义缺失，`S7`：提交前校验 `t_approval_def` 存在） |
@@ -666,8 +666,8 @@ sequenceDiagram
 | 项 | 内容 |
 |---|---|
 | 用途 | 分档 + 流程线 + 审批链 + 审批人**预览**；★ 与 submit **共算同一入口**（D5），前端不本地算分档、**不产生飞书 API 调用** |
-| 请求体 | `doc_type` · `amount_cents?` · `usage_category_l1?` · `payment_method_input?` · `department?`（缺省取会话部门） |
-| 响应 | `spec_version` · `tier` · `route{id,label,env_count,payment}` · `nodes[]`（全流程，含非审批环节；审批节点附 `approvers[]` 与 `resolved`）· `unresolved_roles[]`（**非空 ⇒ 提交将被阻断**，R-g 预暴露） |
+| 请求体 | `doc_type` · `amount_cents?` · `usage_category_l1?` · `payment_method_input?` · `department?`（缺省取会话部门）· `has_contract?`（T3：付款路径第 1 判据；CT 恒视为已签） |
+| 响应 | `spec_version` · `tier` · `route{id,label,env_count,payment}` · ★ **`payment_route`**（T3/R-26：`group_public_account` / `petty_cash` / `personal_advance_reimburse`，值读 `chain.json#payment_route_rule`）· `nodes[]`（全流程，含非审批环节；审批节点附 `approvers[]`/`resolved`/`co_sign_count`）· `unresolved_roles[]`（**非空 ⇒ 提交将被阻断**，R-g 预暴露）· `warnings[]`（N-014 会签 ≥阈值告警） |
 | 错误码 | 40000（档位/分类/支付方式非法，如 PR <1000 引导走 BA —— N-012 过渡） |
 | 关联 | FR-M9-02、D5 |
 

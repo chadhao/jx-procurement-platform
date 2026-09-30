@@ -307,3 +307,105 @@ func TestSpecRulingsAnchor(t *testing.T) {
 		t.Error("forms/PR 缺 is_fixed_asset 字段（N-013 裁定已补）")
 	}
 }
+
+// TestPaymentRouteRuleAnchor T3：payment_route_rule 结构锚定（4 条、priority 1..4、值非空）。
+func TestPaymentRouteRuleAnchor(t *testing.T) {
+	b := loadBundle(t)
+	ds := b.Chain.PaymentRouteRule.Decisions
+	if len(ds) != 4 {
+		t.Fatalf("payment_route_rule.decisions 应 4 条，实为 %d", len(ds))
+	}
+	seen := map[int]string{}
+	for _, d := range ds {
+		if d.PaymentRoute == "" {
+			t.Errorf("priority=%d 的 payment_route 为空", d.Priority)
+		}
+		seen[d.Priority] = d.PaymentRoute
+	}
+	for p := 1; p <= 4; p++ {
+		if seen[p] == "" {
+			t.Errorf("缺 priority=%d 的决策", p)
+		}
+	}
+	// 键名纪律（R-26 教训）：值域三选一，且不叫 route
+	for _, v := range seen {
+		switch v {
+		case "group_public_account", "petty_cash", "personal_advance_reimburse":
+		default:
+			t.Errorf("payment_route 值 %q 不在值域内（且勿与审批流程线 route 混用）", v)
+		}
+	}
+}
+
+// TestPaymentRoutePriorities T3：4 条优先级 + <1000 有合同边界。
+func TestPaymentRoutePriorities(t *testing.T) {
+	b := loadBundle(t)
+	route := func(f Facts) string {
+		t.Helper()
+		s, err := PaymentRouteOf(b, f)
+		if err != nil {
+			t.Fatalf("PaymentRouteOf 失败: %v", err)
+		}
+		return s
+	}
+	// 从 spec 读期望值（不硬编码 —— 改 spec 即变）
+	v1, _ := routeValue(b, 1)
+	v3, _ := routeValue(b, 3)
+	v4, _ := routeValue(b, 4)
+
+	cases := []struct {
+		name string
+		f    Facts
+		want string
+	}{
+		{"P1_有合同即公户", Facts{DocType: DocBA, AmountCents: i64(99999), UsageCategoryL1: "P01", HasContract: true}, v1},
+		{"P2_无合同对公直付M07", Facts{DocType: DocSA, UsageCategoryL1: "M07"}, v1 /* group */},
+		{"P2_M01对公直付", Facts{DocType: DocSA, UsageCategoryL1: "M01", PaymentMethodInput: "对公直付"}, v1},
+		{"P3_采一档备付金", Facts{DocType: DocBA, AmountCents: i64(99999), UsageCategoryL1: "P01"}, v3},
+		{"P4_销线垫付报销", Facts{DocType: DocSA, UsageCategoryL1: "S03", AmountCents: i64(50000)}, v4},
+		{"P4_M01垫付", Facts{DocType: DocSA, UsageCategoryL1: "M01", PaymentMethodInput: "个人垫付", AmountCents: i64(50000)}, v4},
+		{"P4_采二无合同", Facts{DocType: DocPR, AmountCents: i64(100000), UsageCategoryL1: "P01"}, v4},
+	}
+	for _, c := range cases {
+		if got := route(c.f); got != c.want {
+			t.Errorf("%s: payment_route = %s，应为 %s", c.name, got, c.want)
+		}
+	}
+
+	// ★ 边界（boundary_decided_by_us）：<1,000 但签了合同 ⇒ 公户 + 合同两级照走
+	nodes, err := BuildNodes(b, "purchase_tier1",
+		Facts{DocType: DocBA, AmountCents: i64(99999), UsageCategoryL1: "P01", HasContract: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := (Facts{DocType: DocBA, AmountCents: i64(99999), UsageCategoryL1: "P01", HasContract: true}); true {
+		_ = got
+	}
+	if s, _ := PaymentRouteOf(b, Facts{DocType: DocBA, AmountCents: i64(99999), UsageCategoryL1: "P01", HasContract: true}); s != v1 {
+		t.Errorf("边界：有合同应公户，实为 %s", s)
+	}
+	found := false
+	for _, n := range nodes {
+		if n.SourceNodeID == "contract_supervisor" {
+			found = true
+			if !strings.Contains(n.BranchNote, "R-26") {
+				t.Errorf("合同节点缺 R-26 溯源注记：%q", n.BranchNote)
+			}
+		}
+	}
+	if !found {
+		t.Fatal("边界：<1,000 有合同必须插入合同两级（R-26 corollary）")
+	}
+	// Seq 仍连续 1..N
+	seqs := []int{}
+	for _, n := range nodes {
+		if n.IsApproval {
+			seqs = append(seqs, n.Seq)
+		}
+	}
+	for i, s := range seqs {
+		if s != i+1 {
+			t.Fatalf("Seq 不连续: %v", seqs)
+		}
+	}
+}
