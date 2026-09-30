@@ -1,0 +1,193 @@
+{
+  "version": "1.0",
+  "generated_by": "WorkBuddy",
+  "date": "2026-09-30",
+
+  "sources": {
+    "user": "用户 2026-09-30 定案（原话）：「角色代理人名单需要可以在后台定义（点选系统里已存在的用户）。另外，不需要替补。」",
+    "institution": "制度 V4.0 第十二条（回避与代理）：「每个审批角色指定 1 名代理人。两级审批不得由同一人代理；备付金审批不得代理。」「代理人可以转交、回退，不得加签、撤回。代理人转交或者回退的，应当通知该单内已审批通过的全部人员。」",
+    "prd": "docs/01-PRD Q8（各角色的代理人名单 —— ★ 本条闭合它）· docs/01a-PRD-Increment-V2 §4.1 表二 / §4.7 / FR-M9-04 · FR-M9-06 · FR-M9-14 / UC-22 · UC-24 · UC-28",
+    "spec": "spec/chain.json#roles（10 角色）· #contract_approval.order（合同两级）· #routes.purchase_tier1.nodes（备付金两节点）"
+  },
+
+  "scope": "★ 本文件＝「**授权配置**（authority config）」的唯一登记册 —— 管的是「**谁可以代表别人审批**」。",
+
+  "why_own_file": "★★ **为什么不塞进 `spec/constants.json`**：① 那份文件的 `policy.impact_on_flow` 明写「运营性常量**零影响**流程线与硬校验」—— 而**代理人直接改变「谁能审」**，塞进去会让该文件的自我描述**失真**（描述与事实不符＝漂移）；② 那份的 `tables[].seed` 是**自由字符串字典**（单位、范本名），而**代理人的值域只能是系统内已存在的用户**（落库是 `open_id`）—— **值域类型根本不同**，前者可编造、后者必须真实存在；③ mimo 侧 `handlers_admin_constants.go#knownConstantTables` 白名单与 `handlers_approval_formcheck.go`「`constant_ref` 字段的表键 ＝ 字段名」两条约定，都把它当**单据字段的选项字典**用 —— 代理人是**审批人配置**，套进去会造出一个**假消费端**（`README` 定案 #24：无消费端＝假配置）。",
+
+  "authority_split": {
+    "_why": "★★ 原「三分法」（`spec/constants.json#three_way_split`）只覆盖了下拉字典类配置。**代理人名单**两条判据都不合：改它**会**改变「谁能审」（⇒ 不是运营性常量），但它**又必须**由业务在后台自行维护（⇒ 不是制度性枚举）。故**增补第四类**，键名保留历史（那份文件里仍叫 `three_way_split`，**实为四分法**）。",
+    "categories": [
+      { "id": "institution_enum", "label": "制度性枚举", "store": "`spec/enums.json`", "mutable_by_admin": false },
+      { "id": "operational_constant", "label": "运营性常量", "store": "`spec/constants.json`", "mutable_by_admin": true },
+      { "id": "external_sync", "label": "外部同步（人员 / 部门）", "store": "飞书通讯录镜像 `t_org_department` / `t_org_user`", "mutable_by_admin": false },
+      { "id": "authority_config", "label": "授权配置", "store": "**本文件**（`spec/authority.json`），落库为可维护表，经 `/admin` 后台增删改", "mutable_by_admin": true }
+    ],
+    "decision_test": "★★ **与运营性常量共用同一把尺子**（改它会不会改变某笔支出的审批链或校验结论？）—— **会 ⇒ 不能只靠后台纪律，必须有本文件的显式约束与判据兜底**。代理人的答案是「**会**」，故它落在本类而非 `constants.json`。",
+    "discipline": {
+      "mutability": "后台可增删改（用户 2026-09-30 定案）。",
+      "delete_policy": "★★ **只停用（`retired`），不物理删除** —— 与 `constants.json#policy.delete_policy` 同纪律。理由：**在办单据**可能正处于代理状态，删掉会让「这个人当时凭什么能审」无从追溯。",
+      "audit": "每次增删改写审计（`t_audit_log`）：操作人 / 时间 / 表 / 条目前后值。",
+      "impact_on_flow": "★★ **有影响**（与运营性常量相反）—— 它决定「谁能审」。**这是本类必须单独成册的根本原因。**",
+      "value_snapshot": "★ 代理关系**不落单据字段**（不像单位那样被单据存值）⇒ **不适用** `constants.json` 的「值快照」纪律；代理关系的历史靠 **审计日志 + 在办实例的留痕**追溯。★ 单列此句以免后人照搬 `constants.json` 的纪律。"
+    }
+  },
+
+  "agent_eligible_roles": {
+    "rule": "★ 制度原文＝「每个**审批角色**指定 1 名代理人」。⇒ **可设代理人的角色 ＝ `spec/chain.json#roles` 中，扣除下列 4 个非审批角色**：",
+    "excluded": [
+      { "role": "applicant", "label": "申请人", "why": "★ **发起人**不是审批人；且制度与 `01a §4.4` 已明确「**撤回仅发起人本人可行使、代理人不可撤**」—— 给申请人配代理人会诱导出「代理人代撤」的越权通道。" },
+      { "role": "group_finance", "label": "集团财务", "why": "集团侧角色，**不在我方系统内审批**（`01a`：范围止于「提交集团」）。" },
+      { "role": "group_approval", "label": "集团（审批）", "why": "同上。" },
+      { "role": "sys_admin", "label": "系统管理员", "why": "★ 管理权限**不可代理** —— 否则「最小权限」失效（管理员出差期间把后台权限交给他人，等同于权限扩散）。" }
+    ],
+    "eligible": ["supervisor", "project_general_manager", "deputy_general_manager", "ops_supervisor", "purchaser", "inspector_group"],
+    "cardinality": "★★ **每个角色至多 1 名生效代理人**（制度原文「指定 **1 名**」）；**允许留空**（未配＝无代理人，不影响任何流程）。",
+    "open_boundary": "★ 边界待澄清（**不阻塞**，见 `open_items`）：制度只写「审批角色」，**未明确 `purchaser`（采购经办人）与 `inspector_group`（验收人）是否算审批角色**。⇒ 本文件**先把它们留在可配集合内**（因为两者都会在 `chain.json` 里持有 task 节点），**但配置表允许这两行留空**，不影响任何流程。",
+    "references": {
+      "contract_two_level": "`spec/chain.json#contract_approval.order`：seq 4 `supervisor_approval`（actor=supervisor）→ seq 5 `pgm_approval`（actor=project_general_manager）",
+      "petty_cash_nodes": "`spec/chain.json#routes.purchase_tier1.nodes`：`[1] approve_petty_cash`（综合运营主管审批备付金）与 `[3] disburse`（拨付备付金），actor 均为 `ops_supervisor`"
+    }
+  },
+
+  "data_contract": {
+    "note": "★ **字段需求（业务语义）由我方定义**；★ **表名 / DDL / 迁移编号 / 索引 / 存储细节由 mimo 定**（依据 `COLLAB.md §2 责任域`：「模块划分 / 目录结构 / 表设计 / 迁移编号」属 mimo）。",
+    "logical_fields": [
+      { "name": "role_key", "required": true, "domain": "`spec/chain.json#roles` 的键，且必须 ∈ `agent_eligible_roles.eligible`", "note": "被代理的角色。★ **不得自由新增角色** —— 与 `constants.json#tables[key=role_display_name]` 同一条护栏（后台能加角色 ⇒ `chain.json` 的 10 角色口径被绕过）。" },
+      { "name": "agent_open_id", "required": true, "domain": "`t_org_user.open_id`，且该用户**已存在于镜像**且**未离职**", "note": "★★ 用户 2026-09-30 明确「**点选系统里已存在的用户**」⇒ **必须从飞书通讯录镜像选人**，**禁止手填 `open_id`**。★ 这也是**修正**：批次三原计划「`/admin` **手填** `open_id`」与此相反，以本条为准。" },
+      { "name": "state", "required": true, "domain": "`active` | `retired`", "note": "★ 只停用不物理删除（见 `authority_split.discipline.delete_policy`）。" },
+      { "name": "note", "required": false, "domain": "文本", "note": "备注（例：「张三代出差期间」）。★ 便于事后判断该代理关系**当时是否合理**。" },
+      { "name": "created_by / created_at / updated_by / updated_at", "required": true, "domain": "—", "note": "审计四件套。" }
+    ],
+    "uniqueness": "★ **`(role_key)` 在 `state=active` 下唯一** —— 一条硬约束，见 `checks#single_active_agent_per_role`。"
+  },
+
+  "checks": [
+    {
+      "id": "value_must_be_existing_user",
+      "when": "save",
+      "assert": "配置的 `agent_open_id` 必须能在飞书通讯录镜像（`t_org_user`）中查到，且未离职",
+      "else": "拒绝保存，提示「该用户不存在于系统（请从通讯录中选择）」",
+      "origin": "user",
+      "origin_ref": "用户 2026-09-30：「点选系统里已存在的用户」",
+      "severity": "hard",
+      "note": "★★ **本条正是「选人 vs 手填」的分界**。若允许手填，会造出两类静默故障：① 写错 `open_id` ⇒ 代理人**永远收不到待办**（而配置看上去是成功的）；② 填了一个**已离职**的人 ⇒ 代理关系形同虚设。★ 这两类都是「**配了但没生效且不报错**」—— 本项目的经典形态。"
+    },
+    {
+      "id": "single_active_agent_per_role",
+      "when": "save",
+      "assert": "同一 `role_key` 在 `state=active` 下**至多 1 条**",
+      "else": "拒绝保存，提示「该角色已有生效代理人（请先停用原代理人）」",
+      "origin": "institution",
+      "origin_ref": "制度 V4.0 第十二条「每个审批角色指定 1 名代理人」",
+      "severity": "hard",
+      "note": "★ 为什么不是「多条并存、任一生效」：**「本人不在时到底谁审」必须唯一** —— 两条并存的必然结果是**看实现怎么遍历**，那就是「审批人由代码顺序决定」，事后无从解释。"
+    },
+    {
+      "id": "no_shared_agent_across_two_levels",
+      "when": "save",
+      "assert": "★ **同一审批链上相邻两级**的代理人**不得为同一人**。★ 对合同审批即：`supervisor` 与 `project_general_manager` 的代理人不得相同（`chain.json#contract_approval.order` seq 4 / seq 5）",
+      "else": "拒绝保存，提示「两级审批不得由同一人代理（否则两级变一级）」",
+      "origin": "institution",
+      "origin_ref": "制度 V4.0 第十二条「两级审批不得由同一人代理」",
+      "severity": "hard",
+      "note": "★★ **口径说明（重要）**：制度原文针对的是「**两级审批**」这一场景（合同审批统一两级）；本判据按其**意图**推广到「**同一链上相邻两级**」。★ 我**刻意没有**收紧到「同链任意两级」—— 那比制度更严，会**误拦**（例如四级链的第 1 级与第 4 级由同一人代理，制度并未禁止），而**误拦与漏拦同样致命**（见 `N-027` 的验收要求）。★ 是否收紧＝`open_items` 第 1 项。"
+    },
+    {
+      "id": "no_agent_for_petty_cash",
+      "when": "save",
+      "assert": "★ `ops_supervisor` **不得**存在生效代理人**用于备付金节点**；即 `chain.json#routes.purchase_tier1.nodes` 中 `approve_petty_cash`（seq 2）与 `disburse`（seq 4）两节点**不得由代理人操作**",
+      "else": "拒绝保存，或在解析层**排除**该节点（二选一，见 `note`）",
+      "origin": "institution",
+      "origin_ref": "制度 V4.0 第十二条「备付金审批不得代理」；`chain.json#routes.purchase_tier1.nodes[1] / [3]`",
+      "severity": "hard",
+      "note": "★★ **「按角色排除」还是「按节点排除」**：制度说「备付金**审批**不得代理」，管的是**动作**（备付金），不是**人**。⇒ ★ **正确做法是「按节点排除」**：`ops_supervisor` **仍可**在其它节点（如采二/采三档的 `ops_review` 初审）由代理人操作，**只有备付金的两个节点不行**。★ 若按角色一刀切禁掉 `ops_supervisor` 的代理人，会**误伤**初审环节。★ 故本条**首要落点是解析层（`when: resolve` 的节点级判断）**；保存层的提示属**辅助**（提醒管理员该代理人对备付金节点不生效）。"
+    },
+    {
+      "id": "agent_never_substitutes_on_unresolved",
+      "when": "resolve",
+      "assert": "★★ **代理人记录不得参与审批人解析**：当某角色本人不可用（离职 / 停用 / 未解析到）时，解析结果的**唯一**出路是 `unresolved ⇒ block`（错误码 `40010`，见 `N-018`）—— **不得**回退到代理人、**不得**上抬一级、**不得**改派他人",
+      "else": "★ **不得静默通过**：阻断并返回 `40010`；若配置了代理人，提示「该角色配置了代理人，但**代理人不作为替补**（须管理员显式处理）」",
+      "origin": "user",
+      "origin_ref": "用户 2026-09-30：「**不需要替补**」",
+      "severity": "hard",
+      "note": "★★★ **本条就是「不需要替补」的可执行形态，也是本配置**当前唯一的正向消费端**。★ 它防的是最危险的方向：**「配了代理人 ⇒ 系统悄悄找人代签」** —— 那会**绕过两层审批**而无人察觉（`README` 定案 #51：**「没有数据」与「没有违规」不可区分**的同族）。★ 与 `chain.json#roles.supervisor.fallback` **不是同一件事**：后者是**角色归属的解析规则**（主管领导按需求提出部门确定），本条禁的是**签批人不可用时找人代签**；★ **两者不冲突，后者不受影响**。"
+    }
+  ],
+
+  "non_goals": [
+    {
+      "item": "**不做自动替补**（不清：代理人**不是**「本人不在时的默认签批人」）",
+      "evidence": "用户 2026-09-30 原话「不需要替补」；守卫判据＝`checks#agent_never_substitutes_on_unresolved`。",
+      "why": "★ 「自动替补」会让**两级变一级、甚至零级**：没人发现、也没人负责。★ 正解是**阻断并让人显式处理**（`40010`）—— 慢一点，但**每一步都有责任人**。"
+    },
+    {
+      "item": "**不做「委派」**（＝A 交给 B、B 办完**回到 A**）",
+      "evidence": "`docs/01a-PRD-Increment-V2 §4.1` 已定案：「不做「委派」（会后回任）」。",
+      "why": "★ 与代理人**不是一回事**：代理人是**代签**，委派是**代做后回任**。两者混用会让权限边界说不清（`docs/10 §…` 的 `G3`）。"
+    },
+    {
+      "item": "**本系统不维护人员与部门**（代理人只能「点选」镜像里的人，不能新增人）",
+      "evidence": "用户 2026-09-28 定案；`constants.json#three_way_split` 的 `external_sync` 类。",
+      "why": "★ 自建人员表＝**第二份真相**，必然与飞书漂移。"
+    }
+  ],
+
+  "consumers": [
+    {
+      "id": "resolve_ignores_agent",
+      "what": "★ **审批人解析必须忽略代理人**（负向契约）",
+      "status": "★ **可立即实现**（解析器已存在：批 1 已落地 `chain.json#roles` 的解析）",
+      "test": "负向断言：为某角色配置代理人后，**令该角色本人不可用** ⇒ 解析结果仍必须是 `unresolved/block`（`40010`），**不得**变成代理人。"
+    },
+    {
+      "id": "transfer_rollback_by_agent",
+      "what": "★ **代理人可以转交 / 回退**（正向契约；见 `01a §4.1 表二`：代理人**可转交 + 可回退；不可加签、不可撤回**；且**仅限其所代理的那个节点**）",
+      "status": "⏳ **未实现** —— 属 `M9`（转交 / 加签 / 回退 / 撤回）批次",
+      "test": "★ 随 `M9` 落地：`assignee = me` **或**「我是**本节点**审批人的在册代理人」；★ 越节点操作必须被拒（`UC-22` 异常流 A2）。"
+    },
+    {
+      "id": "transfer_notify_approved",
+      "what": "★ 代理人转交 / 回退时**必须通知该单内已审批通过的全部人**（`FR-M9-14`）",
+      "status": "⏳ **未实现**（随 `M9`）",
+      "test": "★ 漏发**必须可检出**（查 `t_notify_log` + Bot 回执）。"
+    }
+  ],
+
+  "enable_guard": {
+    "rule": "★★ **在 `M9` 落地前，本配置不产生任何权限** —— `/admin` 页签须**显式标注「代理人功能未启用」**；服务端**不得**因为存在代理人记录而放行任何操作。",
+    "why": "★ 依据 `README` 定案 **#24**（**每个配置键必须有消费端**，否则就是「假配置」）。本配置当前的消费端**只有负向的那个**（`resolve_ignores_agent`）—— 它保证「配了不会被误用」，但**尚不保证「配了会被用」**。⇒ 与其让运维误以为配了就生效，不如**明白标注未启用**。",
+    "lifting": "★ 解除条件：`M9` 的「转交 / 回退按代理人判定」落地并通过其**应拦 / 应放行**两类用例。"
+  },
+
+  "open_items": [
+    {
+      "item": "「两级不得同人代理」是否收紧到「**同一链上任意两级**」",
+      "status": "未定（不阻塞）",
+      "recommendation": "★ 我方建议：**保持「相邻两级」**，不收紧。理由＝制度原文针对「两级审批」，收紧会**误拦**（如四级链首末两级同人代理，制度未禁），而误拦与漏拦同样致命。★ 若管理层认为「任意两级同人也会让链退化」，改判据即可（结构不变）。"
+    },
+    {
+      "item": "`purchaser`（采购经办人）与 `inspector_group`（验收人）**是否属制度所称「审批角色」**",
+      "status": "未定（不阻塞）",
+      "recommendation": "★ 我方建议：**留在可配集合内、但不强制**（配置表允许留空）。理由＝两者都会在 `chain.json` 中持有 task 节点（如采三档 `rfq` 询比价节点 actor＝`purchaser`），若不可代理，则经办人出差期间该节点**必然卡死**。★ 若不认同，从 `agent_eligible_roles.eligible` 移除即可。"
+    },
+    {
+      "item": "代理人是否需**生效期**（`effective_from` / `effective_to`，到期自动失效）",
+      "status": "未定（不阻塞）",
+      "recommendation": "★ 我方建议：**本期不加**。理由＝用户明确「**不需要替补**」⇒ 系统**不做任何自动行为**，而「到期自动失效」正是自动行为；且加了就必须处理「到期那一刻在办的单怎么办」。★ 现行做法＝**人工停用**，靠 `/admin` 的停用能力与审计留痕。★ 若日后确需，再加字段（结构不变）。"
+    },
+    {
+      "item": "制度侧**未写「代理人由谁指定」**",
+      "status": "★ 属**制度侧**缺口，不是系统缺口（不阻塞）",
+      "recommendation": "★ 制度 V4.0 第十二条只写「每个审批角色指定 1 名代理人」，**未写由谁指定**。★ 我方建议：由**项目总经理**指定（与角色归属同级），并在制度里补一句；★ **系统不校验指定人**（那是**人事安排**，系统只管「登记了谁」）。"
+    },
+    {
+      "item": "`chain.json` 的 `env_count` **语义未定义**（`sole_source` 5 节点写 1）",
+      "status": "已记录（`SS.json#known_gaps` 同项）",
+      "recommendation": "★ 与本文件无关，但**同一批发现**，故在此互相指引：建议在 `chain.json#conventions` 明确其含义（节点总数 / 相对基准的新增环节数），二选一。"
+    }
+  ],
+
+  "change_log": [
+    { "date": "2026-09-30", "version": "1.0", "who": "WorkBuddy", "what": "首版建立：把用户 2026-09-30 的四条定案落成机读规格 —— 代理人**后台可定义**（点选镜像用户）· **不需要替补**（落地为可测的负向守卫）· 两条制度约束（两级不得同人代理 / 备付金不得代理）落成 `checks`；并确立第四类配置「授权配置」，与 `constants.json#three_way_split` 对齐。" }
+  ]
+}

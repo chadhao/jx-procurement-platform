@@ -22,13 +22,17 @@ mimo code 的审计在其中抓出**多处文档内部矛盾**（例如 `docs/11
 | 文件 | 内容 | 状态 |
 |---|---|---|
 | **`chain.json`** | ★ **分档阈值 + 审批链**：9 条流程线（采一/采二/采三/销一/管一/管二/独家/紧急/变更）＋ 合同统一两级 ＋ 11 类单据链 ＋ 10 个角色 | ✅ V1.0 |
-| **`RESOLUTIONS.md`** | ★ **18 条口径冲突的裁定记录**（工具表 ↔ 制度 ↔ 代码 → 唯一口径） | ✅ V1.0 |
-| `forms/*.json` | 11 张单据的表单字段 schema（字段名/类型/必填/枚举/校验） | ⏳ 待产 |
-| `ledger-mapping.json` | 单据 → 台账映射（含 **一对多**）＋ L01–L12 字段定义与写入者 | ⏳ 待产 |
+| **`RESOLUTIONS.md`** | ★ **口径冲突的裁定记录**（工具表 ↔ 制度 ↔ 代码 → 唯一口径） | ✅ **V1.5（30 条裁定）** |
+| **`checks.json`** | ★★ **判据清单（唯一来源）** —— 由**两侧引擎共同执行**（`scripts/check_spec.py` 与 mimo 侧 Go 加载器）⇒ 消灭「第三份真相」（`N-011`） | ✅ **V1.5（9 原语 / 17 判据）** |
+| `forms/*.json` | 11 张单据的表单字段 schema（字段名/类型/必填/枚举/校验） | ⏳ **已交付 6 张**（`BA`/`PR`/`SA`/`CT`/`SS`/`PC`）；**余 5 张**（`RFQ`/`BJ`/`GR`/`QC`/`SUB`） |
+| `ledger-mapping.json` | 单据 → 台账映射（含 **一对多**）＋ L01–L12 字段定义与写入者 | ✅ V1.0（★ `L11`/`L12` 的 `writable` 已修为 `false` ＋ 登记不变量） |
+| **`enums.json`** | ★ **制度性枚举**（★ 后台**不可改**；改动须走裁定） | ✅ V1.1 |
+| **`constants.json`** | ★ **运营性常量表**（后台可增删改；★ **只停用不删** ＋ 单据存值快照）：`unit` / `role_display_name` / `contract_template`；★ 内含配置归处（原三分法 → **四分法**） | ✅ **V1.1** |
+| **`authority.json`** | ★★ **授权配置（第四类，新）**：**角色代理人**（`role_agent`）—— **后台可定义**、**点选通讯录镜像内已存在的用户**（禁手填 `open_id`）、每角色**至多 1 名**、★★ **不做替补**；含 5 条 `checks` ＋ 数据契约 ＋ 未启用守栏 | ✅ **V1.0（2026-09-30 新建）** |
+| **`params.json`** | ★ **可配置参数**（★ 每个参数**强制声明 `consumer`**，否则即「假配置」—— `README` 定案 #24） | ✅ **V1.1**（★ `open_items` 已清零） |
 | `dashboard.yaml` | 4 张看板（13–16）指标定义与口径 | ⏳ 待产 |
 | `acceptance.csv` | 验收用例（对齐 mimo 审计的 6❌ / 21⚠️ 清零） | ⏳ 随第一批 |
-| `openapi.yaml` | 自建侧接口的**业务契约**（路径/入参语义/错误码枚举） | ⏳ 随第一批 |
-| `params.json` | 可配置参数（★ 含"未定值不得固化为常量"的项，如报销时限） | ⏳ 待产 |
+| `openapi.yaml` | 自建侧接口的**业务契约**（路径/入参语义/错误码枚举） | ⏳ 随第一批（★ 接口契约的**人读正本**在 `docs/05-API`） |
 | `institution-anchors.json` | **制度 ↔ 系统 双向锚点**（`COLLAB.md` `N-006`） | ⏳ 随制度 V4.0 |
 
 ---
@@ -53,19 +57,29 @@ python scripts/check_spec.py      # 只查 spec/
 bash   scripts/check_all.sh       # 全量（含本项）
 ```
 
-**校验项**：
+**校验项**：★★ **判据的唯一来源是 `spec/checks.json`** —— 本表**只是索引，不是正本**（★ 免得两处各列一份、必然漂移；本表此前就落后过，见 §6 `V1.1`）。当前 **17 条判据 / 9 个原语引擎**：
 
-| # | 判据 |
+| # | 判据（要点） |
 |---|---|
-| S1 | `spec/**/*.json` 全部可被 `json.load` 解析（★ 抓语法错，含引号/尾逗号） |
-| S2 | `chain.json` 顶层必含 `version`/`roles`/`thresholds`/`contract_approval`/`routes`/`doc_chains` |
-| S3 | `routes` 恰好 9 条流程线 |
-| S4 | `doc_chains` 含 11 类单据（`BA/PR/SA/RFQ/BJ/SS/CT/PC/GR/QC/SUB`） |
-| S5 | 所有 `ledger` 取值 ∈ `L01`–`L12`，且**不得指向** `L08/L10/L11/L12` |
-| S6 | 所有 `route` / `ref` / `route_by_tier` / `route_by_condition` 的取值必须指向存在的流程线 |
-| S7 | 采档阈值**无缝且无重叠**（首档下界为 null、末档上界为 null） |
-| S8 | `forms/*.json` 字段名不得含 `<br>` 或空白 |
-| S9 | `ledger-mapping.json` 必须覆盖 `L01`–`L12` 全部 12 个编号 |
+| `S1` | `spec/**/*.json` 全部可被 `json.load` 解析（★ 抓语法错，含**把中文引号误写成 ASCII 双引号** —— 本条已**当场抓出过两次**，最近一次是 `authority.json`） |
+| `S2` | `chain.json` 顶层必含六键（`version`/`roles`/`thresholds`/`contract_approval`/`routes`/`doc_chains`） |
+| `S3` | `routes` **恰好**覆盖 9 条流程线（不多不少） |
+| `S4` | `doc_chains` 必须含 11 类单据（`BA/PR/SA/RFQ/BJ/SS/CT/PC/GR/QC/SUB`；允许另有说明键） |
+| `S5a` | `chain.json` 内全部 `ledger` 取值 ⊆ `L01`–`L12` |
+| `S5b` | `forms/*.json` 内全部 `ledger` 取值 ⊆ `L01`–`L12` |
+| `S5c` | ★ `chain.json` 侧的 `ledger`（`doc_chains.*` 与 `routes.*.nodes[*]`）**也不得指向** `L08`/`L10`/`L11`/`L12`（`N-020` 补：原 `S5a` 只做「⊆」、`S11` 只扫 `ledger-mapping` ⇒ **两侧都放行**，而本节原文要求「不得指向」） |
+| `S6` | `route` 的取值必须存在于 `routes`（合同统一两级另列，允许） |
+| `S6b` | ★ `doc_chains.*.route_by_tier.*` 的取值必须存在于 `routes`（`N-020` 补：原 `S6` 只管 `**.route`，此项**悬空会静默通过**） |
+| `S6c` | ★ `doc_chains.*.route_by_condition` 的**管道串须逐段**存在于 `routes`（`N-021` 补；依赖 `ref_exists.split`） |
+| `S7` | 采档阈值**无缝且无重叠**（首项 `lower=null`、末项 `upper=null`） |
+| `S8` | `forms/*.json` 字段名不得含 `<br>` 或空白（`R-18` 命名规范） |
+| `S9` | `ledger-mapping.json` **恰好**覆盖 `L01`–`L12` 全部 12 张 |
+| `S10` | `doc_to_ledger` 的 `ledger` 取值必须**真实存在于** `ledgers` |
+| `S11` | `doc_to_ledger` **不得把** `L08`/`L10`/`L11`/`L12` 当落账目标（`README` 定案 #20） |
+| `S12` | ★★ `forms/*.json` 的 `ledger` 必须与 `ledger-mapping.doc_to_ledger` **完全一致** —— 这是 `R-02`（`L03` 恒空**静默缺陷**）的执行守卫 |
+| `S13` | ★★ **制度第三十五条「合同必备条款」8 组完整性** —— `forms/CT.json` 的 `clause_group` 必须覆盖 **1..8**；缺一组＝**少一道硬拦截**（与「`L03` 恒空」同族：**少了东西与没违规长得一样**） |
+
+★★ **两侧共同契约**：同一条判据由 `scripts/check_spec.py`（Python）**与** mimo 侧 Go 加载器**各实现一遍**，且必须**逐字对齐** —— 含**语言怪癖**（例：Python 里 `bool` 是 `int` 的**子类**，`_scalar_str` 的 `bool` 分支必须排在 `int` 之前，否则 `True` 会变 `"True"`）。★ 已由**两侧引擎一致性探针**验证：同一篡改，两侧**都拦下**（`N-021`）。
 
 ★ **本门禁的自证记录**（`README` 定案 #54：有效性只能用探针证明）：
 - **首跑即抓到 WorkBuddy 自己的错**：`chain.json` 初稿有 **3 处把中文引号写成 ASCII 双引号**，直接打断 JSON ⇒ 被 S1 当场抓出
@@ -80,7 +94,7 @@ COLLAB.md                  ← 双方唯一协商渠道（谁必须先给方案�
 spec/*.json  (本目录)       ← ★ 机器可读契约：做什么（WorkBuddy 维护）
 spec/RESOLUTIONS.md        ← 口径裁定的唯一追溯点
 docs/                      ← 人读产品规格：为什么这样设计
-deliverables/…/采购及费用审批制度V4.0.docx   ← 公司级制度（Word，不进代码库）
+deliverables/…/采购及费用审批管理办法V4.0.docx   ← 公司级制度（Word，不进代码库）
 ```
 
 ★ **`spec/` 归 WorkBuddy，`.mimocode/` 归 mimo code** —— 双方**不动对方的文件**（`COLLAB.md §3`）。
@@ -91,4 +105,5 @@ deliverables/…/采购及费用审批制度V4.0.docx   ← 公司级制度（Wo
 
 | 版本 | 日期 | 变更 |
 |---|---|---|
+| V1.1 | 2026-09-30 | ★ **消漂移 ＋ 登记新文件（纯文档）**：① **§2 文件清单**补登 **`checks.json` / `enums.json` / `constants.json` / `authority.json`（新）**，并据实更新状态（`forms/` 已交付 6 张 · `ledger-mapping` 已交付 · `RESOLUTIONS` V1.5 30 条 · `params` V1.1 `open_items` 清零）；② ★★ **§4 校验项改为「只是索引、不是正本」** —— 原表只列 `S1`–`S9`，而 `checks.json` 已达 **17 条**（`S5a/b/c`、`S6b/c`、`S10`–`S13` 从未登记）⇒ 逐条据实重列 ＋ 补「两侧共同契约」与**语言怪癖**（`bool` 是 `int` 子类）说明；③ **§5 修正制度文件名**（原写 `采购及费用审批制度V4.0.docx`，实为 **`采购及费用审批管理办法V4.0.docx`**）；④ `S1` 自证记录补「已当场抓出过两次中文引号误写」。★ **不改任何编号**。 |
 | V1.0 | 2026-09-29 | 首版：目录定位 / 文件清单 / 命名约定 / 门禁九项与自证记录 |
