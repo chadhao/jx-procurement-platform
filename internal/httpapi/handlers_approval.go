@@ -653,10 +653,17 @@ func (d Deps) handleApprovalSubmit(c echo.Context) error {
 				return fail(c, http.StatusInternalServerError, codeInternal, verr.Error())
 			}
 		}
-		// GR#ledger_l07_written（when=提交后）：本单 L07 行 5 列产出自检；
+		// GR#ledger_l07_written（when=落账后；GR 无审批链提交即终态 ⇒ 落账先于自检）：
 		// 失败可见（500 带 biz_no）—— 台账缺行/缺列 ≠ 没有验收
 		if hasFormCheck(form, "ledger_l07_written") {
 			if verr := d.verifyGRPostSubmitL07(ctx, bizNo); verr != nil {
+				return fail(c, http.StatusInternalServerError, codeInternal, verr.Error())
+			}
+		}
+		// SUB#ledger_l06_written（when=落账后，顺序纪律同上；只校验提交时能确定的
+		// 存档 6 列 + 运营 2 列，集团侧 4 个人工列**不算**，否则每次提交都误拦）
+		if hasFormCheck(form, "ledger_l06_written") {
+			if verr := d.verifySUBPostLedgerL06(ctx, bizNo); verr != nil {
 				return fail(c, http.StatusInternalServerError, codeInternal, verr.Error())
 			}
 		}

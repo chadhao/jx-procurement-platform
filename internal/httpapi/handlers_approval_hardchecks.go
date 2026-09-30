@@ -48,6 +48,16 @@ var submitHardChecks = map[string]hardCheckFn{
 	"special_explanation_required":      checkPCSpecialExplanation,
 	"tech_opinion_for_engineering":      checkPCTechOpinionEngineering,
 	"new_supplier_when_supplier_change": checkPCNewSupplier,
+	// ---- SUB（集团提交流转单）----
+	"related_docs_complete":            checkSUBRelatedDocsComplete,
+	"contract_approved_when_over_1000": checkSUBContractApproved,
+	"payee_change_requires_callback":   checkSUBPayeeChangeCallback,
+	"tolerance_note_when_over":         checkSUBToleranceNote,
+	"handover_receipt_required":        checkSUBHandoverReceipt,
+	// "ledger_l06_written"：when=落账后（提交→落账→自检；本单无审批链提交即终态）
+	//   ⇒ verifySUBPostLedgerL06 承载（与 GR/QC 同款顺序纪律）
+	// soft: submit_deadline_warning —— 超 3 工作日**只预警不阻断**（工具表"计入异常预警"≠不予受理）
+
 	// ---- GR（到货验收单）----
 	"related_order_or_record_must_exist":   checkGRRelatedOrderOrRecord,
 	"acceptance_group_members_complete":    checkGRAcceptanceGroupMembers,
@@ -750,6 +760,198 @@ WHERE ledger_type='L07' AND biz_no = ?`, bizNo).Scan(&related, &extRaw, &qty)
 		}
 		if s, isStr := v.(string); isStr && strings.TrimSpace(s) == "" {
 			return fmt.Errorf("GR 提交后 L07 自检失败：列 %s 为空（biz_no=%s）——「没有数据」不得与「没有验收」一样", k, bizNo)
+		}
+	}
+	return nil
+}
+
+// ---------------------------------------------------------------------------
+// SUB（集团提交流转单 · 判据见 spec/forms/SUB.json#checks）
+// ---------------------------------------------------------------------------
+
+// subBizNoRe 识别我方业务单号（前缀-YYMM-####，两段各 4 位数字）。
+var subBizNoRe = regexp.MustCompile(`[A-Z]{2}-[0-9]{4}-[0-9]{4}`)
+
+// parseRelatedDocs 从文本清单解析单据号（去重保序）。
+func parseRelatedDocs(text string) []string {
+	seen := map[string]bool{}
+	var out []string
+	for _, m := range subBizNoRe.FindAllString(text, -1) {
+		if !seen[m] {
+			seen[m] = true
+			out = append(out, m)
+		}
+	}
+	return out
+}
+
+// checkSUBRelatedDocsComplete 关联单据**逐个等值查存在**（不是非空 —— 文本清单只校验
+// 非空等于没校验：写一句「已齐」也能过）；查不到不得 fail-open。
+func checkSUBRelatedDocsComplete(ctx context.Context, d Deps, _ specload.FormDoc, body *approvalSubmitBody, _ string) error {
+	provided := hbProvided(body)
+	text := hStr(provided, "related_docs")
+	if text == "" {
+		return fmt.Errorf("related_docs 不能为空（关联单据清单）")
+	}
+	ids := parseRelatedDocs(text)
+	if len(ids) == 0 {
+		return fmt.Errorf("related_docs 中未解析到任何单据号（形如 CT-2609-0001）—— 文本清单必须可逐项校验，不接受「只写已齐」")
+	}
+	for _, id := range ids {
+		inst, err := d.DB.GetInstanceByBizNo(ctx, id)
+		if err != nil || inst == nil {
+			return fmt.Errorf("关联单 %q 不存在 —— 缺项不得提交（fail-open＝假校验）", id)
+		}
+	}
+	return nil
+}
+
+// checkSUBContractApproved ≥1,000 元（**含**，100,000 分整数闭区间）⇒ 合同审批必须已完成。
+// ★ 与「≥1,000 元必须签合同」是同一条线的两端；严格大于会让恰好 1,000 元的单漏拦。
+func checkSUBContractApproved(ctx context.Context, d Deps, _ specload.FormDoc, body *approvalSubmitBody, _ string) error {
+	provided := hbProvided(body)
+	amt, ok := hNum(provided, "amount_cents")
+	if !ok && body.AmountCents != nil {
+		amt = float64(*body.AmountCents)
+		ok = true
+	}
+	if !ok {
+		return fmt.Errorf("amount_cents 缺失 —— 无法判定合同审批前置（fail-closed）")
+	}
+	if amt < 100000 {
+		return nil // <1,000 元不适用（采一档不签合同）
+	}
+	// 系统标记优先；否则到关联清单里找已审批的 CT（等值）
+	if v, isBool := provided["contract_approved"].(bool); isBool && v {
+		return nil
+	}
+	for _, id := range parseRelatedDocs(hStr(provided, "related_docs")) {
+		if !strings.HasPrefix(id, "CT-") {
+			continue
+		}
+		inst, err := d.DB.GetInstanceByBizNo(ctx, id)
+		if err == nil && inst != nil && inst.Status == "APPROVED" {
+			return nil
+		}
+	}
+	return fmt.Errorf("金额 %s（≥1,000 元）但关联合同审批未完成 —— 合同审批是提交集团的硬性前置", formatCents(int64(amt)))
+}
+
+// checkSUBPayeeChangeCallback 收款账户变更 ⇒ 必须电话回拨留痕（双向；全案唯一反欺诈校验）。
+func checkSUBPayeeChangeCallback(_ context.Context, _ Deps, _ specload.FormDoc, body *approvalSubmitBody, _ string) error {
+	provided := hbProvided(body)
+	verified, isBool := provided["payee_account_verified"].(bool)
+	if !isBool {
+		return fmt.Errorf("payee_account_verified 必须为布尔值（账户是否与合同预留一致）")
+	}
+	callbackConfirmed, _ := provided["callback_confirmed"].(bool)
+	callbackNote := hStr(provided, "callback_note")
+	if !verified { // 账户变更/不一致 ⇒ 回拨确认 + 备注必填
+		if !callbackConfirmed {
+			return fmt.Errorf("收款账户与合同预留不一致/发生变更 —— 必须电话回拨确认（callback_confirmed）")
+		}
+		if callbackNote == "" {
+			return fmt.Errorf("回拨确认必须填写回拨备注（callback_note）—— 留痕是这条校验的全部意义")
+		}
+		return nil
+	}
+	// 双向：账户一致时不得填回拨（假留痕会稀释信号）
+	if callbackConfirmed || callbackNote != "" {
+		return fmt.Errorf("账户未变更时不得填写回拨确认/备注（避免假留痕稀释反欺诈信号）")
+	}
+	return nil
+}
+
+// checkSUBToleranceNote 三单差异超容差 ⇒ 如实说明（**只要求说明、不要求合格** ——
+// 最终复核权在集团财务；写成"不许提交"＝替集团做判断，会把真实差异逼成「一致」）。
+// 双向：其余结论 ⇒ 说明必须为空。
+func checkSUBToleranceNote(_ context.Context, _ Deps, _ specload.FormDoc, body *approvalSubmitBody, _ string) error {
+	provided := hbProvided(body)
+	match := hStr(provided, "three_way_match")
+	note := hStr(provided, "tolerance_note")
+	if match == "" {
+		return fmt.Errorf("three_way_match 必填（三单匹配结论）")
+	}
+	if match == "差异超容差" {
+		if note == "" {
+			return fmt.Errorf("差异超容差必须填写 tolerance_note（如实说明，不是自己下结论）")
+		}
+		return nil
+	}
+	if note != "" {
+		return fmt.Errorf("非「差异超容差」结论不得填写 tolerance_note（双向）")
+	}
+	return nil
+}
+
+// checkSUBHandoverReceipt 移交凭证非空 —— 无凭证则「提交」这件事不成立
+// （L06 里会出现「看起来已提交、实际没交」的行，事后无法区分）。
+func checkSUBHandoverReceipt(_ context.Context, _ Deps, _ specload.FormDoc, body *approvalSubmitBody, _ string) error {
+	provided := hbProvided(body)
+	if !hHas(provided, "handover_receipt") {
+		return fmt.Errorf("移交凭证（handover_receipt）非空是提交成立的条件 —— 无凭证视为未提交")
+	}
+	return nil
+}
+
+// verifySUBPostLedgerL06 SUB#ledger_l06_written（when=落账后 ★ 顺序＝提交→落账→自检；
+// SUB 无审批链、提交即终态 —— 与 GR/QC 同款顺序纪律）：
+//
+//	① 同步存档表 6 列：biz_no / related_docs / item_type / amount_cents / payment_method / hunan_completed_at
+//	② 运营表至少 submit_group_at 与 handover_receipt 两列已有值
+//
+// ★ **只校验提交时能确定的列** —— 集团侧 4 列（编号/状态/付款完成日/驳回处置）事后人工登记、
+// 提交时必然为空，**不得**算进自检（否则每次提交都失败＝误拦）。
+//
+// ⚠ 依赖登记（随 SUB 发起批对齐）：hunan_completed_at 的**生产者口径未定**（表单无此字段，
+// 见 COLLAB 议题）；运营表种子行（submit_group_at/handover_receipt）需落账时写入 ——
+// 两者就位前本自检必失败（**fail-closed 是本意**），SUB 提交通路当前不可达故无误拦。
+func (d Deps) verifySUBPostLedgerL06(ctx context.Context, bizNo string) error {
+	// ① 存档 6 列：biz_no（行键）+ amount_cents（列）+ 4 个 ext 键
+	var extRaw string
+	var amount any
+	if err := d.DB.QueryRowContext(ctx, `
+SELECT COALESCE(ext_json,'{}'), amount_cents FROM t_ledger_archive
+WHERE ledger_type='L06' AND biz_no = ?`, bizNo).Scan(&extRaw, &amount); err != nil {
+		return fmt.Errorf("SUB 落账自检失败：L06 存档行不存在（biz_no=%s）: %w", bizNo, err)
+	}
+	ext := map[string]any{}
+	if extRaw != "" && extRaw != "{}" {
+		if err := json.Unmarshal([]byte(extRaw), &ext); err != nil {
+			return fmt.Errorf("SUB 落账自检失败：ext_json 损坏（biz_no=%s）: %w", bizNo, err)
+		}
+	}
+	if amount == nil {
+		return fmt.Errorf("SUB 落账自检失败：amount_cents 未产出（biz_no=%s）", bizNo)
+	}
+	for _, k := range []string{"related_docs", "item_type", "payment_method", "hunan_completed_at"} {
+		v, exists := ext[k]
+		if !exists || v == nil {
+			return fmt.Errorf("SUB 落账自检失败：存档列 %s 未产出（biz_no=%s）", k, bizNo)
+		}
+		if s, isStr := v.(string); isStr && strings.TrimSpace(s) == "" {
+			return fmt.Errorf("SUB 落账自检失败：存档列 %s 为空（biz_no=%s）", k, bizNo)
+		}
+	}
+	// ② 运营表两列
+	var opsJSON string
+	if err := d.DB.QueryRowContext(ctx,
+		`SELECT ops_json FROM t_ledger_ops WHERE ledger_type='L06' AND biz_no=?`, bizNo).Scan(&opsJSON); err != nil {
+		return fmt.Errorf("SUB 落账自检失败：L06 运营行不存在（biz_no=%s）: %w", bizNo, err)
+	}
+	ops := map[string]any{}
+	if opsJSON != "" && opsJSON != "{}" {
+		if err := json.Unmarshal([]byte(opsJSON), &ops); err != nil {
+			return fmt.Errorf("SUB 落账自检失败：运营行 ops_json 损坏（biz_no=%s）: %w", bizNo, err)
+		}
+	}
+	for _, k := range []string{"submit_group_at", "handover_receipt"} {
+		v, exists := ops[k]
+		if !exists || v == nil {
+			return fmt.Errorf("SUB 落账自检失败：运营列 %s 未产出（biz_no=%s）—— 无凭证视为未提交的两列必须在落账时写入", k, bizNo)
+		}
+		if s, isStr := v.(string); isStr && strings.TrimSpace(s) == "" {
+			return fmt.Errorf("SUB 落账自检失败：运营列 %s 为空（biz_no=%s）", k, bizNo)
 		}
 	}
 	return nil
