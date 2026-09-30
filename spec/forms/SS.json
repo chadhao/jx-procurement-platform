@@ -1,0 +1,516 @@
+{
+  "doc_type": "SS",
+  "label": "单一来源理由书",
+  "prefix": "SS",
+  "number_format": "SS-YYMM-####",
+  "version": "1.0",
+  "date": "2026-09-30",
+  "generated_by": "WorkBuddy",
+  "sources": {
+    "tool_table": "采购与费用审批体系配置工具表_v3.0.xlsx → `单据清单` R9（SS 在 `表单字段清单` 中【未列出】逐条字段，本表 R9 的 C6「关键字段」为次级来源）：唯一性说明、价格佐证、技术部门意见",
+    "institution": "费用管理办法V3.0（第二十条 采购方式升级 / **第五十条 独家采购** / 第五十二条 采购变更）＋ **2026-09-25 批复 A6**（独家采购改项目总经理终审 ＋ 月度／季度报送备案）",
+    "recon": "_scratch/recon-table-v3-fields.md §1.7（SS 次级来源）/ §3（L09 台账字段）",
+    "resolution": "spec/RESOLUTIONS.md（**R-22**：RFQ／QC 侧字段以工具表 C6 ＋ 代码侧为准，须标注「制度未明说」/ R-21#7：变更链字段）"
+  },
+  "ledger": [
+    "L09"
+  ],
+  "ledger_resolution": "SS 是 `L09 例外事项台账` 的**两个生产者之一**（另一个是 PC 采购变更单），`exception_type` 取值为「独家采购」。★ 与 `ledger-mapping.json#ledgers.L09.producer` 一致（判据 `S12` 锚定）。★ **L09 的字段全部由本单自动写入**（除 `is_emergency_closed` 属紧急采购、由采购经办人手工维护）",
+  "routes": {
+    "_authority": "★ 权威源＝`spec/chain.json#doc_chains.SS.route` ＝ `sole_source`（**本文件不得与之冲突**）",
+    "chain_rule": "★ **按「对应档位」的审批链正常审批，由项目总经理终审** —— 即先按金额落档（采一／二／三档，见 `chain.json#thresholds.purchase.bands`），走该档位的审批链，**最后加一道项目总经理终审**",
+    "five_nodes": {
+      "_authority": "`chain.json#routes.sole_source.nodes`（5 个节点）",
+      "①": "提交（采购经办人）",
+      "②": "技术部门意见（评审组 —— ★ **必填**，对应本表单的 `tech_opinion`）",
+      "③": "按对应档位审批（主管领导 → 项目总经理）",
+      "④": "项目总经理终审",
+      "⑤": "台账标记 ＋ 报送备案（综合运营主管，落 `L09`）"
+    },
+    "hard_rules": [
+      "★★ **湖南侧一律截止到项目总经理，不再「上抬一级」至集团**（批复 A6）—— 这与「集团内部流程不属于本办法」一致（`R-28`）",
+      "★ **月度报送须单列「独家采购清单」**（备案，非审批）",
+      "★ **季度统计占比；占比 > 20% 须专项说明**",
+      "★ **无次数上限**"
+    ]
+  },
+  "sections": [
+    {
+      "id": "header",
+      "label": "表头",
+      "fields": [
+        {
+          "name": "biz_no",
+          "label": "单据号",
+          "type": "string",
+          "required": true,
+          "source": "system",
+          "immutable_after_submit": true,
+          "is_business_key": true,
+          "origin": "tool_table",
+          "origin_ref": "单据清单 R9（SS 编号）",
+          "rule": "格式 SS-YYMM-####；提交后不可修改；作为全流程主键"
+        },
+        {
+          "name": "applicant",
+          "label": "申请人",
+          "type": "person",
+          "required": true,
+          "source": "system",
+          "immutable": true,
+          "origin": "tool_table",
+          "origin_ref": "通用表头（同 PR）",
+          "note": "★ 本单的提交人是**采购经办人**（`chain.json#routes.sole_source.nodes[0].actor = purchaser`），不是需求提出人",
+          "rule": "取当前登录人，不可手改"
+        },
+        {
+          "name": "applicant_department",
+          "label": "所属部门",
+          "type": "department",
+          "required": true,
+          "source": "system",
+          "immutable": true,
+          "origin": "tool_table",
+          "origin_ref": "通用表头（同 PR）",
+          "critical_note": "★★ 本字段**用于条件分支判定** —— 决定「主管领导」是谁（综合运营部／质检技术部 → 项目总经理；生产部／销售部 → 副总）。见 `chain.json#roles.supervisor`（`N-016` 已结构化）"
+        },
+        {
+          "name": "related_biz_no",
+          "label": "关联需求单号",
+          "type": "string",
+          "required": true,
+          "source": "system",
+          "immutable": true,
+          "origin": "tool_table",
+          "origin_ref": "单据清单 R9 ＋ PO R30（禁止无源下单）",
+          "rule": "★ 从**已批准的 PR** 带入；★ 对应 §四 的两个采购方均须引用本单",
+          "critical_note": "★ 按 **Q14 定稿**，单据间关联一律用单一键 `related_biz_no`（透传 `ext_json`），**不再逐单据各造键名**"
+        },
+        {
+          "name": "procure_method",
+          "label": "采购方式",
+          "type": "enum",
+          "required": true,
+          "source": "system",
+          "enum_ref": "spec/enums.json#procure_methods",
+          "immutable": true,
+          "origin": "resolution",
+          "origin_ref": "R-20#14",
+          "rule": "★ 本单固定为「**单一来源**」（值域取并集 5 值中的该项）—— 由单据类型决定，不可手改"
+        },
+        {
+          "name": "procurement_subject",
+          "label": "采购标的",
+          "type": "string",
+          "required": true,
+          "source": "user",
+          "origin": "code",
+          "origin_ref": "代码侧 `data_templates.py` SS",
+          "rule": "一句话说清买什么（品名／规格概要）；明细见关联的 PR",
+          "known_gap": "★ 工具表 R9 未单列「采购标的」，为代码侧与推导补入 ⇒ 见 `known_gaps`"
+        },
+        {
+          "name": "usage_category_l1",
+          "label": "用途分类（一级）",
+          "type": "enum",
+          "required": true,
+          "source": "system",
+          "enum_ref": "spec/enums.json#usage_categories",
+          "enum_size": 23,
+          "origin": "resolution",
+          "origin_ref": "R-05",
+          "rule": "★ 从关联 PR 带入",
+          "critical_note": "★ 填入本字段即**决定该笔支出走哪条流程线**（工具表 用途分类表 R2 原文）"
+        },
+        {
+          "name": "usage_category_l2",
+          "label": "二级明细",
+          "type": "enum",
+          "required": true,
+          "source": "system",
+          "enum_ref": "spec/enums.json#usage_categories（按 usage_category_l1 联动）",
+          "origin": "resolution",
+          "origin_ref": "R-05",
+          "rule": "★ 随一级分类联动从 PR 带入；**不得只填一级**"
+        },
+        {
+          "name": "amount_cents",
+          "label": "金额",
+          "type": "money_cents",
+          "required": true,
+          "source": "system",
+          "is_amount_basis": true,
+          "origin": "tool_table",
+          "origin_ref": "L09 `amount_cents`（台账列）",
+          "rule": "★ 从关联 PR 带入的单笔含税总额（单位：分）",
+          "critical_note": "★★ **本值是「按对应档位审批」的唯一依据** —— 决定走采一／二／三档哪条链（`chain.json#thresholds.purchase.bands`，闭区间；1000 与 5000 均含在采二档）"
+        },
+        {
+          "name": "applicable_tier",
+          "label": "适用档位",
+          "type": "enum",
+          "required": true,
+          "source": "computed",
+          "immutable": true,
+          "origin": "resolution",
+          "origin_ref": "R-22 ＋ chain.json 分档",
+          "rule": "★ 由 `amount_cents` 算出（`tier_of`），表单带入、不得手选",
+          "critical_note": "★ 本字段是「**按对应档位审批**」这条规则的**执行载体** —— 没有它，链就不知道按哪一档走"
+        },
+        {
+          "name": "is_fixed_asset",
+          "label": "是否属于固定资产类",
+          "type": "boolean",
+          "required": true,
+          "source": "system",
+          "immutable": true,
+          "origin": "resolution",
+          "origin_ref": "N-013 裁定（同 PR）",
+          "rule": "★ 从关联 PR 带入",
+          "note": "★ 用途：`>200,000 元或固定资产类` 时采购方式应升级为招标／竞谈（第十六条）；★ **单一来源与加强采购不得同时成立** —— 若已判定为加强采购，则应走 BJ／招标而非本单（见 `known_gaps`）"
+        },
+        {
+          "name": "planned_supplier",
+          "label": "拟定供应商",
+          "type": "string",
+          "required": true,
+          "source": "user",
+          "origin": "code",
+          "origin_ref": "代码侧 `data_templates.py` SS",
+          "rule": "本次拟直接采购的唯一供应商名称；★ 须与合同／订单的供应商一致"
+        }
+      ]
+    },
+    {
+      "id": "sole_source_reason",
+      "label": "唯一性说明（工具表 R9）",
+      "institution_ref": "费用管理办法V3.0 第五十条（独家采购）",
+      "hard_rule": "★ 批复 A6：独家采购改**项目总经理终审**＋**月度／季度报送备案**；★ **无次数上限**，但**月度报送须单列「独家采购清单」**、**季度占比 > 20% 须专项说明**",
+      "_note": "★ 本节字段是「为什么只能从这一家买」的**书面依据** —— 独家采购是**例外通道**，例外必须有理由，否则例外会变成常态（与第五十一条紧急采购的「被常规化倾向」同源）",
+      "fields": [
+        {
+          "name": "uniqueness_statement",
+          "label": "唯一性说明",
+          "type": "textarea",
+          "required": true,
+          "source": "user",
+          "origin": "tool_table",
+          "origin_ref": "单据清单 R9「唯一性说明」",
+          "rule": "★ 须说清「**为什么只有这一家能做**」：技术独占、专利、独家代理、地理／资质唯一等，**不接受「一直是他家」「比较熟」这类理由**",
+          "critical_note": "★ 本字段是 L09 台账 `uniqueness_reason`（A6 批复新增）的**唯一数据源**"
+        },
+        {
+          "name": "uniqueness_basis",
+          "label": "唯一性依据类型",
+          "type": "enum",
+          "required": true,
+          "source": "user",
+          "enum_inline": [
+            "技术独占／专利",
+            "独家代理／授权",
+            "唯一可满足资质的供应商",
+            "不可替代的兼容性要求",
+            "其他（须说明）"
+          ],
+          "origin": "code",
+          "origin_ref": "代码侧补充",
+          "rule": "★ 选「其他」时须在 `uniqueness_statement` 中说明",
+          "known_gap": "★ **制度与工具表均未给出取值域** —— 本枚举为我方补入（依据＝第二十三条资质审查 ＋ 常识分类）⇒ 见 `known_gaps`"
+        },
+        {
+          "name": "market_scan_note",
+          "label": "市场排查说明",
+          "type": "textarea",
+          "required": false,
+          "source": "user",
+          "origin": "code",
+          "origin_ref": "代码侧补充",
+          "rule": "如已做过市场排查（询问过其他供应商、查过同类产品），在此说明排查范围与结论",
+          "known_gap": "★ 制度未要求，属**我方建议的加强项**（降低「独家」被滥用的风险）⇒ 非必填，见 `known_gaps`"
+        },
+        {
+          "name": "sole_source_attachment",
+          "label": "佐证附件",
+          "type": "attachment",
+          "required": false,
+          "source": "user",
+          "origin": "code",
+          "origin_ref": "代码侧补充",
+          "rule": "授权书／专利证书／资质文件等；★ **选「独家代理／授权」时必填**"
+        }
+      ]
+    },
+    {
+      "id": "price_evidence",
+      "label": "价格佐证（工具表 R9）",
+      "_note": "★ 工具表 R9 明确要求「**价格佐证**」—— 独家采购没有比价，**价格合理性无从通过竞争得到验证**，因此必须另有佐证",
+      "fields": [
+        {
+          "name": "price_evidence",
+          "label": "价格佐证",
+          "type": "textarea",
+          "required": true,
+          "source": "user",
+          "origin": "tool_table",
+          "origin_ref": "单据清单 R9「价格佐证」",
+          "rule": "★ 须给出可比依据：历史采购价、同类产品市场价、供应商报价构成说明、行业协会价格等",
+          "critical_note": "★ 无佐证的价格在独家采购里**没有任何制衡** —— 这是本单比一般采购更依赖书面留痕的原因"
+        },
+        {
+          "name": "reference_price_cents",
+          "label": "参考价",
+          "type": "money_cents",
+          "required": false,
+          "source": "user",
+          "origin": "code",
+          "origin_ref": "代码侧补充",
+          "rule": "填佐证中引用的参考单价／总价，便于后续抽查比对"
+        },
+        {
+          "name": "is_price_negotiated",
+          "label": "是否已议价",
+          "type": "boolean",
+          "required": true,
+          "source": "user",
+          "origin": "code",
+          "origin_ref": "代码侧补充",
+          "rule": "★ 选「是」时建议填写议价过程与结果（写入 `price_evidence`）"
+        }
+      ]
+    },
+    {
+      "id": "tech_opinion",
+      "label": "技术部门意见（节点②·必填）",
+      "filled_at": "node2_tech_opinion",
+      "institution_ref": "chain.json#routes.sole_source.nodes[1]（actor = inspector_group，required = true）",
+      "_note": "★ 本节点在链路里是**必经**的（`required: true`）—— 技术部门要对「技术独占性」背书，这是独家采购最难被外部验证的一环",
+      "fields": [
+        {
+          "name": "tech_opinion",
+          "label": "技术部门意见",
+          "type": "textarea",
+          "required": true,
+          "source": "inspector_at_node",
+          "origin": "tool_table",
+          "origin_ref": "单据清单 R9「技术部门意见」",
+          "rule": "★ 须明确回答「**是否确认技术上的唯一性**」；仅签字不表意的不视为有效意见"
+        },
+        {
+          "name": "tech_opinion_by",
+          "label": "意见人",
+          "type": "person",
+          "required": true,
+          "source": "system",
+          "immutable": true,
+          "origin": "code",
+          "origin_ref": "代码侧（通用留痕）",
+          "rule": "取节点操作人，不可手改"
+        },
+        {
+          "name": "tech_opinion_at",
+          "label": "意见时间",
+          "type": "datetime",
+          "required": true,
+          "source": "system",
+          "immutable": true,
+          "origin": "code",
+          "origin_ref": "代码侧（通用留痕）",
+          "rule": "取节点审批时间，不可手改"
+        }
+      ]
+    },
+    {
+      "id": "approval_and_filing",
+      "label": "终审与备案（节点③④⑤）",
+      "filled_at": "node4_pgm_final_and_node5_ledger",
+      "institution_ref": "批复 A6 ＋ chain.json#routes.sole_source.nodes[2..5]",
+      "_note": "★ 节点③「按对应档位审批」是**继承档位链**（不产生本单字段）；本节只承载 ④终审 与 ⑤台账/备案 的落点",
+      "fields": [
+        {
+          "name": "tier_chain_record",
+          "label": "档位审批记录",
+          "type": "string",
+          "required": true,
+          "source": "system",
+          "origin": "code",
+          "origin_ref": "chain.json#routes.sole_source.nodes[2]",
+          "rule": "系统自动关联本次「按对应档位审批」的实例与结论（含审批人／时间／意见）",
+          "critical_note": "★ 本字段为空则该档位**实际未经审批**却无从发现 ⇒ 台账「审批记录」列取本字段"
+        },
+        {
+          "name": "pgm_final_opinion",
+          "label": "项目总经理终审意见",
+          "type": "textarea",
+          "required": true,
+          "source": "pgm_at_node",
+          "origin": "institution",
+          "origin_ref": "批复 A6",
+          "rule": "★ 独家采购的**终审**在项目总经理；意见须说明是否同意采用单一来源及理由",
+          "critical_note": "★★ 批复 A6 明确：湖南侧**一律截止到项目总经理**，**不再「上抬一级」至集团**"
+        },
+        {
+          "name": "ledger_marked_at",
+          "label": "台账标记时间",
+          "type": "datetime",
+          "required": true,
+          "source": "system",
+          "immutable": true,
+          "origin": "code",
+          "origin_ref": "chain.json#routes.sole_source.nodes[4]（ledger = L09）",
+          "rule": "落 `L09` 台账（`exception_type` = 独家采购）的时间"
+        },
+        {
+          "name": "report_note",
+          "label": "报送备注",
+          "type": "textarea",
+          "required": false,
+          "source": "user",
+          "origin": "institution",
+          "origin_ref": "批复 A6（月度清单 / 季度占比 > 20% 专项说明）",
+          "rule": "★ 季度占比 > 20% 时**必填专项说明**；否则可空",
+          "critical_note": "★ 月度报送须**单列「独家采购清单」**（备案，非审批）—— 该清单由台账导出，本字段是其补充说明"
+        }
+      ]
+    }
+  ],
+  "checks": [
+    {
+      "id": "uniqueness_and_price_required",
+      "when": "submit",
+      "assert": "uniqueness_statement 非空 且 price_evidence 非空",
+      "else": "拒绝提交",
+      "origin": "tool_table",
+      "origin_ref": "单据清单 R9（唯一性说明 / 价格佐证）",
+      "severity": "hard"
+    },
+    {
+      "id": "sole_source_attachment_when_authorized",
+      "when": "submit",
+      "assert": "uniqueness_basis == '独家代理／授权' ⇒ sole_source_attachment 非空",
+      "else": "拒绝提交",
+      "origin": "code",
+      "origin_ref": "代码侧补充",
+      "severity": "hard"
+    },
+    {
+      "id": "related_pr_must_exist",
+      "when": "submit",
+      "assert": "related_biz_no 存在且对应 PR 实例为已批准状态",
+      "else": "★ **可见失败**（不 fail-open）—— 提示「关联需求单不存在或未批准」",
+      "origin": "tool_table",
+      "origin_ref": "PO R30「从已批准的 PR 生成，禁止无源下单」",
+      "severity": "hard",
+      "note": "★ 与 CT 的同款判据同口径：**关联 PR 查不到 ⇒ 拒绝，不得静默放行**"
+    },
+    {
+      "id": "tech_opinion_required_at_node2",
+      "when": "node2_tech_opinion",
+      "assert": "tech_opinion 非空",
+      "else": "拒绝进入下一节点",
+      "origin": "resolution",
+      "origin_ref": "chain.json#routes.sole_source.nodes[1]（required = true）",
+      "severity": "hard"
+    },
+    {
+      "id": "pgm_final_required",
+      "when": "node4_pgm_final",
+      "assert": "pgm_final_opinion 非空",
+      "else": "拒绝",
+      "origin": "institution",
+      "origin_ref": "批复 A6（项目总经理终审）",
+      "severity": "hard"
+    },
+    {
+      "id": "no_escalation_to_group",
+      "when": "算链",
+      "assert": "本单链路**不含**任何集团节点；末节点恒为项目总经理",
+      "else": "★ 拒绝（链配置被改）",
+      "origin": "institution",
+      "origin_ref": "批复 A6 ＋ R-28（只写湖南侧义务）",
+      "severity": "hard",
+      "note": "★ 这是「湖南侧截止到项目总经理、不上抬集团」这条硬规则的**执行守卫** —— 没有它，链被改回「上抬集团」不会被发现"
+    },
+    {
+      "id": "tier_chain_from_amount",
+      "when": "算链",
+      "assert": "applicable_tier == tier_of(amount_cents)（按 chain.json#thresholds.purchase.bands，闭区间）",
+      "else": "拒绝提交",
+      "origin": "resolution",
+      "origin_ref": "chain.json 分档（R-22）",
+      "severity": "hard",
+      "note": "★ 防止「按档位审批」被绕成「按最低档审批」"
+    },
+    {
+      "id": "fixed_asset_conflict",
+      "when": "submit",
+      "assert": "NOT (is_fixed_asset == true AND amount_cents > 20000000)",
+      "else": "★ **不静默通过**：提示「超 20 万元或固定资产类应走招标／竞谈，不应使用单一来源」",
+      "origin": "institution",
+      "origin_ref": "第二十条 ＋ 第十六条（加强采购）",
+      "severity": "soft",
+      "note": "★ 制度把「加强采购」与「独家采购」分别定为两条例外通道，**未明说二者冲突时如何处置** ⇒ 本条暂列 `soft`，口径待定（见 `known_gaps`）"
+    },
+    {
+      "id": "ledger_l09_written",
+      "when": "终态",
+      "assert": "落 L09 一行，且 exception_type = '独家采购'",
+      "else": "★ 告警（落账自检）",
+      "origin": "resolution",
+      "origin_ref": "ledger-mapping.json#ledgers.L09.producer",
+      "severity": "hard",
+      "note": "★ 与 `flow.finalize` 的落账后自检同口径 —— **「没有数据」不得与「没有违规」长得一样**"
+    },
+    {
+      "id": "no_self_purchaser",
+      "when": "submit",
+      "assert": "NOT (applicant == 需求提出人 AND designated_by == 需求提出人)",
+      "else": "拒绝（硬拦截）",
+      "origin": "resolution",
+      "origin_ref": "R-27（B7 定案）＋ 制度第十四条",
+      "severity": "hard",
+      "note": "★ **必须与 `PR.json` / `CT.json` 同款判据一致**（三处同口径）"
+    },
+    {
+      "id": "idempotency_key",
+      "when": "submit",
+      "assert": "读取 Idempotency-Key",
+      "else": "无幂等保护",
+      "origin": "code",
+      "origin_ref": "mimo 审计：submit 须照抄 submission 的「占位 + 指纹 + 40900」模式",
+      "severity": "hard"
+    }
+  ],
+  "known_gaps": [
+    {
+      "gap": "★ `chain.json` 的 `env_count` **语义未定义**（`conventions` 里没有这一项）",
+      "status": "已记录，建议在 `conventions` 补一句",
+      "note": "★ 实测：`routes.sole_source.env_count = 1`，但该路由**有 5 个节点**；`doc_chains.SS.env_count` 同样为 1。而 `purchase_tier1.env_count = 6` 与其节点数一致。⇒ **同一字段在不同处含义像是不一样**，而 `conventions` 未定义它 ⇒ 后人无法判断该写几。★ 建议：在 `chain.json#conventions` 明确「`env_count` ＝ 该链路**相对基准新增的必经环节数**」或「＝ 节点总数」，二选一。★ 属**spec 侧待明确**，不影响本表单字段。"
+    },
+    {
+      "gap": "唯一性依据类型的**取值域**（`uniqueness_basis`）",
+      "status": "我方补入，制度未明说",
+      "note": "★ 工具表 R9 只给「唯一性说明」，**未给分类**；制度第五十条亦未给。⇒ 本枚举为我方按第二十三条（资质审查）与常识分类补入，**已标 `origin: code`**。★ 若集团对「独家采购」有分类口径（如招标法体系下的单一来源情形），**应以集团口径替换本枚举**。"
+    },
+    {
+      "gap": "「加强采购（>20 万元或固定资产类）」与「单一来源」**同时成立**时如何处置",
+      "status": "未定",
+      "note": "★ 制度把二者定为两条**独立**的例外通道（第十六条 vs 第五十条），**未说冲突时的优先级**。⇒ 现行处置为 `checks#fixed_asset_conflict`（`soft`：提示但**不阻断**）。★ 需用户／管理层定：**加强采购优先（走招标／竞谈）**，还是**单一来源优先（需更强理由）**？"
+    },
+    {
+      "gap": "季度金额占比（`quarterly_share`）的**计算口径**",
+      "status": "未定",
+      "origin_note": "批复 A6 只写「季度统计占比；占比 > 20% 须专项说明」",
+      "note": "★ 未明确：① 分母是什么（全部采购金额？全部例外采购？）② 按**单据数**还是**金额** ③ 季度如何界定（自然季 / 滚动 3 个月）④ 由系统算还是综合运营主管算。★ 与 `L09` 的 `quarterly_share` 字段配套 —— **分母未定则该列无法计算**。"
+    },
+    {
+      "gap": "「月度报送单列独家采购清单」的**清单字段**",
+      "status": "未定",
+      "note": "★ 批复 A6 要求月度报送**单列「独家采购清单」**，但**未给清单字段**。⇒ 现行按 L09 的列导出（例外类型 / 单据号 / 金额 / 理由 / 审批记录 / 唯一性理由 / 季度占比）。★ 若集团有既定表样，应按集团表样调整。"
+    },
+    {
+      "gap": "本单与 `BJ`／`RFQ` 的**互斥关系**未在机读规格中表达",
+      "status": "未定",
+      "note": "★ 「单一来源」意味着**没有询比价** ⇒ 逻辑上本单与 BJ／RFQ 互斥。★ 但 `chain.json` 未表达该互斥，本表单也未加判据（因缺少「该 PR 是否已存在 BJ」的查法）。⇒ 建议在 `BJ` 交付时一并定义「BJ 与 SS 互斥」的判据。"
+    }
+  ]
+}
