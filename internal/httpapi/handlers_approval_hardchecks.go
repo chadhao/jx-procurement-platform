@@ -138,39 +138,59 @@ func hHas(provided map[string]any, name string) bool {
 // CT
 // ---------------------------------------------------------------------------
 
-// checkCTMandatoryClauses 制度第三十五条：8 组必备条款**均须有实质内容**（缺任一项不得进入
-// 合同审批）。判据：第 1..8 组（clause_group 标注）在提交时点**至少各有 1 个非空值**。
+// checkCTMandatoryClauses 制度第三十五条：各组必备条款**均须有实质内容**（缺任一项不得进入
+// 合同审批）。判据：第 1..maxGroup 组（clause_group 标注）在提交时点**至少各有 1 个非空值**。
+//
+// ★ 组数**不写死 8**（N-031 收口：业务数不得进代码）—— 从 CT 表单的 clause_group
+//
+//	值域（提交时点字段的标注）推导；某组号无字段定义 ⇒ fail-closed（表单结构坏了必须可见，
+//	否则该组永远无实质内容却按"未定义"放过）。maxGroup 与 checks.json#S13 的 min_hits
+//	同源同值（S13 锚定同一份表单标注，一处定义两处生效）。
 func checkCTMandatoryClauses(_ context.Context, _ Deps, form specload.FormDoc, body *approvalSubmitBody, _ string) error {
 	provided := hbProvided(body)
-	groups := map[int]bool{} // 组号 → 是否已有实质内容
+	maxGroup := 0
+	groupHasFields := map[int]bool{}
 	for _, sec := range form.Sections {
 		if strings.TrimSpace(sec.FilledAt) != "" {
 			continue
 		}
 		for _, f := range sec.Fields {
-			g := clauseGroupOf(f)
+			g := f.ClauseGroup
 			if g == 0 {
 				continue
 			}
+			groupHasFields[g] = true
+			if g > maxGroup {
+				maxGroup = g
+			}
 			if hHas(provided, f.Name) {
-				groups[g] = true
+				// 实质内容在下方按组汇总
 			}
 		}
 	}
-	for g := 1; g <= 8; g++ {
-		if !groups[g] {
+	if maxGroup == 0 {
+		return fmt.Errorf("CT 表单缺 clause_group 标注 —— 必备条款校验无法执行（fail-closed，不许静默通过）")
+	}
+	filled := map[int]bool{}
+	for _, sec := range form.Sections {
+		if strings.TrimSpace(sec.FilledAt) != "" {
+			continue
+		}
+		for _, f := range sec.Fields {
+			if f.ClauseGroup > 0 && hHas(provided, f.Name) {
+				filled[f.ClauseGroup] = true
+			}
+		}
+	}
+	for g := 1; g <= maxGroup; g++ {
+		if !groupHasFields[g] {
+			return fmt.Errorf("合同必备条款第 %d 组在表单中无字段定义（spec 结构异常 —— fail-closed）", g)
+		}
+		if !filled[g] {
 			return fmt.Errorf("合同必备条款第 %d 组无实质内容（制度第三十五条：缺少任一项的不得进入合同审批环节）", g)
 		}
 	}
 	return nil
-}
-
-// clauseGroupOf 从字段扩展信息取 clause_group —— FormDoc.FieldDoc 未建模该键，
-// 经 Raw 不便；批 1 做法：FieldDoc 增加通用承载？—— 不改 specload 结构的前提下，
-// 从 form 的原始 JSON 不可得 ⇒ 用 check 的语义映射：CT 的 clause_group 只在
-// FieldDoc 需要。★ 实现见 specload.FieldDoc.ClauseGroup（本函数读它）。
-func clauseGroupOf(f specload.FieldDoc) int {
-	return f.ClauseGroup
 }
 
 func checkCTPayeeMatchesSupplier(_ context.Context, _ Deps, _ specload.FormDoc, body *approvalSubmitBody, _ string) error {

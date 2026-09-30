@@ -194,6 +194,9 @@ type NodeDoc struct {
 	Formula        string       `json:"formula"`
 	DeadlineHours  int          `json:"deadline_hours"`
 	Branches       []NodeBranch `json:"branches"` // 节点级条件分支（R-03 备付金上抬等）
+	// AgentAllowed 禁代理标记（N-031；chain.json#conventions.agent_allowed：缺省 true，
+	// 指针 nil 即缺省；显式 false ＝ 制度禁止代理 —— 业务名单在 spec，不在代码字面量）。
+	AgentAllowed *bool `json:"agent_allowed"`
 }
 
 // NodeBranch 节点级条件分支：when 命中时 actor 被替换/行为修正。

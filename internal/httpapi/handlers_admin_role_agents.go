@@ -107,9 +107,9 @@ func (d Deps) handleAdminRoleAgentsList(c echo.Context) error {
 			"state": r.State, "note": r.Note,
 		})
 	}
-	// 备付金节点不接受代理人 —— 回传供前端标注（按节点，不按角色）
+	// spec 标记 agent_allowed=false 的节点不接受代理人 —— 回传供前端标注（按节点，不按角色）
 	denied := make([]string, 0, 2)
-	for id := range chain.PettyCashAgentDeniedNodeIDs(d.Spec) {
+	for id := range chain.AgentDeniedNodeIDs(d.Spec) {
 		denied = append(denied, id)
 	}
 	return ok(c, map[string]any{
