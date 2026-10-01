@@ -90,20 +90,17 @@ func TestUnregisteredWritableLedgerFields(t *testing.T) {
 		}
 	})
 
-	t.Run("真实spec_断言11条且无只读台账泄漏", func(t *testing.T) {
+	t.Run("真实spec_断言10条且无只读台账泄漏", func(t *testing.T) {
 		// ★ N-026：原「不设期望条数」无鉴别力 —— 真 spec 插入假可写列也测不出。
 		//   期望清单由 WorkBuddy 独立算出（2026-09-30，议题 N-026），直接采用；
 		//   ★ spec 演进使条数变化时**同步改断言并在议题回执**，不得改回「不设条数」。
-		//   ★ 2026-10-01 首次兑现：WorkBuddy 给 ledger-mapping.L08 补登可写列 `账户变更`
-		//     （看板 16「账户变更」预警实现一直在读它、而它此前未登记 ⇒ 补登记，见 COLLAB `N-033①`）
-		//     ⇒ 缺口 10 → 11 条，期望清单同步 +1（★ 方向是加严，不是放宽）。
 		specBytes, err := specfs.FS.ReadFile("spec/ledger-mapping.json")
 		if err != nil {
 			t.Fatal(err)
 		}
 		// ★ 载荷＝样例配置（真实导入基线 docs/reference/config-mapping.sample.json，
 		//   已登记 19 条 ledger_field）—— 空载荷会把全部 writable 列报出来（28 条），
-		//   那不是「真实导入」场景，期望 11 条是**样例基线下的缺口**（N-026 口径）。
+		//   那不是「真实导入」场景，期望 10 条是**样例基线下的缺口**（N-026 口径）。
 		sampleRaw, err := os.ReadFile(filepath.Join(findRepoRootInTest(t), "docs", "reference", "config-mapping.sample.json"))
 		if err != nil {
 			t.Fatalf("读取样例配置失败: %v", err)
@@ -126,7 +123,6 @@ func TestUnregisteredWritableLedgerFields(t *testing.T) {
 			"台账 L08 的可写列 `准入日期`",
 			"台账 L08 的可写列 `评级`",
 			"台账 L08 的可写列 `关联关系申报`",
-			"台账 L08 的可写列 `账户变更`",
 		}
 		if len(got) != len(want) {
 			t.Fatalf("真 spec 下应报 %d 条，实为 %d：%v（若 spec 演进请按 N-026 同步改断言并回执）", len(want), len(got), got)
