@@ -274,9 +274,11 @@ type CheckDoc struct {
 	OriginRef string `json:"origin_ref"`
 	// Severity hard = 提交期机判硬拦截（T4：amount_vs_pr / no_self_purchaser）；缺省 soft。
 	Severity string `json:"severity"`
-	// CarriedBy 非提交时点 hard 判据的承载者（N-036 conventions.checks_when）——
-	// 「声明了却没人执行」必须能被机器看见；提交时点判据不需要（引擎自动执行）。
+	// CarriedBy 非提交时点 hard 判据的承载者**落点**（自由文本，人读；N-036）。
 	CarriedBy string `json:"carried_by"`
+	// CarriedByKind 承载者**形态**（受控词，机器用；S14 值域判据作用于它）：
+	// code / structural / manual / pending_wiring / pending_implementation。
+	CarriedByKind string `json:"carried_by_kind"`
 }
 
 // ---------------------------------------------------------------------------

@@ -32,6 +32,8 @@ const (
 	DocPR = "PR"
 	DocSA = "SA"
 	DocCT = "CT" // 合同 / 简式订单（批 3 · T4）
+	DocSS = "SS" // 单一来源理由书（N-036 接线批 ②：链算通路）
+	DocPC = "PC" // 采购变更单（同上）
 )
 
 // 常见错误（handler 映射为 40000 + 中文明细；错误码枚举归 WorkBuddy，N-018）。

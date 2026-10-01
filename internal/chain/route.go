@@ -70,6 +70,18 @@ func ResolveRoute(b *specload.Bundle, f Facts) (RouteResult, error) {
 		}
 		return RouteResult{RouteID: b.Chain.ContractApproval.ID, Tier: tier}, nil
 
+	case DocSS, DocPC:
+		// ★ N-036 接线批 ②：单一来源 / 采购变更的线由 `doc_chains.route` **固定**
+		//   （S6 已核该引用存在），不按金额判线 —— change 路由内的 `tier_judge`
+		//   节点按档位就高公式自判（R-15），sole_source 无分档。
+		//   ★ 补此分支 ⇒ SS/PC 的提交在链算层从 `ErrUnsupportedDoc` 变为可达，
+		//   其判据（pending_wiring / structural）随之进入生产可达范围。
+		dc := b.Chain.DocChains[f.DocType]
+		if dc.Route == "" {
+			return RouteResult{}, fmt.Errorf("%w: doc_chains.%s 缺 route（机读规格未声明线引用）", ErrRouteMissing, f.DocType)
+		}
+		return RouteResult{RouteID: dc.Route}, nil
+
 	default:
 		return RouteResult{}, fmt.Errorf("%w: %s", ErrUnsupportedDoc, f.DocType)
 	}

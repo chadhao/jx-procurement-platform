@@ -296,6 +296,77 @@ func runOne(c checkDef, files map[string][]byte, decoded map[string]any) []strin
 		}
 		return problems
 
+	case "array_each_required":
+		// ★ N-036 ④（array_each_required · 第 10 原语）：**数组逐项条件必填** ——
+		//   对 collect 收集到的**每个数组元素**，当 when_key 缺省（无条件）或
+		//   元素[when_key] 的值 ∈ when_in 时，required_keys 中每个键必须**存在**。
+		//   ★ 解决「非提交时点 hard 判据必须逐条声明 carried_by_kind」这类
+		//   「条件必填」—— 现有原语（required_keys 作用于 dict 键、set_covers.min_hits
+		//   逐文件计数）都表达不了；语义按存在性（与 required_keys 同口径）。
+		pat, _ := argString(c.Args, "file")
+		collect, _ := argString(c.Args, "collect")
+		required := argStrings(c.Args, "required_keys")
+		whenKey, _ := argStringOpt(c.Args, "when_key")
+		whenIn := argStrings(c.Args, "when_in")
+		// 可选第二条件（AND）：典型＝ when ∧ severity（"非提交时点的 hard 判据"需要双键，
+		// 单键表达不了 —— 本原语设计时的实测需求）。
+		whenKey2, _ := argStringOpt(c.Args, "when_key2")
+		whenIn2 := argStrings(c.Args, "when_in2")
+		problems := []string{}
+		seen := 0
+		for _, name := range sortedStrKeys(decoded) {
+			if !globMatch(pat, name) {
+				continue
+			}
+			items := collectPath(decoded[name], collect)
+			for i, item := range items {
+				m := asMap(item)
+				if m == nil {
+					problems = append(problems, fmt.Sprintf("[%s] %s 的 %s 第 %d 项不是对象", c.ID, name, collect, i))
+					continue
+				}
+				seen++
+				if whenKey != "" {
+					v, exists := m[whenKey]
+					if !exists {
+						continue // 条件键缺失 ⇒ 不在适用面（由该键自身的 required 判据管）
+					}
+					sv, _ := v.(string)
+					if sv == "" {
+						sv = fmt.Sprintf("%v", v)
+					}
+					if !containsStr(whenIn, sv) {
+						continue
+					}
+				}
+				if whenKey2 != "" {
+					v2, exists := m[whenKey2]
+					if !exists {
+						continue
+					}
+					sv2, _ := v2.(string)
+					if sv2 == "" {
+						sv2 = fmt.Sprintf("%v", v2)
+					}
+					if !containsStr(whenIn2, sv2) {
+						continue
+					}
+				}
+				for _, k := range required {
+					if _, exists := m[k]; !exists {
+						problems = append(problems, fmt.Sprintf(
+							"[%s] %s %s 第 %d 项缺键 %q（条件必填未声明 —— 「声明了却没人执行」必须能被机器看见）",
+							c.ID, name, collect, i, k))
+					}
+				}
+			}
+		}
+		if seen == 0 {
+			problems = append(problems, fmt.Sprintf("[%s] collect=%q 在 file=%q 下收集到 0 项（清单声明写错不许静默通过）",
+				c.ID, collect, pat))
+		}
+		return problems
+
 	case "cross_equal_by_key":
 		leftGlob, _ := argString(c.Args, "left_glob")
 		leftKey, _ := argString(c.Args, "left_key")

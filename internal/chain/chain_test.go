@@ -74,6 +74,10 @@ func TestResolveRoute(t *testing.T) {
 		{"SA_P01拒", Facts{DocType: DocSA, UsageCategoryL1: "P01"}, "", ErrCategoryInvalid},
 		{"SA_M01支付方式缺", Facts{DocType: DocSA, UsageCategoryL1: "M01"}, "", ErrPaymentInvalid},
 		{"SA_未知分类", Facts{DocType: DocSA, UsageCategoryL1: "Z99"}, "", ErrCategoryInvalid},
+		// ★ N-036 接线批 ②：SS/PC 链算通路（线由 doc_chains.route 固定、不按金额判线）
+		{"SS_单一来源线", Facts{DocType: DocSS}, "sole_source", nil},
+		{"PC_采购变更线", Facts{DocType: DocPC}, "change", nil},
+		// RFQ 等其余单据仍未接入（不在本批范围 —— 接入须同批判据与通路）
 		{"批3之外单据(RFQ未接入)", Facts{DocType: "RFQ"}, "", ErrUnsupportedDoc},
 	}
 	for _, c := range cases {
