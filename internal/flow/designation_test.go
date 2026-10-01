@@ -185,3 +185,63 @@ func TestDesignationIgnoredOnOtherNodeAndNilChannel(t *testing.T) {
 		t.Errorf("豁免通道任务状态 = %s, 期望 APPROVED", got)
 	}
 }
+
+// TestDesignationBlocksSelfSelf N-035：自批自派自经办（操作人与经办人**同时**为
+// 需求提出人）⇒ 拦；且两个「允许」必须保留 ——
+//
+//	① 上级领导指派提出人本人 ⇒ 放（已在 TestDesignationAppliedWithFlags）；
+//	② 提出人自批但指定**别人** ⇒ 放（本用例后半）。
+func TestDesignationBlocksSelfSelf(t *testing.T) {
+	db := newFlowDB(t)
+	svc := flow.New(db, "app")
+	ctx := context.Background()
+
+	// 构造：申请人本人就是 supervisor_approval 的审批人（自批场景）。
+	bizNo, err := svc.Submit(ctx, flow.SubmitInput{
+		DocType: "PR", ApprovalCode: "code-pr",
+		ApplicantOpenID: "ou_app", ApplicantName: "张三", Department: "生产部",
+		Nodes: []flow.NodeSpec{
+			{NodeID: "supervisor_approval", NodeName: "主管领导", Seq: 1, Approvers: []flow.Approver{
+				{OpenID: "ou_app", Name: "张三"}},
+			},
+		},
+		At: flowAt,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	tk := taskFor(t, db, bizNo, "ou_app")
+
+	// ① 自批 + 自派 ⇒ 拦（任务仍 PENDING、ext 无残留）
+	err = svc.Approve(ctx, bizNo, tk.TaskID, "ou_app", "同意", map[string]any{
+		"designated_purchaser": "ou_app",
+		"designation_basis":    "我自己经办",
+	})
+	if !errors.Is(err, flow.ErrInvalidDesignation) {
+		t.Fatalf("自批自派应拦（PR#no_self_purchaser_at_designation）, 实际: %v", err)
+	}
+	if got := taskFor(t, db, bizNo, "ou_app").Status; got != "PENDING" {
+		t.Errorf("拦截后任务状态 = %s, 期望 PENDING（同事务回滚）", got)
+	}
+	if _, has := extOf(t, db, bizNo)["designated_purchaser"]; has {
+		t.Error("拦截后 ext 不应有 designated_purchaser（残留）")
+	}
+
+	// ② 提出人自批但指定**别人** ⇒ 放行（仅操作人＝提出人，不构成自批自派）
+	if err := svc.Approve(ctx, bizNo, tk.TaskID, "ou_app", "同意", map[string]any{
+		"designated_purchaser": "ou_h_other",
+		"designation_basis":    "指定他人经办",
+	}); err != nil {
+		t.Fatalf("自批但指定别人应放行（只拦两者同时成立）: %v", err)
+	}
+	ext := extOf(t, db, bizNo)
+	if ext["designated_purchaser"] != "ou_h_other" {
+		t.Errorf("ext designated_purchaser = %v, 期望 ou_h_other", ext["designated_purchaser"])
+	}
+	if v, _ := ext["is_self_designated"].(bool); v {
+		t.Errorf("指定的不是申请人本人，is_self_designated 应 false: %v", ext)
+	}
+	if got := taskFor(t, db, bizNo, "ou_app").Status; got != "APPROVED" {
+		t.Errorf("放行后任务状态 = %s, 期望 APPROVED", got)
+	}
+}

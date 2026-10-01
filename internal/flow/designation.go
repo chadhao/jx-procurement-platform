@@ -53,6 +53,16 @@ func (s *Service) applyDesignationTx(ctx context.Context, tx *sql.Tx, inst *stor
 	if purchaser == "" || basis == "" {
 		return fmt.Errorf("%w: 主管领导审批须当场指定经办人与指定依据（制度第十一条 · N-015 裁定①）", ErrInvalidDesignation)
 	}
+	// ★ N-035：`PR#no_self_purchaser_at_designation`（when=approval(supervisor_approval)
+	//   severity=hard · carried_by=本文件）—— **自批自派自经办**：操作人与被指定人
+	//   **同时**为需求提出人 ⇒ 拦（制度第十四条/第六十条的系统把关）。
+	//   ★ 两个「允许」必须保留（裁定原文）：仅经办人＝提出人（上级领导指派）放行；
+	//   仅操作人＝提出人而指定别人也放行 —— **只拦两者同时成立**。
+	//   ★ 规则来源＝spec 该判据（carried_by 反向锚定本文件；锚定测试见
+	//   `specload/spec_anchors_test.go`，spec 改动会使锚定测试转红、防两份真相）。
+	if actor == inst.ApplicantOpenID && purchaser == inst.ApplicantOpenID {
+		return fmt.Errorf("%w: 不得自批自派自经办（操作人与经办人同为需求提出人 —— PR#no_self_purchaser_at_designation）", ErrInvalidDesignation)
+	}
 
 	ext := map[string]any{}
 	if strings.TrimSpace(inst.ExtJSON) != "" {
