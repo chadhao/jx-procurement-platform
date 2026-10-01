@@ -66,6 +66,11 @@ MIG = {p: read(p) for p in MIG_FILES}
 
 hits = []
 
+# ★★ 已豁免的调用点（带位置）。★★ **必须始终可见** ——
+#   静默豁免与静默命中同病：「没人看见的放过」＝判据形同虚设。
+#   ⇒ 每次运行都列出条数与**逐条明细**（见 main）。
+excused = []
+
 # 已人工判定为「有意为之 / 已记录在案」的命中：(检查项, 消息包含的片段, 理由)。
 # ★ 只用于**压掉已知项**，使门禁对"新出现的"命中保持灵敏；绝不用于放宽检查逻辑。
 KNOWN = [
@@ -425,31 +430,35 @@ def check_test_fixture_bypass():
                 producible.add(e.get('value'))
         except Exception as ex:  # noqa: BLE001
             hit('C8b', '解析样例配置失败：%s' % ex)
-    used = set()
+    used = {}          # 台账 → [(文件, 行号, 调用点偏移, 全文)]
+    seed_re = re.compile(r'seed(?:Archive(?:DocExt)?|Ops)\([^)]*?"(L\d\d)"', re.S)
     for p, s in TESTSRC.items():
-        for m in re.finditer(r'seedArchive(?:DocExt)?\([^)]*?"(L\d\d)"', s, re.S):
-            used.add(m.group(1))
-        for m in re.finditer(r'seedOps\([^)]*?"(L\d\d)"', s, re.S):
-            used.add(m.group(1))
+        for m in seed_re.finditer(s):
+            ln = s.count('\n', 0, m.start()) + 1
+            used.setdefault(m.group(1), []).append((p, ln, m.start(), s))
+
+    # ★ 例外：**负向断言夹具** —— 故意造一行"生产上不可能存在"的数据，
+    #   用来证明读侧不会读它（B37 的 L11 回归就是这么写的）。
+    #   判据：该 seed 调用附近的注释出现否定语。
+    #   ★★ 2026-10-01 补「反例」：本判据的语义**就是**识别负向夹具，而「反例」是这类用例的
+    #      **标准说法**却漏在词表外 —— 于是 mimo 在 N-034 补的那条反例用例被误报。
+    #      ★ 这是**提升判据的理解力**，不是"压掉已知项"（与之相对，`KNOWN` 才是后者）。
+    #   ★★ 同批另修两处与兄弟判据不一致的地方（C6/C8a 都带位置）：
+    #      ① 命中**带 file:line**（此前只有一句描述 ⇒ 人工判定无从下手）；
+    #      ② 豁免**按调用点**判（原按台账判 —— 同一台账只要有一处带否定语，
+    #         就把它**所有**调用点一并豁免了）；③ 豁免**可见**（见 main 的汇总行）。
+    neg_markers = ('负向', '反例', '不会', '不再', '脏数据', '不该', '不得')
     for lt in sorted(used):
         if lt in producible:
             continue
-        # ★ 例外：**负向断言夹具** —— 故意造一行"生产上不可能存在"的数据，
-        #   用来证明读侧不会读它（B37 的 L11 回归就是这么写的）。
-        #   判据：该 seed 调用附近的注释出现否定语（不会/不再/负向/脏）。
-        neg_markers = ('负向', '不会', '不再', '脏数据', '不该', '不得')
-        excused = False
-        for p, s in TESTSRC.items():
-            for m in re.finditer(r'seed(?:Archive|Ops)(?:DocExt)?\([^)]*?"%s"' % lt, s, re.S):
-                ctx = s[max(0, m.start() - 600):m.start()]
-                if any(mk in ctx for mk in neg_markers):
-                    excused = True
-                    break
-            if excused:
-                break
-        if not excused:
-            hit('C8b', '测试夹具造了台账 `%s` 的行，但样例配置里**没有任何 doc_type 能生产它** '
-                       '（用例在验证生产上走不到的路径）' % lt)
+        for p, ln, off, s in used[lt]:
+            ctx = s[max(0, off - 600):off]
+            if any(mk in ctx for mk in neg_markers):
+                excused.append('%s:%d 台账 `%s`（负向/反例夹具 —— 故意造不可达台账行以证明读侧不读它）'
+                               % (rel(p), ln, lt))
+                continue
+            hit('C8b', '%s:%d 测试夹具造了台账 `%s` 的行，但样例配置里**没有任何 doc_type 能生产它** '
+                       '（用例在验证生产上走不到的路径）' % (rel(p), ln, lt))
 
 
 def main():
@@ -473,6 +482,19 @@ def main():
         print('[%s] %d 处（需人工判定）' % (c, len(rows)))
         for r in rows:
             print('   · ' + r)
+        print()
+
+    # ★★ 豁免必须可见：既不静默放过，也不假装"零产出＝没问题"
+    if excused:
+        print('[C8b] 已声明豁免 %d 处（负向/反例夹具 · ★ 不静默）：' % len(excused))
+        for e in excused:
+            print('   · ' + e)
+        if not any(k == 'C8b' for k, _ in hits):
+            print('   ★ 本判据本次**零产出、全靠豁免** —— ★ 这不是错误（本项目的用例本就要求'
+                  '「拦 ＋ 放」成对、反例是标准配置），但★ **每条豁免的语义都要经得起看**：')
+            print('     判据口径是「seed 调用**前 600 字**内出现否定语即豁免」—— ★ 这是本条**已知的宽松处**：')
+            print('     ① 窗口偏宽（远处的无关注释也能误豁免）；② 只能识别词表内的说法。')
+            print('     ⇒ 复核时请逐条确认「它真的是在验证『读不到』」。')
         print()
 
     print('合计命中 %d 处' % len(hits))
