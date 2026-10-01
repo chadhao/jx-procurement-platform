@@ -106,3 +106,21 @@ func TestR3ZeroGuardWithSource(t *testing.T) {
 		t.Fatalf("合规样本计数 = %d, want 0", c)
 	}
 }
+
+// TestAssignedFallsBackToDesignatedPurchaser N-015 批 2：审批时点指定经办落
+// ext 的规格列名 designated_purchaser —— 看板 Assigned() 必须能读到它
+// （否则「需求提出人任经办人」等指标在审批指定路径下永远算不出人）。
+func TestAssignedFallsBackToDesignatedPurchaser(t *testing.T) {
+	r := Row{ArchiveExt: map[string]any{"designated_purchaser": "ou_h9"}}
+	if got := r.Assigned(); got != "ou_h9" {
+		t.Fatalf("Assigned() = %q, 期望 designated_purchaser 的值 ou_h9", got)
+	}
+	// 运营表口径优先（兼容既有人工登记路径不回归）
+	r2 := Row{
+		Ops:        map[string]any{"assigned_open_id": "ou_ops"},
+		ArchiveExt: map[string]any{"designated_purchaser": "ou_h9"},
+	}
+	if got := r2.Assigned(); got != "ou_ops" {
+		t.Fatalf("ops 口径应优先, got %q", got)
+	}
+}

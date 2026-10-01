@@ -18,7 +18,7 @@ func TestCallbackTokenAndIdempotency(t *testing.T) {
 	bizNo := submitOneNode(t, svc, "ou_m1")
 	m1 := taskFor(t, db, bizNo, "ou_m1")
 	svc.SetCallbackAdvancer(func(ctx context.Context, req flow.CallbackRequest) error {
-		return svc.Approve(ctx, req.BizNo, req.TaskID, req.OperatorOpenID, req.Reason)
+		return svc.Approve(ctx, req.BizNo, req.TaskID, req.OperatorOpenID, req.Reason, nil)
 	})
 
 	// ① 非法 token → 可见地拒绝。
@@ -87,7 +87,7 @@ func prodAdvancer(svc *flow.Service) flow.Advancer {
 		if req.OpType == flow.OpReject {
 			return svc.Reject(ctx, req.BizNo, req.TaskID, req.OperatorOpenID, req.Reason)
 		}
-		return svc.Approve(ctx, req.BizNo, req.TaskID, req.OperatorOpenID, req.Reason)
+		return svc.Approve(ctx, req.BizNo, req.TaskID, req.OperatorOpenID, req.Reason, nil)
 	}
 }
 

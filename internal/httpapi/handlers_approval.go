@@ -295,13 +295,14 @@ func callbackErrorStatus(err error) (status int, code int) {
 
 // approvalActionBody 两键 / 四操作共用请求体。
 type approvalActionBody struct {
-	TaskID     string `json:"task_id"`
-	Opinion    string `json:"opinion"`     // 两键意见
-	Reason     string `json:"reason"`      // 四操作原因（与 opinion 兼容）
-	Target     string `json:"target"`      // 转交 / 加签目标 open_id
-	TargetName string `json:"target_name"` // 转交 / 加签目标姓名（展示）
-	TargetNode string `json:"target_node"` // 回退目标 node_id
-	Timing     string `json:"timing"`      // 加签时机 AFTER / BEFORE（默认 AFTER）
+	TaskID     string         `json:"task_id"`
+	Opinion    string         `json:"opinion"`     // 两键意见
+	Reason     string         `json:"reason"`      // 四操作原因（与 opinion 兼容）
+	Target     string         `json:"target"`      // 转交 / 加签目标 open_id
+	TargetName string         `json:"target_name"` // 转交 / 加签目标姓名（展示）
+	TargetNode string         `json:"target_node"` // 回退目标 node_id
+	Timing     string         `json:"timing"`      // 加签时机 AFTER / BEFORE（默认 AFTER）
+	Fields     map[string]any `json:"fields"`      // 审批时点结构化填报（N-015：supervisor_approval 指定经办）
 }
 
 // handleApprovalApprove 我方页面「同意」（与回调同一状态机出口）。
@@ -326,7 +327,12 @@ func (d Deps) approveReject(c echo.Context, op string) error {
 	reason := firstNonEmptyStr(body.Opinion, body.Reason)
 	ctx := c.Request().Context()
 	if op == flow.OpApprove {
-		err = d.Flow.Approve(ctx, bizNo, body.TaskID, idn.OpenID, reason)
+		// ★ 恒传非 nil（N-015 批 2）：我方页面通道执行必填；飞书回调/repair 走 nil 豁免。
+		fields := body.Fields
+		if fields == nil {
+			fields = map[string]any{}
+		}
+		err = d.Flow.Approve(ctx, bizNo, body.TaskID, idn.OpenID, reason, fields)
 	} else {
 		err = d.Flow.Reject(ctx, bizNo, body.TaskID, idn.OpenID, reason)
 	}
@@ -1085,7 +1091,7 @@ func (d Deps) approvalError(c echo.Context, err error) error {
 		errors.Is(err, flow.ErrNodeNotReached):
 		return fail(c, http.StatusConflict, codeApprovalConflict, err.Error())
 	case errors.Is(err, flow.ErrInvalidSubmit), errors.Is(err, flow.ErrInvalidToken),
-		errors.Is(err, store.ErrStagingNotBindable):
+		errors.Is(err, flow.ErrInvalidDesignation), errors.Is(err, store.ErrStagingNotBindable):
 		return fail(c, http.StatusBadRequest, codeBadRequest, err.Error())
 	default:
 		return fail(c, http.StatusInternalServerError, codeInternal, err.Error())

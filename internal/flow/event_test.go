@@ -37,7 +37,7 @@ func TestEventsDispatchedAfterCommit(t *testing.T) {
 		t.Fatalf("提交应分发 SUBMITTED，实际 %+v", sub.events)
 	}
 	m1 := taskFor(t, db, bizNo, "ou_m1")
-	if err := svc.Approve(ctx, bizNo, m1.TaskID, "ou_m1", "同意"); err != nil {
+	if err := svc.Approve(ctx, bizNo, m1.TaskID, "ou_m1", "同意", nil); err != nil {
 		t.Fatal(err)
 	}
 	var sawTask, sawInst bool
@@ -76,7 +76,7 @@ func TestSubscriberPanicIsolated(t *testing.T) {
 		t.Errorf("panic 订阅者不应阻止其余订阅者收到事件")
 	}
 	m1 := taskFor(t, db, bizNo, "ou_m1")
-	if err := svc.Approve(ctx, bizNo, m1.TaskID, "ou_m1", "同意"); err != nil {
+	if err := svc.Approve(ctx, bizNo, m1.TaskID, "ou_m1", "同意", nil); err != nil {
 		t.Fatalf("订阅者 panic 不应影响审批主流程: %v", err)
 	}
 	if got := instOf(t, db, bizNo).Status; got != flow.InstanceApproved {

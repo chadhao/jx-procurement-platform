@@ -792,7 +792,12 @@ func (r Row) Assigned() string {
 	if v := jsonStr(r.Ops[keyAssignedCN]); v != "" {
 		return v
 	}
-	return jsonStr(r.ArchiveExt[keyAssignedCN])
+	if v := jsonStr(r.ArchiveExt[keyAssignedCN]); v != "" {
+		return v
+	}
+	// ★ N-015 批 2：审批时点指定经办落 ext 的**规格列名**（designated_purchaser）——
+	//   它是 L03「指定经办人」的权威列，前四个键是运营表/人工登记口径的兼容读法。
+	return jsonStr(r.ArchiveExt["designated_purchaser"])
 }
 
 // OpsStr 读取运营字段字符串值。

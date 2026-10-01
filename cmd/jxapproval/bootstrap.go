@@ -306,7 +306,7 @@ func run(version string) error {
 	flowSvc.SetCallbackAdvancer(func(ctx context.Context, req flow.CallbackRequest) error {
 		switch strings.ToUpper(strings.TrimSpace(req.OpType)) {
 		case flow.OpApprove:
-			return flowSvc.Approve(ctx, req.BizNo, req.TaskID, req.OperatorOpenID, req.Reason)
+			return flowSvc.Approve(ctx, req.BizNo, req.TaskID, req.OperatorOpenID, req.Reason, nil) // 飞书回调＝非结构化通道：指定经办豁免（designation.go）
 		case flow.OpReject:
 			return flowSvc.Reject(ctx, req.BizNo, req.TaskID, req.OperatorOpenID, req.Reason)
 		default:

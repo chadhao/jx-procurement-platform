@@ -60,9 +60,9 @@ func TestNotifyMissingDetectable(t *testing.T) {
 		t.Fatal(err)
 	}
 	m1 := taskFor(t, db, bizNo, "ou_m1")
-	_ = svc.Approve(ctx, bizNo, m1.TaskID, "ou_m1", "同意")
+	_ = svc.Approve(ctx, bizNo, m1.TaskID, "ou_m1", "同意", nil)
 	m2 := taskFor(t, db, bizNo, "ou_m2")
-	_ = svc.Approve(ctx, bizNo, m2.TaskID, "ou_m2", "同意")
+	_ = svc.Approve(ctx, bizNo, m2.TaskID, "ou_m2", "同意", nil)
 
 	// 订阅 notifier：对 ou_m2 发送失败（模拟"应发 2 只发出 1"）。
 	sender := &fakeSender{fail: map[string]bool{"ou_m2": true}}
@@ -103,7 +103,7 @@ func TestNotifyNoSenderKeepsExpected(t *testing.T) {
 	ctx := context.Background()
 	bizNo := submitTwoNodes(t, svc, "ou_m1", "ou_m2")
 	m1 := taskFor(t, db, bizNo, "ou_m1")
-	_ = svc.Approve(ctx, bizNo, m1.TaskID, "ou_m1", "同意")
+	_ = svc.Approve(ctx, bizNo, m1.TaskID, "ou_m1", "同意", nil)
 	svc.Subscribe(flow.NewNotifier(db, nil, nil)) // 无发送器
 	_ = svc.Cancel(ctx, bizNo, "ou_app", "撤回")
 	expN, _ := db.CountNotifyByStatus(ctx, bizNo, store.NotifyExpected)

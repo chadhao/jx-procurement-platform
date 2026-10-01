@@ -355,13 +355,17 @@ func (s *Service) Submit(ctx context.Context, in SubmitInput) (string, error) {
 }
 
 // Approve 同意某任务（会签：需该节点全员同意才推进，04a §2.3）。
-func (s *Service) Approve(ctx context.Context, bizNo, taskID, actorOpenID, reason string) error {
-	return s.act(ctx, bizNo, taskID, actorOpenID, OpApprove, reason)
+// Approve 同意某任务。fields ＝ 审批时点结构化填报（N-015 指定经办）：
+//   - 非 nil（我方页面两键通道，handler 恒传）⇒ supervisor_approval 的 PR 同意**必填**
+//     designated_purchaser + designation_basis（缺 ⇒ ErrInvalidDesignation）；
+//   - nil（飞书回调 / repair 重放等非结构化通道）⇒ 豁免必填、不写入（见 designation.go）。
+func (s *Service) Approve(ctx context.Context, bizNo, taskID, actorOpenID, reason string, fields map[string]any) error {
+	return s.act(ctx, bizNo, taskID, actorOpenID, OpApprove, reason, fields)
 }
 
-// Reject 拒绝某任务（节点驳回 → 实例驳回）。
+// Reject 拒绝某任务（节点驳回 → 实例驳回；reject 一律不带指定填报 —— N-015 裁定④）。
 func (s *Service) Reject(ctx context.Context, bizNo, taskID, actorOpenID, reason string) error {
-	return s.act(ctx, bizNo, taskID, actorOpenID, OpReject, reason)
+	return s.act(ctx, bizNo, taskID, actorOpenID, OpReject, reason, nil)
 }
 
 // Cancel 撤回（仅发起人；未终结前可撤）→ 实例 CANCELED、在途任务 DONE。
@@ -426,7 +430,7 @@ func (s *Service) Cancel(ctx context.Context, bizNo, actorOpenID, reason string)
 }
 
 // act 是同意/拒绝的共用实现。
-func (s *Service) act(ctx context.Context, bizNo, taskID, actor, opType, reason string) error {
+func (s *Service) act(ctx context.Context, bizNo, taskID, actor, opType, reason string, fields map[string]any) error {
 	at := time.Now()
 	var events []FlowEvent
 	err := s.db.WithTx(ctx, func(tx *sql.Tx) error {
@@ -491,6 +495,15 @@ func (s *Service) act(ctx context.Context, bizNo, taskID, actor, opType, reason 
 		//      会让节点在"后一位尚未收到通知"时就提前通过，直接静默破坏会签语义。
 		if task.ReleaseState == ReleaseHeld {
 			return fmt.Errorf("%w: 任务 %s（节点 %s）", ErrTaskHeld, taskID, task.NodeID)
+		}
+
+		// ⑥ 指定经办填报（N-015 批 2）：同事务落 designated_*；必填仅在结构化通道执行。
+		//    位于幂等/终态/状态各早退**之后**、任务推进**之前** ——
+		//    填报失败 ⇒ 任务不推进、ext 不落（与幂等键同一事务语义）。
+		if opType == OpApprove {
+			if err := s.applyDesignationTx(ctx, tx, inst, task, fields, actor, at); err != nil {
+				return err
+			}
 		}
 
 		newTaskStatus := TaskApproved

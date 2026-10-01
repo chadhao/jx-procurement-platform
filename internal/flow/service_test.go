@@ -110,7 +110,7 @@ func TestCoSignNodeRequiresAllApproved(t *testing.T) {
 	bizNo := submitTwoNode(t, svc, db)
 
 	m1 := taskFor(t, db, bizNo, "ou_m1")
-	if err := svc.Approve(ctx, bizNo, m1.TaskID, "ou_m1", "同意"); err != nil {
+	if err := svc.Approve(ctx, bizNo, m1.TaskID, "ou_m1", "同意", nil); err != nil {
 		t.Fatalf("同意 m1 失败: %v", err)
 	}
 	// 会签下仅 1/2 同意：实例仍 PENDING，node1 仍有待审任务。
@@ -123,7 +123,7 @@ func TestCoSignNodeRequiresAllApproved(t *testing.T) {
 	}
 
 	// m2 同意 → node1 通过；实例仍 PENDING（等待 node2）。
-	if err := svc.Approve(ctx, bizNo, m2.TaskID, "ou_m2", "同意"); err != nil {
+	if err := svc.Approve(ctx, bizNo, m2.TaskID, "ou_m2", "同意", nil); err != nil {
 		t.Fatalf("同意 m2 失败: %v", err)
 	}
 	if got := instOf(t, db, bizNo).Status; got != flow.InstancePending {
@@ -132,7 +132,7 @@ func TestCoSignNodeRequiresAllApproved(t *testing.T) {
 
 	// node2 同意 → 全部节点通过 → 实例 APPROVED。
 	gm := taskFor(t, db, bizNo, "ou_gm")
-	if err := svc.Approve(ctx, bizNo, gm.TaskID, "ou_gm", "同意"); err != nil {
+	if err := svc.Approve(ctx, bizNo, gm.TaskID, "ou_gm", "同意", nil); err != nil {
 		t.Fatalf("同意 gm 失败: %v", err)
 	}
 	if got := instOf(t, db, bizNo).Status; got != flow.InstanceApproved {
@@ -148,7 +148,7 @@ func TestFutureNodeCannotApproveEarly(t *testing.T) {
 	bizNo := submitTwoNode(t, svc, db)
 
 	gm := taskFor(t, db, bizNo, "ou_gm") // node2
-	err := svc.Approve(ctx, bizNo, gm.TaskID, "ou_gm", "越级同意")
+	err := svc.Approve(ctx, bizNo, gm.TaskID, "ou_gm", "越级同意", nil)
 	if !errors.Is(err, flow.ErrNodeNotReached) {
 		t.Fatalf("提前审批 node2 应返回 ErrNodeNotReached，实际: %v", err)
 	}
@@ -197,7 +197,7 @@ func TestTerminalInstanceNoRegression(t *testing.T) {
 		t.Fatal(err)
 	}
 	task := taskFor(t, db, bizNo, "ou_m1")
-	if err := svc.Approve(ctx, bizNo, task.TaskID, "ou_m1", "同意"); err != nil {
+	if err := svc.Approve(ctx, bizNo, task.TaskID, "ou_m1", "同意", nil); err != nil {
 		t.Fatal(err)
 	}
 	before := instOf(t, db, bizNo)
@@ -206,7 +206,7 @@ func TestTerminalInstanceNoRegression(t *testing.T) {
 	}
 
 	// 对终态实例再"同意"→ no-op（幂等），状态与版本号均不变。
-	if err := svc.Approve(ctx, bizNo, task.TaskID, "ou_m1", "再来一次"); err != nil {
+	if err := svc.Approve(ctx, bizNo, task.TaskID, "ou_m1", "再来一次", nil); err != nil {
 		t.Fatalf("终态重复同意应为 no-op，实际报错: %v", err)
 	}
 	// 试图"拒绝"终态实例 → 亦为 no-op，绝不回退。
@@ -247,7 +247,7 @@ func TestCanceledCannotAdvance(t *testing.T) {
 	}
 	// CANCELED 后同意/拒绝均 no-op，状态不得改变。
 	m1 := taskFor(t, db, bizNo, "ou_m1")
-	if err := svc.Approve(ctx, bizNo, m1.TaskID, "ou_m1", "撤回后同意"); err != nil {
+	if err := svc.Approve(ctx, bizNo, m1.TaskID, "ou_m1", "撤回后同意", nil); err != nil {
 		t.Fatalf("CANCELED 后同意应 no-op: %v", err)
 	}
 	if err := svc.Reject(ctx, bizNo, m1.TaskID, "ou_m1", "撤回后拒绝"); err != nil {
@@ -280,19 +280,19 @@ func TestUpdateTimeStrictlyIncreases(t *testing.T) {
 	}
 
 	m1 := taskFor(t, db, bizNo, "ou_m1")
-	if err := svc.Approve(ctx, bizNo, m1.TaskID, "ou_m1", ""); err != nil {
+	if err := svc.Approve(ctx, bizNo, m1.TaskID, "ou_m1", "", nil); err != nil {
 		t.Fatal(err)
 	}
 	check("同意 m1")
 
 	m2 := taskFor(t, db, bizNo, "ou_m2")
-	if err := svc.Approve(ctx, bizNo, m2.TaskID, "ou_m2", ""); err != nil {
+	if err := svc.Approve(ctx, bizNo, m2.TaskID, "ou_m2", "", nil); err != nil {
 		t.Fatal(err)
 	}
 	check("同意 m2")
 
 	gm := taskFor(t, db, bizNo, "ou_gm")
-	if err := svc.Approve(ctx, bizNo, gm.TaskID, "ou_gm", ""); err != nil {
+	if err := svc.Approve(ctx, bizNo, gm.TaskID, "ou_gm", "", nil); err != nil {
 		t.Fatal(err)
 	}
 	check("同意 gm（终审）")
@@ -375,7 +375,7 @@ func TestSeqSignReleasesNextOnApprove(t *testing.T) {
 	bizNo := submitSeqNode(t, svc)
 
 	a := taskFor(t, db, bizNo, "ou_a")
-	if err := svc.Approve(ctx, bizNo, a.TaskID, "ou_a", "同意"); err != nil {
+	if err := svc.Approve(ctx, bizNo, a.TaskID, "ou_a", "同意", nil); err != nil {
 		t.Fatalf("同意 ou_a 失败: %v", err)
 	}
 	if got := releaseOf(t, db, bizNo, "ou_b"); got != flow.ReleaseReleased {
@@ -395,7 +395,7 @@ func TestSeqSignHeldTaskCannotApprove(t *testing.T) {
 
 	// ou_b 尚 HELD（ou_a 未同意）→ 同意必须返回 ErrTaskHeld。
 	b := taskFor(t, db, bizNo, "ou_b")
-	if err := svc.Approve(ctx, bizNo, b.TaskID, "ou_b", "抢跑"); !errors.Is(err, flow.ErrTaskHeld) {
+	if err := svc.Approve(ctx, bizNo, b.TaskID, "ou_b", "抢跑", nil); !errors.Is(err, flow.ErrTaskHeld) {
 		t.Fatalf("未释放任务同意应返回 ErrTaskHeld，实际: %v", err)
 	}
 	if err := svc.Reject(ctx, bizNo, b.TaskID, "ou_b", "抢跑拒绝"); !errors.Is(err, flow.ErrTaskHeld) {
@@ -420,7 +420,7 @@ func TestSeqSignNextNodeOnlyAfterFullNode(t *testing.T) {
 	approve := func(ap string) {
 		t.Helper()
 		tk := taskFor(t, db, bizNo, ap)
-		if err := svc.Approve(ctx, bizNo, tk.TaskID, ap, "同意"); err != nil {
+		if err := svc.Approve(ctx, bizNo, tk.TaskID, ap, "同意", nil); err != nil {
 			t.Fatalf("同意 %s 失败: %v", ap, err)
 		}
 	}
@@ -451,7 +451,7 @@ func TestSeqSignRejectStopsRelease(t *testing.T) {
 	bizNo := submitSeqNode(t, svc)
 
 	a := taskFor(t, db, bizNo, "ou_a")
-	if err := svc.Approve(ctx, bizNo, a.TaskID, "ou_a", "同意"); err != nil {
+	if err := svc.Approve(ctx, bizNo, a.TaskID, "ou_a", "同意", nil); err != nil {
 		t.Fatal(err)
 	}
 	// ou_a 同意后 ou_b 已释放；此时 ou_b 拒绝 → 实例驳回；ou_c 不得被释放。
@@ -478,7 +478,7 @@ func TestSeqSignRepushDoesNotResetRelease(t *testing.T) {
 	bizNo := submitSeqNode(t, svc)
 
 	a := taskFor(t, db, bizNo, "ou_a")
-	if err := svc.Approve(ctx, bizNo, a.TaskID, "ou_a", "同意"); err != nil {
+	if err := svc.Approve(ctx, bizNo, a.TaskID, "ou_a", "同意", nil); err != nil {
 		t.Fatal(err)
 	}
 	// 模拟「落后快照重推」：以同 task_id、旧状态（PENDING/HELD）再次 upsert。
@@ -618,7 +618,7 @@ func TestSeqSignOrderFollowsDeclarationNotLexicographic(t *testing.T) {
 	approve := func(ap string) {
 		t.Helper()
 		tk := taskFor(t, db, bizNo, ap)
-		if err := svc.Approve(ctx, bizNo, tk.TaskID, ap, "同意"); err != nil {
+		if err := svc.Approve(ctx, bizNo, tk.TaskID, ap, "同意", nil); err != nil {
 			t.Fatalf("同意 %s 失败: %v", ap, err)
 		}
 	}
@@ -684,7 +684,7 @@ func TestApproveRequiresAssignee(t *testing.T) {
 	m1 := taskFor(t, db, bizNo, "ou_m1")
 
 	// 非本人（ou_evil）approve / reject → 均须 ErrNotAssignee。
-	if err := svc.Approve(ctx, bizNo, m1.TaskID, "ou_evil", "替签"); !errors.Is(err, flow.ErrNotAssignee) {
+	if err := svc.Approve(ctx, bizNo, m1.TaskID, "ou_evil", "替签", nil); !errors.Is(err, flow.ErrNotAssignee) {
 		t.Errorf("非本人 approve 应 ErrNotAssignee，实际: %v", err)
 	}
 	if err := svc.Reject(ctx, bizNo, m1.TaskID, "ou_evil", "替拒"); !errors.Is(err, flow.ErrNotAssignee) {
@@ -698,7 +698,7 @@ func TestApproveRequiresAssignee(t *testing.T) {
 		t.Errorf("非本人操作推进了实例：%s，期望 PENDING", got)
 	}
 	// 对照：本人 approve → 成功推进。
-	if err := svc.Approve(ctx, bizNo, m1.TaskID, "ou_m1", "同意"); err != nil {
+	if err := svc.Approve(ctx, bizNo, m1.TaskID, "ou_m1", "同意", nil); err != nil {
 		t.Fatalf("本人 approve 应成功，实际: %v", err)
 	}
 	if got := taskFor(t, db, bizNo, "ou_m1").Status; got != flow.TaskApproved {
@@ -723,7 +723,7 @@ func TestCallbackRejectsNonAssignee(t *testing.T) {
 		if req.OpType == flow.OpReject {
 			return svc.Reject(ctx, req.BizNo, req.TaskID, req.OperatorOpenID, req.Reason)
 		}
-		return svc.Approve(ctx, req.BizNo, req.TaskID, req.OperatorOpenID, req.Reason)
+		return svc.Approve(ctx, req.BizNo, req.TaskID, req.OperatorOpenID, req.Reason, nil)
 	})
 
 	// operator = ou_evil ≠ assignee(ou_m1) → 必须被拒（推进不得发生）。

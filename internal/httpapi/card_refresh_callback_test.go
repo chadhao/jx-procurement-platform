@@ -64,7 +64,7 @@ func wireCardRefreshProbe(svc *flow.Service, db *store.DB, fake *feishu.FakeMess
 	svc.SetCallbackAdvancer(func(ctx context.Context, req flow.CallbackRequest) error {
 		switch strings.ToUpper(strings.TrimSpace(req.OpType)) {
 		case flow.OpApprove:
-			return svc.Approve(ctx, req.BizNo, req.TaskID, req.OperatorOpenID, req.Reason)
+			return svc.Approve(ctx, req.BizNo, req.TaskID, req.OperatorOpenID, req.Reason, nil)
 		case flow.OpReject:
 			return svc.Reject(ctx, req.BizNo, req.TaskID, req.OperatorOpenID, req.Reason)
 		default:

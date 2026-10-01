@@ -65,7 +65,7 @@ func TestTransferReassigns(t *testing.T) {
 		t.Errorf("新任务 = {node:%s rel:%s status:%s}, 期望 {n1 RELEASED PENDING}", m9.NodeID, m9.ReleaseState, m9.Status)
 	}
 	// 新审批人继续 → 节点通过 → 实例 APPROVED。
-	if err := svc.Approve(ctx, bizNo, m9.TaskID, "ou_m9", "同意"); err != nil {
+	if err := svc.Approve(ctx, bizNo, m9.TaskID, "ou_m9", "同意", nil); err != nil {
 		t.Fatalf("新审批人同意失败: %v", err)
 	}
 	if got := instOf(t, db, bizNo).Status; got != flow.InstanceApproved {
@@ -121,7 +121,7 @@ func TestAddSignAppendsToTail(t *testing.T) {
 	}
 
 	// 原审批人同意 → 节点未通过（加签未审）；加签任务被释放。
-	if err := svc.Approve(ctx, bizNo, m1.TaskID, "ou_m1", "同意"); err != nil {
+	if err := svc.Approve(ctx, bizNo, m1.TaskID, "ou_m1", "同意", nil); err != nil {
 		t.Fatal(err)
 	}
 	if got := instOf(t, db, bizNo).Status; got != flow.InstancePending {
@@ -131,7 +131,7 @@ func TestAddSignAppendsToTail(t *testing.T) {
 		t.Errorf("加签任务应被释放，实际 %s", got)
 	}
 	// 加签人同意 → 节点通过 → APPROVED。
-	if err := svc.Approve(ctx, bizNo, m9.TaskID, "ou_m9", "同意"); err != nil {
+	if err := svc.Approve(ctx, bizNo, m9.TaskID, "ou_m9", "同意", nil); err != nil {
 		t.Fatal(err)
 	}
 	if got := instOf(t, db, bizNo).Status; got != flow.InstanceApproved {
@@ -234,7 +234,7 @@ func TestAddSignBeforeInsertsBeforeCurrent(t *testing.T) {
 	}
 
 	// 新增者先审 → 通过后当前办理人才被释放（顺序链前进一步）。
-	if err := svc.Approve(ctx, bizNo, z.TaskID, "ou_z", "同意"); err != nil {
+	if err := svc.Approve(ctx, bizNo, z.TaskID, "ou_z", "同意", nil); err != nil {
 		t.Fatalf("前置人同意失败: %v", err)
 	}
 	if got := releasedPendingCount(t, db, bizNo); got != 1 {
@@ -247,7 +247,7 @@ func TestAddSignBeforeInsertsBeforeCurrent(t *testing.T) {
 		t.Errorf("节点未全部通过时实例 = %s，期望 PENDING", got)
 	}
 	// 当前办理人同意 → 继续按链推进（ou_b 释放）。
-	if err := svc.Approve(ctx, bizNo, aAfter.TaskID, "ou_a", "同意"); err != nil {
+	if err := svc.Approve(ctx, bizNo, aAfter.TaskID, "ou_a", "同意", nil); err != nil {
 		t.Fatalf("当前办理人同意失败: %v", err)
 	}
 	if got := taskFor(t, db, bizNo, "ou_b").ReleaseState; got != flow.ReleaseReleased {
@@ -295,7 +295,7 @@ func TestAddSignBeforeDoesNotReReviewApproved(t *testing.T) {
 	bizNo := submitSeqNode(t, svc)
 
 	a := taskFor(t, db, bizNo, "ou_a")
-	if err := svc.Approve(ctx, bizNo, a.TaskID, "ou_a", "同意"); err != nil {
+	if err := svc.Approve(ctx, bizNo, a.TaskID, "ou_a", "同意", nil); err != nil {
 		t.Fatalf("ou_a 同意失败: %v", err)
 	}
 	aBefore := taskFor(t, db, bizNo, "ou_a")
@@ -416,7 +416,7 @@ func TestAddSignApprovedTaskRejected(t *testing.T) {
 	bizNo := submitSeqNode(t, svc) // n1: ou_a(1) RELEASED；ou_b/c HELD；n2: ou_gm HELD
 
 	a := taskFor(t, db, bizNo, "ou_a")
-	if err := svc.Approve(ctx, bizNo, a.TaskID, "ou_a", "同意"); err != nil {
+	if err := svc.Approve(ctx, bizNo, a.TaskID, "ou_a", "同意", nil); err != nil {
 		t.Fatalf("ou_a 同意失败: %v", err)
 	}
 	// 夹具自检：ou_a 已 APPROVED，但其任务**仍 RELEASED**（顺序会签不清理释放态）。
@@ -455,7 +455,7 @@ func TestRollbackResetsEarlierNode(t *testing.T) {
 	bizNo := submitTwoNodes(t, svc, "ou_m1", "ou_m2")
 
 	m1 := taskFor(t, db, bizNo, "ou_m1")
-	if err := svc.Approve(ctx, bizNo, m1.TaskID, "ou_m1", "同意"); err != nil {
+	if err := svc.Approve(ctx, bizNo, m1.TaskID, "ou_m1", "同意", nil); err != nil {
 		t.Fatal(err)
 	}
 	// 当前活动节点 = n2（当前办理人 = ou_m2）；★ 回退准入收紧后，须由**当前办理人**发起。
@@ -482,7 +482,7 @@ func TestRollbackNegatives(t *testing.T) {
 	ctx := context.Background()
 	bizNo := submitTwoNodes(t, svc, "ou_m1", "ou_m2")
 	m1 := taskFor(t, db, bizNo, "ou_m1")
-	_ = svc.Approve(ctx, bizNo, m1.TaskID, "ou_m1", "同意") // 活动节点 = n2（当前办理人 = ou_m2）
+	_ = svc.Approve(ctx, bizNo, m1.TaskID, "ou_m1", "同意", nil) // 活动节点 = n2（当前办理人 = ou_m2）
 
 	// ★ 由**当前办理人**（ou_m2）回退到当前/更晚节点 → 非法（须回退到**更早**节点）。
 	if err := svc.Rollback(ctx, bizNo, "ou_m2", "n2", ""); !errors.Is(err, flow.ErrIllegalTransition) {
@@ -508,7 +508,7 @@ func TestRollbackRequiresCurrentAssignee(t *testing.T) {
 	ctx := context.Background()
 	bizNo := submitTwoNodes(t, svc, "ou_m1", "ou_m2")
 	m1 := taskFor(t, db, bizNo, "ou_m1")
-	if err := svc.Approve(ctx, bizNo, m1.TaskID, "ou_m1", "同意"); err != nil {
+	if err := svc.Approve(ctx, bizNo, m1.TaskID, "ou_m1", "同意", nil); err != nil {
 		t.Fatal(err)
 	} // 活动节点 = n2，当前办理人 = ou_m2
 

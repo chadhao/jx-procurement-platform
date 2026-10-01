@@ -32,7 +32,7 @@ func TestFinalizeProducesEveryInstanceLedger(t *testing.T) {
 		t.Fatal(err)
 	}
 	tk := taskFor(t, db, bizNo, "ou_x")
-	if err := svc.Approve(ctx, bizNo, tk.TaskID, "ou_x", "同意"); err != nil {
+	if err := svc.Approve(ctx, bizNo, tk.TaskID, "ou_x", "同意", nil); err != nil {
 		t.Fatal(err)
 	}
 	if got := instOf(t, db, bizNo).Status; got != flow.InstanceApproved {
@@ -84,7 +84,7 @@ func TestFinalizeSkipsNonInstanceLedgers(t *testing.T) {
 		t.Fatal(err)
 	}
 	tk := taskFor(t, db, bizNo, "ou_x")
-	if err := svc.Approve(ctx, bizNo, tk.TaskID, "ou_x", "同意"); err != nil {
+	if err := svc.Approve(ctx, bizNo, tk.TaskID, "ou_x", "同意", nil); err != nil {
 		t.Fatal(err)
 	}
 	if n := storetest.Count(t, db,
@@ -132,7 +132,7 @@ func TestFinalizeBizDateAndAmountGuards(t *testing.T) {
 		t.Fatal(err)
 	}
 	tk1 := taskFor(t, db, bizNo1, "ou_x")
-	if err := svc.Approve(ctx, bizNo1, tk1.TaskID, "ou_x", "同意"); err != nil {
+	if err := svc.Approve(ctx, bizNo1, tk1.TaskID, "ou_x", "同意", nil); err != nil {
 		t.Fatal(err)
 	}
 	var bizDate1, amount1 sql.NullString
@@ -160,7 +160,7 @@ func TestFinalizeBizDateAndAmountGuards(t *testing.T) {
 		t.Fatal(err)
 	}
 	tk2 := taskFor(t, db, bizNo2, "ou_x")
-	if err := svc.Approve(ctx, bizNo2, tk2.TaskID, "ou_x", "同意"); err != nil {
+	if err := svc.Approve(ctx, bizNo2, tk2.TaskID, "ou_x", "同意", nil); err != nil {
 		t.Fatal(err)
 	}
 	var bizDate2 string

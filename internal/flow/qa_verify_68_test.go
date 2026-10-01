@@ -132,7 +132,7 @@ func TestQAV68PathConsistency_CallbackVsInApp_DeepEqual(t *testing.T) {
 				t.Fatal(err)
 			}
 		} else {
-			if err := svc.Approve(ctx, bizNo, m1ID, "ou_m1", ""); err != nil {
+			if err := svc.Approve(ctx, bizNo, m1ID, "ou_m1", "", nil); err != nil {
 				t.Fatal(err)
 			}
 		}
@@ -144,7 +144,7 @@ func TestQAV68PathConsistency_CallbackVsInApp_DeepEqual(t *testing.T) {
 				t.Fatal(err)
 			}
 		} else {
-			if err := svc.Approve(ctx, bizNo, m1ID, "ou_m1", ""); err != nil {
+			if err := svc.Approve(ctx, bizNo, m1ID, "ou_m1", "", nil); err != nil {
 				t.Fatal(err)
 			}
 		}
@@ -234,7 +234,7 @@ func TestQAV68HeldCallbackGate_FullArcVisibleRejectThenImmediateAdvance(t *testi
 	}
 
 	// ③ 释放后真实回调立即推进：ou_a 审批 → ou_b RELEASED → ou_b 真实回调。
-	if err := svc.Approve(ctx, bizNo, taskFor(t, db, bizNo, "ou_a").TaskID, "ou_a", ""); err != nil {
+	if err := svc.Approve(ctx, bizNo, taskFor(t, db, bizNo, "ou_a").TaskID, "ou_a", "", nil); err != nil {
 		t.Fatal(err)
 	}
 	tb2 := taskFor(t, db, bizNo, "ou_b")

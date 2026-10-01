@@ -132,7 +132,7 @@ func TestQAInvariantAndCrossInstanceIsolation(t *testing.T) {
 	}
 	for _, s := range steps {
 		tk := taskFor(t, db, s.biz, s.assignee)
-		if err := svc.Approve(ctx, s.biz, tk.TaskID, s.assignee, "同意"); err != nil {
+		if err := svc.Approve(ctx, s.biz, tk.TaskID, s.assignee, "同意", nil); err != nil {
 			t.Fatalf("同意 %s/%s 失败: %v", s.biz, s.assignee, err)
 		}
 		other := b1
@@ -181,7 +181,7 @@ func TestQAHeldApproveRejectedAcrossInstances(t *testing.T) {
 	if tb.ReleaseState != "HELD" {
 		t.Fatalf("ou_b 初始 release_state = %s, 期望 HELD", tb.ReleaseState)
 	}
-	err := svc.Approve(ctx, b, tb.TaskID, "ou_b", "抢跑")
+	err := svc.Approve(ctx, b, tb.TaskID, "ou_b", "抢跑", nil)
 	if err == nil {
 		t.Fatalf("HELD 任务 approve 未被拒（静默放行）")
 	}
@@ -209,7 +209,7 @@ func TestQARepushDoesNotResetRelease(t *testing.T) {
 	b := qaSubmitQ(t, svc, "rp")
 
 	ta := taskFor(t, db, b, "ou_a") // RELEASED
-	if err := svc.Approve(ctx, b, ta.TaskID, "ou_a", "同意"); err != nil {
+	if err := svc.Approve(ctx, b, ta.TaskID, "ou_a", "同意", nil); err != nil {
 		t.Fatal(err)
 	}
 	before := taskFor(t, db, b, "ou_a")
@@ -253,7 +253,7 @@ func qaFinish(t *testing.T, db *store.DB, svc *flow.Service, docType string, fie
 		t.Fatalf("提交失败: %v", err)
 	}
 	tk := taskFor(t, db, bizNo, "ou_x")
-	if err := svc.Approve(context.Background(), bizNo, tk.TaskID, "ou_x", "同意"); err != nil {
+	if err := svc.Approve(context.Background(), bizNo, tk.TaskID, "ou_x", "同意", nil); err != nil {
 		t.Fatalf("同意失败: %v", err)
 	}
 	return bizNo

@@ -150,7 +150,7 @@ func TestActivatedNotifyOnActivation(t *testing.T) {
 	}
 
 	// ② m1 同意 → ou_m2 激活收到通知；ou_m3 仍 HELD 不发。
-	if err := svc.Approve(ctx, bizNo, m1.TaskID, "ou_m1", "同意"); err != nil {
+	if err := svc.Approve(ctx, bizNo, m1.TaskID, "ou_m1", "同意", nil); err != nil {
 		t.Fatal(err)
 	}
 	if got := sender.countEvent("ou_m2", "TASK_ACTIVATED"); got != 1 {
@@ -163,7 +163,7 @@ func TestActivatedNotifyOnActivation(t *testing.T) {
 	// ③ m2 同意 → ou_m3 激活；★ 断言收件人＝新审批人（ou_m3），不是已通过者（ou_m1/ou_m2
 	// 不因「已通过者」口径在激活事件上收到任何 TASK_ACTIVATED）。
 	m2 := taskFor(t, db, bizNo, "ou_m2")
-	if err := svc.Approve(ctx, bizNo, m2.TaskID, "ou_m2", "同意"); err != nil {
+	if err := svc.Approve(ctx, bizNo, m2.TaskID, "ou_m2", "同意", nil); err != nil {
 		t.Fatal(err)
 	}
 	if got := sender.countEvent("ou_m3", "TASK_ACTIVATED"); got != 1 {
@@ -211,7 +211,7 @@ func TestActivatedNotifyFailureNotBlocking(t *testing.T) {
 
 	bizNo := submitTwoSeqNodes(t, svc)
 	m1 := taskFor(t, db, bizNo, "ou_m1")
-	if err := svc.Approve(ctx, bizNo, m1.TaskID, "ou_m1", "同意"); err != nil {
+	if err := svc.Approve(ctx, bizNo, m1.TaskID, "ou_m1", "同意", nil); err != nil {
 		t.Fatalf("m1 同意失败（通知失败不得影响业务）: %v", err)
 	}
 
@@ -234,7 +234,7 @@ func TestActivatedNotifyFailureNotBlocking(t *testing.T) {
 	if m2.Status != flow.TaskPending || m2.ReleaseState != flow.ReleaseReleased {
 		t.Fatalf("通知失败影响了业务：m2 = %s/%s, 期望 PENDING/RELEASED", m2.Status, m2.ReleaseState)
 	}
-	if err := svc.Approve(ctx, bizNo, m2.TaskID, "ou_m2", "同意"); err != nil {
+	if err := svc.Approve(ctx, bizNo, m2.TaskID, "ou_m2", "同意", nil); err != nil {
 		t.Fatalf("m2 同意失败: %v", err)
 	}
 	if got := sender.countEvent("ou_m3", "TASK_ACTIVATED"); got != 1 {
@@ -255,7 +255,7 @@ func TestActivatedNotifyIdempotent(t *testing.T) {
 
 	bizNo := submitTwoSeqNodes(t, svc)
 	m1 := taskFor(t, db, bizNo, "ou_m1")
-	if err := svc.Approve(ctx, bizNo, m1.TaskID, "ou_m1", "同意"); err != nil {
+	if err := svc.Approve(ctx, bizNo, m1.TaskID, "ou_m1", "同意", nil); err != nil {
 		t.Fatal(err)
 	}
 
@@ -317,7 +317,7 @@ func TestLegacyNotifyEventsUnchanged(t *testing.T) {
 		t.Fatal(err)
 	}
 	m1 := taskFor(t, db, bizNo, "ou_m1")
-	if err := svc.Approve(ctx, bizNo, m1.TaskID, "ou_m1", "同意"); err != nil {
+	if err := svc.Approve(ctx, bizNo, m1.TaskID, "ou_m1", "同意", nil); err != nil {
 		t.Fatal(err)
 	}
 	m2 := taskFor(t, db, bizNo, "ou_m2")

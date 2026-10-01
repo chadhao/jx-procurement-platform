@@ -11,11 +11,25 @@ import (
 // ---------- 用户角色映射（M5） ----------
 
 // GetUserRole 按 open_id 读取角色；未映射或已停用返回 ErrNotFound（deny by default，TC-32）。
+// GetUserRoleTx 同 GetUserRole（事务内）—— flow 指定经办范围标记在 WithTx 内查部门用。
+func (d *DB) GetUserRoleTx(ctx context.Context, tx *sql.Tx, openID string) (*UserRole, error) {
+	row := tx.QueryRowContext(ctx, `
+SELECT id, open_id, COALESCE(name,''), role, COALESCE(department,''), COALESCE(extra_depts,'[]'),
+       active, updated_at
+FROM t_user_role WHERE open_id = ? AND active = 1`, openID)
+	return scanUserRoleRow(row)
+}
+
 func (d *DB) GetUserRole(ctx context.Context, openID string) (*UserRole, error) {
 	row := d.QueryRowContext(ctx, `
 SELECT id, open_id, COALESCE(name,''), role, COALESCE(department,''), COALESCE(extra_depts,'[]'),
        active, updated_at
 FROM t_user_role WHERE open_id = ? AND active = 1`, openID)
+	return scanUserRoleRow(row)
+}
+
+// scanUserRoleRow 单行扫描（非 Tx / Tx 两条查询共用，防两份扫描逻辑漂移）。
+func scanUserRoleRow(row *sql.Row) (*UserRole, error) {
 	var (
 		r       UserRole
 		extra   string

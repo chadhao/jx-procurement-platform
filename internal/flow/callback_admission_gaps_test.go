@@ -52,7 +52,7 @@ func TestCallbackHeldTaskRejectedWithoutKeyPollution(t *testing.T) {
 	}
 
 	// ② 释放：ou_m1 应用内同意 → ou_m2 变为可办理（RELEASED）。
-	if err := svc.Approve(ctx, bizNo, taskFor(t, db, bizNo, "ou_m1").TaskID, "ou_m1", "同意"); err != nil {
+	if err := svc.Approve(ctx, bizNo, taskFor(t, db, bizNo, "ou_m1").TaskID, "ou_m1", "同意", nil); err != nil {
 		t.Fatalf("ou_m1 同意失败: %v", err)
 	}
 	m2b := taskFor(t, db, bizNo, "ou_m2")
