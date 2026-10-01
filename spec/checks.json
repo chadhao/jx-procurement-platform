@@ -1,5 +1,5 @@
 {
-  "version": "1.6",
+  "version": "1.7",
   "generated_by": "WorkBuddy",
   "date": "2026-09-29",
   "scope": "spec/",
@@ -420,6 +420,18 @@
         ],
         "min_hits": 8
       }
+    },
+    {
+      "id": "S14",
+      "severity": "must-green",
+      "desc": "★ **`checks[*].carried_by_kind` 取值必须来自受控词表**（议题 `N-036`）：★ 一条 `hard` 判据的 `else` 若承诺「拒绝（硬拦截）」，就必须说清**谁来执行它**；`carried_by_kind` 就是那个声明的**受控词**（`code`＝有运行时执行体／`structural`＝结构性保证、运行时无需检查／`manual`＝人工承载、有制度依据／`pending_wiring`＝**通路未接、当前生产不可达**／`pending_implementation`＝**尚无任何承载者★真缺口**）。★★ **为什么只做值域、不做必填**：现有 9 个原语**都作用于 dict 的键或全局集合**，**表达不了「数组每一项都必填」** —— ★ `set_covers.min_hits` 是**逐文件**语义（不是全局计数），`required_keys` 只作用于 scope 的键、`coverage` 只作用于 dict ⇒ ★ **「每条必有」需新原语**，见 `COLLAB.md#N-036`。★ 本判据保证「**凡声明了的，不瞎写**」；★ 缺失的可见性由**新原语**补。★★ `min_hits: 0` —— ★ 因为**只有 8 张表单**有非提交时点的 `hard` 判据（`BA`/`RFQ`/`SA` 等**本就没有**这个字段），而 `min_hits` 是**逐文件**语义 ⇒ ★ 保留默认 1 会让「本来就没有」被当成「清单写错」。★ 同 `S5b` 的先例（`min_hits` 1→0）；★ **代价如实**：该护栏在本判据上失效（collect 写错将不被发现）—— ★ 由 `S14` 的 desc 与本注承担这个风险。",
+      "primitive": "enum_subset",
+      "args": {
+        "file": "spec/forms/*.json",
+        "collect": "checks[*].carried_by_kind",
+        "allowed": ["code", "structural", "manual", "pending_wiring", "pending_implementation"],
+        "min_hits": 0
+      }
     }
   ],
   "consumer_obligations": {
@@ -429,6 +441,11 @@
     "on_emitting_a_violation": "★★ **两侧引擎在报违规时，必须把「当前判据的真实 `id`」写进消息前缀** —— 例如 `[S5c] …`，**不得硬编码某个 ID 字面量、也不得写原语名**。★ 理由（实测事故）：同一原语会被**多条判据**复用（现 16 条判据复用 8 个原语），一旦硬编码，`S5c` 报出来的会是 `[S8/S11]` —— **排查者照错误 ID 去查，必然被带偏；这比『不报错』更坏**。Python 侧实现＝执行器注入 `args[\"__cid__\"]` ＋ `_self_audit_cid_literals()` 源码自审（禁止回潮）；Go 侧请同口径实现。"
   },
   "change_log": [
+    {
+      "version": "1.7",
+      "date": "2026-10-01",
+      "change": "★★ 新增 **`S14`**（`enum_subset`）：`checks[*].carried_by_kind` 取值必须 ∈ 受控词表。★ 配套 `forms/*.json` 的 **17 条非提交时点 `hard` 判据已逐条声明该字段**（`N-036`）；★ 其中 **6 条为 `pending_implementation`（★ 真缺口：判据的「拒绝」承诺无任何承载者）**，已登记待办。★★ **如实更正**：`set_covers.min_hits` 是**逐文件**语义 ⇒ **表达不了「全 spec 一条不缺」**，故「必填」那半**需新原语**（回到 `N-036` 原方案，两侧同批）。"
+    },
     {
       "version": "1.6",
       "date": "2026-09-30",

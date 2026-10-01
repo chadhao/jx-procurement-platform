@@ -800,7 +800,7 @@
       "else": "拒绝签署（不得先签后批、不得先盖章后审批）",
       "origin": "institution",
       "origin_ref": "第三十四条",
-      "severity": "hard"
+      "severity": "hard", "carried_by_kind": "manual"
     },
     {
       "id": "no_amount_tiering",
@@ -809,7 +809,7 @@
       "else": "拒绝提交",
       "origin": "resolution",
       "origin_ref": "chain.json#doc_chains.CT.hard_rules",
-      "severity": "hard",
+      "severity": "hard", "carried_by_kind": "structural",
       "note": "★ 本条是「统一两级、取消金额分档」这个改动的**执行守卫** —— 没有它，分档逻辑可能被重新引入而不被察觉"
     },
     {

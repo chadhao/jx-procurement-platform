@@ -409,7 +409,7 @@
       "else": "拒绝进入下一节点",
       "origin": "resolution",
       "origin_ref": "chain.json#routes.sole_source.nodes[1]（required = true）",
-      "severity": "hard"
+      "severity": "hard", "carried_by_kind": "pending_implementation"
     },
     {
       "id": "pgm_final_required",
@@ -418,7 +418,7 @@
       "else": "拒绝",
       "origin": "institution",
       "origin_ref": "批复 A6（项目总经理终审）",
-      "severity": "hard"
+      "severity": "hard", "carried_by_kind": "pending_implementation"
     },
     {
       "id": "no_escalation_to_group",
@@ -427,7 +427,7 @@
       "else": "★ 拒绝（链配置被改）",
       "origin": "institution",
       "origin_ref": "批复 A6 ＋ R-28（只写湖南侧义务）",
-      "severity": "hard",
+      "severity": "hard", "carried_by_kind": "structural",
       "note": "★ 这是「湖南侧截止到项目总经理、不上抬集团」这条硬规则的**执行守卫** —— 没有它，链被改回「上抬集团」不会被发现"
     },
     {
@@ -437,7 +437,7 @@
       "else": "拒绝提交",
       "origin": "resolution",
       "origin_ref": "chain.json 分档（R-22）",
-      "severity": "hard",
+      "severity": "hard", "carried_by_kind": "pending_wiring",
       "note": "★ 防止「按档位审批」被绕成「按最低档审批」"
     },
     {
@@ -457,7 +457,7 @@
       "else": "★ 告警（落账自检）",
       "origin": "resolution",
       "origin_ref": "ledger-mapping.json#ledgers.L09.producer",
-      "severity": "hard",
+      "severity": "hard", "carried_by_kind": "pending_implementation",
       "note": "★ 与 `flow.finalize` 的落账后自检同口径 —— **「没有数据」不得与「没有违规」长得一样**"
     },
     {

@@ -329,7 +329,7 @@
       "assert": "applicable_tier == tier_of( max(change_amount_cents, original_contract_amount_cents) )",
       "else": "★ **拒绝**（档位被改）",
       "origin": "resolution", "origin_ref": "批复 A8（`tier_formula`）",
-      "severity": "hard",
+      "severity": "hard", "carried_by_kind": "pending_wiring",
       "note": "★★ 这是「**档位就高**」的**执行守卫** —— 没有它，把档位改回「仅就差额」不会被发现，而那条通道正是 A8 要堵的"
     },
     {
@@ -338,7 +338,7 @@
       "assert": "applicable_tier != 'purchase_tier1'",
       "else": "★ 拒绝（配置被改）",
       "origin": "resolution", "origin_ref": "本文件 `routes._unreachable_branch`（可证）",
-      "severity": "hard",
+      "severity": "hard", "carried_by_kind": "structural",
       "note": "★★ **可证的不变量**：PC 前提是「合同签订后」⇒ 采一档（<1,000 元）**不签合同** ⇒ `original_contract_amount_cents ≥ 100000` ⇒ `max(...) ≥ 100000` ⇒ **档位恒 ≥ 采二档**。★ 制度第五十二条列举的「采一档由综合运营主管审批」在本单中**不可达**（与 `chain.json` 的 actor 不构成冲突）"
     },
     {
@@ -372,7 +372,7 @@
       "assert": "90 天内同一 contract_no 变更 ≥2 次 ⇒ is_anomaly_listed = true，且进月度报送专项说明",
       "else": "★ 告警（未标记异常）",
       "origin": "institution", "origin_ref": "制度第五十三条",
-      "severity": "hard"
+      "severity": "hard", "carried_by_kind": "pending_implementation"
     },
     {
       "id": "tech_opinion_for_engineering",
@@ -397,7 +397,7 @@
       "assert": "resubmitted_to_group_at 非空",
       "else": "★ **不得标记为已闭环**（提示「变更后的合同须重新归口提交集团」）",
       "origin": "institution", "origin_ref": "制度第五十二条末段",
-      "severity": "hard"
+      "severity": "hard", "carried_by_kind": "pending_implementation"
     },
     {
       "id": "ledger_l09_written",
@@ -405,7 +405,7 @@
       "assert": "落 L09 一行，`exception_type` = '采购变更' 且 `change_chain` 有值",
       "else": "★ 告警（落账自检）",
       "origin": "resolution", "origin_ref": "ledger-mapping.json#ledgers.L09.producer ＋ R-21#7",
-      "severity": "hard",
+      "severity": "hard", "carried_by_kind": "pending_implementation",
       "note": "★ 与 `flow.finalize` 落账后自检同口径 —— **「没有数据」不得与「没有违规」长得一样**"
     },
     {
