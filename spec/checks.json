@@ -1,5 +1,5 @@
 {
-  "version": "1.7",
+  "version": "1.8",
   "generated_by": "WorkBuddy",
   "date": "2026-09-29",
   "scope": "spec/",
@@ -95,6 +95,26 @@
           "必需项数组（元素可为字符串或数字；数字按整数值规范化）"
         ],
         "min_hits": 1
+      }
+    },
+    "array_each_required": {
+      "array_each_required": {
+        "desc": "★★ **第 10 原语（`N-036`）：数组逐项条件必填** —— 对 `collect` 收集到的**每个数组元素**，当 `when_key` 缺省（无条件）或「元素[when_key] ∈ when_in」时，`required_keys` 中每个键**必须存在**（**存在性**口径，同 `required_keys`）。\n★ **为什么需要它**：既有 9 个原语**都表达不了「数组每一项都必填」** —— `required_keys` 只作用于 **scope 的键**；`coverage` 只作用于 **dict 的键**；★★ `set_covers.min_hits` 是**逐文件**计数（**不是全局**）⇒ 表达不了「全清单一条不缺」。\n★★ **它治什么**：**「声明了却没人执行」** —— 判据的 `else` 若承诺「拒绝」，就必须说清 **谁来执行**；缺声明即报错，**不许静默**（比「不报错」更坏的是「你以为已经做了」）。\n★ **三处细节**：① `seen` 计数在**条件过滤之前**（所以「collect 指空路径」能被 `seen==0` 抓到）；② 条件键**缺失** ⇒ 视为**不在适用面**（由该键自身的 required 判据管），而不是报错；③ 可加 `when_key2`/`when_in2`（与第一个条件是 **AND**）—— ★ 实测需求：「非提交时点的 hard 判据」需要**双键**（`when` ∧ `severity`），单键表达不了。\n★ 由 `N-036` **双方同时实现**（Python `scripts/check_spec.py` ＋ Go `internal/specload/checklist.go`），语义以本 desc 裁决。",
+        "args": {
+          "file": "glob",
+          "collect": "点路径（指向数组）",
+          "required_keys": [
+            "必须存在的键"
+          ],
+          "when_key": "可选：条件键",
+          "when_in": [
+            "条件取值（白名单枚举）"
+          ],
+          "when_key2": "可选：第二个条件键（与第一个是 AND）",
+          "when_in2": [
+            "第二个条件的取值"
+          ]
+        }
       }
     }
   },
@@ -429,8 +449,25 @@
       "args": {
         "file": "spec/forms/*.json",
         "collect": "checks[*].carried_by_kind",
-        "allowed": ["code", "structural", "manual", "pending_wiring", "pending_implementation"],
+        "allowed": ["code", "structural", "manual", "pending_wiring", "pending_implementation", "submit"],
         "min_hits": 0
+      }
+    },
+    {
+      "id": "S15",
+      "severity": "must-green",
+      "desc": "★★ **每一条 `severity=hard` 的判据都必须声明 `carried_by_kind`**（议题 `N-036` 的**核心判据**）：★ 一条 `hard` 判据的 `else` 若承诺「拒绝（硬拦截）」，就**必须说清谁来执行它** —— ★ 缺声明即报错。\n★★ 它治的是「**声明了却没人执行**」：★ 这比「没声明」危险 —— **后者你知道要做，前者你以为已经做了**。\n★★ **为什么条件写 `severity=hard` 而不是「非提交时点」**：`when_in` 是**白名单枚举**，而「非提交时点」是**否定式**、且提交白名单是**模式匹配**（`== submit` / `submit ` 前缀 / 含「提交前」）⇒ **无法枚举**；★ 故改为**无条件要求每一条 `hard`** —— ★ 语义更简单、**消除特例**，且**顺带把「提交期判据由谁执行」也显式化**（此前是隐含的：引擎自动执行）。\n★ 现值分布：`submit`（引擎自动执行）／`code`（运行时执行体）／`structural`（结构性保证）／`manual`（人工承载，须有制度依据）／`pending_wiring`（通路未接、当前不可达）／★★ `pending_implementation`（**尚无任何承载者 ＝ 真缺口**：判据承诺的「拒绝」不会发生）。",
+      "primitive": "array_each_required",
+      "args": {
+        "file": "spec/forms/*.json",
+        "collect": "checks[*]",
+        "required_keys": [
+          "carried_by_kind"
+        ],
+        "when_key": "severity",
+        "when_in": [
+          "hard"
+        ]
       }
     }
   ],
@@ -441,6 +478,11 @@
     "on_emitting_a_violation": "★★ **两侧引擎在报违规时，必须把「当前判据的真实 `id`」写进消息前缀** —— 例如 `[S5c] …`，**不得硬编码某个 ID 字面量、也不得写原语名**。★ 理由（实测事故）：同一原语会被**多条判据**复用（现 16 条判据复用 8 个原语），一旦硬编码，`S5c` 报出来的会是 `[S8/S11]` —— **排查者照错误 ID 去查，必然被带偏；这比『不报错』更坏**。Python 侧实现＝执行器注入 `args[\"__cid__\"]` ＋ `_self_audit_cid_literals()` 源码自审（禁止回潮）；Go 侧请同口径实现。"
   },
   "change_log": [
+    {
+      "version": "1.8",
+      "date": "2026-10-01",
+      "change": "★★★ 声明**第 10 原语 `array_each_required`**（数组逐项条件必填）并新增 **`S15`**（每一条 `severity=hard` 判据必须声明 `carried_by_kind`）；`S14.allowed` 加 `submit`。★ 配套：`forms/*.json` 的 **68 条 `hard` 判据全部已声明**（`submit` 51 条＝引擎自动执行 ＋ 17 条非提交时点形态各异，其中 **6 条 `pending_implementation` 为真缺口**）。★★ 本原语由 **`N-036` 双方同时实现**（Python `check_spec.py` ＋ Go `internal/specload/checklist.go`）；★ **必须在两侧都实现后才能在 `checks.json` 声明** —— 理由：Python 侧有 fail-closed 护栏（`[META] 清单引用了未实现的原语`），★ 单侧先落会**立刻打红**（可见但红）。"
+    },
     {
       "version": "1.7",
       "date": "2026-10-01",

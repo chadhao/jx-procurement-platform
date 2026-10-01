@@ -359,6 +359,64 @@ def prim_cross_equal_by_key(args):
     return probs
 
 
+def prim_array_each_required(args):
+    """★ 第 10 原语（`N-036`）：**数组逐项条件必填** —— 对 `collect` 收集到的**每个数组元素**，
+    当 `when_key` 缺省（无条件）或 `元素[when_key] ∈ when_in`（可用 `when_key2`/`when_in2` 再加一个 AND 条件）时，
+    `required_keys` 中每个键**必须存在**。
+
+    为什么需要它：既有 9 个原语**都表达不了「数组每一项都必填」** ——
+      · `required_keys` 只作用于 **scope 的键**；`coverage` 只作用于 **dict 的键**；
+      · `set_covers.min_hits` 是**逐文件**计数（不是全局），表达不了「一条不缺」。
+    ⇒ ★ 本原语专治「**声明了却没人执行**」这类缺口：判据的 `else` 若承诺「拒绝」，
+      **必须说清谁来执行它**；缺声明就报错，不许静默。
+
+    ★ 语义与 Go 侧 `internal/specload/checklist.go#case "array_each_required"` **逐字对齐**
+      （两侧共同契约，见 `spec/checks.json#consumer_obligations`）。
+    """
+    cid, probs = _cid(args), []
+    pat = args["file"]
+    collect = args["collect"]
+    required = args.get("required_keys") or []
+    wk, wi = args.get("when_key") or "", [str(x) for x in (args.get("when_in") or [])]
+    wk2, wi2 = args.get("when_key2") or "", [str(x) for x in (args.get("when_in2") or [])]
+
+    def _match(v):
+        """值 → 参与 when_in 比较的字符串（★ 兜底口径对齐 Go 的 %v：bool/数值见 _scalar_str）。"""
+        if isinstance(v, str) and v:
+            return v
+        s = _scalar_str(v)
+        return s if s is not None else None
+
+    seen = 0
+    for f in expand(pat):
+        for i, item in enumerate(sel(load_json(f), toks(collect))):
+            if not isinstance(item, dict):
+                probs.append("[%s] %s 的 %s 第 %d 项不是对象" % (cid, rel(f), collect, i))
+                continue
+            seen += 1
+            if wk:
+                if wk not in item:
+                    # ★ 条件键缺失 ⇒ 不在适用面（由该键自身的 required 判据管）
+                    continue
+                if _match(item[wk]) not in wi:
+                    continue
+            if wk2:
+                if wk2 not in item:
+                    continue
+                if _match(item[wk2]) not in wi2:
+                    continue
+            for k in required:
+                if k not in item:
+                    probs.append(
+                        "[%s] %s 的 %s 第 %d 项缺键 %r（条件必填未声明 —— "
+                        "「声明了却没人执行」必须能被机器看见）"
+                        % (cid, rel(f), collect, i, k))
+    if seen == 0:
+        probs.append("[%s] collect=%r 在 file=%r 下收集到 0 项（清单声明写错不许静默通过）"
+                     % (cid, collect, pat))
+    return probs
+
+
 PRIMITIVES = {
     "json_parse": prim_json_parse,
     "required_keys": prim_required_keys,
@@ -369,6 +427,7 @@ PRIMITIVES = {
     "pattern_absent": prim_pattern_absent,
     "cross_equal_by_key": prim_cross_equal_by_key,
     "set_covers": prim_set_covers,
+    "array_each_required": prim_array_each_required,
 }
 
 

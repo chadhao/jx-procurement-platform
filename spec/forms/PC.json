@@ -320,7 +320,7 @@
       "assert": "contract_no 非空 且 在合同台账 L04 中**等值命中**一行",
       "else": "★ **拒绝提交**（可见失败）—— 提示「关联合同号不存在，无法建立变更链」",
       "origin": "resolution", "origin_ref": "chain.json#routes.change.nodes[0].required_fields ＋ 制度第五十二条",
-      "severity": "hard",
+      "severity": "hard", "carried_by_kind": "submit",
       "note": "★★ **必须等值匹配，绝不前缀匹配** —— 前缀匹配会让 `CT-1` 命中 `CT-1X`（串链/越权）。★ 代码侧已有对应断言（`internal/flow/finalize_test.go`），本判据是规格侧的同口径声明"
     },
     {
@@ -329,7 +329,7 @@
       "assert": "applicable_tier == tier_of( max(change_amount_cents, original_contract_amount_cents) )",
       "else": "★ **拒绝**（档位被改）",
       "origin": "resolution", "origin_ref": "批复 A8（`tier_formula`）",
-      "severity": "hard", "carried_by_kind": "pending_wiring",
+      "severity": "hard", "carried_by_kind": "code", "carried_by": "internal/chain/change.go#ChangeTierOf（就高公式 max(变更差额, 原合同金额)）＋ test:internal/httpapi",
       "note": "★★ 这是「**档位就高**」的**执行守卫** —— 没有它，把档位改回「仅就差额」不会被发现，而那条通道正是 A8 要堵的"
     },
     {
@@ -347,7 +347,7 @@
       "assert": "change_amount_cents != 0",
       "else": "拒绝提交",
       "origin": "code", "origin_ref": "代码侧（无差额的变更无意义）",
-      "severity": "hard"
+      "severity": "hard", "carried_by_kind": "submit"
     },
     {
       "id": "reset_as_new_purchase_block",
@@ -355,7 +355,7 @@
       "assert": "NOT (new_total_cents > original_contract_amount_cents * 1.5)",
       "else": "★ **拒绝**，提示「变更后总额已超原合同 150%，须重走全套流程（询比价 → 拟成交审批 → 合同两级审批）」",
       "origin": "institution", "origin_ref": "制度第五十二条（150%）",
-      "severity": "hard",
+      "severity": "hard", "carried_by_kind": "submit",
       "note": "★ 与 30% 门槛**不是同一条规则**（`R-15`）：本判据管「**重走全套**」，30% 管「**专项说明**」"
     },
     {
@@ -364,7 +364,7 @@
       "assert": "total_change_cents > original_contract_amount_cents * 0.3 ⇒ special_explanation 非空",
       "else": "拒绝提交",
       "origin": "institution", "origin_ref": "制度第五十二条 / 第五十三条（30%）",
-      "severity": "hard"
+      "severity": "hard", "carried_by_kind": "submit"
     },
     {
       "id": "anomaly_list_and_report",
@@ -380,7 +380,7 @@
       "assert": "is_engineering_category == true ⇒ tech_opinion 非空 且 tech_opinion_by 非空",
       "else": "拒绝提交",
       "origin": "institution", "origin_ref": "制度第五十二条（工程类变更须质检技术岗／工程负责人出技术意见）",
-      "severity": "hard"
+      "severity": "hard", "carried_by_kind": "submit"
     },
     {
       "id": "new_supplier_when_supplier_change",
@@ -388,7 +388,7 @@
       "assert": "change_type == '供应商变更' ⇒ new_supplier 非空 且 new_supplier != original_supplier",
       "else": "拒绝提交",
       "origin": "institution", "origin_ref": "制度第五十二条（供应商变更属触发情形）",
-      "severity": "hard",
+      "severity": "hard", "carried_by_kind": "submit",
       "note": "★ 供应商变更 = **合同主体变了** ⇒ 除本单外**须重新走合同审批**（第三十四条）；本判据只保证「填了」，无法替代合同审批"
     },
     {
@@ -414,7 +414,7 @@
       "assert": "NOT (applicant == 需求提出人 AND designated_by == 需求提出人)",
       "else": "拒绝（硬拦截）",
       "origin": "resolution", "origin_ref": "R-27（B7 定案）＋ 制度第十四条",
-      "severity": "hard",
+      "severity": "hard", "carried_by_kind": "submit",
       "note": "★ **必须与 `PR.json` / `CT.json` / `SS.json` 同款判据一致**（四处同口径）"
     },
     {
@@ -423,7 +423,7 @@
       "assert": "读取 Idempotency-Key",
       "else": "无幂等保护",
       "origin": "code", "origin_ref": "mimo 审计：submit 须照抄 submission 的「占位 + 指纹 + 40900」模式",
-      "severity": "hard"
+      "severity": "hard", "carried_by_kind": "submit"
     }
   ],
 

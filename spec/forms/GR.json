@@ -268,7 +268,7 @@
       "else": "★ **不静默通过**：拒绝并提示「关联单据 {no} 不存在（须为 CT 或 BA 单号）」",
       "origin": "institution",
       "origin_ref": "制度第十三条（采一档不签合同 ⇒ 只能关联备案单）＋ `L07.fields[related_order_or_record_no]`",
-      "severity": "hard",
+      "severity": "hard", "carried_by_kind": "submit",
       "note": "★★ **必须允许「两种单据类型」**：采一档按制度**不签合同**，其验收只能挂 `BA` 备案单 ⇒ ★ 若实现只认 `CT`，**采一档的验收永远录不进来**（这正是 `L03` 恒空那类缺陷的形态：不是报错，而是**那一档永远没有数据**）。★ 与 `QC#related_gr_must_exist` 同款：**等值匹配** ＋ **查不到不得 fail-open**。"
     },
     {
@@ -278,7 +278,7 @@
       "else": "★ 拒绝并逐项提示（缺哪个角色 / 多了哪个角色）",
       "origin": "chain",
       "origin_ref": "`chain.json#doc_chains.GR.acceptance_groups` ＋ `enums.json#acceptance_groups.by_category_prefix`（含 `size`）",
-      "severity": "hard",
+      "severity": "hard", "carried_by_kind": "submit",
       "note": "★★ **本判据是双向的（＝而非⇒）**：只写「该有的要有」会放过「**不该有的也有**」（例如 `P05–P08` 却填了库管）—— 那不叫「更严格」，那叫**背离了品类对应的验收责任**。★ 与 `QC#sample_quantity_pair`、`CT#prepay_pair` 同款写法（**成对字段必须一起出现、也必须一起不出现**）。"
     },
     {
@@ -288,7 +288,7 @@
       "else": "★ 拒绝：综合运营主管不得同时作为该笔的验收人",
       "origin": "enum",
       "origin_ref": "`enums.json#acceptance_groups.hard_rules`（第 2 条）",
-      "severity": "hard",
+      "severity": "hard", "carried_by_kind": "submit",
       "note": "★★ **最易混淆的一处**：`P05–P08` 组的成员写的是「**综合运营部人员**」，而受限的是「**综合运营主管**」—— 两者名称相近，★ 若实现把限制写成「不得是综合运营部的人」，会把**正常成员全部挡住**（误拦）；★ 若实现只按名字模糊匹配，又会**放过主管本人**（漏拦）。⇒ ★ **必须按角色判定**（`roles.ops_supervisor` 的解析结果），**不得按部门判定**。"
     },
     {
@@ -298,7 +298,7 @@
       "else": "★ 拒绝：审批人不得同时担任验收人；★ 若该单**取不到审批记录** ⇒ **按可见失败处理并提示**（不得放行）",
       "origin": "institution",
       "origin_ref": "制度 V4.0 **第十条**「**审批人不得同时担任验收人**」",
-      "severity": "hard",
+      "severity": "hard", "carried_by_kind": "submit",
       "note": "★★ **为什么「取不到就失败」而不是放行**：制度这条约束的意义就是「**自己批的自己不能自己验**」。★ 若写成「取不到审批记录就跳过校验」，那么**只要数据缺一条，约束就整体消失** —— 这与「这条校验根本没写」毫无区别（`N-027` 已确立的口径：**fail-open＝假校验**）。★ **代价**：早期单据数据不全时会被挡住并提示 ⇒ ★ 这是**有意为之**：**让缺数据可见**，好过让它静默失效。"
     },
     {
@@ -308,7 +308,7 @@
       "else": "★ 拒绝：让步接收须质检与使用部门双签（且不得为同一人）",
       "origin": "enum",
       "origin_ref": "`enums.json#acceptance_conclusion.rule`：「让步接收须**质检与使用部门双签**」",
-      "severity": "hard",
+      "severity": "hard", "carried_by_kind": "submit",
       "note": "★★ **本判据同时收口了 `QC` 留下的一个缺口**（`forms/QC.json#known_gaps` 第 2 条：「**让步接收的双签落在哪张单承载**」—— 当时未定）。★ **现在定了：落在本单（`GR`）**。★ 依据＝**措辞字面一致**：「让步接收」正是 `acceptance_conclusion` 的枚举值之一，而「双签」是对该结论的**加强要求** ⇒ **结论在哪张单，对结论的加强就在哪张单**。★ 若把它放到 `QC`（判定→让步使用），会出现「QC 签了、GR 判了、两张单各说一半」的缝隙。"
     },
     {
@@ -318,7 +318,7 @@
       "else": "★ 拒绝：实收数量必须大于 0",
       "origin": "institution",
       "origin_ref": "制度第三十四条（三单匹配需「数量」这一方）＋ `L07.fields[received_quantity]`",
-      "severity": "hard",
+      "severity": "hard", "carried_by_kind": "submit",
       "note": "★ 看似平凡，但它是**三单匹配能成立的前提**：三方比对里若「到货验收单」这一方数量为空，比对就无从做起 ⇒ `SUB` 的「三单匹配结论」会退化成**人说了算**。"
     },
     {

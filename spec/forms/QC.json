@@ -228,7 +228,7 @@
       "else": "★ **不静默通过**：拒绝并提示「关联验收单 {no} 不存在」",
       "origin": "chain",
       "origin_ref": "`chain.json#doc_chains.QC.required_config[0]`",
-      "severity": "hard",
+      "severity": "hard", "carried_by_kind": "submit",
       "note": "★★ **三点说清**：① **必须存在** —— 否则「检验」失去了被检验的对象；② **等值不前缀** —— 前缀会让 `GR-2609-0001` 的查询命中 `GR-2609-00011`（`README` 定案 #15/#28 同族：**前缀匹配＝串单／越权**）；③ ★★ **查不到时不得 fail-open** —— 「查不到就放行」等于这条校验不存在（`N-027` 已确立的口径：**fail-open＝假校验**）。"
     },
     {
@@ -238,7 +238,7 @@
       "else": "★ 拒绝：判定结论必填",
       "origin": "chain",
       "origin_ref": "`chain.json#doc_chains.QC.required_config[1]`",
-      "severity": "hard",
+      "severity": "hard", "carried_by_kind": "submit",
       "note": "★ 这条看似平凡，却是**整张单存在的理由** —— QC 的产出就是「一个判定」。★ 与 `related_gr_must_exist` 合起来正好对应 `chain.json` 写明的**两个必配项**：**一个指明对象（哪张 GR），一个给出结论**。"
     },
     {
@@ -248,7 +248,7 @@
       "else": "★ 拒绝：抽检须填抽检数量；全检不得填抽检数量",
       "origin": "code",
       "origin_ref": "本表 `inspection_method` / `sample_quantity` 的 `rule`",
-      "severity": "hard",
+      "severity": "hard", "carried_by_kind": "submit",
       "note": "★ **双向**约束（⟺ 而非 ⇒）：只写「抽检⇒填数量」会漏掉「全检却填了数量」这种自相矛盾。★ 与 `CT` 的 `prepay_pair` 同款写法（**成对字段必须一起出现、也必须一起不出现**）。"
     },
     {
@@ -258,7 +258,7 @@
       "else": "★ 拒绝：判定为非合格时须填写不合格描述",
       "origin": "code",
       "origin_ref": "本表 `defect_description.rule`",
-      "severity": "hard",
+      "severity": "hard", "carried_by_kind": "submit",
       "note": "★ 判「不合格」却写不出哪里不合格 ⇒ 该判定**不可复核**。★ 注意方向：**合格时不要求**（避免让质检为了过校验写废话）。"
     },
     {

@@ -381,7 +381,7 @@
       "else": "拒绝提交",
       "origin": "tool_table",
       "origin_ref": "单据清单 R9（唯一性说明 / 价格佐证）",
-      "severity": "hard"
+      "severity": "hard", "carried_by_kind": "submit"
     },
     {
       "id": "sole_source_attachment_when_authorized",
@@ -390,7 +390,7 @@
       "else": "拒绝提交",
       "origin": "code",
       "origin_ref": "代码侧补充",
-      "severity": "hard"
+      "severity": "hard", "carried_by_kind": "submit"
     },
     {
       "id": "related_pr_must_exist",
@@ -399,7 +399,7 @@
       "else": "★ **可见失败**（不 fail-open）—— 提示「关联需求单不存在或未批准」",
       "origin": "tool_table",
       "origin_ref": "PO R30「从已批准的 PR 生成，禁止无源下单」",
-      "severity": "hard",
+      "severity": "hard", "carried_by_kind": "submit",
       "note": "★ 与 CT 的同款判据同口径：**关联 PR 查不到 ⇒ 拒绝，不得静默放行**"
     },
     {
@@ -437,7 +437,7 @@
       "else": "拒绝提交",
       "origin": "resolution",
       "origin_ref": "chain.json 分档（R-22）",
-      "severity": "hard", "carried_by_kind": "pending_wiring",
+      "severity": "hard", "carried_by_kind": "code", "carried_by": "internal/chain/route.go#TierOf（按 chain.json#thresholds.purchase.bands 闭区间）",
       "note": "★ 防止「按档位审批」被绕成「按最低档审批」"
     },
     {
@@ -467,7 +467,7 @@
       "else": "拒绝（硬拦截）",
       "origin": "resolution",
       "origin_ref": "R-27（B7 定案）＋ 制度第十四条",
-      "severity": "hard",
+      "severity": "hard", "carried_by_kind": "submit",
       "note": "★ **必须与 `PR.json` / `CT.json` 同款判据一致**（三处同口径）"
     },
     {
@@ -477,7 +477,7 @@
       "else": "无幂等保护",
       "origin": "code",
       "origin_ref": "mimo 审计：submit 须照抄 submission 的「占位 + 指纹 + 40900」模式",
-      "severity": "hard"
+      "severity": "hard", "carried_by_kind": "submit"
     }
   ],
   "known_gaps": [
