@@ -277,21 +277,20 @@ func TestDashboardD5RestoredAndBoard13Passes(t *testing.T) {
 // TestDashboardD7Probes [D7] 三向：漏列必报 / 多列必报 / 还原不报（r9 派生量）。
 func TestDashboardD7Probes(t *testing.T) {
 	runProbes(t, []probe{
-		{name: "D7-16漏列L08", expect: "[D7]", mutate: func(t *testing.T, files map[string][]byte) {
+		// ★ N-034 重指：原「删 L08」在 V1.3 后成为空操作（L08 已移出 16 号板）。
+		//   改为**从真 spec 派生删除目标**（source_ledgers[0]）—— [D7] 保证该列表 == fields
+		//   并集非空 ⇒ 第一项必被至少一个指标引用 ⇒ 删掉必触发漏列分支；spec 再演进也不漂移。
+		{name: "D7-16漏列首项", expect: "[D7]", mutate: func(t *testing.T, files map[string][]byte) {
 			mutateJSON(t, files, "spec/dashboard.json", func(m map[string]any) {
 				boards, _ := m["dashboards"].([]any)
 				for _, b := range boards {
 					bm, _ := b.(map[string]any)
 					if id, _ := bm["id"].(float64); int(id) == 16 {
 						leds, _ := bm["source_ledgers"].([]any)
-						kept := []any{}
-						for _, l := range leds {
-							if l == "L08" {
-								continue // 指标 fields 引用了 L08 —— 删掉即漏列
-							}
-							kept = append(kept, l)
+						if len(leds) == 0 {
+							t.Fatal("16 号板 source_ledgers 为空 —— [D7] 应已拦（前提破坏）")
 						}
-						bm["source_ledgers"] = kept
+						bm["source_ledgers"] = leds[1:] // 删首项 ⇒ 漏列（它必被 fields 引用）
 					}
 				}
 			})

@@ -445,13 +445,15 @@ func (b *Builder) buildExpense(ctx context.Context, res Result, period string, q
 
 func (b *Builder) buildAnomaly(ctx context.Context, res Result, period string, q Query) (Result, error) {
 	// L11 已为派生视图、不落行，不再列入（原列入但从未消费 byType["L11"]）。
-	types := []string{"L01", "L03", "L06", "L08", "L09", "L12"}
+	// ★ N-034：L08 已从看板数据源移除（手工主数据 producer=[]、零写入通路 ——
+	//   指向它的指标生产上永不亮）；account_changed 改读 L06。
+	types := []string{"L01", "L03", "L06", "L09", "L12"}
 	rows, err := b.fetchLedgerRows(ctx, types, windowStart(period, defaultCycleMonths-1), q)
 	if err != nil {
 		return res, err
 	}
 	byType := splitByType(rows, types...)
-	r01, r03, r08, r09, r12 := byType["L01"], byType["L03"], byType["L08"], byType["L09"], byType["L12"]
+	r01, r03, r06, r09, r12 := byType["L01"], byType["L03"], byType["L06"], byType["L09"], byType["L12"]
 
 	// ★ 11 个指标**每个各自**带可用性守卫（connected_requires 16① / global_rules.r6）——
 	//   看板级只有一个 source_status，而 11 个指标分布在 7 个台账上。
@@ -482,11 +484,11 @@ func (b *Builder) buildAnomaly(ctx context.Context, res Result, period string, q
 		// ④ 单一来源：例外事项台账（L09）采购方式含「单一来源」或「独家」。
 		guardedAlert("sole_source", "单一来源", countOpsContainsAny(r09, keyMethod, "单一来源", "独家"), len(r09), true),
 
-		// ⑤ 账户变更：现读 L08 标记（★ 数据源与 spec fields「L04.收款账户」的差异已登记议题）。
-		// ★ T1b（r3 列级）：`账户变更` 是**人工登记列** —— 守卫源＝「有登记值」的行数，
-		//   不是 L08 表行数：一行都没登记时显示「数据未接入」而非 0（0 与「没登记」同形）。
-		guardedAlert("account_changed", "账户变更", countTruthy(r08, keyAcctChange),
-			countRegistered(r08, keyAcctChange), true),
+		// ⑤ 账户变更：★ N-034 改判 —— `L06.收款账户已核验` 为「否/false」（＝变更过）的笔数；
+		//   该列由 SUB 落账带入（writable:false ⇒ 存 archive ext）⇒ 列级守卫＝ext 中
+		//   **有登记值**的行数（一行都没登记 ⇒ not_connected 而非 0，r3 列级照旧）。
+		guardedAlert("account_changed", "账户变更", countL06Unverified(r06),
+			countExtRegistered(r06, "payee_account_verified"), true),
 
 		// ⑥ 拆分嫌疑：同供应商 + 同品类月累计 ≥ 1,000 元（且 ≥2 笔）。
 		guardedAlert("split_suspicion", "拆分嫌疑", b.countSplitSuspect(r01), len(r01), true),
@@ -895,6 +897,47 @@ func countOpsContainsAny(rows []Row, key string, subs ...string) int {
 				break
 			}
 		}
+	}
+	return n
+}
+
+// countL06Unverified 统计 `L06.收款账户已核验` 为「否」的笔数（N-034：＝变更过的笔数）。
+// 值形态兼容两种落账编码：bool false（SUB 表单原值）与字符串「否」。
+func countL06Unverified(rows []Row) int {
+	n := 0
+	for _, r := range rows {
+		v, ok := r.ArchiveExt["payee_account_verified"]
+		if !ok || v == nil {
+			continue
+		}
+		switch x := v.(type) {
+		case bool:
+			if !x {
+				n++
+			}
+		case string:
+			s := strings.TrimSpace(x)
+			if s == "否" || strings.EqualFold(s, "false") {
+				n++
+			}
+		}
+	}
+	return n
+}
+
+// countExtRegistered 存档 ext 列的**列级守卫源**（N-034：writable:false 的落账带入列
+// 存于 archive ext_json、不在 ops）：该键有登记值（非 null、非空串）的行数。
+func countExtRegistered(rows []Row, key string) int {
+	n := 0
+	for _, r := range rows {
+		v, ok := r.ArchiveExt[key]
+		if !ok || v == nil {
+			continue
+		}
+		if s, isStr := v.(string); isStr && strings.TrimSpace(s) == "" {
+			continue
+		}
+		n++
 	}
 	return n
 }

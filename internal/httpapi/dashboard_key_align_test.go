@@ -502,8 +502,8 @@ func TestBoard13GrayKeys(t *testing.T) {
 	}
 }
 
-// TestAccountChangedColumnGuard T1b（r3 列级守卫）：`账户变更` 是人工登记列 ——
-// L08 有行但该列**无人登记** ⇒ not_connected（而非 0）；登记后才出数。
+// TestAccountChangedColumnGuard N-034：`L06.收款账户已核验`（SUB 落账带入，存 archive ext）
+// 列级守卫 —— L06 有行但该列**无人登记** ⇒ not_connected（而非 0）；登记「否」后出数。
 func TestAccountChangedColumnGuard(t *testing.T) {
 	e, db, auth := newDashboardApp(t) // 聚合路径
 	ctx := context.Background()
@@ -528,8 +528,8 @@ func TestAccountChangedColumnGuard(t *testing.T) {
 		return nil
 	}
 
-	// ① L08 有行但列未登记 ⇒ not_connected（列级守卫：不是表行数）
-	seedArchive(t, db, "L08", "V-0001", "ou_a", "生产部", "供应商甲", "", "", "2026-09-01", 0)
+	// ① L06 有行但该列未登记（ext 无 payee_account_verified）⇒ not_connected
+	seedArchiveDocExt(t, db, "L06", "SUB-2609-0001", "SUB", "ou_a", "生产部", "", "2026-09-01", 1000, `{}`)
 	m := fetch()
 	if m["status"] != "not_connected" {
 		t.Errorf("列未登记时 status=%v（%v），期望 not_connected —— 0 与「没登记」同形", m["status"], m)
@@ -538,13 +538,83 @@ func TestAccountChangedColumnGuard(t *testing.T) {
 		t.Errorf("列未登记却出数 count=%v", m["count"])
 	}
 
-	// ② 登记一行为「是」⇒ 出数
-	seedOps(t, db, "L08", "V-0001", `{"账户变更":"是"}`)
+	// ② 登记为「否」（＝变更过）⇒ 出数 1；再登记一笔「是」⇒ 仍 1（只数「否」）
+	seedArchiveDocExt(t, db, "L06", "SUB-2609-0001", "SUB", "ou_a", "生产部", "", "2026-09-01", 1000,
+		`{"payee_account_verified": false}`)
 	m = fetch()
 	if v, has := m["count"]; !has || v != float64(1) {
-		t.Errorf("登记后 count=%v（has=%v）, 期望 1（%v）", m["count"], has, m)
+		t.Errorf("登记「否」后 count=%v（has=%v）, 期望 1（%v）", m["count"], has, m)
 	}
 	if m["status"] == "not_connected" {
 		t.Error("已登记仍报 not_connected —— 守卫过严")
+	}
+	seedArchiveDocExt(t, db, "L06", "SUB-2609-0002", "SUB", "ou_a", "生产部", "", "2026-09-02", 1000,
+		`{"payee_account_verified": true}`)
+	m = fetch()
+	if v, has := m["count"]; !has || v != float64(1) {
+		t.Errorf("「是」不应计入 count=%v（has=%v），期望仍 1（%v）", m["count"], has, m)
+	}
+}
+
+// TestAccountChangedBindsSpecFields N-034 第 4 条（本批最重要）：把**实现的取数台账**
+// 与 spec 的 fields 绑起来 —— 「规格说 L06、实现读 L08」这类差异此前在测试上完全无声
+// （[D7] 只校验 spec 内部一致性，管不到实现读了哪张表）。
+//
+//	正例：只在 **L06** 造行（含该列）⇒ 出数；
+//	反例：只在 **L08** 造行（含旧列）⇒ 必须 not_connected ——
+//	实现若读回 L08，此断言必红（L08 的行会给守卫供源、从而出数）。
+func TestAccountChangedBindsSpecFields(t *testing.T) {
+	e, db, auth := newDashboardApp(t)
+	ctx := context.Background()
+	if _, err := seed.SeedQ3Defaults(ctx, db); err != nil {
+		t.Fatalf("播种失败: %v", err)
+	}
+	seedRole(t, db, "ou_pm", "项目总经理", "")
+
+	fetch := func() map[string]any {
+		t.Helper()
+		rec, env := doRequest(e, http.MethodGet, "/api/dashboard/16?period=2026-09", auth.Establish("ou_pm"), "")
+		if rec.Code != http.StatusOK {
+			t.Fatalf("http=%d body=%s", rec.Code, rec.Body.String())
+		}
+		for _, a := range mustData(t, env)["alerts"].([]any) {
+			m, _ := a.(map[string]any)
+			if m["key"] == "account_changed" {
+				return m
+			}
+		}
+		t.Fatal("缺 account_changed")
+		return nil
+	}
+
+	// ★ 前提核对：spec 必须仍指向 L06（若 WB 再次改判，本用例随 spec 演进更新 —— N-034 口径）
+	specBoard := metaTestBundle(t).Dashboard.Board(16)
+	if specBoard == nil {
+		t.Fatal("spec 缺 16 号板")
+	}
+	var specFields []string
+	for _, ind := range specBoard.Indicators {
+		if ind.Key == "account_changed" {
+			specFields = ind.Fields
+		}
+	}
+	if len(specFields) == 0 || specFields[0] != "L06.收款账户已核验" {
+		t.Fatalf("spec account_changed fields=%v, 期望 L06.收款账户已核验（改判后本用例须随 spec 更新）", specFields)
+	}
+
+	// ① 反例先行：只在 L08 造行（旧数据源、旧列）⇒ 出不了数
+	seedArchiveDocExt(t, db, "L08", "V-9999", "CT", "ou_a", "生产部", "供应商", "2026-09-01", 0,
+		`{"账户变更": "是"}`)
+	m := fetch()
+	if _, has := m["count"]; has || m["status"] != "not_connected" {
+		t.Errorf("只在 L08 造行却出数/未灰（%v）—— 实现若读 L08 即中招（本断言是 N-034 的绑定覆盖）", m)
+	}
+
+	// ② 正例：L06 造行且该列登记为「否」⇒ 出数 1
+	seedArchiveDocExt(t, db, "L06", "SUB-2609-0100", "SUB", "ou_a", "生产部", "", "2026-09-01", 1000,
+		`{"payee_account_verified": false}`)
+	m = fetch()
+	if v, has := m["count"]; !has || v != float64(1) {
+		t.Errorf("L06 造行后 count=%v（has=%v），期望 1（%v）", m["count"], has, m)
 	}
 }
