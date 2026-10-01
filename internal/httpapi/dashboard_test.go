@@ -544,30 +544,52 @@ func TestDashboardR1NotConnectedHTTP(t *testing.T) {
 		if ss, _ := data["source_status"].(string); ss == "connected" || ss == "" {
 			t.Errorf("看板 %d source_status=%v, 期望 pending（spec 声明）且必带", id, data["source_status"])
 		}
-		as, _ := data["alerts"].([]any)
-		if len(as) == 0 {
-			t.Fatalf("看板 %d 灰态告警清单为空 —— 指标清单应来自 spec", id)
-		}
-		for _, a := range as {
-			m, _ := a.(map[string]any)
-			// r7 第三态（口径未定）优先于 r1 灰态 —— 两者都不得带数字
-			st, _ := m["status"].(string)
-			if st != "not_connected" && st != "undefined_criteria" {
-				t.Errorf("看板 %d 指标 %v status=%v, 期望 not_connected/undefined_criteria", id, m["key"], st)
-			}
-			if v, has := m["count"]; has {
-				t.Errorf("看板 %d 指标 %v 带 count=%v —— 非 connected 禁止显示数字",
-					id, m["key"], v)
-			}
-		}
-		// cards 不得以 0 值充数
-		if cs, ok := data["cards"].([]any); ok {
-			for _, c := range cs {
-				cm, _ := c.(map[string]any)
-				if cm["status"] != "not_connected" {
-					t.Errorf("看板 %d 卡片 %v 无灰态标记: %v", id, cm["key"], cm)
+		// ★ r8 归位：指标按 render 分布在 cards/charts/alerts —— 三容器遍历逐项断言，
+		//   且总数必须等于 spec 指标数（归位不丢不增；14 号板无 alert 指标、alerts 可为空）。
+		total := 0
+		checkItems := func(container string, items []any) {
+			for _, it := range items {
+				m, _ := it.(map[string]any)
+				total++
+				st, _ := m["status"].(string)
+				if st != "not_connected" && st != "undefined_criteria" {
+					t.Errorf("看板 %d [%s] 指标 %v status=%v, 期望 not_connected/undefined_criteria",
+						id, container, m["key"], st)
+				}
+				if v, has := m["count"]; has {
+					t.Errorf("看板 %d [%s] 指标 %v 带 count=%v —— 非 connected 禁止显示数字",
+						id, container, m["key"], v)
+				}
+				if v, has := m["value"]; has && v != nil {
+					t.Errorf("看板 %d [%s] 指标 %v 带 value=%v —— 非 connected 禁止显示数字",
+						id, container, m["key"], v)
 				}
 			}
+		}
+		cs, _ := data["cards"].([]any)
+		chs, _ := data["charts"].([]any)
+		as, _ := data["alerts"].([]any)
+		checkItems("cards", cs)
+		checkItems("charts", chs)
+		checkItems("alerts", as)
+		// render=supervision 的指标归位到 supervision 块（带 key 的才算一个指标；
+		// 16 号板的整块兜底灰 map 无 key、代表历史结构而非指标，不计数）
+		if sup, ok := data["supervision"].(map[string]any); ok {
+			if v, has := sup["requester_as_handler_count"]; has && v != nil {
+				t.Errorf("看板 %d 灰态 supervision 携带 requester_as_handler_count=%v —— 禁止显示数字", id, v)
+			}
+			if _, isMetric := sup["key"]; isMetric {
+				total++
+				if st, _ := sup["status"].(string); st != "not_connected" && st != "undefined_criteria" {
+					t.Errorf("看板 %d supervision 指标 %v status=%v, 期望灰态", id, sup["key"], sup["status"])
+				}
+			} else if st, _ := sup["status"].(string); st != "not_connected" && st != "undefined_criteria" {
+				t.Errorf("看板 %d supervision 兜底块 status=%v, 期望 not_connected", id, sup["status"])
+			}
+		}
+		specN := len(metaTestBundle(t).Dashboard.Board(id).Indicators)
+		if total != specN {
+			t.Errorf("看板 %d 灰态指标总数 = %d, spec 指标数 = %d（归位丢/增）", id, total, specN)
 		}
 	}
 }

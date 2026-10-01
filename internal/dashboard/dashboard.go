@@ -205,18 +205,16 @@ func (b *Builder) Build(ctx context.Context, id int, period string, q Query) (re
 			// ★ global_rules.r7 第三态：口径未定 ≠ 数据未接入（"标准没给"与"没接上"
 			//   成因不同、渲染必须互不相同 —— 否则读成「没有异常科目」）。
 			if formulaUndefined(ind.Formula) {
-				res.Alerts = append(res.Alerts, map[string]any{
-					"key": ind.Key, "label": ind.Label,
-					"status": "undefined_criteria", "message": "口径未定 —— 待财务/集团给判定标准",
-				})
+				greyOut(&res, ind, "undefined_criteria", "口径未定 —— 待财务/集团给判定标准")
 				continue
 			}
-			res.Alerts = append(res.Alerts, map[string]any{
-				"key": ind.Key, "label": ind.Label,
-				"status": "not_connected", "message": "数据未接入",
-			})
+			greyOut(&res, ind, "not_connected", "数据未接入")
 		}
-		res.Supervision = map[string]any{"status": "not_connected", "message": "数据未接入"}
+		// 板内无 render=supervision 的指标时，历史 supervision 块整体置灰 ——
+		// 否则 emptySupervision() 的 requester_as_handler_count=0 会在灰态冒出「真 0」。
+		if _, isMap := res.Supervision["status"].(string); !isMap || res.Supervision["status"] == "" {
+			res.Supervision = map[string]any{"status": "not_connected", "message": "数据未接入"}
+		}
 		return res, nil
 	}
 	var berr error
@@ -240,6 +238,27 @@ func (b *Builder) Build(ctx context.Context, id int, period string, q Query) (re
 	//   实现侧 desc 只作未注入时的兜底，避免「label 又成第二份真相」）。
 	b.applySpecIndicatorMeta(&res, id)
 	return res, nil
+}
+
+// greyOut 把一个指标按 spec 的 render 归位到灰态容器（r8：形态由规格定 ——
+// 灰态也不例外：card→Cards / chart→Charts / alert→Alerts / supervision→Supervision）。
+func greyOut(res *Result, ind specload.IndicatorDoc, status, message string) {
+	item := map[string]any{
+		"key": ind.Key, "label": ind.Label,
+		"status": status, "message": message,
+	}
+	switch ind.Render {
+	case "card":
+		res.Cards = append(res.Cards, item)
+	case "chart":
+		res.Charts = append(res.Charts, Chart{
+			Key: ind.Key, Status: status, Message: message,
+		})
+	case "supervision":
+		res.Supervision = item
+	default: // alert 及未知（[D4] 已拦未知值；此处兜底走 Alerts 不丢指标）
+		res.Alerts = append(res.Alerts, item)
+	}
 }
 
 // formulaUndefined 指标 formula 声明「未定义」（global_rules.r7 的判据形态：
@@ -393,16 +412,13 @@ func (b *Builder) buildExpense(ctx context.Context, res Result, period string, q
 
 	periodRows := filterByMonth(r05, period)
 
-	// 指标卡：本期费用总额（金额）+ 笔数。
-	var total int64
-	for _, r := range periodRows {
-		total += r.AmountCents
-	}
-	res.Cards = append(res.Cards, moneyCard("expense_total", "本期费用总额", total))
-	res.Cards = append(res.Cards, card("expense_count", "本期笔数", len(periodRows)))
+	// ★ N-033② 裁定（dashboard.json V1.2 · known_gaps 第 8 条）：spec 只列 4 项 ——
+	//   原 expense_total / expense_count / expense_monthly_trend **已删除**（两条权威源
+	//   工具表 R18 + PRD §6.3 都没有它们；monthly_trend 与 by_department 是同一件事的
+	//   两种算法 ⇒ 保留即第二份真相）。业务确需须由 WorkBuddy 补进 spec 再实现。
 
-	// 按部门分布。
-	res.Charts = append(res.Charts, Chart{Key: "expense_by_department", Type: "bar", Series: groupMoney(periodRows, func(r Row) string { return r.Department }, 0)})
+	// 按部门分布（spec key：by_department —— 不再私设 expense_ 前缀，r8）。
+	res.Charts = append(res.Charts, Chart{Key: "by_department", Type: "bar", Series: groupMoney(periodRows, func(r Row) string { return r.Department }, 0)})
 	// 按类别分布（二级明细，回退一级）。
 	cat := func(r Row) string {
 		if strings.TrimSpace(r.PurposeL2) != "" {
@@ -410,23 +426,9 @@ func (b *Builder) buildExpense(ctx context.Context, res Result, period string, q
 		}
 		return r.PurposeL1
 	}
-	res.Charts = append(res.Charts, Chart{Key: "expense_by_category", Type: "pie", Series: groupMoney(periodRows, cat, 0)})
+	res.Charts = append(res.Charts, Chart{Key: "by_category", Type: "pie", Series: groupMoney(periodRows, cat, 0)})
 	// 按供应商分布（TOP5）。
-	res.Charts = append(res.Charts, Chart{Key: "expense_by_supplier", Type: "bar", Series: groupMoney(periodRows, func(r Row) string { return r.Supplier }, 5)})
-
-	// 月度趋势。
-	sumByMonth := map[string]int64{}
-	for _, r := range r05 {
-		if m := monthOf(r.BizDate); m != "" {
-			sumByMonth[m] += r.AmountCents
-		}
-	}
-	months := lastMonths(period, defaultCycleMonths)
-	trend := make([]map[string]any, 0, len(months))
-	for _, m := range months {
-		trend = append(trend, moneyPoint(m, sumByMonth[m]))
-	}
-	res.Charts = append(res.Charts, Chart{Key: "expense_monthly_trend", Type: "line", Series: trend})
+	res.Charts = append(res.Charts, Chart{Key: "by_supplier", Type: "bar", Series: groupMoney(periodRows, func(r Row) string { return r.Supplier }, 5)})
 
 	// 异常科目提示：★ spec 明令「口径未定 —— 我方不编」（known_gaps 第 3 条：
 	// 工具表只给五个字、无判定标准）⇒ 输出**第三态 undefined_criteria**，
@@ -481,7 +483,10 @@ func (b *Builder) buildAnomaly(ctx context.Context, res Result, period string, q
 		guardedAlert("sole_source", "单一来源", countOpsContainsAny(r09, keyMethod, "单一来源", "独家"), len(r09), true),
 
 		// ⑤ 账户变更：现读 L08 标记（★ 数据源与 spec fields「L04.收款账户」的差异已登记议题）。
-		guardedAlert("account_changed", "账户变更", countTruthy(r08, keyAcctChange), len(r08), true),
+		// ★ T1b（r3 列级）：`账户变更` 是**人工登记列** —— 守卫源＝「有登记值」的行数，
+		//   不是 L08 表行数：一行都没登记时显示「数据未接入」而非 0（0 与「没登记」同形）。
+		guardedAlert("account_changed", "账户变更", countTruthy(r08, keyAcctChange),
+			countRegistered(r08, keyAcctChange), true),
 
 		// ⑥ 拆分嫌疑：同供应商 + 同品类月累计 ≥ 1,000 元（且 ≥2 笔）。
 		guardedAlert("split_suspicion", "拆分嫌疑", b.countSplitSuspect(r01), len(r01), true),
@@ -890,6 +895,23 @@ func countOpsContainsAny(rows []Row, key string, subs ...string) int {
 				break
 			}
 		}
+	}
+	return n
+}
+
+// countRegistered 人工登记列的**列级守卫源**：该列有登记值（非 null、非空串）的行数。
+// 「登记为否」也是登记（算源）；整列无人登记 ⇒ 0 ⇒ 守卫触发 not_connected（r3）。
+func countRegistered(rows []Row, key string) int {
+	n := 0
+	for _, r := range rows {
+		v, ok := r.Ops[key]
+		if !ok || v == nil {
+			continue
+		}
+		if s, isStr := v.(string); isStr && strings.TrimSpace(s) == "" {
+			continue
+		}
+		n++
 	}
 	return n
 }

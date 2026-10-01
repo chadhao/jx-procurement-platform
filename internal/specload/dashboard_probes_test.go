@@ -187,3 +187,133 @@ func TestDashboardD6GuardedPasses(t *testing.T) {
 		t.Fatalf("connected + 守卫齐全应通过（r6 判据＝守卫齐全，不是数据到齐）: %v", err)
 	}
 }
+
+// ---------- BATCH-4：[D4]render / [D5] r2 机检 / [D7] 派生量 ----------
+
+// TestDashboardD4RenderProbes render 必填且 ∈ 值域（r8 —— 形态是实现最容易私设的自由度）。
+func TestDashboardD4RenderProbes(t *testing.T) {
+	runProbes(t, []probe{
+		{name: "D4-缺render", expect: "[D4]", mutate: func(t *testing.T, files map[string][]byte) {
+			mutateJSON(t, files, "spec/dashboard.json", func(m map[string]any) {
+				boards, _ := m["dashboards"].([]any)
+				inds, _ := boards[0].(map[string]any)["indicators"].([]any)
+				inds[0].(map[string]any)["render"] = ""
+			})
+		}},
+		{name: "D4-render越域", expect: "[D4]", mutate: func(t *testing.T, files map[string][]byte) {
+			mutateJSON(t, files, "spec/dashboard.json", func(m map[string]any) {
+				boards, _ := m["dashboards"].([]any)
+				inds, _ := boards[0].(map[string]any)["indicators"].([]any)
+				inds[0].(map[string]any)["render"] = "table"
+			})
+		}},
+	})
+}
+
+// TestDashboardD5Probes [D5] 三向（任务包 §2：双向 ＋ 13 不命中的负例）：
+// ① 14/15/16 任一删掉 ops_table_required ⇒ 报 [D5]；② 补回 ⇒ 不报；
+// ③ 13 不命中（source_ledgers=[L12]）⇒ 给不给标记都不报（防判据过宽）。
+func TestDashboardD5Probes(t *testing.T) {
+	strip := func(boardID int) func(*testing.T, map[string][]byte) {
+		return func(t *testing.T, files map[string][]byte) {
+			mutateJSON(t, files, "spec/dashboard.json", func(m map[string]any) {
+				boards, _ := m["dashboards"].([]any)
+				for _, b := range boards {
+					bm, _ := b.(map[string]any)
+					if id, _ := bm["id"].(float64); int(id) == boardID {
+						delete(bm, "ops_table_required")
+					}
+				}
+			})
+		}
+	}
+	runProbes(t, []probe{
+		{name: "D5-14删标记", expect: "[D5]", mutate: strip(14)},
+		{name: "D5-15删标记", expect: "[D5]", mutate: strip(15)},
+		{name: "D5-16删标记", expect: "[D5]", mutate: strip(16)},
+	})
+}
+
+// TestDashboardD5RestoredAndBoard13Passes 对照：补回 ⇒ 过；13 加标记/不加都不报（负例）。
+func TestDashboardD5RestoredAndBoard13Passes(t *testing.T) {
+	base := loadReal(t).ProblemsRaw
+
+	// ② 补回（真 spec 本就带标记 —— 直接加载即通过）
+	if _, err := loadFiles(cloneFiles(base)); err != nil {
+		t.Fatalf("真 spec 应通过 [D5]: %v", err)
+	}
+
+	// ③-1：13 **不加**标记 ⇒ 不报（L12 不在 r2 名单，天然不命中）
+	files := cloneFiles(base)
+	mutateJSON(t, files, "spec/dashboard.json", func(m map[string]any) {
+		boards, _ := m["dashboards"].([]any)
+		for _, b := range boards {
+			bm, _ := b.(map[string]any)
+			if id, _ := bm["id"].(float64); int(id) == 13 {
+				delete(bm, "ops_table_required")
+			}
+		}
+	})
+	if _, err := loadFiles(files); err != nil {
+		t.Fatalf("13 不命中时无标记应通过（防判据过宽）: %v", err)
+	}
+
+	// ③-2：13 **加了**标记也不报（判据只在命中时要求声明，不反向禁止不命中板声明）
+	files = cloneFiles(base)
+	mutateJSON(t, files, "spec/dashboard.json", func(m map[string]any) {
+		boards, _ := m["dashboards"].([]any)
+		for _, b := range boards {
+			bm, _ := b.(map[string]any)
+			if id, _ := bm["id"].(float64); int(id) == 13 {
+				bm["ops_table_required"] = true
+			}
+		}
+	})
+	if _, err := loadFiles(files); err != nil {
+		t.Fatalf("13 加标记不应报错（判据不看不命中板）: %v", err)
+	}
+}
+
+// TestDashboardD7Probes [D7] 三向：漏列必报 / 多列必报 / 还原不报（r9 派生量）。
+func TestDashboardD7Probes(t *testing.T) {
+	runProbes(t, []probe{
+		{name: "D7-16漏列L08", expect: "[D7]", mutate: func(t *testing.T, files map[string][]byte) {
+			mutateJSON(t, files, "spec/dashboard.json", func(m map[string]any) {
+				boards, _ := m["dashboards"].([]any)
+				for _, b := range boards {
+					bm, _ := b.(map[string]any)
+					if id, _ := bm["id"].(float64); int(id) == 16 {
+						leds, _ := bm["source_ledgers"].([]any)
+						kept := []any{}
+						for _, l := range leds {
+							if l == "L08" {
+								continue // 指标 fields 引用了 L08 —— 删掉即漏列
+							}
+							kept = append(kept, l)
+						}
+						bm["source_ledgers"] = kept
+					}
+				}
+			})
+		}},
+		{name: "D7-14多列L05", expect: "[D7]", mutate: func(t *testing.T, files map[string][]byte) {
+			mutateJSON(t, files, "spec/dashboard.json", func(m map[string]any) {
+				boards, _ := m["dashboards"].([]any)
+				for _, b := range boards {
+					bm, _ := b.(map[string]any)
+					if id, _ := bm["id"].(float64); int(id) == 14 {
+						leds, _ := bm["source_ledgers"].([]any)
+						bm["source_ledgers"] = append(leds, "L05") // 没有任何指标引用 L05 —— 多列
+					}
+				}
+			})
+		}},
+	})
+}
+
+// TestDashboardD7Restored 还原（真 spec）⇒ 不报（对照，双向闭环）。
+func TestDashboardD7Restored(t *testing.T) {
+	if _, err := loadFiles(cloneFiles(loadReal(t).ProblemsRaw)); err != nil {
+		t.Fatalf("真 spec（V1.2 派生量已修正）应通过 [D7]: %v", err)
+	}
+}

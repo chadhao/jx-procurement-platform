@@ -8,10 +8,9 @@ const CHART_LABELS = {
   delay_top5: '延期订单 TOP5',
   monthly_amount_trend: '月度金额趋势',
   supplier_monthly_accum_top: '本月供应商 TOP',
-  expense_by_department: '部门费用分布',
-  expense_by_category: '费用类别分布',
-  expense_by_supplier: '供应商费用分布',
-  expense_monthly_trend: '费用月度趋势',
+  by_department: '部门费用分布',
+  by_category: '费用类别分布',
+  by_supplier: '供应商费用分布',
 }
 
 /**

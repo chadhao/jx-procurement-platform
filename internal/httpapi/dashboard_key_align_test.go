@@ -141,13 +141,17 @@ func TestDashboardUndefinedCriteriaGray(t *testing.T) {
 		t.Fatalf("http=%d body=%s", rec.Code, rec.Body.String())
 	}
 	data := mustData(t, env)
+	// ★ r8 归位：render=alert 的只进 alerts、render=chart 的进 charts —— 15 号板灰态下
+	//   alerts 应恰剩 abnormal_subject_hint，by_* 3 个在 charts 且带 not_connected。
 	as, _ := data["alerts"].([]any)
 	byKey := map[string]map[string]any{}
 	for _, a := range as {
 		m, _ := a.(map[string]any)
 		byKey[m["key"].(string)] = m
 	}
-	// abnormal_subject_hint：第三态（口径未定），不得是「数据未接入」
+	if len(as) != 1 {
+		t.Errorf("15 灰态 alerts = %d, want 1（render=alert 只有 abnormal_subject_hint；chart 指标不得混入）", len(as))
+	}
 	abn, ok := byKey["abnormal_subject_hint"]
 	if !ok {
 		t.Fatalf("缺 spec key abnormal_subject_hint: %v", byKey)
@@ -158,11 +162,17 @@ func TestDashboardUndefinedCriteriaGray(t *testing.T) {
 	if msg, _ := abn["message"].(string); msg == "" || msg == "数据未接入" {
 		t.Errorf("口径未定文案必须与「数据未接入」不同: %q", abn["message"])
 	}
-	// 其余 3 个分布指标：not_connected，且文案不同
+	// 其余 3 个分布指标（render=chart）：归位到 charts，not_connected 且文案不同
+	cs, _ := data["charts"].([]any)
+	chartByKey := map[string]map[string]any{}
+	for _, c := range cs {
+		m, _ := c.(map[string]any)
+		chartByKey[m["key"].(string)] = m
+	}
 	for _, k := range []string{"by_department", "by_category", "by_supplier"} {
-		m, ok := byKey[k]
+		m, ok := chartByKey[k]
 		if !ok {
-			t.Errorf("缺指标 %s", k)
+			t.Errorf("charts 缺 render=chart 指标 %s（归位错误）: %v", k, chartByKey)
 			continue
 		}
 		if m["status"] != "not_connected" {
@@ -316,5 +326,225 @@ func TestDashboardNoGuardRealZero(t *testing.T) {
 	}
 	if cycle["status"] != "not_connected" {
 		t.Errorf("avg_cycle_days status=%v, 期望 not_connected（须守卫项）", cycle["status"])
+	}
+}
+
+// ---------- T1c/T3：13/14/15 双向 key 验收 ＋ render 归位 ----------
+
+// renderKeysOf 按 render 从 spec 取该形态的指标 key 集合。
+func renderKeysOf(t *testing.T, boardID int, render string) map[string]bool {
+	t.Helper()
+	b := metaTestBundle(t).Dashboard.Board(boardID)
+	if b == nil {
+		t.Fatalf("spec 缺看板 %d", boardID)
+	}
+	out := map[string]bool{}
+	for _, ind := range b.Indicators {
+		if ind.Render == render {
+			out[ind.Key] = true
+		}
+	}
+	return out
+}
+
+func keysOfItems(items []any) []string {
+	out := []string{}
+	for _, it := range items {
+		if m, ok := it.(map[string]any); ok {
+			if k, ok := m["key"].(string); ok {
+				out = append(out, k)
+			}
+		}
+	}
+	return out
+}
+
+// TestRenderPlacementBoard14 聚合路径 14：每指标按 render 归位 ——
+// card→cards、chart→charts、alert→alerts（应为空）、supervision→supervision 块；
+// 且各容器 key 集合与 spec 该形态集合**完全一致**（spec ⊆ 输出 ＋ 等量）。
+func TestRenderPlacementBoard14(t *testing.T) {
+	e, db, auth := newDashboardApp(t) // 不注 Spec ⇒ 聚合路径
+	if _, err := seed.SeedQ3Defaults(context.Background(), db); err != nil {
+		t.Fatalf("播种失败: %v", err)
+	}
+	seedRole(t, db, "ou_pm", "项目总经理", "")
+
+	rec, env := doRequest(e, http.MethodGet, "/api/dashboard/14?period=2026-09", auth.Establish("ou_pm"), "")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("http=%d body=%s", rec.Code, rec.Body.String())
+	}
+	data := mustData(t, env)
+
+	// card / chart / alert：容器 key 与 spec 逐 key 集合相等
+	assertAlertKeysAligned(t, keysOfItems(data["cards"].([]any)), renderKeysOf(t, 14, "card"))
+	assertAlertKeysAligned(t, keysOfItems(data["charts"].([]any)), renderKeysOf(t, 14, "chart"))
+	alertKeys := keysOfItems(data["alerts"].([]any))
+	assertAlertKeysAligned(t, alertKeys, renderKeysOf(t, 14, "alert")) // 14 无 alert ⇒ 恰为空
+
+	// supervision：render=supervision 的 1 个指标 → Supervision 块必须存在且有集中度数据结构
+	if len(renderKeysOf(t, 14, "supervision")) != 1 {
+		t.Fatal("spec 14 应恰有 1 个 render=supervision 指标（前提破坏？spec 演进请更新本用例）")
+	}
+	sup, ok := data["supervision"].(map[string]any)
+	if !ok {
+		t.Fatal("14 号板缺 supervision 块（purchaser_concentration 未归位）")
+	}
+	if _, has := sup["handler_concentration"]; !has {
+		t.Errorf("supervision 块缺集中度结构（归位后仍是历史结构键）: %v", sup)
+	}
+	// 反向：purchaser_concentration 不得以 key 形态出现在 cards/charts/alerts（归位=只此一处）
+	for _, container := range []struct {
+		name string
+		keys []string
+	}{{"cards", keysOfItems(data["cards"].([]any))},
+		{"charts", keysOfItems(data["charts"].([]any))},
+		{"alerts", keysOfItems(data["alerts"].([]any))}} {
+		for _, k := range container.keys {
+			if k == "purchaser_concentration" {
+				t.Errorf("purchaser_concentration 出现在 %s —— render=supervision 应只归位到 supervision 块", container.name)
+			}
+		}
+	}
+}
+
+// TestRenderPlacementBoard15 聚合路径 15：恰 4 指标 —— 3 chart ＋ 1 alert，
+// **cards 必须为空**（N-033② 裁定删除 expense_total/expense_count），
+// 且 6 个旧名（3 个改名前 ＋ 3 个已删）逐个必红。
+func TestRenderPlacementBoard15(t *testing.T) {
+	e, db, auth := newDashboardApp(t)
+	if _, err := seed.SeedQ3Defaults(context.Background(), db); err != nil {
+		t.Fatalf("播种失败: %v", err)
+	}
+	seedRole(t, db, "ou_pm", "项目总经理", "")
+	seedArchive(t, db, "L05", "EX-2609-1", "ou_a", "生产部", "", "备品备件", "耗材", "2026-09-10", 500000)
+
+	rec, env := doRequest(e, http.MethodGet, "/api/dashboard/15?period=2026-09", auth.Establish("ou_pm"), "")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("http=%d body=%s", rec.Code, rec.Body.String())
+	}
+	data := mustData(t, env)
+
+	// cards 必须为空（被裁定删除的 expense_total / expense_count 不得藏进别的 key）
+	if cs, _ := data["cards"].([]any); len(cs) != 0 {
+		t.Errorf("15 号板 cards 应为空（spec 无 render=card 指标），实际: %v", cs)
+	}
+	// charts 恰 3 个 spec key；alerts 恰 abnormal_subject_hint
+	assertAlertKeysAligned(t, keysOfItems(data["charts"].([]any)), renderKeysOf(t, 15, "chart"))
+	assertAlertKeysAligned(t, keysOfItems(data["alerts"].([]any)), renderKeysOf(t, 15, "alert"))
+
+	// 总数恰 4（不多不少 —— 「删掉的 3 个」没有藏在任何容器）
+	total := len(keysOfItems(data["cards"].([]any))) +
+		len(keysOfItems(data["charts"].([]any))) +
+		len(keysOfItems(data["alerts"].([]any)))
+	if total != 4 {
+		t.Errorf("15 号板指标总数 = %d, want 4（删除裁定的执行验证）", total)
+	}
+
+	// 反向（鉴别力）：6 个旧名逐个注入断言必须红
+	spec15 := map[string]bool{}
+	for k := range renderKeysOf(t, 15, "chart") {
+		spec15[k] = true
+	}
+	for k := range renderKeysOf(t, 15, "alert") {
+		spec15[k] = true
+	}
+	oldNames := []string{
+		"expense_by_department", "expense_by_category", "expense_by_supplier", // 改名前
+		"expense_total", "expense_count", "expense_monthly_trend", // 已裁定删除
+	}
+	for _, old := range oldNames {
+		if spec15[old] {
+			t.Fatalf("前提破坏：旧名 %q 竟在 spec 中", old)
+		}
+		if !alertKeyMismatch([]string{old}, spec15) {
+			t.Errorf("旧名 %q 未被断言抓出 —— 无鉴别力", old)
+		}
+	}
+}
+
+// TestBoard13GrayKeys 13（not_enabled 灰态）：4 个指标按 render 归位且全部灰态
+// （spec 指标 key 天然进容器 —— 灰态路径用 spec key，本用例锁「13 也在覆盖内」）。
+func TestBoard13GrayKeys(t *testing.T) {
+	e, db, auth, _ := newAdminTestApp(t) // 注入 Spec ⇒ 灰态
+	if _, err := seed.SeedQ3Defaults(context.Background(), db); err != nil {
+		t.Fatalf("播种失败: %v", err)
+	}
+	seedRole(t, db, "ou_pm", "项目总经理", "")
+
+	rec, env := doRequest(e, http.MethodGet, "/api/dashboard/13?period=2026-09", auth.Establish("ou_pm"), "")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("http=%d body=%s", rec.Code, rec.Body.String())
+	}
+	data := mustData(t, env)
+	if ss, _ := data["source_status"].(string); ss != "not_enabled" {
+		t.Errorf("13 source_status=%v, want not_enabled", data["source_status"])
+	}
+	total := 0
+	for _, container := range []string{"cards", "charts", "alerts"} {
+		items, _ := data[container].([]any)
+		got := keysOfItems(items)
+		total += len(got)
+		for _, k := range got {
+			// 每个输出 key 必须在 spec 13 中（13 灰态全 spec key）
+			found := false
+			for _, sk := range []string{"budget_progress_by_subject", "overspend_warning_count", "monthly_execution_rate", "yoy"} {
+				if sk == k {
+					found = true
+				}
+			}
+			if !found {
+				t.Errorf("13 输出 key %q 不在 spec 中", k)
+			}
+		}
+	}
+	if total != 4 {
+		t.Errorf("13 灰态指标总数 = %d, want 4", total)
+	}
+}
+
+// TestAccountChangedColumnGuard T1b（r3 列级守卫）：`账户变更` 是人工登记列 ——
+// L08 有行但该列**无人登记** ⇒ not_connected（而非 0）；登记后才出数。
+func TestAccountChangedColumnGuard(t *testing.T) {
+	e, db, auth := newDashboardApp(t) // 聚合路径
+	ctx := context.Background()
+	if _, err := seed.SeedQ3Defaults(ctx, db); err != nil {
+		t.Fatalf("播种失败: %v", err)
+	}
+	seedRole(t, db, "ou_pm", "项目总经理", "")
+
+	fetch := func() map[string]any {
+		t.Helper()
+		rec, env := doRequest(e, http.MethodGet, "/api/dashboard/16?period=2026-09", auth.Establish("ou_pm"), "")
+		if rec.Code != http.StatusOK {
+			t.Fatalf("http=%d body=%s", rec.Code, rec.Body.String())
+		}
+		for _, a := range mustData(t, env)["alerts"].([]any) {
+			m, _ := a.(map[string]any)
+			if m["key"] == "account_changed" {
+				return m
+			}
+		}
+		t.Fatal("缺 account_changed")
+		return nil
+	}
+
+	// ① L08 有行但列未登记 ⇒ not_connected（列级守卫：不是表行数）
+	seedArchive(t, db, "L08", "V-0001", "ou_a", "生产部", "供应商甲", "", "", "2026-09-01", 0)
+	m := fetch()
+	if m["status"] != "not_connected" {
+		t.Errorf("列未登记时 status=%v（%v），期望 not_connected —— 0 与「没登记」同形", m["status"], m)
+	}
+	if _, has := m["count"]; has {
+		t.Errorf("列未登记却出数 count=%v", m["count"])
+	}
+
+	// ② 登记一行为「是」⇒ 出数
+	seedOps(t, db, "L08", "V-0001", `{"账户变更":"是"}`)
+	m = fetch()
+	if v, has := m["count"]; !has || v != float64(1) {
+		t.Errorf("登记后 count=%v（has=%v）, 期望 1（%v）", m["count"], has, m)
+	}
+	if m["status"] == "not_connected" {
+		t.Error("已登记仍报 not_connected —— 守卫过严")
 	}
 }
