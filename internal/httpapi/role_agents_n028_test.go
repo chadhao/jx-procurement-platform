@@ -204,6 +204,24 @@ func TestAgentAuditAndDeleteRefusedAndListContract(t *testing.T) {
 	if !got["approve_petty_cash"] || !got["disburse"] {
 		t.Errorf("denied_node_ids = %v（应含两个备付金节点）", denied)
 	}
+
+	// ★ N-037：筛选参数统一为 `state`（spec/authority.json 字段名唯一真相）——
+	//   `?state=active` 生效；旧名 `?status=` **不再被识别**（返回全量而非过滤结果）。
+	rec3, env3 := doRequest(e, http.MethodGet, "/api/admin/role-agents?state=retired", admin, "")
+	if rec3.Code != http.StatusOK {
+		t.Fatalf("?state=retired 失败 %d", rec3.Code)
+	}
+	if items, _ := env3.Data.(map[string]any)["items"].([]any); len(items) != 0 {
+		t.Errorf("?state=retired 应过滤为 0 条（刚建的是 active），实为 %d", len(items))
+	}
+	// 旧名 status 不再识别：status=retired 若仍生效应返回 0 条；现应返回全量 1 条
+	rec4, env4 := doRequest(e, http.MethodGet, "/api/admin/role-agents?status=retired", admin, "")
+	if rec4.Code != http.StatusOK {
+		t.Fatalf("?status= 失败 %d", rec4.Code)
+	}
+	if items, _ := env4.Data.(map[string]any)["items"].([]any); len(items) != 1 {
+		t.Errorf("旧名 ?status=retired 应**不再过滤**（返回全量 1 条），实为 %d —— 双名未收敛或误认了旧参", len(items))
+	}
 }
 
 // ⑥ 负向守卫：配了代理人后令本人不可用 ⇒ 解析仍 unresolved/block（不替补）

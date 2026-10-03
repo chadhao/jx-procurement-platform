@@ -231,6 +231,72 @@ func (d Deps) handleGetInstance(c echo.Context) error {
 	return ok(c, row)
 }
 
+// handleInstancePrefill GET /api/instances/:code/prefill?keys=a,b
+//
+// 关联单预填（B6 · CT#usage_category 从已批准 PR 带入）：从实例 ext_json 取
+// 指定键的值 —— ★ 键白名单由 **spec 驱动**（全表单 `source=="system"` 字段），
+// 再排除四个**非 related 带入型**键（其生命周期各自独立，不是从关联单来的）：
+//
+//	biz_no（提交后生成）· related_biz_no（用户输入源本身）·
+//	purchaser / approval_record_ref（审批时点产生）。
+//
+// ★ 越权复用 instanceAllowed（与 detail 同口径）；键不在白名单 ⇒ 40000（不泄漏任意 ext 键）。
+func (d Deps) handleInstancePrefill(c echo.Context) error {
+	idn, _, err := d.identityFrom(c)
+	if err != nil {
+		return fail(c, http.StatusUnauthorized, codeRoleMapped, "未映射角色或会话失效")
+	}
+	ctx := c.Request().Context()
+	rule, _ := d.Perm.Resolve(ctx, "api:instances", idn)
+	code := c.Param("code")
+	if allowed, err := d.instanceAllowed(ctx, rule, idn, code); err != nil || !allowed {
+		return fail(c, http.StatusForbidden, codeRowForbidden, "越权访问：该实例不在你的可见范围内")
+	}
+	inst, err := d.DB.GetInstance(ctx, code)
+	if err != nil {
+		return fail(c, http.StatusNotFound, codeNotFound, "实例不存在")
+	}
+	// 键白名单：spec 全表单 source=system 字段（减去 related 带入的排除集）
+	exclude := map[string]bool{
+		"biz_no": true, "related_biz_no": true, "purchaser": true, "approval_record_ref": true,
+	}
+	allowedKeys := map[string]bool{}
+	for _, form := range d.Spec.Forms {
+		for _, sec := range form.Sections {
+			for _, f := range sec.Fields {
+				if f.Source == "system" && !exclude[f.Name] {
+					allowedKeys[f.Name] = true
+				}
+			}
+		}
+	}
+	requested := strings.Split(c.QueryParam("keys"), ",")
+	if len(requested) == 0 || c.QueryParam("keys") == "" {
+		return fail(c, http.StatusBadRequest, codeBadRequest, "keys 不能为空（逗号分隔）")
+	}
+	ext := map[string]any{}
+	if strings.TrimSpace(inst.ExtJSON) != "" {
+		if err := json.Unmarshal([]byte(inst.ExtJSON), &ext); err != nil {
+			return fail(c, http.StatusInternalServerError, codeInternal, "实例 ext_json 损坏")
+		}
+	}
+	out := map[string]any{}
+	for _, k := range requested {
+		k = strings.TrimSpace(k)
+		if k == "" {
+			continue
+		}
+		if !allowedKeys[k] {
+			// ★ 白名单外不回显（防探测任意 ext 键 —— 同「字段级不泄漏」口径）
+			return fail(c, http.StatusBadRequest, codeBadRequest, "键不在可预填白名单内（须为 spec 中 source=system 的关联带入型字段）: "+k)
+		}
+		if v, ok := ext[k]; ok && v != nil {
+			out[k] = v
+		}
+	}
+	return ok(c, map[string]any{"prefill": out})
+}
+
 func (d Deps) handleInstanceFields(c echo.Context) error {
 	idn, _, err := d.identityFrom(c)
 	if err != nil {

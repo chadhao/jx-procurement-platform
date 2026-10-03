@@ -273,6 +273,21 @@ sequenceDiagram
 
 > **设计不变量**：字段以键值对返回，**不依赖字段顺序**；模板新增/改名不报错（TC-23）。
 
+#### `GET /api/instances/{instance_code}/prefill`（关联单预填 · B6 / UI 债 C）
+
+> ★ CT `usage_category_l1/l2`（`source=system`）从**已批准的 PR** 带入（`spec/forms/CT.json` rule：可改但须在审批意见中说明理由）。
+> ★ 取值源＝该实例 **`ext_json`**（我方提交路径落的字段）——★ 不依赖已作废的 `t_instance_field`（见上一节 fields 的作废声明）。
+
+| 项 | 内容 |
+|---|---|
+| 用途 | 按 `keys` 回显该实例 `ext_json` 中**可预填键**的值（缺省键不出现） |
+| 权限要求 | 行级过滤（复用 instance detail 的 `instanceAllowed` 口径） |
+| 路径参数 | `instance_code` |
+| 查询参数 | `keys`（**必填**，逗号分隔）—— ★ 白名单＝spec 全表单 `source=="system"` 字段**减**关联带入排除集 `biz_no`·`related_biz_no`·`purchaser`·`approval_record_ref`（四者各有生命周期，非 related 来源）；白名单外 ⇒ 40000（**不泄漏任意 ext 键**） |
+| 响应字段 | `{prefill{}}`（仅含请求且在 ext 中存在的键） |
+| 错误码 | 40000（keys 空 / 键不在白名单）、40301、40400 |
+| 关联 FR | FR-M9-03（CT 发起页 · B6 带入定案 2026-09-30） |
+
 #### `GET /api/instances/{instance_code}/timeline`
 
 | 项 | 内容 |

@@ -87,7 +87,7 @@ func (d Deps) validateAdjacentAgent(ctx context.Context, roleKey, agentOpenID st
 	return 0, "", true
 }
 
-// handleAdminRoleAgentsList GET /api/admin/role-agents?role_key=&status=
+// handleAdminRoleAgentsList GET /api/admin/role-agents?role_key=&state=
 func (d Deps) handleAdminRoleAgentsList(c echo.Context) error {
 	if _, granted := d.requireSysAdmin(c); !granted {
 		return nil
@@ -96,7 +96,9 @@ func (d Deps) handleAdminRoleAgentsList(c echo.Context) error {
 		return nil
 	}
 	rows, err := d.DB.ListRoleAgents(c.Request().Context(),
-		strings.TrimSpace(c.QueryParam("role_key")), strings.TrimSpace(c.QueryParam("status")))
+		// ★ N-037：筛选参数统一为 `state`（spec/authority.json 字段名唯一真相）——
+		//   原 `status` 与响应/请求体的 `state` 同义双名，是接口契约缺陷。
+		strings.TrimSpace(c.QueryParam("role_key")), strings.TrimSpace(c.QueryParam("state")))
 	if err != nil {
 		return fail(c, http.StatusInternalServerError, codeInternal, err.Error())
 	}

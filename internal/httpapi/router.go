@@ -136,6 +136,7 @@ func NewRouter(d Deps) *echo.Echo {
 	api.GET("/instances", d.handleListInstances)
 	api.GET("/instances/:code", d.handleGetInstance)
 	api.GET("/instances/:code/fields", d.handleInstanceFields)
+	api.GET("/instances/:code/prefill", d.handleInstancePrefill) // B6 关联单预填（usage_category 等 source=system 带入键）
 	api.GET("/instances/:code/timeline", d.handleInstanceTimeline)
 	// 附件（B39）：元数据列表 + 按需下载（行级以所属实例为准）。
 	api.GET("/instances/:code/attachments", d.handleInstanceAttachments)

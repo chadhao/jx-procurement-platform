@@ -10,6 +10,7 @@ import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import {
   fetchApprovalMeta, previewApproval, submitApproval, uploadApprovalAttachment,
+  fetchInstancePrefill,
 } from '../api'
 
 const props = defineProps({ docType: { type: String, default: '' } })
@@ -241,6 +242,34 @@ onMounted(async () => {
 })
 
 // 关键事实变化 ⇒ 重算预览
+// ---- B6 · CT usage_category 从关联 PR 带入（UI 债 C）----
+// ★ spec：CT#usage_category_l1/l2 source=system、rule「从已批准的 PR 带入、可改」——
+//   回填后用户仍可改（可改但须在审批意见中说明理由 —— 判据/审批侧管，不在前端锁死）。
+// ★ 键集合与后端白名单**同 spec 源**：source=system ∧ 非 related 带入排除集
+//   （biz_no/related_biz_no/purchaser/approval_record_ref 各有生命周期，不是 related 来的）。
+// ★ related 非 PR 号 / 拉取失败 ⇒ 静默不回填（关联单存在性由提交期判据管，此处不越权报错）。
+const prefillExclude = new Set(['biz_no', 'related_biz_no', 'purchaser', 'approval_record_ref'])
+
+async function fillFromRelated(f) {
+  if (!f || f.name !== 'related_biz_no') return
+  if (!curForm.value) return
+  const rel = String(fields.related_biz_no || '').trim()
+  if (!/^PR-\d{4}-\d{4}$/.test(rel)) return
+  const keys = visibleFields.value
+    .filter((x) => x.source === 'system' && !prefillExclude.has(x.name) && x.name !== f.name)
+    .map((x) => x.name)
+  if (!keys.length) return
+  try {
+    const data = await fetchInstancePrefill(rel, keys)
+    const pf = (data && data.prefill) || {}
+    for (const k of Object.keys(pf)) {
+      if (pf[k] !== undefined && pf[k] !== null) fields[k] = pf[k]
+    }
+  } catch {
+    // 静默：单号不存在 / 无权限 / 白名单外 —— 不阻断起草（提交期判据兜底）
+  }
+}
+
 watch(() => [curDocType.value, fields.amount_cents, fields.usage_category_l1, fields.payment_method_input], schedulePreview)
 </script>
 
@@ -397,6 +426,7 @@ watch(() => [curDocType.value, fields.amount_cents, fields.usage_category_l1, fi
               class="inp"
               type="text"
               :placeholder="f.required_conditional ? `条件必填：${f.required_conditional}` : ''"
+              @change="fillFromRelated(f)"
             >
           </label>
         </template>
