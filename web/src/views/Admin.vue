@@ -15,6 +15,7 @@ import {
   fetchRoleAgents,
   createRoleAgent,
   patchRoleAgent,
+  fetchOrgUsers,
 } from '../api'
 import { session } from '../store'
 import { fmtTime } from '../utils'
@@ -101,6 +102,16 @@ async function saveRules() {
 
 // ---- 人员角色 ----
 const users = ref([])
+// ★ N-042 / FR-M5-10：镜像选人数据源（GET /api/org/users —— **不得手填 open_id**）。
+const orgUsers = ref([])
+async function loadOrgUsers() {
+  try {
+    const data = await fetchOrgUsers()
+    orgUsers.value = (data && data.items) || []
+  } catch (e) {
+    err.value = e.message || String(e)
+  }
+}
 const newUser = reactive({ open_id: '', name: '', role: '', department: '', extra_depts: '', active: true })
 
 async function loadUsers() {
@@ -266,7 +277,7 @@ async function saveAgent(row) {
 }
 
 async function loadAll() {
-  await Promise.all([loadRules(), loadUsers(), loadConstTables(), loadAgents()])
+  await Promise.all([loadRules(), loadUsers(), loadConstTables(), loadAgents(), loadOrgUsers()])
   await loadConstants()
 }
 
@@ -368,7 +379,12 @@ onMounted(loadAll)
       <div v-if="activeTab === 'users'" class="panel">
         <h2>人员角色（open_id ↔ 角色 / 部门 / 分管部门）</h2>
         <div class="toolbar">
-          <input v-model="newUser.open_id" placeholder="open_id" />
+          <select v-model="newUser.open_id">
+            <option value="" disabled>点选人员（镜像）</option>
+            <option v-for="u in orgUsers" :key="u.open_id" :value="u.open_id">
+              {{ u.name || u.open_id }}（{{ u.department || '—' }}）· {{ u.open_id }}
+            </option>
+          </select>
           <input v-model="newUser.name" placeholder="姓名" />
           <select v-model="newUser.role">
             <option value="">选择角色</option>

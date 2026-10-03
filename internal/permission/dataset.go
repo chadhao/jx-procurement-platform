@@ -104,31 +104,17 @@ func RowFilter(alias string, scope RowScope, id Identity) Condition {
 		if me == "" {
 			return Condition{SQL: "1=0"}
 		}
-		// ★ 双源匹配（2026-09-26 修正）：指定经办人可能落在「存档表 ext_json」或「运营表 ops_json」
-		// 任一处（口径 Q14 未定）→ 只看存档表会让「采购经办人」看到 0 条记录。两者命中其一即可见。
-		return Condition{
-			SQL: "(" + jsonScalarEquals(col("ext_json"), "$.assigned_open_id") + " OR EXISTS (" +
-				"SELECT 1 FROM t_ledger_ops o WHERE o.ledger_type = " + col("ledger_type") +
-				" AND o.biz_no = " + col("biz_no") +
-				" AND " + jsonScalarEquals("o.ops_json", "$.assigned_open_id") + "))",
-			Args: []any{me, me},
-		}
+		// ★ N-042：0019 补列后改读**规范列**（docs/19 §3.3「台账侧同款」）——
+		//   精确等值；open_id 存在前缀包含关系（ou_ab 是 ou_abc 前缀），绝不用 LIKE。
+		//   历史行（列 NULL）不命中＝fail-closed（宁可少不可多）。
+		return Condition{SQL: col("designated_open_id") + " = ?", Args: []any{me}}
 
 	case ScopeParticipated:
 		if me == "" {
 			return Condition{SQL: "1=0"}
 		}
-		// ★ 同上：验收人集合同样双源匹配（存档 ext_json 或运营表 ops_json）。
-		// ★★ 必须是**逐元素精确匹配**，不得用 `LIKE '%me%'`：
-		//	open_id 之间存在前缀包含关系（如 "ou_ab" 是 "ou_abc" 的前缀），子串匹配会把
-		//	「只含 ou_abc」的记录判给 "ou_ab" → **越权可见**。
-		return Condition{
-			SQL: "(" + jsonArrayContains(col("ext_json"), "$.acceptors") + " OR EXISTS (" +
-				"SELECT 1 FROM t_ledger_ops o WHERE o.ledger_type = " + col("ledger_type") +
-				" AND o.biz_no = " + col("biz_no") +
-				" AND " + jsonArrayContains("o.ops_json", "$.acceptors") + "))",
-			Args: []any{me, me},
-		}
+		// ★ N-042：规范列 acceptors（JSON 数组串或普通文本）——逐元素精确匹配，绝不用 LIKE。
+		return Condition{SQL: textOrJSONContains(col("acceptors")), Args: []any{me, me}}
 
 	default: // ScopeDeny 或未知 → 拒绝
 		return Condition{SQL: "1=0"}
@@ -175,12 +161,25 @@ func textOrJSONContains(col string) string {
 		col + ",'$') WHERE json_each.value = ?) ELSE " + col + " = ? END)"
 }
 
-// RowFilterForInstances 针对 t_instance（无 ext_json 列）的行过滤。
-// ASSIGNED / PARTICIPATED 依赖运营扩展字段，在实例主表不适用，一律拒绝（1=0）。
+// RowFilterForInstances 针对 t_instance（规范列承载）的行过滤。
+// ★ N-042：0019 补列后 ASSIGNED/PARTICIPATED 不再 1=0 ——
+//
+//	ASSIGNED     → designated_open_id = me（精确等值；open_id 有前缀包含关系，绝不 LIKE）
+//	PARTICIPATED → textOrJSONContains("acceptors")（JSON 数组或普通文本均精确匹配）
+//	空身份仍 fail-closed（1=0）。
 func RowFilterForInstances(scope RowScope, id Identity) Condition {
+	me := strings.TrimSpace(id.OpenID)
 	switch scope {
-	case ScopeAssigned, ScopeParticipated:
-		return Condition{SQL: "1=0"}
+	case ScopeAssigned:
+		if me == "" {
+			return Condition{SQL: "1=0"}
+		}
+		return Condition{SQL: "designated_open_id = ?", Args: []any{me}}
+	case ScopeParticipated:
+		if me == "" {
+			return Condition{SQL: "1=0"}
+		}
+		return Condition{SQL: textOrJSONContains("acceptors"), Args: []any{me, me}}
 	default:
 		return RowFilter("", scope, id)
 	}

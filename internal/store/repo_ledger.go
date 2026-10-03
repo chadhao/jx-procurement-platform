@@ -26,8 +26,9 @@ func upsertArchive(ctx context.Context, q execer, a *LedgerArchive) error {
 	_, err := q.ExecContext(ctx, `
 INSERT INTO t_ledger_archive
   (ledger_type, biz_no, instance_code, source_doc_type, department, applicant_open_id, submitter_open_id,
-   amount_cents, supplier, supplier_norm, purpose_class_l1, purpose_class_l2, biz_date, ext_json, created_at, updated_at)
-VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+   amount_cents, supplier, supplier_norm, purpose_class_l1, purpose_class_l2, biz_date,
+   designated_open_id, acceptors, ext_json, created_at, updated_at)
+VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
 ON CONFLICT(ledger_type, biz_no) DO UPDATE SET
   instance_code = COALESCE(NULLIF(excluded.instance_code,''), t_ledger_archive.instance_code),
   source_doc_type = COALESCE(NULLIF(excluded.source_doc_type,''), t_ledger_archive.source_doc_type),
@@ -51,6 +52,9 @@ ON CONFLICT(ledger_type, biz_no) DO UPDATE SET
   purpose_class_l1 = COALESCE(NULLIF(excluded.purpose_class_l1,''), t_ledger_archive.purpose_class_l1),
   purpose_class_l2 = COALESCE(NULLIF(excluded.purpose_class_l2,''), t_ledger_archive.purpose_class_l2),
   biz_date = COALESCE(NULLIF(excluded.biz_date,''), t_ledger_archive.biz_date),
+  -- ★ N-042 权限位点：派生数据 upsert 时刷新（非空覆盖、空保留 —— 同 department 形态）
+  designated_open_id = COALESCE(NULLIF(excluded.designated_open_id,''), t_ledger_archive.designated_open_id),
+  acceptors = COALESCE(NULLIF(excluded.acceptors,''), t_ledger_archive.acceptors),
   -- ★ R19：ext_json 承载**变更链检索**（contract_no 等），无条件覆盖会被 "{}" 抹掉。
   --   改为「空不覆盖」：新值为 NULL / '' / '{}' 时保留既有值，非空才正常覆盖。
   ext_json = CASE
@@ -65,6 +69,7 @@ ON CONFLICT(ledger_type, biz_no) DO UPDATE SET
 		//   这样「列加了就一定有写入者」，不会重演 biz_date / department 那种「列存在但没人写」。
 		nullStr(a.Supplier), nullStr(normalize.Supplier(a.Supplier)),
 		nullStr(a.PurposeClassL1), nullStr(a.PurposeClassL2), nullStr(a.BizDate),
+		nullStr(a.DesignatedOpenID), nullStr(a.Acceptors),
 		defaultStr(a.ExtJSON, "{}"), fmtTime(a.CreatedAt), fmtTime(a.UpdatedAt))
 	if err != nil {
 		return fmt.Errorf("store: 写入台账存档失败: %w", err)

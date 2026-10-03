@@ -627,6 +627,26 @@ func (d Deps) handleApprovalSubmit(c echo.Context) error {
 	if verr := d.injectPCSSSystemFields(ctx, &body); verr != nil {
 		return fail(c, http.StatusBadRequest, codeBadRequest, verr.Error())
 	}
+	// ---- N-042 权限位点：GR acceptors（PARTICIPATED）—— member_* 非空值收集为数组，
+	// 进 fields ⇒ Submit 时随 ext 落库；instance 规范列在 Submit 成功后同批写（见下）。
+	grAcceptorsJSON := ""
+	if body.DocType == "GR" {
+		if body.Fields == nil {
+			body.Fields = map[string]any{}
+		}
+		members := []any{}
+		for _, k := range []string{"member_purchaser", "member_qc", "member_warehouse", "member_ops"} {
+			if v, _ := body.Fields[k].(string); strings.TrimSpace(v) != "" {
+				members = append(members, strings.TrimSpace(v))
+			}
+		}
+		if len(members) > 0 {
+			body.Fields["acceptors"] = members
+			if b, merr := json.Marshal(members); merr == nil {
+				grAcceptorsJSON = string(b)
+			}
+		}
+	}
 
 	// ---- 幂等（Idempotency-Key；d9 照 submission 模式）----
 	idemKey := strings.TrimSpace(c.Request().Header.Get("Idempotency-Key"))
@@ -681,6 +701,13 @@ func (d Deps) handleApprovalSubmit(c echo.Context) error {
 			TargetID: bizNo, Result: "warn",
 			DetailJSON: prMismatchDetail,
 		})
+	}
+	// N-042 权限位点：GR → t_instance.acceptors 规范列（PARTICIPATED 数据承载；
+	// archive 侧由 finalize 从同源 ext 取值 —— 两表同批不单写一处）。
+	if grAcceptorsJSON != "" {
+		if aerr := d.DB.SetInstanceAcceptors(ctx, bizNo, grAcceptorsJSON); aerr != nil {
+			return fail(c, http.StatusInternalServerError, codeInternal, aerr.Error())
+		}
 	}
 	// N-027：提交后 hard 自检（contract_no_format —— 需生成后的 biz_no；失败=内部一致性破坏，可见 500）
 	if hasForm {

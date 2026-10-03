@@ -12,6 +12,7 @@ import (
 	"errors"
 	"testing"
 
+	"github.com/chadhao/jx-procurement-platform/internal/config"
 	"github.com/chadhao/jx-procurement-platform/internal/flow"
 	"github.com/chadhao/jx-procurement-platform/internal/store"
 )
@@ -243,5 +244,97 @@ func TestDesignationBlocksSelfSelf(t *testing.T) {
 	}
 	if got := taskFor(t, db, bizNo, "ou_app").Status; got != "APPROVED" {
 		t.Errorf("放行后任务状态 = %s, 期望 APPROVED", got)
+	}
+}
+
+// TestDesignationWritesBothTables N-042 判据⑦：指定经办 ⇒ t_instance.designated_open_id
+// 与 t_ledger_archive.designated_open_id（L03）**同时有值**（防「只写一处 / 有列无数据」）。
+func TestDesignationWritesBothTables(t *testing.T) {
+	db := newFlowDB(t)
+	maps := &config.Maps{Ledger: map[string][]string{"PR": {"L02", "L03"}}}
+	svc := flow.NewWithConfig(db, "app", maps, nil)
+	ctx := context.Background()
+
+	bizNo := submitSupervisorPR(t, svc, db, "PR")
+	tk := taskFor(t, db, bizNo, "ou_sup")
+	if err := svc.Approve(ctx, bizNo, tk.TaskID, "ou_sup", "同意", map[string]any{
+		"designated_purchaser": "ou_h_dual",
+		"designation_basis":    "判据⑦：两表同批",
+	}); err != nil {
+		t.Fatalf("放行: %v", err)
+	}
+
+	// ① instance 规范列（designation 同事务写）
+	var desig string
+	if err := db.QueryRowContext(ctx,
+		`SELECT COALESCE(designated_open_id,'') FROM t_instance WHERE biz_no=?`, bizNo).
+		Scan(&desig); err != nil {
+		t.Fatal(err)
+	}
+	if desig != "ou_h_dual" {
+		t.Errorf("t_instance.designated_open_id = %q, 期望 ou_h_dual（有列无数据＝判据⑦要防的）", desig)
+	}
+	// ② archive L03 行（单节点 approve ⇒ 终态 ⇒ finalize 落账，同源 ext）
+	var arch string
+	if err := db.QueryRowContext(ctx,
+		`SELECT COALESCE(designated_open_id,'') FROM t_ledger_archive WHERE ledger_type='L03' AND biz_no=?`, bizNo).
+		Scan(&arch); err != nil {
+		t.Fatalf("L03 行不存在（finalize 未落账？）: %v", err)
+	}
+	if arch != "ou_h_dual" {
+		t.Errorf("L03.designated_open_id = %q, 期望同值（两表同批、不得只写一处）", arch)
+	}
+}
+
+// TestGRFlowWritesAcceptorsToArchive N-042 判据⑦（GR 侧 · archive 半）：
+// GR 提交时 fields["acceptors"]（handler 收集 member_* 后塞入）随 Submit 落 ext，
+// finalize 落 L05 时写规范列 acceptors（PARTICIPATED 数据承载 · archive 侧）。
+// ★ t_instance.acceptors 由 httpapi handler 在 Submit 成功后写（SetInstanceAcceptors）——
+//
+//	GR 的 HTTP 通路（ResolveRoute）未接，端到端随通路批验证；本测覆盖 store 写入函数有效。
+func TestGRFlowWritesAcceptorsToArchive(t *testing.T) {
+	db := newFlowDB(t)
+	maps := &config.Maps{Ledger: map[string][]string{"GR": {"L05"}}}
+	svc := flow.NewWithConfig(db, "app", maps, nil)
+	ctx := context.Background()
+
+	bizNo, err := svc.Submit(ctx, flow.SubmitInput{
+		DocType: "GR", ApprovalCode: "code-pr",
+		ApplicantOpenID: "ou_app", ApplicantName: "张三", Department: "生产部",
+		Nodes: []flow.NodeSpec{
+			{NodeID: "n1", NodeName: "入库", Seq: 1, Approvers: []flow.Approver{
+				{OpenID: "ou_g", Name: "验收"}},
+			},
+		},
+		// handler 收集 member_* 后塞入 acceptors（本测直接给该形态）
+		BizFields: map[string]any{"acceptors": []any{"ou_qc", "ou_store"}},
+		At:        flowAt,
+	})
+	if err != nil {
+		t.Fatalf("提交失败: %v", err)
+	}
+	if err := svc.Approve(ctx, bizNo, taskFor(t, db, bizNo, "ou_g").TaskID, "ou_g", "同意", nil); err != nil {
+		t.Fatalf("放行: %v", err)
+	}
+	var acc string
+	if err := db.QueryRowContext(ctx,
+		`SELECT COALESCE(acceptors,'') FROM t_ledger_archive WHERE ledger_type='L05' AND biz_no=?`, bizNo).
+		Scan(&acc); err != nil {
+		t.Fatalf("L05 行不存在: %v", err)
+	}
+	if acc == "" {
+		t.Error("L05.designated acceptors 为空 —— GR 落账未带验收人集合（有列无数据）")
+	}
+	// store 写入函数本身（handler 调它写 t_instance.acceptors）
+	if err := db.SetInstanceAcceptors(ctx, bizNo, `["ou_qc","ou_store"]`); err != nil {
+		t.Fatalf("SetInstanceAcceptors: %v", err)
+	}
+	var iacc string
+	if err := db.QueryRowContext(ctx,
+		`SELECT COALESCE(acceptors,'') FROM t_instance WHERE biz_no=?`, bizNo).Scan(&iacc); err != nil {
+		t.Fatal(err)
+	}
+	if iacc != `["ou_qc","ou_store"]` {
+		t.Errorf("t_instance.acceptors = %q, 期望写入值", iacc)
 	}
 }

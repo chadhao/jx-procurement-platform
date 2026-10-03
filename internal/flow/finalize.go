@@ -100,23 +100,45 @@ func (s *Service) finalizeLedgersTx(ctx context.Context, tx *sql.Tx, inst *store
 	if strings.TrimSpace(ext) == "" {
 		ext = "{}"
 	}
+	// ★ N-042 权限位点：archive 的 designated_open_id / acceptors **同源自 ext**
+	//   （designation 写 ext.designated_purchaser、GR 提交写 ext.acceptors ——
+	//   规范列与 ext 双写，避免两处不一致；列过滤（ASSIGNED/PARTICIPATED）读规范列）。
+	extMap := map[string]any{}
+	if uerr := json.Unmarshal([]byte(ext), &extMap); uerr != nil {
+		// 权限位点取值：ext 脏 ⇒ 两列留空（fail-closed —— 列空 ⇒ 行过滤不命中，宁少勿多；
+		// 不中断终态，与 finalize 自检「告警不拒绝」同口径）。
+		extMap = map[string]any{}
+	}
+	designated, _ := extMap["designated_purchaser"].(string)
+	acceptors := ""
+	switch av := extMap["acceptors"].(type) {
+	case string:
+		acceptors = av
+	case nil:
+	default:
+		if b, err := json.Marshal(av); err == nil {
+			acceptors = string(b)
+		}
+	}
 
 	for _, lt := range write {
 		if err := s.db.UpsertArchiveTx(ctx, tx, &store.LedgerArchive{
-			LedgerType:      lt,
-			BizNo:           inst.BizNo,
-			InstanceCode:    inst.InstanceCode,
-			SourceDocType:   inst.DocType,
-			Department:      inst.Department,
-			ApplicantOpenID: inst.ApplicantOpenID,
-			AmountCents:     amount,
-			Supplier:        inst.Supplier,
-			PurposeClassL1:  inst.PurposeClassL1,
-			PurposeClassL2:  inst.PurposeClassL2,
-			BizDate:         bizDate,
-			ExtJSON:         ext,
-			CreatedAt:       at,
-			UpdatedAt:       at,
+			LedgerType:       lt,
+			BizNo:            inst.BizNo,
+			InstanceCode:     inst.InstanceCode,
+			SourceDocType:    inst.DocType,
+			Department:       inst.Department,
+			ApplicantOpenID:  inst.ApplicantOpenID,
+			AmountCents:      amount,
+			Supplier:         inst.Supplier,
+			PurposeClassL1:   inst.PurposeClassL1,
+			PurposeClassL2:   inst.PurposeClassL2,
+			BizDate:          bizDate,
+			DesignatedOpenID: designated,
+			Acceptors:        acceptors,
+			ExtJSON:          ext,
+			CreatedAt:        at,
+			UpdatedAt:        at,
 		}); err != nil {
 			return err
 		}

@@ -31,8 +31,13 @@ type Instance struct {
 	PurposeClassL2  string
 	Supplier        string
 	Source          string
-	CreatedAt       time.Time
-	UpdatedAt       time.Time
+	// ★ N-042 权限位点（0019）：行级 ASSIGNED / PARTICIPATED 的数据承载。
+	//   写入端＝designation 同事务写 designated_open_id（SetInstanceDesignatedTx）、
+	//   GR 提交写 acceptors（SetInstanceAcceptors）；消费端＝RowFilterForInstances 规范列过滤。
+	DesignatedOpenID string // 被指定经办人（ASSIGNED）
+	Acceptors        string // 验收人集合（PARTICIPATED，JSON 数组串）
+	CreatedAt        time.Time
+	UpdatedAt        time.Time
 
 	// ★ 架构转向 ③（04a §1.1）：以下 6 列为 migration 0007 新增，**只加列、不改既有列语义**。
 	//   UpdateTime 为推送版本号，**单调递增**——不递增会让飞书侧推送**被拒且静默**（04a §3.1）。
@@ -262,9 +267,13 @@ type LedgerArchive struct {
 	PurposeClassL1 string
 	PurposeClassL2 string
 	BizDate        string
-	ExtJSON        string
-	CreatedAt      time.Time
-	UpdatedAt      time.Time
+	// ★ N-042 权限位点（0019）：行级 ASSIGNED / PARTICIPATED 的数据承载。
+	//   写入端＝finalize 从 ext_json 取 designated_purchaser / acceptors（同源 ext ⇒ 两处一致）。
+	DesignatedOpenID string // 被指定经办人（ASSIGNED）
+	Acceptors        string // 验收人集合（PARTICIPATED，JSON 数组串）
+	ExtJSON          string
+	CreatedAt        time.Time
+	UpdatedAt        time.Time
 }
 
 // LedgerOps 台账·运营表行（可写，M4）。

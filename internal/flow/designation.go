@@ -93,7 +93,12 @@ func (s *Service) applyDesignationTx(ctx context.Context, tx *sql.Tx, inst *stor
 	}
 	inst.ExtJSON = string(b)
 	// ★ 与任务推进同事务：本函数失败 ⇒ 任务状态不推进、ext 不落（一致性一体）。
-	return s.db.UpsertInstanceTx(ctx, tx, inst)
+	if err := s.db.UpsertInstanceTx(ctx, tx, inst); err != nil {
+		return err
+	}
+	// ★ N-042 权限位点：同事务写 t_instance.designated_open_id（ASSIGNED 令牌的数据承载；
+	//   规范列与 ext 双写 —— 避免「ext 有、列没写」的两处不一致；archive 侧由 finalize 同源取 ext）。
+	return s.db.SetInstanceDesignatedTx(ctx, tx, inst.BizNo, purchaser)
 }
 
 // designationStr 从 fields 取字符串（非字符串类型视为空 —— 必填由调用方判）。

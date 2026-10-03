@@ -306,6 +306,11 @@ func TestContractChangesHidesAmountFlavouredKeys(t *testing.T) {
 		`{"contract_no":"CT-2609-1001","assigned_open_id":"ou_h",
 		  "change_cents":100000,"change_display":"1,000.00",
 		  "original_cents":500000,"original_display":"5,000.00"}`)
+	// ★ N-042：ASSIGNED 改读规范列（0019）—— seed 补 designated_open_id
+	if _, err := db.ExecContext(ctx,
+		`UPDATE t_ledger_archive SET designated_open_id='ou_h' WHERE ledger_type='L09' AND biz_no='CH-2609-1001'`); err != nil {
+		t.Fatal(err)
+	}
 
 	// ① 采购经办人（禁金额）：金额类键名在**任意层级**都不得出现。
 	rec, env := doRequest(e, http.MethodGet, "/api/contract/CT-2609-1001/changes", auth.Establish("ou_h"), "")

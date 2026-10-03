@@ -23,8 +23,9 @@ INSERT INTO t_instance (
   instance_code, approval_code, doc_type, biz_no, biz_no_prefix, biz_no_yymm, biz_no_seq,
   status, status_raw, applicant_open_id, applicant_name, department, amount_cents,
   purpose_class_l1, purpose_class_l2, supplier, source, created_at, updated_at,
-  update_time, prev_biz_no, cancel_reason, cancel_at, push_hash, push_at, ext_json
-) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,COALESCE(NULLIF(?,''),'{}'))
+  update_time, prev_biz_no, cancel_reason, cancel_at, push_hash, push_at, ext_json,
+  designated_open_id, acceptors
+) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,COALESCE(NULLIF(?,''),'{}'),?,?)
 ON CONFLICT(instance_code) DO UPDATE SET
   approval_code     = excluded.approval_code,
   doc_type          = COALESCE(NULLIF(excluded.doc_type,''), t_instance.doc_type),
@@ -63,6 +64,9 @@ ON CONFLICT(instance_code) DO UPDATE SET
   purpose_class_l2  = COALESCE(NULLIF(excluded.purpose_class_l2,''), t_instance.purpose_class_l2),
   supplier          = COALESCE(NULLIF(excluded.supplier,''), t_instance.supplier),
   source            = excluded.source,
+  -- ★ N-042 权限位点：派生列 upsert 刷新（非空覆盖、空保留 —— 同 department 形态）
+  designated_open_id = COALESCE(NULLIF(excluded.designated_open_id,''), t_instance.designated_open_id),
+  acceptors          = COALESCE(NULLIF(excluded.acceptors,''), t_instance.acceptors),
   updated_at        = excluded.updated_at,
   -- ★ update_time 单调递增（04a §3.1）：取两值较大者，**任何写入都不得使其回退**
   --   （版本回退会让飞书侧推送静默失败）。
@@ -85,7 +89,8 @@ ON CONFLICT(instance_code) DO UPDATE SET
 		nullStr(in.Department), in.AmountCents, nullStr(in.PurposeClassL1), nullStr(in.PurposeClassL2),
 		nullStr(in.Supplier), defaultStr(in.Source, "event"), fmtTime(in.CreatedAt), fmtTime(in.UpdatedAt),
 		in.UpdateTime, nullStr(in.PrevBizNo), nullStr(in.CancelReason), nullStr(fmtMaybeTime(in.CancelAt)),
-		nullStr(in.PushHash), nullStr(fmtMaybeTime(in.PushAt)), nullStr(in.ExtJSON), nullStr(in.ExtJSON),
+		nullStr(in.PushHash), nullStr(fmtMaybeTime(in.PushAt)), nullStr(in.ExtJSON),
+		nullStr(in.DesignatedOpenID), nullStr(in.Acceptors), nullStr(in.ExtJSON),
 	)
 	if err != nil {
 		return fmt.Errorf("store: 写入实例 %s 失败: %w", in.InstanceCode, err)
@@ -475,4 +480,30 @@ func defaultStr(s, d string) string {
 		return d
 	}
 	return s
+}
+
+// SetInstanceDesignatedTx N-042：写 t_instance.designated_open_id（ASSIGNED 权限位点）。
+// ★ 与 flow 的 designation 动作**同事务**（applyDesignationTx 内调用）——
+//
+//	避免「指定经办已落 ext、规范列却没写」的两处不一致。
+func (d *DB) SetInstanceDesignatedTx(ctx context.Context, tx *sql.Tx, bizNo, designated string) error {
+	_, err := tx.ExecContext(ctx, `
+UPDATE t_instance SET designated_open_id = ?, updated_at = ? WHERE biz_no = ?`,
+		designated, fmtTime(timeNow().UTC()), bizNo)
+	if err != nil {
+		return fmt.Errorf("store: 写入 designated_open_id 失败: %w", err)
+	}
+	return nil
+}
+
+// SetInstanceAcceptors N-042：写 t_instance.acceptors（PARTICIPATED 权限位点；
+// GR 提交时由 handler 调用，值＝member_* 收集的 JSON 数组串）。
+func (d *DB) SetInstanceAcceptors(ctx context.Context, bizNo, acceptorsJSON string) error {
+	_, err := d.ExecContext(ctx, `
+UPDATE t_instance SET acceptors = ?, updated_at = ? WHERE biz_no = ?`,
+		acceptorsJSON, fmtTime(timeNow().UTC()), bizNo)
+	if err != nil {
+		return fmt.Errorf("store: 写入 acceptors 失败: %w", err)
+	}
+	return nil
 }

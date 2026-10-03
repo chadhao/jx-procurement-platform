@@ -87,6 +87,11 @@ func TestQAB31AmountSynonymKeysHiddenFromDeniedRoles(t *testing.T) {
 		  "change_cents":100000,"change_display":"1,000.00",
 		  "original_cents":500000,"original_display":"5,000.00"}`)
 
+	// ★ N-042：ASSIGNED/PARTICIPATED 改读规范列（0019）—— seed 补两列
+	if _, err := db.ExecContext(ctx,
+		`UPDATE t_ledger_archive SET designated_open_id='ou_h', acceptors='["ou_v"]' WHERE ledger_type='L09' AND biz_no='CH-QA-B31-1'`); err != nil {
+		t.Fatal(err)
+	}
 	amountKeys := []string{"change_cents", "change_display", "original_cents", "original_display"}
 	denied := []struct {
 		name   string
@@ -552,6 +557,11 @@ func TestQAPermissionOpenIDPrefixNotVisible(t *testing.T) {
 	)
 	seedArchiveExt(t, db, "L09", "CH-PREFIX-1", "ou_x", "生产部", 100,
 		`{"contract_no":"CT-PREFIX","assigned_open_id":"ou_abc","change_cents":100}`)
+	// ★ N-042：ASSIGNED 改读规范列（0019）—— ou_ab 前缀不得命中 ou_abc（精确等值）
+	if _, err := db.ExecContext(ctx,
+		`UPDATE t_ledger_archive SET designated_open_id='ou_abc' WHERE ledger_type='L09' AND biz_no='CH-PREFIX-1'`); err != nil {
+		t.Fatal(err)
+	}
 
 	_, envAB := doRequest(e, http.MethodGet, "/api/contract/CT-PREFIX/changes", auth.Establish("ou_ab"), "")
 	if got := mustData(t, envAB)["count"].(float64); got != 0 {
