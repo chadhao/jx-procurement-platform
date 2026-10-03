@@ -546,12 +546,12 @@ sequenceDiagram
 
 | 项 | 内容 |
 |---|---|
-| 用途 | 角色代理人增删改查：`GET` 列出（可按 `role_key` / `status` 过滤）· `POST {role_key, agent_open_id, note?}` 新增 · `PUT {agent_open_id?, note?, state?}` 改人 / 备注 / **停用** · `DELETE` **永远 409**（只停用不删） |
+| 用途 | 角色代理人增删改查：`GET` 列出（可按 `role_key` / `state` 过滤）· `POST {role_key, agent_open_id, note?}` 新增 · `PUT {agent_open_id?, note?, state?}` 改人 / 备注 / **停用** · `DELETE` **永远 409**（只停用不删） |
 | 权限要求 | 系统管理员（与 §3.9 同口径） |
 | ★★ 指定人 vs 登记人 | ★ **代理人由主管领导指定**（制度 V4.0 第十二条）—— ★★ **但系统不校验指定人**：本接口只记录**登记人**（审计 `created_by`），**不要求**「登记人 ＝ 主管领导」。★ 理由见 `spec/authority.json#designator.system_scope`（用一个**随单据变化**的值去校验一条**长期配置**，必然造出自相矛盾的规则） |
 | ★★ 值域 | **`agent_open_id` 必须能在通讯录镜像（`t_org_user`）中查到且未离职** —— 前端「点选」，**后端仍须硬校验**（用户 2026-09-30 定案「点选系统里已存在的用户」）。★ **禁止接受任意字符串**：写错 `open_id` 会让代理人**永远收不到待办**，而配置看上去是成功的 |
 | ★ 护栏 | ① **只停用不删**（`DELETE` → `40900`）；② **每 `role_key` 在 `active` 下至多 1 条**（`40900`）；③ **同一链相邻两级不得同一人代理**（`40000`）；④ **`role_key` 必须在白名单内**（`spec/authority.json#agent_eligible_roles.eligible`；`applicant` / `sys_admin` / `group_finance` / `group_approval` **不可配**）；⑤ 每次成功变更写审计（`role_agent_create` / `role_agent_update`，含条目前后值） |
-| 请求 / 响应字段 | `role_key`·`agent_open_id`·`note`·**`state`**（`active` 或 `retired` —— ★ **响应与请求体字段名是 `state`**；★ **注意：`GET` 的筛选参数名是 `status`** —— ★ 二者不一致，**以 `spec/authority.json` 为准（字段＝`state`）**，筛选参数**待统一为 `state`**，见 `COLLAB.md#N-037`）；`GET` 响应含 `{items[], eligible_roles[], feature_enabled}` |
+| 请求 / 响应字段 | `role_key`·`agent_open_id`·`note`·**`state`**（`active` 或 `retired` —— ★ **筛选参数、请求体、响应体三者统一为 `state`**；★ **已于 2026-10-03 收敛**：原筛选参数写作 `status`、与字段名不一致，经 `N-037` 统一为 `state`，口径以 `spec/authority.json` 为准）；`GET` 响应含 `{items[], eligible_roles[], feature_enabled}` |
 | ★★ 生效范围 | ★ **备付金节点不适用** —— 制度「备付金审批不得代理」⇒ `chain.json#routes.purchase_tier1.nodes` 的 `approve_petty_cash` / `disburse` **两节点不接受代理人**；★ **按节点排除，不按角色排除**（`ops_supervisor` 在其它节点仍可代理，否则误伤初审环节） |
 | ★★ 不作为替补 | ★ **代理人记录不得参与审批人解析**：签批人不可用 ⇒ **只阻断**（`40010`），**不回退到代理人、不上抬一级、不改派**（用户 2026-09-30「不需要替补」） |
 | ★ 启用状态 | ★ 正向消费端（**转交 / 回退由代理人操作**）属 `M9`、**未实现** ⇒ **`feature_enabled=false`**，页签须**显式标注「代理人功能未启用」**；★ 解除条件见 `spec/authority.json#enable_guard`（依据 `README` 定案 #24：无消费端＝假配置） |
