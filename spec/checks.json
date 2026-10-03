@@ -1,7 +1,7 @@
 {
-  "version": "1.8",
+  "version": "1.10",
   "generated_by": "WorkBuddy",
-  "date": "2026-09-29",
+  "date": "2026-10-03",
   "scope": "spec/",
   "supersedes": "scripts/check_spec.py 的内联判据（本清单是判据的**唯一来源**）",
   "_format_note": "★★ **格式决定：用 JSON 而非 YAML**（对 N-011 提议的 `checks.yaml` 的偏离）——\n① **不引入新依赖**：本项目 Python 门禁一律 **stdlib-only**（`check_md_tables.py` / `check_collab.py` / `audit_silent.py` 均无第三方依赖），YAML 需 PyYAML；\n② **Go 侧更省事**：`encoding/json` 是标准库，YAML 要引 `gopkg.in/yaml.v3`；\n③ 与 `spec/` 其余文件格式统一。\n★ 结构与「可执行声明式清单」的设计**完全按 N-011 约定**，**仅容器格式变化**。若 mimo 认为必须 YAML，请开议题并说明依赖引入方案。",
@@ -98,23 +98,22 @@
       }
     },
     "array_each_required": {
-      "array_each_required": {
-        "desc": "★★ **第 10 原语（`N-036`）：数组逐项条件必填** —— 对 `collect` 收集到的**每个数组元素**，当 `when_key` 缺省（无条件）或「元素[when_key] ∈ when_in」时，`required_keys` 中每个键**必须存在**（**存在性**口径，同 `required_keys`）。\n★ **为什么需要它**：既有 9 个原语**都表达不了「数组每一项都必填」** —— `required_keys` 只作用于 **scope 的键**；`coverage` 只作用于 **dict 的键**；★★ `set_covers.min_hits` 是**逐文件**计数（**不是全局**）⇒ 表达不了「全清单一条不缺」。\n★★ **它治什么**：**「声明了却没人执行」** —— 判据的 `else` 若承诺「拒绝」，就必须说清 **谁来执行**；缺声明即报错，**不许静默**（比「不报错」更坏的是「你以为已经做了」）。\n★ **三处细节**：① `seen` 计数在**条件过滤之前**（所以「collect 指空路径」能被 `seen==0` 抓到）；② 条件键**缺失** ⇒ 视为**不在适用面**（由该键自身的 required 判据管），而不是报错；③ 可加 `when_key2`/`when_in2`（与第一个条件是 **AND**）—— ★ 实测需求：「非提交时点的 hard 判据」需要**双键**（`when` ∧ `severity`），单键表达不了。\n★ 由 `N-036` **双方同时实现**（Python `scripts/check_spec.py` ＋ Go `internal/specload/checklist.go`），语义以本 desc 裁决。",
-        "args": {
-          "file": "glob",
-          "collect": "点路径（指向数组）",
-          "required_keys": [
-            "必须存在的键"
-          ],
-          "when_key": "可选：条件键",
-          "when_in": [
-            "条件取值（白名单枚举）"
-          ],
-          "when_key2": "可选：第二个条件键（与第一个是 AND）",
-          "when_in2": [
-            "第二个条件的取值"
-          ]
-        }
+      "desc": "★★ **第 10 原语（`N-036`）：数组逐项条件必填** —— 对 `collect` 收集到的**每个数组元素**，当 `when_key` 缺省（无条件）或「元素[when_key] ∈ when_in」时，`required_keys` 中每个键**必须存在**（**存在性**口径，同 `required_keys`）。\n★ **为什么需要它**：既有 9 个原语**都表达不了「数组每一项都必填」** —— `required_keys` 只作用于 **scope 的键**；`coverage` 只作用于 **dict 的键**；★★ `set_covers.min_hits` 是**逐文件**计数（**不是全局**）⇒ 表达不了「全清单一条不缺」。\n★★ **它治什么**：**「声明了却没人执行」** —— 判据的 `else` 若承诺「拒绝」，就必须说清 **谁来执行**；缺声明即报错，**不许静默**（比「不报错」更坏的是「你以为已经做了」）。\n★ **三处细节**：① `seen` 计数在**条件过滤之前**（所以「collect 指空路径」能被 `seen==0` 抓到）；② 条件键**缺失** ⇒ 视为**不在适用面**（由该键自身的 required 判据管），而不是报错；③ 可加 `when_key2`/`when_in2`（与第一个条件是 **AND**）—— ★ 实测需求：「非提交时点的 hard 判据」需要**双键**（`when` ∧ `severity`），单键表达不了。\n★ 由 `N-036` **双方同时实现**（Python `scripts/check_spec.py` ＋ Go `internal/specload/checklist.go`），语义以本 desc 裁决。\n★★★★ **2026-10-03 追加 `matched` 计数 ＋ 条件面为空守卫**（判据 `S17`，两侧同批）：★ 原 `seen==0` 只治「**collect 路径写错**」；★ 实测出**第二种假绿** —— `when_in` **字面量写错**（实测 `when_in=[\"True\"]`，而字段实际是 JSON 布尔 `true`，★ 两侧引擎都归一为小写 `\"true\"`）⇒ ★ **一项不匹配、零违规、门禁全绿、判据完全空转**，而 `seen=259>0` ⇒ **`seen==0` 守卫看不见**。★ 故新增规则：**两个 `when` 都通过的项数为 0 且 `seen>0` ⇒ 报错**（除非 args 写 `allow_empty_match: true`，★ 且须在判据 desc 说明依据）。★ Go 侧（`internal/specload/checklist.go`）**同批实现**。",
+      "args": {
+        "file": "glob",
+        "collect": "点路径（指向数组）",
+        "required_keys": [
+          "必须存在的键"
+        ],
+        "when_key": "可选：条件键",
+        "when_in": [
+          "条件取值（白名单枚举）"
+        ],
+        "when_key2": "可选：第二个条件键（与第一个是 AND）",
+        "when_in2": [
+          "第二个条件的取值"
+        ],
+        "allow_empty_match": "可选：true = 显式豁免「条件面为空」（须在判据 desc 说明依据）"
       }
     }
   },
@@ -449,7 +448,14 @@
       "args": {
         "file": "spec/forms/*.json",
         "collect": "checks[*].carried_by_kind",
-        "allowed": ["code", "structural", "manual", "pending_wiring", "pending_implementation", "submit"],
+        "allowed": [
+          "code",
+          "structural",
+          "manual",
+          "pending_wiring",
+          "pending_implementation",
+          "submit"
+        ],
         "min_hits": 0
       }
     },
@@ -469,11 +475,46 @@
           "hard"
         ]
       }
+    },
+    {
+      "id": "S16",
+      "severity": "must-green",
+      "desc": "★★ **每个 `immutable: true` 且 `source ∈ {system, computed}` 的字段，都必须声明「谁来保证它不可篡改」**（2026-10-03，`N-038`）。\n★ **它治什么**：`immutable` 这个键在本项目**已写 55 处**，★ 且多处带 `critical_note` 明写「**篡改本值即可降档**」（`PC#applicable_tier` / `PC#original_contract_amount_cents`）—— ★ 但**整仓 Go 代码零消费端**（实测 `grep -rn 'immutable' --include=*.go` 只命中一个**同名判据 id** `BJ#selection_reason_immutable`，与字段无关）⇒ ★★ **`immutable` 是一句无人执行的承诺** —— 与 `N-036` 的「判据声明了却没人执行」**同族，但载体是字段而不是判据**。\n★★ **实测危害（2026-10-03 已复现）**：mimo `9fd0227` 的 `putSysField` 语义是「**非空不覆盖**」⇒ ★ 前端手填即可篡改 5 个字段：`applicable_tier`（**整条审批链走错档**）／`original_contract_amount_cents`（**档位就高的两个输入之一被换掉**）／`change_count_to_date` ／`is_anomaly_listed`（**规避异常清单**）／`exception_type`（**例外台账的例外类型被改**）—— ★ 都不是「少一条提示」，是**内控被绕过**。\n★ 声明字段：**`carried_by_kind`**（**与判据侧同一受控词表**，见 `S14`）＋ **`carried_by`**（落点，自由文本）。\n★★ **语义差异（务必分清）**：判据侧 `pending_implementation` ＝「承诺的**拒绝**不会发生」；★ 字段侧 `pending_implementation` ＝「**该字段的不可篡改性无任何机制保证**」—— ★ 后者**更靠前**，★ 因为它连「谁来发现篡改」都没有。\n★ 本判据**不检查运行时行为**（那属实现侧测试）—— ★ 它保证的是「**每条不可篡改承诺都有名字**」，★ 使「哪些还没做」从散文变成**可数清单**。",
+      "primitive": "array_each_required",
+      "args": {
+        "file": "spec/forms/*.json",
+        "collect": "sections[*].fields[*]",
+        "required_keys": [
+          "carried_by_kind"
+        ],
+        "when_key": "immutable",
+        "when_in": [
+          "true"
+        ],
+        "when_key2": "source",
+        "when_in2": [
+          "system",
+          "computed"
+        ]
+      }
+    },
+    {
+      "id": "S18",
+      "severity": "must-green",
+      "desc": "★★ **每条原语声明必须是扁平对象 `{desc, args}`**（2026-10-03，`N-038`）—— ★ 治「**声明形状不一致、两侧引擎都看不见**」。\n★★★ **实测事故（V1.8 埋下、本日才发现）**：`primitives.array_each_required` 被**多包了一层**（写成 `{\"array_each_required\": {\"desc\":…, \"args\":…}}`），★ 而其余 9 条都是扁平形状。\n★★ **为什么两侧都没报**：① 两侧引擎的 fail-closed 自检**只用键是否存在**（`internal/specload/checklist.go#runChecklist` 的 `doc.Primitives[c.Primitive]`、`scripts/check_spec.py` 同款），★ **从不校验值的形状**；② `desc`/`args` 是**文档性字段、不是执行输入**（执行参数在 `checks[*].args`）⇒ ★ 错了**也不影响判据跑**。\n★ 后果：**那份原语的说明文档谁都读不到**（要读得再剥一层），★ 而门禁 **8/8 全绿**。\n★★ **为什么这类错值得一条判据**：★ 它比 `N-036`／`N-038` 的「声明了却没人执行」**更靠前** —— ★ 那两条是「承诺没人兑现」，★ 这条是「**承诺本身没写对**」。★ 判据不是越多越好，★ 但「**清单自身也要被门禁**」**没有替代品**。",
+      "primitive": "required_keys",
+      "args": {
+        "file": "spec/checks.json",
+        "scope": "primitives.*",
+        "keys": [
+          "desc"
+        ]
+      }
     }
   ],
   "consumer_obligations": {
     "python_side": "`scripts/check_spec.py` 是**清单执行器**：不自持判据，只实现 `primitives` 引擎并逐条执行 `checks`。",
-    "go_side": "mimo 的 spec 加载器实现同一组原语的 Go 版、读同一份 `checks.json`。★ **原语语义以本文件 `desc` 裁决**；不一致即两侧漂移，必要时开议题。",
+    "go_side": "mimo 的 spec 加载器实现同一组原语的 Go 版、读同一份 `checks.json`。★ **原语语义以本文件 `desc` 裁决**；不一致即两侧漂移，必要时开议题。\n★★ **2026-10-03 新增一项同批义务（`N-038`）**：★ `array_each_required` 须实现**「条件面为空」守卫** —— ★ `seen > 0` 且「两个 `when` 都通过的项数为 0」⇒ 报错（除非 args 写 `allow_empty_match: true`）。★ **为什么必须两侧同批**：★ Python 侧已实现，★ 若 Go 侧不实现，则 **`spec` 门禁（Python）与 `go test` 侧（Go）对同一份 spec 给出不同结论** —— ★ 而这正是本项目最贵的失败模式（「同一套判据两份实现必然漂移」）。★ 同时 Go 侧须认 `S16`（新判据，`collect=sections[*].fields[*]` ＋ 双键条件 `immutable=true ∧ source∈{system,computed}`）。",
     "on_adding_a_check": "★ 新增判据＝**在本文件加一条** ＋ 若需新原语则在 `primitives` 声明并在两侧实现。**不得只在某一侧硬编码。**",
     "on_emitting_a_violation": "★★ **两侧引擎在报违规时，必须把「当前判据的真实 `id`」写进消息前缀** —— 例如 `[S5c] …`，**不得硬编码某个 ID 字面量、也不得写原语名**。★ 理由（实测事故）：同一原语会被**多条判据**复用（现 16 条判据复用 8 个原语），一旦硬编码，`S5c` 报出来的会是 `[S8/S11]` —— **排查者照错误 ID 去查，必然被带偏；这比『不报错』更坏**。Python 侧实现＝执行器注入 `args[\"__cid__\"]` ＋ `_self_audit_cid_literals()` 源码自审（禁止回潮）；Go 侧请同口径实现。"
   },
@@ -522,6 +563,11 @@
       "version": "1.0",
       "date": "2026-09-29",
       "change": "首版：8 原语 + S1–S12（原 check_spec.py 内联判据的清单化）"
+    },
+    {
+      "version": "1.10",
+      "date": "2026-10-03",
+      "change": "★★ **修 V1.8 埋下的形状错**：`primitives.array_each_required` 多包一层（与其余 9 条扁平形状不一致；★★ 两侧引擎都只查键存在、**不查值形状** ⇒ 隐形 ＋ 门禁 8/8 全绿）；★ 配套**新增 `S18`**（`primitives[*]` 须含 `desc` ⇒ 治「说明文档读不到」；★ 口径经实测收窄过一次：初版要求「恰含 `desc`＋`args`」**与 mimo 既有探针互斥**，已改为只要求 `desc`）。\n★ 另新增 **`S16`**（每个 `immutable:true`＋`source∈{system,computed}` 的字段必须声明 `carried_by_kind` —— ★ 治「`immutable` 是无人执行的承诺」；实测整仓 Go 零消费端、且已复现**两条独立篡改路径**：① `putSysField` 「非空不覆盖」⇒ 5 字段可前端篡改（含**降档**）；② `applyBizFields` default 分支 ⇒ 客户端伪造的 `applicant` **残留 `ext_json`、与规范列并存矛盾**）。★ 配套：`array_each_required` 新增**「条件面为空」守卫**（`S16` 的 `when_in` 写错即零命中零违规 ⇒ 该守卫的活体证明）与 `allow_empty_match` 参数 —— ★ 二者登记在 `primitives` 与 `consumer_obligations`，**不是独立判据**。\n★ **`forms/*.json` 54 个 immutable 系统字段已逐条声明**（`code` 33／`structural` 9／`manual` 4／★★ **`pending_implementation` 8** —— 8 条是「声明了不可篡改、却无任何生产点」的**真缺口**，含 `is_reset_as_new_purchase`（判据已拦、标记无人算））。★ 判据 20 → **22**、原语仍 **10**（零引擎新增）。"
     }
   ]
 }

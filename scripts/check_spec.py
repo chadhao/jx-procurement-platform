@@ -379,6 +379,9 @@ def prim_array_each_required(args):
     required = args.get("required_keys") or []
     wk, wi = args.get("when_key") or "", [str(x) for x in (args.get("when_in") or [])]
     wk2, wi2 = args.get("when_key2") or "", [str(x) for x in (args.get("when_in2") or [])]
+    # ★ `allow_empty_match`（2026-10-03）：条件面为空时**显式豁免**，须在判据 args 里写 true
+    #   并由 desc 说明依据 —— ★ 目的是「豁免必须留痕」，而不是「豁免可以悄悄做」。
+    aem = args.get("allow_empty_match") is True
 
     def _match(v):
         """值 → 参与 when_in 比较的字符串（★ 兜底口径对齐 Go 的 %v：bool/数值见 _scalar_str）。"""
@@ -388,6 +391,13 @@ def prim_array_each_required(args):
         return s if s is not None else None
 
     seen = 0
+    # ★★ `matched` ＝ **真正进入条件必填面**的项数（两个 when 都通过）。
+    #   为什么要它：★ `seen` 只证明「collect 收到了东西」，**不证明 when_in 写得对** ——
+    #   ★ 实测（2026-10-03）：`when_key=immutable` 配 `when_in=["True"]`（大写 T）时，
+    #   字段实际值是 JSON 布尔 `true`、两侧引擎都归一为小写 `"true"` ⇒ **一项都不匹配**，
+    #   ★ 而 `seen=259 > 0` ⇒ **`seen==0` 守卫看不见、门禁显示全绿、判据完全空转**。
+    #   ⇒ 这是「**条件写错冒充条件不适用**」，与 `seen==0`（collect 写错）是**不同**的形态。
+    matched = 0
     for f in expand(pat):
         for i, item in enumerate(sel(load_json(f), toks(collect))):
             if not isinstance(item, dict):
@@ -405,15 +415,35 @@ def prim_array_each_required(args):
                     continue
                 if _match(item[wk2]) not in wi2:
                     continue
+            matched += 1
             for k in required:
                 if k not in item:
+                    # ★ 命中必须**可定位**：给出「哪一项」的**业务标识**（字段名/判据 id），
+                    #   否则「第 N 项」要重跑脚本逐个数数组下标 —— ★ 54 条红等于没报
+                    #   （2026-10-03 `S16` 首跑即如此：54 条命中全是「第 N 项」，无一能直接定位）。
+                    label = ""
+                    for lk in ("name", "id", "key", "code", "label"):
+                        v = item.get(lk)
+                        if isinstance(v, str) and v.strip():
+                            label = "（%s=%s）" % (lk, v)
+                            break
                     probs.append(
-                        "[%s] %s 的 %s 第 %d 项缺键 %r（条件必填未声明 —— "
-                        "「声明了却没人执行」必须能被机器看见）"
-                        % (cid, rel(f), collect, i, k))
+                        "[%s] %s 的 %s 第 %d 项%s缺键 %r（条件必填未声明 —— 「声明了却没人执行」必须能被机器看见）"
+                        % (cid, rel(f), collect, i, label, k))
     if seen == 0:
         probs.append("[%s] collect=%r 在 file=%r 下收集到 0 项（清单声明写错不许静默通过）"
                      % (cid, collect, pat))
+    # ★★ 条件面为空守卫（2026-10-03 新增，与 Go 侧同批）：collect 收到了项、但**没有一项命中 when**。
+    #   ★ 这正是「when_in 字面量写错」（大小写 / 枚举值拼错）时的形态 —— ★ 此前**任何守卫都看不见**，
+    #   ★ 判据静默空转而门禁全绿（★ 已实测：`when_in=["True"]` vs 实际 `true` ⇒ 0 命中 0 报错）。
+    #   ★ 与 `seen==0` 分开报，两者病因不同（collect 写错 vs 条件写错）。
+    if seen > 0 and matched == 0 and not aem:
+        probs.append(
+            "[%s] collect=%r 收到 %d 项，但**无一项命中 when 条件**（when_key=%r when_in=%r"
+            % (cid, collect, seen, wk, wi)
+            + (" / when_key2=%r when_in2=%r" % (wk2, wi2) if wk2 else "")
+            + "）—— ★ **条件字面量极可能写错**（大小写 / 枚举值），判据正静默空转；"
+              "若确应为空，请在 desc 里显式声明 `allow_empty_match` 并说明依据")
     return probs
 
 

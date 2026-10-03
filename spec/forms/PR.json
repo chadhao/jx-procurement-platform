@@ -6,17 +6,17 @@
   "version": "1.0",
   "date": "2026-09-29",
   "generated_by": "WorkBuddy",
-
   "sources": {
     "tool_table": "采购与费用审批体系配置工具表_v3.0.xlsx → sheet「表单字段清单」R4–R21（本单据是 11 张里字段最完整的一张）",
     "institution": "费用管理办法V3.0（第十三条禁止自我经办 / 第十四条 / 第十八条 / 第二十条 / 第六十条）",
     "recon": "_scratch/recon-table-v3-fields.md §1.1",
     "resolution": "spec/RESOLUTIONS.md（R-02 / R-05 / R-06 / R-17）"
   },
-
-  "ledger": ["L02", "L03"],
+  "ledger": [
+    "L02",
+    "L03"
+  ],
   "ledger_resolution": "R-02：★ **一对多** —— PR 同时落 `L02`（采购需求与审批台账）与 `L03`（采购经办登记台账）。原实现一对一使 L03 恒空，进而使看板指标「需求提出人任经办人的笔数」**恒为 0，而 0 恰是期望值** ⇒ 违规永远发现不了",
-
   "routes": {
     "_authority": "★ 分档与审批链的权威源＝`spec/chain.json#doc_chains.PR.route_by_tier`（**本文件不得与之冲突**）",
     "by_amount": {
@@ -34,96 +34,172 @@
     "then_by_tier3_plus": "amount_cents > 20000000 或 is_fixed_asset ⇒ 走 tier3_plus 分支（见 spec/chain.json#routes.purchase_tier3.branches）",
     "_resolution": "N-012 裁定：首版 `by_amount` 误含 `purchase_tier1`，与 `chain.json`（权威源，PR 无采一链）**内部不一致** ⇒ 已改为 `not_applicable` 显式拒收。★ 制度侧采一档单据本就是 BA"
   },
-
   "sections": [
     {
       "id": "header",
       "label": "表头",
       "fields": [
         {
-          "name": "biz_no", "label": "申请单号", "type": "string", "required": true, "source": "system",
-          "immutable_after_submit": true, "is_business_key": true,
-          "origin": "tool_table", "origin_ref": "表单字段清单 R4",
+          "name": "biz_no",
+          "label": "申请单号",
+          "type": "string",
+          "required": true,
+          "source": "system",
+          "immutable_after_submit": true,
+          "is_business_key": true,
+          "origin": "tool_table",
+          "origin_ref": "表单字段清单 R4",
           "rule": "格式 PR-YYMM-####；提交后不可修改；作为全流程主键"
         },
         {
-          "name": "applicant", "label": "申请人", "type": "person", "required": true, "source": "system",
+          "name": "applicant",
+          "label": "申请人",
+          "type": "person",
+          "required": true,
+          "source": "system",
           "immutable": true,
-          "origin": "tool_table", "origin_ref": "表单字段清单 R5",
+          "carried_by_kind": "code",
+          "carried_by": "httpapi#handleApprovalSubmit 取 `idn.OpenID`（飞书免登身份）写入 `t_instance.applicant_open_id` 规范列；★ 客户端 `body.Fields[\"applicant\"]` **写不进规范列**（实测探针）",
+          "origin": "tool_table",
+          "origin_ref": "表单字段清单 R5",
           "note": "★ 原表为一行「申请人 / 所属部门」（类型 人员 / 部门）⇒ 按类型拆为两个字段，语义不变（技术归一）",
           "rule": "取当前登录人，不可手改"
         },
         {
-          "name": "applicant_department", "label": "所属部门", "type": "department", "required": true, "source": "system",
+          "name": "applicant_department",
+          "label": "所属部门",
+          "type": "department",
+          "required": true,
+          "source": "system",
           "immutable": true,
-          "origin": "tool_table", "origin_ref": "表单字段清单 R5",
+          "carried_by_kind": "code",
+          "carried_by": "httpapi#handleApprovalSubmit 取 `idn.Department` 写入 `t_instance.department` 规范列；★★ **但客户端同名值会残留 `ext_json`**（2026-10-03 实测：`{\"applicant\":\"ou_攻击者\"}` 与规范列并存）⇒ 见 `N-038` 交办收口",
+          "origin": "tool_table",
+          "origin_ref": "表单字段清单 R5",
           "rule": "取当前登录人所在部门，不可手改",
           "critical_note": "★★ 本字段**用于条件分支判定** —— 决定「主管领导」是谁（综合运营部/质检技术部 → 项目总经理；生产部/销售部 → 副总）。见 spec/chain.json roles.supervisor"
         },
         {
-          "name": "usage_category_l1", "label": "用途分类（一级）", "type": "enum", "required": true, "source": "user",
-          "enum_ref": "spec/enums.json#usage_categories", "enum_size": 23,
-          "origin": "resolution", "origin_ref": "R-05",
+          "name": "usage_category_l1",
+          "label": "用途分类（一级）",
+          "type": "enum",
+          "required": true,
+          "source": "user",
+          "enum_ref": "spec/enums.json#usage_categories",
+          "enum_size": 23,
+          "origin": "resolution",
+          "origin_ref": "R-05",
           "resolution_note": "★★ **本字段在工具表 PR 字段组中【未列出】（R4–R21 无此字段）**，但 `用途分类表` R2 明确「每张申请单必填且只能选一个一级分类」、`单据清单` R5 C6 亦把「用途分类」列为 PR 关键字段 ⇒ **判定为字段清单缺漏，予以补入**",
           "critical_note": "★ 填入本字段即**决定该笔支出走哪条流程线**（工具表 用途分类表 R2 原文）",
           "rule": "唯一性：只能选一个（R-05 / 用途分类表 R31）"
         },
         {
-          "name": "usage_category_l2", "label": "二级明细", "type": "enum", "required": true, "source": "user",
+          "name": "usage_category_l2",
+          "label": "二级明细",
+          "type": "enum",
+          "required": true,
+          "source": "user",
           "enum_ref": "spec/enums.json#usage_categories（按 usage_category_l1 联动）",
-          "origin": "resolution", "origin_ref": "R-05",
+          "origin": "resolution",
+          "origin_ref": "R-05",
           "rule": "★ **完整性要求：二级明细必填，不得只填一级分类**（用途分类表 R32）—— 理由：一级分类只用于台账汇总，**二级明细才是审计核查与价格比对的依据**"
         },
         {
-          "name": "requirement_type", "label": "需求类型", "type": "enum", "required": true, "source": "user",
+          "name": "requirement_type",
+          "label": "需求类型",
+          "type": "enum",
+          "required": true,
+          "source": "user",
           "enum_ref": "spec/enums.json#requirement_types",
-          "origin": "tool_table", "origin_ref": "表单字段清单 R6"
+          "origin": "tool_table",
+          "origin_ref": "表单字段清单 R6"
         },
         {
-          "name": "purpose", "label": "用途说明", "type": "textarea", "required": true, "source": "user",
-          "origin": "tool_table", "origin_ref": "表单字段清单 R7",
+          "name": "purpose",
+          "label": "用途说明",
+          "type": "textarea",
+          "required": true,
+          "source": "user",
+          "origin": "tool_table",
+          "origin_ref": "表单字段清单 R7",
           "rule": "必填；一句话说清解决什么问题，**建议不超过 200 字**"
         },
         {
-          "name": "required_date", "label": "需求日期", "type": "date", "required": true, "source": "user",
-          "origin": "tool_table", "origin_ref": "表单字段清单 R8",
+          "name": "required_date",
+          "label": "需求日期",
+          "type": "date",
+          "required": true,
+          "source": "user",
+          "origin": "tool_table",
+          "origin_ref": "表单字段清单 R8",
           "rule": "不得早于提交日期；**加急件须为当日或次日**"
         },
         {
-          "name": "urgent_level", "label": "紧急程度", "type": "enum", "required": true, "source": "user",
+          "name": "urgent_level",
+          "label": "紧急程度",
+          "type": "enum",
+          "required": true,
+          "source": "user",
           "enum_ref": "spec/enums.json#urgent_levels",
-          "origin": "tool_table", "origin_ref": "表单字段清单 R9",
+          "origin": "tool_table",
+          "origin_ref": "表单字段清单 R9",
           "rule": "选「加急」须填写加急理由",
           "hard_rule": "★ 批复 A6/B5：**不得借「加急」变相上抬审批层级或降档**；紧急采购另走「先支出＋后补办＋核销闭合」"
         },
         {
-          "name": "budget_subject", "label": "预算科目", "type": "enum", "required": true, "source": "user",
+          "name": "budget_subject",
+          "label": "预算科目",
+          "type": "enum",
+          "required": true,
+          "source": "user",
           "enum_ref": "spec/enums.json#budget_subjects",
-          "origin": "tool_table", "origin_ref": "表单字段清单 R10",
+          "origin": "tool_table",
+          "origin_ref": "表单字段清单 R10",
           "note": "★ 本期**不做余额校验**，仅作分类归集"
         },
         {
-          "name": "estimated_total_cents", "label": "预估总金额", "type": "money_cents", "required": true,
-          "source": "computed", "is_amount_basis": true, "immutable": true,
-          "origin": "tool_table", "origin_ref": "表单字段清单 R11",
+          "name": "estimated_total_cents",
+          "label": "预估总金额",
+          "type": "money_cents",
+          "required": true,
+          "source": "computed",
+          "is_amount_basis": true,
+          "immutable": true,
+          "carried_by_kind": "pending_implementation",
+          "carried_by": "★★ **无生产点，且口径未定义**（是否含运费/是否含税）⇒ 我方规格缺口",
+          "origin": "tool_table",
+          "origin_ref": "表单字段清单 R11",
           "rule": "**公式汇总明细小计，禁止手填**（防篡改）",
           "critical_note": "★★ **该值是分档判定的唯一依据** ⇒ 见 spec/chain.json thresholds.purchase.bands"
         },
         {
-          "name": "suggested_supplier", "label": "建议供应商", "type": "string", "required": false, "source": "user",
-          "origin": "tool_table", "origin_ref": "表单字段清单 R12",
+          "name": "suggested_supplier",
+          "label": "建议供应商",
+          "type": "string",
+          "required": false,
+          "source": "user",
+          "origin": "tool_table",
+          "origin_ref": "表单字段清单 R12",
           "rule": "无建议时可留空，由被指定的采购经办人在询比价阶段确定"
         },
         {
-          "name": "is_safety_or_special_equipment", "label": "是否涉及安全环保 / 特种设备", "type": "boolean",
-          "required": true, "source": "user",
-          "origin": "tool_table", "origin_ref": "表单字段清单 R13",
+          "name": "is_safety_or_special_equipment",
+          "label": "是否涉及安全环保 / 特种设备",
+          "type": "boolean",
+          "required": true,
+          "source": "user",
+          "origin": "tool_table",
+          "origin_ref": "表单字段清单 R13",
           "rule": "选「是」**触发合规校验分支**，须附资质文件或说明"
         },
         {
-          "name": "is_fixed_asset", "label": "是否属于固定资产类", "type": "boolean",
-          "required": true, "source": "user",
-          "origin": "resolution", "origin_ref": "N-013 裁定",
+          "name": "is_fixed_asset",
+          "label": "是否属于固定资产类",
+          "type": "boolean",
+          "required": true,
+          "source": "user",
+          "origin": "resolution",
+          "origin_ref": "N-013 裁定",
           "resolution_note": "★★ **本字段在工具表 PR 字段组中【未列出】**，但 `spec/chain.json#routes.purchase_tier3.branches.tier3_plus.when` 含 `is_fixed_asset == true`，而**制度第二十条**的条件是「合同金额超过 200,000 元 **或属于固定资产类**」—— 后者是**独立条件** ⇒ **无本字段则该分支在批 1 内不可达**。",
           "why_not_use_category": "★ **不得用 `usage_category_l1 == P04`（设备类）代理判定** —— 制度第二十条的「固定资产类」是**会计口径**（是否资本化），而「设备类」是**品类口径**；设备可以不资本化 ⇒ 代理会造成**误触发**（把非固定资产的设备单拉进招标/竞谈流程）。",
           "rule": "由申请人按**公司固定资产标准**判定并勾选；★ 因判定带主观性，**审批人可在审批意见中复核**（不阻断）"
@@ -137,9 +213,13 @@
       "_note": "★ 本节字段**不是在申请人填单时填写**，而是在审批节点由审批人填写/系统带入（V3.0 新增结构）",
       "fields": [
         {
-          "name": "designated_purchaser", "label": "指定采购经办人", "type": "person", "required": true,
+          "name": "designated_purchaser",
+          "label": "指定采购经办人",
+          "type": "person",
+          "required": true,
           "source": "supervisor_at_approval",
-          "origin": "tool_table", "origin_ref": "表单字段清单 R14",
+          "origin": "tool_table",
+          "origin_ref": "表单字段清单 R14",
           "rule": "★ 填写执行该笔采购的人员与部门",
           "hard_rules": [
             "★★ **禁止的是「自批自派自经办」，不是「经办人＝需求提出人」本身**（★ B7 定案 2026-09-30 口径变更：**上级领导指派的，经办人可以是需求提出人**）；★ 判定＝「**指定人**（`designated_by`，系统带入＝审批操作人）≠ 需求提出人」即放行；★ 采一档豁免",
@@ -148,22 +228,40 @@
           "known_cost": "★ 平台**无跨字段校验能力** ⇒ 由综合运营主管在三单匹配初审环节**人工核对**（制度第十四条 / 第六十条；第 7 项已定 0925）"
         },
         {
-          "name": "designated_by", "label": "指定人", "type": "person", "required": true, "source": "system",
+          "name": "designated_by",
+          "label": "指定人",
+          "type": "person",
+          "required": true,
+          "source": "system",
           "immutable": true,
-          "origin": "tool_table", "origin_ref": "表单字段清单 R15",
+          "carried_by_kind": "code",
+          "carried_by": "`flow#act` 指定经办块写 `ext_json.designated_by`（＝本任务审批人，已鉴权）",
+          "origin": "tool_table",
+          "origin_ref": "表单字段清单 R15",
           "note": "★ 原表为一行「指定人与指定时间」（类型 人员 / 日期时间）⇒ 按类型拆为两个字段（技术归一）",
           "rule": "取审批节点**操作人**，不可手改"
         },
         {
-          "name": "designated_at", "label": "指定时间", "type": "datetime", "required": true, "source": "system",
+          "name": "designated_at",
+          "label": "指定时间",
+          "type": "datetime",
+          "required": true,
+          "source": "system",
           "immutable": true,
-          "origin": "tool_table", "origin_ref": "表单字段清单 R15",
+          "carried_by_kind": "code",
+          "carried_by": "`flow#act` 指定经办块写 `ext_json.designated_at`（＝系统时刻）",
+          "origin": "tool_table",
+          "origin_ref": "表单字段清单 R15",
           "rule": "取审批节点**审批时间**，不可手改。作为「谁指定的、什么时候指定的」的**唯一依据**，是三单匹配与月度报送的数据源"
         },
         {
-          "name": "designation_basis", "label": "指定依据", "type": "text", "required": true,
+          "name": "designation_basis",
+          "label": "指定依据",
+          "type": "text",
+          "required": true,
           "source": "supervisor_at_approval",
-          "origin": "resolution", "origin_ref": "R-17",
+          "origin": "resolution",
+          "origin_ref": "R-17",
           "resolution_note": "★★ **本字段在工具表 PR 审批节点字段（R14/R15）中【未列出】**，但**制度第六十条明确要求登记**「指定依据（审批意见中简述为何指定该人员）」⇒ **判定为漏项，予以补入**",
           "rule": "必填 —— 未填理由则无法事后核对「指定是否合理」"
         }
@@ -175,59 +273,168 @@
       "repeating": true,
       "fields": [
         {
-          "name": "material_name_spec", "label": "物料名称 / 规格型号", "type": "text", "required": true, "source": "user",
-          "origin": "tool_table", "origin_ref": "表单字段清单 R16",
+          "name": "material_name_spec",
+          "label": "物料名称 / 规格型号",
+          "type": "text",
+          "required": true,
+          "source": "user",
+          "origin": "tool_table",
+          "origin_ref": "表单字段清单 R16",
           "rule": "建议**关联物料编码库**；关联后自动带出库存量"
         },
         {
-          "name": "unit", "label": "单位", "type": "constant_ref", "required": true, "source": "user",
+          "name": "unit",
+          "label": "单位",
+          "type": "constant_ref",
+          "required": true,
+          "source": "user",
           "constant_ref": "spec/constants.json#tables[key=unit]",
-          "origin": "resolution", "origin_ref": "A4（2026-09-30 定案）＋ 表单字段清单 R17",
+          "origin": "resolution",
+          "origin_ref": "A4（2026-09-30 定案）＋ 表单字段清单 R17",
           "note": "★ 原表为一行「单位 / 数量」（类型 文本 / 数字）⇒ 按类型拆为两个字段（技术归一）",
           "rule": "★ 从**系统常量表**中选取（单位字典，**后台可增删改**）"
         },
         {
-          "name": "quantity", "label": "数量", "type": "number", "required": true, "source": "user",
-          "origin": "tool_table", "origin_ref": "表单字段清单 R17",
+          "name": "quantity",
+          "label": "数量",
+          "type": "number",
+          "required": true,
+          "source": "user",
+          "origin": "tool_table",
+          "origin_ref": "表单字段清单 R17",
           "rule": "**数量须为正数**"
         },
         {
-          "name": "estimated_unit_price_cents", "label": "预估单价", "type": "money_cents", "required": true, "source": "user",
-          "origin": "tool_table", "origin_ref": "表单字段清单 R18",
+          "name": "estimated_unit_price_cents",
+          "label": "预估单价",
+          "type": "money_cents",
+          "required": true,
+          "source": "user",
+          "origin": "tool_table",
+          "origin_ref": "表单字段清单 R18",
           "rule": "与历史采购价**偏离超 20%** 时提示并需填写说明"
         },
         {
-          "name": "subtotal_cents", "label": "小计", "type": "money_cents", "required": false, "source": "computed",
-          "origin": "tool_table", "origin_ref": "表单字段清单 R19",
+          "name": "subtotal_cents",
+          "label": "小计",
+          "type": "money_cents",
+          "required": false,
+          "source": "computed",
+          "origin": "tool_table",
+          "origin_ref": "表单字段清单 R19",
           "rule": "单价 × 数量，并**自动求和至表头** `estimated_total_cents`"
         },
         {
-          "name": "stock_qty", "label": "现有库存量（自动带出）", "type": "number", "required": false, "source": "system",
-          "origin": "tool_table", "origin_ref": "表单字段清单 R20",
+          "name": "stock_qty",
+          "label": "现有库存量（自动带出）",
+          "type": "number",
+          "required": false,
+          "source": "system",
+          "origin": "tool_table",
+          "origin_ref": "表单字段清单 R20",
           "rule": "从**库存台账**读取；**有可用库存时须说明为何仍需采购**"
         },
         {
-          "name": "tech_attachment", "label": "技术附件", "type": "attachment", "required": false, "source": "user",
-          "origin": "tool_table", "origin_ref": "表单字段清单 R21",
+          "name": "tech_attachment",
+          "label": "技术附件",
+          "type": "attachment",
+          "required": false,
+          "source": "user",
+          "origin": "tool_table",
+          "origin_ref": "表单字段清单 R21",
           "rule": "图纸 / 技术参数 / 样品照片；★ **设备类必须上传**"
         }
       ]
     }
   ],
-
   "checks": [
-    { "id": "amount_positive",     "when": "submit", "assert": "estimated_total_cents > 0", "else": "拒绝提交", "origin": "resolution", "origin_ref": "FR-M9-03（现实现仅 Warn 不拒）" },
-    { "id": "completeness_l2",     "when": "submit", "assert": "usage_category_l1 与 usage_category_l2 均已填", "else": "拒绝提交", "origin": "tool_table", "origin_ref": "用途分类表 R32" },
-    { "id": "no_self_purchaser",   "when": "submit", "assert": "NOT (designated_purchaser == applicant AND designated_by == applicant)", "assert_readable": "★ **提交时点这一半**：**不得在提交体里自带 `designated_by` ＝ 需求提出人本人**（防**伪造提交体** —— 提交方自己把「指定人」填成自己，从而把「自批」伪装成合法指定）。★ 审批时点那一半见下一条 `no_self_purchaser_at_designation`。", "else": "★ 拒绝（硬拦截）：提示「指定人不能是需求提出人本人」", "severity": "hard", "carried_by_kind": "submit", "origin": "resolution", "origin_ref": "B7（2026-09-30 定案）＋ 制度第十四条 / 第六十条", "note": "★★★ **2026-10-01 拆分（`N-035`）**：原 `when` 写「`approval(supervisor) 指定时 + 提交前`」—— ★ 它**声称覆盖两个时点**，而 checks 引擎的白名单按「含『提交前』」只收**提交**那一个；★ 且**提交时 `designated_*` 尚未填写**（本节 `filled_at` ＝ `supervisor_approval`）⇒ ★★ **审批时点的那一半从未被评估**，而它 `else` 承诺的「拒绝（硬拦截）」在「**主管领导当场指定经办人**」这个真实场景上**是空的**。⇒ ★ 按「**一条判据只声称一个时点**」（`chain.json#conventions.checks_when`）拆为两条：本条＝**提交时点**（防伪造）；`no_self_purchaser_at_designation`＝**节点时点**（拦自批自派）。★ 两条**同源、同断言、不同时点**。" },
-    { "id": "no_self_purchaser_at_designation", "when": "approval(supervisor_approval)", "assert": "NOT (designated_purchaser == applicant AND designated_by == applicant)", "assert_readable": "★ **节点时点这一半**：主管领导当场指定经办人时，**不得「自批自派」** —— 若操作人（`designated_by`，系统带入＝本任务审批人）**就是**需求提出人本人，**且**他指定的经办人**也是自己** ⇒ 拒绝该审批动作。★ 注意两个**允许**（用户 2026-09-30 定案 B7）：仅「经办人＝提出人」（**上级领导指派**）**允许**；仅「操作人＝提出人」而指定了别人**也允许** —— 拦的**只有两者同时成立**。", "else": "★ 拒绝该审批动作（400）：提示「不得自批自派自经办 —— 你是本单需求提出人，不能作为主管领导指定经办人」", "severity": "hard", "carried_by_kind": "code", "origin": "resolution", "origin_ref": "B7（2026-09-30 定案）＋ 制度第十四条 / 第六十条 ＋ N-015 裁定①（必填时点＝supervisor_approval＋approve）", "carried_by": "internal/flow/designation.go（★ 节点时点由该节点的 handler 承载；checks 引擎对非提交时点 `continue` 跳过 —— 详见 `chain.json#conventions.checks_when`）", "note": "★★★ **2026-10-01 新增（`N-035`）**：由 `no_self_purchaser` **拆出** —— 原单条判据只跑提交那一半，**审批时点的那一半从未被评估**。★ 本条才是 `else` 里「拒绝（硬拦截）」真正生效的地方。★ **为什么用「节点时点」而不是塞进提交期**：它断言的 `designated_purchaser` / `designated_by` **在提交时尚不存在**（`filled_at: supervisor_approval`），**提交期无论如何判不出**。★★ **与「两个不阻断标记」的分工**：`is_self_designated`（经办人＝提出人）与 `designation_out_of_scope`（范围外）**按要求不阻断、只落标记**（`N-015` 裁定③）；**本条拦的是「自批＋自派同时成立」**，两者不冲突。" },
-    { "id": "cross_dept_designation","when": "approval(supervisor_approval)", "assert": "跨部门指定须有被指定部门主管领导同意记录", "carried_by": "★ **人工承载**（`else` ＝ 人工核对）—— 本单**无自动执行体**，MUST NOT 被误读为「系统会拦」", "else": "人工核对", "origin": "tool_table", "origin_ref": "D2 批复" },
-    { "id": "safety_branch",       "when": "submit", "assert": "is_safety_or_special_equipment == true ⇒ 须附资质文件或说明", "else": "拒绝提交", "origin": "tool_table", "origin_ref": "表单字段清单 R13" },
-    { "id": "device_tech_attachment","when": "submit", "assert": "usage_category_l1 == 'P04' ⇒ tech_attachment 非空", "else": "拒绝提交", "origin": "tool_table", "origin_ref": "表单字段清单 R21" },
-    { "id": "idempotency_key",     "when": "submit", "assert": "读取 Idempotency-Key", "else": "无幂等保护", "origin": "code", "origin_ref": "mimo 审计：现 submit 不读 Idempotency-Key；应照抄 submission 的「占位 + 指纹 + 40900」模式" }
+    {
+      "id": "amount_positive",
+      "when": "submit",
+      "assert": "estimated_total_cents > 0",
+      "else": "拒绝提交",
+      "origin": "resolution",
+      "origin_ref": "FR-M9-03（现实现仅 Warn 不拒）"
+    },
+    {
+      "id": "completeness_l2",
+      "when": "submit",
+      "assert": "usage_category_l1 与 usage_category_l2 均已填",
+      "else": "拒绝提交",
+      "origin": "tool_table",
+      "origin_ref": "用途分类表 R32"
+    },
+    {
+      "id": "no_self_purchaser",
+      "when": "submit",
+      "assert": "NOT (designated_purchaser == applicant AND designated_by == applicant)",
+      "assert_readable": "★ **提交时点这一半**：**不得在提交体里自带 `designated_by` ＝ 需求提出人本人**（防**伪造提交体** —— 提交方自己把「指定人」填成自己，从而把「自批」伪装成合法指定）。★ 审批时点那一半见下一条 `no_self_purchaser_at_designation`。",
+      "else": "★ 拒绝（硬拦截）：提示「指定人不能是需求提出人本人」",
+      "severity": "hard",
+      "carried_by_kind": "submit",
+      "origin": "resolution",
+      "origin_ref": "B7（2026-09-30 定案）＋ 制度第十四条 / 第六十条",
+      "note": "★★★ **2026-10-01 拆分（`N-035`）**：原 `when` 写「`approval(supervisor) 指定时 + 提交前`」—— ★ 它**声称覆盖两个时点**，而 checks 引擎的白名单按「含『提交前』」只收**提交**那一个；★ 且**提交时 `designated_*` 尚未填写**（本节 `filled_at` ＝ `supervisor_approval`）⇒ ★★ **审批时点的那一半从未被评估**，而它 `else` 承诺的「拒绝（硬拦截）」在「**主管领导当场指定经办人**」这个真实场景上**是空的**。⇒ ★ 按「**一条判据只声称一个时点**」（`chain.json#conventions.checks_when`）拆为两条：本条＝**提交时点**（防伪造）；`no_self_purchaser_at_designation`＝**节点时点**（拦自批自派）。★ 两条**同源、同断言、不同时点**。"
+    },
+    {
+      "id": "no_self_purchaser_at_designation",
+      "when": "approval(supervisor_approval)",
+      "assert": "NOT (designated_purchaser == applicant AND designated_by == applicant)",
+      "assert_readable": "★ **节点时点这一半**：主管领导当场指定经办人时，**不得「自批自派」** —— 若操作人（`designated_by`，系统带入＝本任务审批人）**就是**需求提出人本人，**且**他指定的经办人**也是自己** ⇒ 拒绝该审批动作。★ 注意两个**允许**（用户 2026-09-30 定案 B7）：仅「经办人＝提出人」（**上级领导指派**）**允许**；仅「操作人＝提出人」而指定了别人**也允许** —— 拦的**只有两者同时成立**。",
+      "else": "★ 拒绝该审批动作（400）：提示「不得自批自派自经办 —— 你是本单需求提出人，不能作为主管领导指定经办人」",
+      "severity": "hard",
+      "carried_by_kind": "code",
+      "origin": "resolution",
+      "origin_ref": "B7（2026-09-30 定案）＋ 制度第十四条 / 第六十条 ＋ N-015 裁定①（必填时点＝supervisor_approval＋approve）",
+      "carried_by": "internal/flow/designation.go（★ 节点时点由该节点的 handler 承载；checks 引擎对非提交时点 `continue` 跳过 —— 详见 `chain.json#conventions.checks_when`）",
+      "note": "★★★ **2026-10-01 新增（`N-035`）**：由 `no_self_purchaser` **拆出** —— 原单条判据只跑提交那一半，**审批时点的那一半从未被评估**。★ 本条才是 `else` 里「拒绝（硬拦截）」真正生效的地方。★ **为什么用「节点时点」而不是塞进提交期**：它断言的 `designated_purchaser` / `designated_by` **在提交时尚不存在**（`filled_at: supervisor_approval`），**提交期无论如何判不出**。★★ **与「两个不阻断标记」的分工**：`is_self_designated`（经办人＝提出人）与 `designation_out_of_scope`（范围外）**按要求不阻断、只落标记**（`N-015` 裁定③）；**本条拦的是「自批＋自派同时成立」**，两者不冲突。"
+    },
+    {
+      "id": "cross_dept_designation",
+      "when": "approval(supervisor_approval)",
+      "assert": "跨部门指定须有被指定部门主管领导同意记录",
+      "carried_by": "★ **人工承载**（`else` ＝ 人工核对）—— 本单**无自动执行体**，MUST NOT 被误读为「系统会拦」",
+      "else": "人工核对",
+      "origin": "tool_table",
+      "origin_ref": "D2 批复"
+    },
+    {
+      "id": "safety_branch",
+      "when": "submit",
+      "assert": "is_safety_or_special_equipment == true ⇒ 须附资质文件或说明",
+      "else": "拒绝提交",
+      "origin": "tool_table",
+      "origin_ref": "表单字段清单 R13"
+    },
+    {
+      "id": "device_tech_attachment",
+      "when": "submit",
+      "assert": "usage_category_l1 == 'P04' ⇒ tech_attachment 非空",
+      "else": "拒绝提交",
+      "origin": "tool_table",
+      "origin_ref": "表单字段清单 R21"
+    },
+    {
+      "id": "idempotency_key",
+      "when": "submit",
+      "assert": "读取 Idempotency-Key",
+      "else": "无幂等保护",
+      "origin": "code",
+      "origin_ref": "mimo 审计：现 submit 不读 Idempotency-Key；应照抄 submission 的「占位 + 指纹 + 40900」模式"
+    }
   ],
-
   "known_gaps": [
-    { "gap": "「物料编码库」与「库存台账」的外部来源", "status": "★★ **已定（`COLLAB §9.2`）**", "decision": "★ **本期不做**：字段保留、手工填写 —— 外部数据源未定，且非制度硬要求。", "note": "字段 R16/R20 依赖物料编码库与库存台账；两者是否在本期范围内**未在工具表与制度中明确**，需开议题确认" },
-    { "gap": "「与历史采购价偏离超 20%」的历史价数据源", "status": "★★ **已定（`COLLAB §9.2`）**", "decision": "★ **本期不做该校验** —— 数据源未定；制度亦无此要求。", "note": "R18 的校验需要历史采购价；数据源未明确" }
+    {
+      "gap": "「物料编码库」与「库存台账」的外部来源",
+      "status": "★★ **已定（`COLLAB §9.2`）**",
+      "decision": "★ **本期不做**：字段保留、手工填写 —— 外部数据源未定，且非制度硬要求。",
+      "note": "字段 R16/R20 依赖物料编码库与库存台账；两者是否在本期范围内**未在工具表与制度中明确**，需开议题确认"
+    },
+    {
+      "gap": "「与历史采购价偏离超 20%」的历史价数据源",
+      "status": "★★ **已定（`COLLAB §9.2`）**",
+      "decision": "★ **本期不做该校验** —— 数据源未定；制度亦无此要求。",
+      "note": "R18 的校验需要历史采购价；数据源未明确"
+    }
   ]
 }

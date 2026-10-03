@@ -6,7 +6,6 @@
   "version": "1.0",
   "date": "2026-10-01",
   "generated_by": "WorkBuddy",
-
   "sources": {
     "tool_table": "★★ **权威源＝工具表 `采购方式与留痕`**（`表单字段清单` **未列 RFQ 字段组**）：**R6**（采三档 >5,000 元）强制留痕材料明确含「**询价单**」（与「比价表」并列）· 内控要点「★ **三家报价须独立获取**」；**R5**（采二档 1,000–5,000 元）留痕材料含「**报价单或框架协议价**」· 内控「**报价依据须可追溯**」。",
     "chain": "spec/chain.json#doc_chains.RFQ —— `label: 询价单` · `prefix: RFQ` · `ledger: []` · `env_count: 0` · ★ **`parent: \"PR@rfq\"`**（★ **11 类单据里唯一带 `parent` 的一张**）· note：「**无独立审批链、不落账**；作为采三档「询比价」环节产生，**随主单 PR 留痕**」。",
@@ -16,11 +15,8 @@
     "institution": "费用管理办法V4.0 —— **第二十条**（采三档：组织询比价**不少于 3 家**，并编制比价表）· **第二十三条**（报价与资质审查）· 第十条（经办人由主管领导指定）",
     "resolution": "spec/RESOLUTIONS.md（**R-22**：`RFQ`／`QC` 侧字段以工具表 C6 ＋ 代码侧为准，须标注「制度未明说」/ **R-20#14** 采购方式取并集 5 值）"
   },
-
   "ledger": [],
-
   "ledger_resolution": "★★ **本单不落台账、也没有落账自检** —— 与 `BJ` 同（`doc_to_ledger.RFQ = []`）：\n· ★ 但它的**留存要求更硬**：工具表 R6 把「**询价单**」列为**强制留痕材料**，而 R2 明写「**无留存即视为未执行程序**」；\n· ★ 它与 `BJ` 的差别是**主从**：`chain.json#doc_chains.RFQ.parent = \"PR@rfq\"`（★ **11 类里唯一有 `parent` 的**）⇒ ★ **它明确挂在主单 `PR` 的 `rfq` 节点上**。\n· ⇒ ★ **故本单无 `ledger_*_written` 判据**；★ 它的「有没有留下」由**附件必填**（`rfq_file` ＋ `send_evidence`）与 **`parent` 关联**共同保证 —— ★ **不是靠台账行**。",
-
   "routes": {
     "_authority": "★ 权威源＝`spec/chain.json#doc_chains.RFQ`（`env_count = 0`，**`parent: PR@rfq`**）—— **本文件不得与之冲突**",
     "no_chain": "★★ **无独立审批链、不落账**：本单**不是要审批的单据**，而是采三档「询比价」环节的**过程记录** —— 由**采购经办人**在向供应商询价时出具。",
@@ -28,7 +24,6 @@
     "where_it_feeds": "★ 本单的**下游是 `BJ`（比价表）**：`BJ` 汇总各家报价并选定；★ 建议 **`BJ` 引用本单号**（`related_rfq_no`）而不是各写一遍报价信息 —— ★ 但 `BJ` 已交付（`cedbea2`），★ 该改动**须走一次规格变更、且两侧同批**（见 `known_gaps` 第 1 条）。",
     "what_stays_here": "★ **本单独占的、`BJ` 没有的东西**：**报价截止时间** 与 ★★ **报价有效期** —— ★ 后者是**「有效报价」判定的第一个要件**（见 `known_gaps` 第 2 条：`BJ` 当时把「有效」的判定标准记为未定，**其根因正是本单未交付**）。"
   },
-
   "sections": [
     {
       "id": "header",
@@ -54,6 +49,8 @@
           "required": true,
           "source": "system",
           "immutable": true,
+          "carried_by_kind": "code",
+          "carried_by": "httpapi#handleApprovalSubmit 取 `idn.OpenID`（飞书免登身份）写入 `t_instance.applicant_open_id` 规范列；★ 客户端 `body.Fields[\"applicant\"]` **写不进规范列**（实测探针）",
           "origin": "chain",
           "origin_ref": "`routes.purchase_tier3.nodes[1].actor = purchaser`",
           "rule": "取当前登录人；★ 应为**该 PR 的采购经办人**（主管领导在审批时指定，见第十条）"
@@ -65,6 +62,8 @@
           "required": true,
           "source": "system",
           "immutable": true,
+          "carried_by_kind": "code",
+          "carried_by": "httpapi#handleApprovalSubmit 取 `idn.Department` 写入 `t_instance.department` 规范列；★★ **但客户端同名值会残留 `ext_json`**（2026-10-03 实测：`{\"applicant\":\"ou_攻击者\"}` 与规范列并存）⇒ 见 `N-038` 交办收口",
           "origin": "code",
           "origin_ref": "通用表头（同 PR）",
           "note": "★ 用于留痕与统计；本单无审批链，不参与分支判定"
@@ -76,6 +75,8 @@
           "required": true,
           "source": "system",
           "immutable": true,
+          "carried_by_kind": "structural",
+          "carried_by": "★ 契约键（Q14 单一键）：`CT/QC/RFQ/SUB/SS/BJ` 的关联单据**存在性由提交期 hard 判据逐项等值查**（`related_*_must_exist` 系）⇒ 填不存在的单号**过不了提交**；★ 填「另一个存在的单号」属业务错配，非本字段可独力造成",
           "origin": "chain",
           "origin_ref": "★ `doc_chains.RFQ.parent = \"PR@rfq\"`（**本单挂在 PR 的 rfq 节点上**）",
           "rule": "★ 从关联 PR 带入；★ **一 PR 可多张**（分标段／分品类询价）",
@@ -105,7 +106,6 @@
         }
       ]
     },
-
     {
       "id": "requirement",
       "label": "询价要求",
@@ -166,7 +166,6 @@
         }
       ]
     },
-
     {
       "id": "invited",
       "label": "受邀单位与发出留痕",
@@ -218,7 +217,6 @@
         }
       ]
     },
-
     {
       "id": "responses",
       "label": "回应情况",
@@ -248,7 +246,6 @@
       ]
     }
   ],
-
   "checks": [
     {
       "id": "related_pr_must_exist",
@@ -257,7 +254,8 @@
       "else": "★ **不静默通过**：拒绝并提示「关联采购申请单 {no} 不存在」",
       "origin": "chain",
       "origin_ref": "★ `doc_chains.RFQ.parent = \"PR@rfq\"`（本单**挂在 PR 的 rfq 节点上**）",
-      "severity": "hard", "carried_by_kind": "submit",
+      "severity": "hard",
+      "carried_by_kind": "submit",
       "note": "★★ 本单是**唯一带 `parent` 的单据** ⇒ 它的**归属是显式声明**的，因此这条判据**直接对应规格里的那句话**（不像别的单要靠约定推断）。★ 查不到**不得 fail-open**（`N-027` 口径：**fail-open＝假校验**）。"
     },
     {
@@ -267,7 +265,8 @@
       "else": "★ 拒绝：「采三档询比价须邀请不少于 3 家，当前 N 家」",
       "origin": "institution",
       "origin_ref": "制度**第二十条**（≥3 家）＋ 工具表 R6（同）／ **R5**（采二档「≥1 家」）",
-      "severity": "hard", "carried_by_kind": "submit",
+      "severity": "hard",
+      "carried_by_kind": "submit",
       "note": "★★ **本条的关键是「门槛随档位」，而不是「一律 3 家」**：★ 工具表 R5 明写采二档是「报价比选（**≥1 家**报价或框架协议价）」⇒ ★ 若本单统一按 3 家拦，会**把采二档全部误拦**（而采二档是 1,000–5,000 元的**主力档位**）。★ 与 `SUB#contract_approved_when_over_1000` 同样教训：**门槛的边界与适用面必须逐档核对，不能想当然**。★ 家数**必须由明细计数**（`BJ` 同款）。"
     },
     {
@@ -277,7 +276,8 @@
       "else": "★ 拒绝：「采购方式为『单一来源』时不得走询价通道 —— 请走单一来源理由书（SS）」",
       "origin": "institution",
       "origin_ref": "制度**第五十条**（独家采购单列通道）＋ 与 `forms/BJ.json#checks#not_single_source` **同款**",
-      "severity": "hard", "carried_by_kind": "submit",
+      "severity": "hard",
+      "carried_by_kind": "submit",
       "note": "★★ **与 `BJ` 的互斥判据是同一条逻辑**（`BJ` 交付时已确立）：★ 询价的前提是「**有得问**」，而「单一来源」的前提**正是「没得问」** ⇒ ★ 两者在语义上不可能同时成立。★ **本单与 `BJ` 都设这条**，是因为二者**都可独立存在**（采二档可能只有本单、没有 `BJ`）⇒ ★ **凡是这两张单各自的入口，都要拦一次** —— ★ 这不是重复实现（**判据 id 与 `BJ` 的同名同款，实现共用**），而是**两条独立通道各设一个守卫**。"
     },
     {
@@ -287,7 +287,8 @@
       "else": "★ 拒绝：「报价截止时间不得早于询价发出日期」",
       "origin": "code",
       "origin_ref": "本表 `quote_deadline` / `send_date` 的 `rule`",
-      "severity": "hard", "carried_by_kind": "submit",
+      "severity": "hard",
+      "carried_by_kind": "submit",
       "note": "★ 看似平凡，但它防的是**回溯性数据**：★ 「截止时间早于发出时间」在现实中只有一个成因 —— **事后倒填**（先定了结果，再补一份「询价记录」）。★ 与 `BJ#selection_reason_immutable` 同族：**都在防「事后补写」**；★ 一个防「改」，一个防「补」。"
     },
     {
@@ -297,7 +298,8 @@
       "else": "★ 拒绝：「未留存询价单与发出证据不得提交（工具表：**无留存即视为未执行程序**）」",
       "origin": "tool_table",
       "origin_ref": "工具表 R6 强制留痕材料「**询价单**」＋ R5 内控「**报价依据须可追溯**」＋ R2（「无留存即视为未执行程序」）",
-      "severity": "hard", "carried_by_kind": "submit",
+      "severity": "hard",
+      "carried_by_kind": "submit",
       "note": "★★ **本单不落台账，所以这条判据是它唯一的「存在证明」**：★ 别的单据靠落账自检证明「真的产出了」，本单**只能靠附件** ⇒ ★ 若这两项可空，本单在系统里就**只是一行无内容的记录**，而**它与「根本没询价」无法区分**。★ 这正是 `ledger_resolution` 里说的「靠附件而非台账行」。"
     },
     {
@@ -311,7 +313,6 @@
       "note": "★★ **为什么是 `soft`（本单最容易做错的一处）**：★ 「实际只回了 1 家」**不一定是程序问题** —— 可能是**市场上确实只有这 1 家**，而那种情况的正确处置**不是拦住这张询价单**，而是**改走单一来源通道**（`SS`）。⇒ ★ 硬拦会**把真实业务逼成「去凑够 3 家」**（找人陪个价），★ **那正好把「独立获取」这条内控变成形式**。★ 与 `SUB#submit_deadline_warning` 同款：**该提示的不要拦；拦错了会催生假数据**。"
     }
   ],
-
   "known_gaps": [
     {
       "gap": "★ **`BJ` 是否应引用本单号**（`related_rfq_no`）",

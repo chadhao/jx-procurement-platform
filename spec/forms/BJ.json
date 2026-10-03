@@ -6,7 +6,6 @@
   "version": "1.0",
   "date": "2026-10-01",
   "generated_by": "WorkBuddy",
-
   "sources": {
     "tool_table": "★★ **关键权威源＝工具表 `采购方式与留痕`**（不是 `表单字段清单` —— 该表**未列 BJ 字段组**）：**R6**（采三档 >5,000 元：采购方式「询比价（不少于 3 家有效报价）」· 强制留痕材料「询价单、**比价表**、**选定理由**、主管领导 ＋ 项目总经理审批单、合同、验收记录、集团提交流转单」· 内控要点「★ **三家报价须独立获取，报价单位不得相互关联**；★ **比价表须含技术符合性评价栏**」）＋ **R19**「★ **采购方式的选择由采购经办人在比价表「选定理由」栏说明，不得事后补写**」。",
     "chain": "spec/chain.json#doc_chains.BJ —— `label: 比价表` · `prefix: BJ` · `ledger: []` · `env_count: 0` · ★ note：「**无独立审批链、不落账**（**嵌入采三档询比价环节**）」；★ 同环节的 `RFQ`（询价单）带 `parent: \"PR@rfq\"`。",
@@ -15,11 +14,8 @@
     "institution": "费用管理办法V4.0 —— **第二十条**（采三档：询比价**不少于 3 家**，并**编制比价表**）· **第二十三条**（报价与资质审查）· 第三十四条（三单匹配）",
     "resolution": "spec/RESOLUTIONS.md（**R-22**：`RFQ`／`QC` 侧字段以工具表 C6 ＋ 代码侧为准，须标注「制度未明说」/ **R-20#14** 采购方式取并集 5 值 / **R-09** 采三档加强链节点顺序）"
   },
-
   "ledger": [],
-
   "ledger_resolution": "★★ **本单不落台账、也没有落账自检** —— 这一点必须说清，免得后人以为漏了一条 check：\n· `ledger-mapping.json#doc_to_ledger.BJ = []`（判据 `S12` 锚定，本文件**必须**写空数组）；\n· `chain.json#doc_chains.BJ` 明写「**无独立审批链、不落账**（**嵌入采三档询比价环节**）」；\n· ★ **但它的数据不能丢**：工具表 R6 把「询价单、比价表、选定理由」列为**强制留痕材料**，并明写「**无留存即视为未执行程序**」 ⇒ ★ 留存靠**附件与随主单引用**（同环节 `RFQ` 的 `parent = PR@rfq`，即随主单 `PR` 留痕）。\n· ⇒ ★ **故本单无 `ledger_*_written` 判据**；而与之相对，`SS`／`PC`／`QC`／`GR`／`SUB` **都各有落账自检** —— ★ **区别不在有没有用，而在「该不该落账」**。★ 判据的存在与否，本身就是规格的一部分。",
-
   "routes": {
     "_authority": "★ 权威源＝`spec/chain.json#doc_chains.BJ`（`env_count = 0`）—— **本文件不得与之冲突**",
     "no_chain": "★★ **无独立审批链、不落账**：本单**不是一张要审批的单据**，而是**采三档「询比价」环节的产出物** —— 由**采购经办人**在组织询价时一并编制。",
@@ -27,7 +23,6 @@
     "why_no_chain": "★ 理由：比价是**执行动作**（谁去问、问了几家、为什么选这家），**不是审批动作** ⇒ 给它单设审批链等于**同一件事审两遍**；★ 真正需要把关的是「**跟谁买、什么价**」（`pgm_confirm`）与「**付款条件**」（合同两级审批）⇒ 那两处已有节点。",
     "role": "★★ **本单在制度里的真正身份**：工具表 R19 写「**采购方式的选择由采购经办人在比价表「选定理由」栏说明**」 ⇒ ★ **它是「为什么选这家、为什么用这个采购方式」的唯一正本说明**；★ 而且**不得事后补写**（同一句明文）⇒ ★ 故本单的 `selection_reason` **提交后不可修改**（见 `checks#selection_reason_immutable`）。"
   },
-
   "sections": [
     {
       "id": "header",
@@ -52,6 +47,8 @@
           "required": true,
           "source": "system",
           "immutable": true,
+          "carried_by_kind": "code",
+          "carried_by": "httpapi#handleApprovalSubmit 取 `idn.OpenID`（飞书免登身份）写入 `t_instance.applicant_open_id` 规范列；★ 客户端 `body.Fields[\"applicant\"]` **写不进规范列**（实测探针）",
           "origin": "chain",
           "origin_ref": "`routes.purchase_tier3.nodes[1].actor = purchaser`",
           "rule": "取当前登录人；★ 应为**该 PR 的采购经办人**（由主管领导在审批时指定，见第十条）",
@@ -64,6 +61,8 @@
           "required": true,
           "source": "system",
           "immutable": true,
+          "carried_by_kind": "code",
+          "carried_by": "httpapi#handleApprovalSubmit 取 `idn.Department` 写入 `t_instance.department` 规范列；★★ **但客户端同名值会残留 `ext_json`**（2026-10-03 实测：`{\"applicant\":\"ou_攻击者\"}` 与规范列并存）⇒ 见 `N-038` 交办收口",
           "origin": "code",
           "origin_ref": "通用表头（同 PR）",
           "note": "★ 用于留痕与统计；本单无审批链，不参与分支判定"
@@ -75,6 +74,8 @@
           "required": true,
           "source": "system",
           "immutable": true,
+          "carried_by_kind": "structural",
+          "carried_by": "★ 契约键（Q14 单一键）：`CT/QC/RFQ/SUB/SS/BJ` 的关联单据**存在性由提交期 hard 判据逐项等值查**（`related_*_must_exist` 系）⇒ 填不存在的单号**过不了提交**；★ 填「另一个存在的单号」属业务错配，非本字段可独力造成",
           "origin": "chain",
           "origin_ref": "`doc_chains.RFQ.parent = \"PR@rfq\"`（同环节的询价单挂在 PR 的 rfq 节点）",
           "rule": "★ 从关联 PR 带入；★ 对应关系为**一对多**（同一 PR 可分标段／分品类多次比价）",
@@ -104,7 +105,6 @@
         }
       ]
     },
-
     {
       "id": "quotes",
       "label": "报价明细（≥3 家有效报价）",
@@ -145,7 +145,6 @@
         }
       ]
     },
-
     {
       "id": "evaluation",
       "label": "技术符合性与选定",
@@ -196,7 +195,6 @@
         }
       ]
     },
-
     {
       "id": "attachment",
       "label": "附件",
@@ -226,7 +224,6 @@
       ]
     }
   ],
-
   "checks": [
     {
       "id": "min_three_valid_quotes",
@@ -235,7 +232,8 @@
       "else": "★ 拒绝：「采三档询比价须不少于 3 家有效报价，当前 N 家」",
       "origin": "institution",
       "origin_ref": "制度**第二十条**（询比价**不少于 3 家**，并编制比价表）＋ 工具表 R6（「不少于 3 家有效报价」）",
-      "severity": "hard", "carried_by_kind": "submit",
+      "severity": "hard",
+      "carried_by_kind": "submit",
       "note": "★★ **两条要点**：① **门槛是制度明文**（不是建议），且采三档的**内控强度就建立在「有得挑」之上** ⇒ 少于 3 家时正确出路是**改走竞争性谈判或单一来源通道**，而不是「就这两家选一个」；② ★ **家数必须由明细自动计数** —— 若让填写人手填，它必然被填成 3（★ **表格会自己骗自己**）。★ 与 `GR#acceptance_group_members_complete` 同款：**成员/家数一律由明细推导，不接受声明**。"
     },
     {
@@ -245,7 +243,8 @@
       "else": "★ 拒绝：「报价单位之间存在关联关系时不得按比价结果选定 —— 请剔除关联报价并补足 3 家独立报价，或改走招标／竞争性谈判」",
       "origin": "tool_table",
       "origin_ref": "工具表 R6 内控要点「★ **三家报价须独立获取，报价单位不得相互关联**」",
-      "severity": "hard", "carried_by_kind": "submit",
+      "severity": "hard",
+      "carried_by_kind": "submit",
       "note": "★★★ **本判据的性质必须写清，否则会被误读**：★ **系统核验不了「两家公司是否关联」**（没有工商股权数据源）⇒ 本判据校验的**不是事实，而是声明** —— 它的价值在于：**让人必须显式回答这个问题，并为「是」付出代价**（走不了比价、必须改通道）。★ **这仍然是有效的内控**：围标的典型形态是「没人被问过这个问题」；一旦要签字声明，风险就从「系统不知道」变成「有人明知故犯」。★ 与 `SUB#payee_change_requires_callback` **同族**：**系统管不了事实，就管住「必须做过这个动作且留下痕迹」**。★ 关联关系若**真实存在但声明为「否」** ⇒ ★ 属**违规**（制度层面处理），**不在系统可判定范围内** —— 这一点必须如实写明，不得暗示系统能发现围标。"
     },
     {
@@ -255,7 +254,8 @@
       "else": "★ 拒绝：「比价表须含技术符合性评价栏（工具表 R6 内控要点）」",
       "origin": "tool_table",
       "origin_ref": "工具表 R6 内控要点「★ **比价表须含技术符合性评价栏**」",
-      "severity": "hard", "carried_by_kind": "submit",
+      "severity": "hard",
+      "carried_by_kind": "submit",
       "note": "★ **本判据只要求「填了」，不要求「结论正确」** —— ★ 与 `SUB#tolerance_note_when_over` 同款：**技术判断是人的专业判断，系统的职责是让它必须发生且留痕**。★ 若把它写成「必须判为符合」，就变成系统替技术部门下结论。"
     },
     {
@@ -265,7 +265,8 @@
       "else": "★ 拒绝：「选定单位 X 不在有效且技术符合的报价之列」",
       "origin": "chain",
       "origin_ref": "工具表 R6（「询比价（不少于 3 家**有效**报价）」＋「技术符合性评价栏」）＋ `routes.purchase_tier3.nodes[3]`（项目总经理确认**拟成交单位**）",
-      "severity": "hard", "carried_by_kind": "submit",
+      "severity": "hard",
+      "carried_by_kind": "submit",
       "note": "★★ **这条防的是最典型的「比价做样子」**：**找了 3 家来陪标，最后选了一家没报价的（或已判技术不符合的）** ⇒ ★ 若没有这条，前面所有判据都白做（家数够了、也独立了、技术栏也填了，**结论却跟它们无关**）。★ 与 `GR#acceptance_group_members_complete` 的**双向**思路同源：**不仅「该有的要有」，还要「用的必须是清单里的」**。★ 实现上须**从 `quotes` 文本明细中解析**（见 `quotes.critical_note` 已说明其局限）。"
     },
     {
@@ -275,7 +276,8 @@
       "else": "★ **不静默通过**：拒绝修改并提示「选定理由不得事后补写（工具表 R19）」",
       "origin": "tool_table",
       "origin_ref": "★★ 工具表 **R19**：「采购方式的选择由采购经办人在比价表「选定理由」栏说明，**不得事后补写**」＋ `enums.json#procure_methods.rule`（「不得事后补写」）",
-      "severity": "hard", "carried_by_kind": "code",
+      "severity": "hard",
+      "carried_by_kind": "code",
       "note": "★★★ **本判据是本单的立身之本**：工具表把「选定理由」定为**强制留痕材料**，两处明文都强调「**不得事后补写**」—— ★ 而「不得事后补写」在系统里的**唯一可执行形态就是「提交后不可改」**：★ 否则用户随时可以改，**「事前形成」这件事在系统上根本不成立**（改完就是事后补写的）。⇒ ★ 这不是「字段只读」这种界面细节，而是**一条纪律能否成立的技术前提**。★ 类：`chain.json#conventions.naming` 之外的**「不可变」也是契约**。"
     },
     {
@@ -285,11 +287,11 @@
       "else": "★ 拒绝：「采购方式为『单一来源』时不得使用比价表通道 —— 请走单一来源理由书（SS）」",
       "origin": "institution",
       "origin_ref": "制度**第五十条**（独家采购单列通道）＋ 工具表 R8（单一来源为「任何金额（例外）」独立行）＋ ★ **本条同时关闭 `SS.json#known_gaps` 的「与 BJ／RFQ 互斥未表达」**",
-      "severity": "hard", "carried_by_kind": "submit",
+      "severity": "hard",
+      "carried_by_kind": "submit",
       "note": "★★★ **本条就是 `SS` 交付时留下的那个缺口，现在关闭**：`SS.json#known_gaps` 原文——「★ 「单一来源」意味着**没有询比价** ⇒ 逻辑上本单与 `BJ`／`RFQ` 互斥。★ 但 `chain.json` 未表达该互斥，本表单也未加判据（因缺少『该 PR 是否已存在 BJ』的查法）。⇒ **建议在 `BJ` 交付时一并定义**」。★ **现在定了**：互斥的判定**不需要在 `chain.json` 里表达**，也不需要跨单据查询 —— ★ **同一张比价表自己就知道**：它要求选定的单位来自**≥3 家独立报价**，而单一来源的**前提正是「凑不出 3 家」** ⇒ ★ 两者在**语义上**不可能同时成立，且**在数据上**表现为 `procure_method` 这一个字段。⇒ **判据只需一句**：本单存在 ⇒ 方式不得为「单一来源」。★ 这是「**表面冲突 ⇒ 找到一个字段就知道答案**」的一个实例（同族：`R-30`「证明不可达」优于「裁定谁对」）。★ **反向的一半**（`SS` 存在 ⇒ 不得再有 `BJ`）：★ 由 `SS#fixed_asset_conflict` 的 `soft` 口径与实际业务决定，**不在本单设**（避免两处各判一半）。"
     }
   ],
-
   "known_gaps": [
     {
       "gap": "★★ ★ **`quotes`（报价明细）目前只能用文本承载，无法真正机读**",

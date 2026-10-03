@@ -55,6 +55,8 @@
           "required": true,
           "source": "system",
           "immutable": true,
+          "carried_by_kind": "structural",
+          "carried_by": "★ 契约键（Q14 单一键）：`CT/QC/RFQ/SUB/SS/BJ` 的关联单据**存在性由提交期 hard 判据逐项等值查**（`related_*_must_exist` 系）⇒ 填不存在的单号**过不了提交**；★ 填「另一个存在的单号」属业务错配，非本字段可独力造成",
           "origin": "tool_table",
           "origin_ref": "单据清单 R10 ＋ 采购订单 R30",
           "rule": "★ 从**已批准的 PR** 带入，**禁止无源起草**（同 PO R30「从已批准的 PR 生成，禁止无源下单」）",
@@ -145,6 +147,8 @@
           "required": true,
           "source": "system",
           "immutable": true,
+          "carried_by_kind": "code",
+          "carried_by": "`N-015` 指定经办块：`flow#act` 写 ext 的 `purchaser`（＝本节点解析出的经办人，已鉴权）",
           "origin": "tool_table",
           "origin_ref": "R-20#2 统一名 ＋ PR 审批节点「指定采购经办人」",
           "rule": "★ 取 PR 审批节点指定的采购经办人；★ **不得为需求提出人本人**（制度第十四条；采一档豁免）"
@@ -717,7 +721,8 @@
       "else": "★★ **拒绝进入合同审批环节**（第三十五条原文：缺少任一项的不得进入）",
       "origin": "institution",
       "origin_ref": "第三十五条",
-      "severity": "hard", "carried_by_kind": "submit"
+      "severity": "hard",
+      "carried_by_kind": "submit"
     },
     {
       "id": "payee_name_matches_supplier",
@@ -726,7 +731,8 @@
       "else": "拒绝提交",
       "origin": "institution",
       "origin_ref": "第三十五条（7）（开户名称须与合同相对方一致）",
-      "severity": "hard", "carried_by_kind": "submit",
+      "severity": "hard",
+      "carried_by_kind": "submit",
       "note": "★ 跨字段校验 —— 属转向 ③ 后我方可自建的能力（原生平台做不到，见 `docs/13` 结论位点映射）"
     },
     {
@@ -736,7 +742,8 @@
       "else": "拒绝提交",
       "origin": "institution",
       "origin_ref": "第三十四条 / 第三十五条（3）＋ R-21#5",
-      "severity": "hard", "carried_by_kind": "submit"
+      "severity": "hard",
+      "carried_by_kind": "submit"
     },
     {
       "id": "sole_source_link",
@@ -745,7 +752,8 @@
       "else": "拒绝提交",
       "origin": "institution",
       "origin_ref": "第二十三条 ＋ 批复 A6",
-      "severity": "hard", "carried_by_kind": "submit"
+      "severity": "hard",
+      "carried_by_kind": "submit"
     },
     {
       "id": "tier3_quote_link",
@@ -754,7 +762,8 @@
       "else": "拒绝提交",
       "origin": "institution",
       "origin_ref": "第二十条",
-      "severity": "hard", "carried_by_kind": "submit",
+      "severity": "hard",
+      "carried_by_kind": "submit",
       "note": "★ 阈值 500000 分（＝5,000 元）取自 `chain.json#thresholds.purchase.bands` 的采三档下界，**不另立数值**"
     },
     {
@@ -764,7 +773,8 @@
       "else": "拒绝提交",
       "origin": "institution",
       "origin_ref": "第三十六条",
-      "severity": "hard", "carried_by_kind": "submit"
+      "severity": "hard",
+      "carried_by_kind": "submit"
     },
     {
       "id": "equipment_after_sales",
@@ -773,7 +783,8 @@
       "else": "拒绝提交",
       "origin": "institution",
       "origin_ref": "第三十五条（6）（设备类必备）",
-      "severity": "hard", "carried_by_kind": "submit"
+      "severity": "hard",
+      "carried_by_kind": "submit"
     },
     {
       "id": "tech_opinion_needed",
@@ -782,7 +793,8 @@
       "else": "拒绝提交",
       "origin": "resolution",
       "origin_ref": "R-21#4 ＋ 第二十二条",
-      "severity": "hard", "carried_by_kind": "submit"
+      "severity": "hard",
+      "carried_by_kind": "submit"
     },
     {
       "id": "contract_no_format",
@@ -791,7 +803,8 @@
       "else": "拒绝提交",
       "origin": "code",
       "origin_ref": "本文件 number_format",
-      "severity": "hard", "carried_by_kind": "submit"
+      "severity": "hard",
+      "carried_by_kind": "submit"
     },
     {
       "id": "sign_after_approval",
@@ -800,7 +813,8 @@
       "else": "拒绝签署（不得先签后批、不得先盖章后审批）",
       "origin": "institution",
       "origin_ref": "第三十四条",
-      "severity": "hard", "carried_by_kind": "manual"
+      "severity": "hard",
+      "carried_by_kind": "manual"
     },
     {
       "id": "no_amount_tiering",
@@ -809,7 +823,8 @@
       "else": "拒绝提交",
       "origin": "resolution",
       "origin_ref": "chain.json#doc_chains.CT.hard_rules",
-      "severity": "hard", "carried_by_kind": "structural",
+      "severity": "hard",
+      "carried_by_kind": "structural",
       "note": "★ 本条是「统一两级、取消金额分档」这个改动的**执行守卫** —— 没有它，分档逻辑可能被重新引入而不被察觉"
     },
     {
@@ -819,7 +834,8 @@
       "else": "★ **拒绝进入合同审批**，并提示「已超出容差，请先行采购变更（PC）」",
       "origin": "resolution",
       "origin_ref": "B5（2026-09-30 定案）＋ 第四十二条（精神）",
-      "severity": "hard", "carried_by_kind": "submit",
+      "severity": "hard",
+      "carried_by_kind": "submit",
       "note": "★ 阈值**不写死在本文件**，取 `spec/params.json` 的 `contract.amount_over_pr_tolerance_percent`（＝10）。★ 与制度第四十二条的「**付款额**超**原合同金额**」**不是同一场景、不得混用**（那条走 PC，这条是签约前的闸门）。★ 本条同时关闭「先报低价拿审批、再签高价合同」的通道。",
       "assert_readable": "合同金额 **≤ PR 预估金额 × 1.10**（容差 10%）⇒ 直接放行（须在合同单写说明）；**超出 10% ⇒ 必须先走采购变更（PC）后方可签约**"
     },
@@ -830,7 +846,8 @@
       "else": "★ **拒绝**（硬拦截）：提示「指定人不能是需求提出人本人」",
       "origin": "resolution",
       "origin_ref": "B7（2026-09-30 定案）＋ 制度第十四条 / 第六十条",
-      "severity": "hard", "carried_by_kind": "submit",
+      "severity": "hard",
+      "carried_by_kind": "submit",
       "note": "★★ **口径变更记录（重要）**：原为「**经办人不得＝需求提出人**」（PR 侧因原生平台**无跨字段校验**只能人工核对）。用户 2026-09-30 定案：**上级领导指派的，经办人可以是需求提出人** ⇒ 本条改为「**禁止的是「自批自派自经办」，而不是「经办人＝需求提出人」本身**」。★ **无新增字段**：`designated_by`（指定人）本就在 PR 上，取审批节点操作人 —— 「是不是上级领导指派」用「**指定人是否等于需求提出人**」即可机判，不必另加勾选框。★ 采一档仍豁免（第十八条）。★ **必须与 `PR.json` 的同款判据保持一致**（两处口径同改）。",
       "assert_readable": "★ **经办人可以＝需求提出人**（**上级领导指派**的情形）；★ **但「指定人」不得是需求提出人本人** —— 即**不得自批、自派、自经办**。判定＝只要「指定人 ≠ 需求提出人」（说明是**别人（上级领导）指派的**）即放行。"
     },
@@ -841,7 +858,8 @@
       "else": "无幂等保护",
       "origin": "code",
       "origin_ref": "mimo 审计：submit 须照抄 `submission` 的「占位 + 指纹 + 40900」模式",
-      "severity": "hard", "carried_by_kind": "submit"
+      "severity": "hard",
+      "carried_by_kind": "submit"
     }
   ],
   "known_gaps": [

@@ -6,7 +6,6 @@
   "version": "1.2",
   "date": "2026-09-30",
   "generated_by": "WorkBuddy",
-
   "sources": {
     "_v1_1": "★ 2026-10-01：把 `inspection_report_file` 的 `type` 由 `file` 改为 **`attachment`** —— ★ 起因：核对全量表单时发现**其余 9 个附件字段全部用 `attachment`，只有本单用了 `file`** ⇒ **同一概念两个词**（自造的第二词）。★ 无功能影响（Go 侧无类型白名单），但**同义异名必然漂移**，故立即对齐。",
     "tool_table": "★ **工具表 `表单字段清单` 未列 QC 字段组**（该表只到 6 组：PR／SA／PO／到货验收单／集团提交流转单／结算补录）⇒ 本表字段**由 `L07` 台账列需求 ＋ 制度 ＋ 代码侧推导**，且**逐条标注来源**（见 `known_gaps` 第 1 条）。",
@@ -15,11 +14,8 @@
     "institution": "费用管理办法V3.0（第五十九条 到货验收台账；第三十四条 不得先付后验）＋ **2026-09-25 批复 A2**（验收人按品类分三组）",
     "resolution": "spec/RESOLUTIONS.md（**R-22**：RFQ／QC 侧字段以工具表 C6 ＋ 代码侧为准，须标注「制度未明说」/ **R-20#6**：检验结论统一用制度名 / **R-16**：经办人已纳入验收组，旧「经办人不得验收」口径作废）"
   },
-
   "ledger": [],
-
   "ledger_resolution": "★★ **本单不落台账行，但向 `L07` 写一列** —— 这一点必须说清，否则极易被误读成「QC 与台账无关」：\n· `ledger-mapping.json#doc_to_ledger.QC = []` ⇒ **不产生台账行**（判决类型 `[]`，判据 `S12` 锚定，本文件**必须**写空数组）；\n· 但 `L07.fields[inspection_conclusion]` 的 `writer` 正是**质检技术部**，**数据来源就是本单** ⇒ ★★ **QC 不交付 ⇒ `L07`「检验结论」列恒空**；\n· ★★ 而「**恒空**」在本项目里是最危险的形态之一：**「没有数据」与「没有违规」长得一模一样**（`README` 定案 #51 同族）—— 台账看上去正常，实际这一列永远读不到值，且**没有任何东西会报错**。\n· ⇒ 因此本单的**两个必配项**（`related_biz_no → GR 单号`、`inspection_result`）各配一条 `hard` 判据，见 `checks`。",
-
   "routes": {
     "_authority": "★ 权威源＝`spec/chain.json#doc_chains.QC`（`env_count = 0`）—— **本文件不得与之冲突**",
     "no_chain": "★★ **无独立审批链**：本单**不设审批节点**，是**登记／补录型单据** —— 由质检技术岗在**到货验收当日**填写并提交；交付后**不回写** GR 的结论，只向 `L07` 补写「检验结论」列（见 `ledger_resolution`）。",
@@ -27,7 +23,6 @@
     "submitter": "★ 提交人＝**质检技术岗**（`chain.json#roles.inspector_group` 一类）；★ 现状：**待总工到位**（`docs/01-PRD` 组织架构）⇒ 本单**暂由项目总经理代管**填写（与「质检技术部由总经理代管」一致）。",
     "avoidance": "★ **综合运营主管不得同时作为该笔的验收人**（`enums.json#acceptance_groups.hard_rules`）—— ★ 该约束的**承载点在 `GR`**（验收人字段），本单**不重复设卡**（否则同一规则两处实现＝漂移）。"
   },
-
   "sections": [
     {
       "id": "header",
@@ -52,6 +47,8 @@
           "required": true,
           "source": "system",
           "immutable": true,
+          "carried_by_kind": "code",
+          "carried_by": "httpapi#handleApprovalSubmit 取 `idn.OpenID`（飞书免登身份）写入 `t_instance.applicant_open_id` 规范列；★ 客户端 `body.Fields[\"applicant\"]` **写不进规范列**（实测探针）",
           "origin": "code",
           "origin_ref": "代码侧 QC ＋ `L07.fields[inspection_conclusion].writer = 质检技术部`",
           "rule": "取当前登录人，不可手改；★ 应为**质检技术岗**（现状待总工到位，暂由项目总经理代管）"
@@ -63,6 +60,8 @@
           "required": true,
           "source": "system",
           "immutable": true,
+          "carried_by_kind": "code",
+          "carried_by": "httpapi#handleApprovalSubmit 取 `idn.Department` 写入 `t_instance.department` 规范列；★★ **但客户端同名值会残留 `ext_json`**（2026-10-03 实测：`{\"applicant\":\"ou_攻击者\"}` 与规范列并存）⇒ 见 `N-038` 交办收口",
           "origin": "code",
           "origin_ref": "通用表头（同 PR）",
           "note": "★ 用于留痕与统计，**不参与本单的分支判定**（本单无审批链）"
@@ -74,6 +73,8 @@
           "required": true,
           "source": "system",
           "immutable": true,
+          "carried_by_kind": "structural",
+          "carried_by": "★ 契约键（Q14 单一键）：`CT/QC/RFQ/SUB/SS/BJ` 的关联单据**存在性由提交期 hard 判据逐项等值查**（`related_*_must_exist` 系）⇒ 填不存在的单号**过不了提交**；★ 填「另一个存在的单号」属业务错配，非本字段可独力造成",
           "is_business_key": false,
           "origin": "chain",
           "origin_ref": "`chain.json#doc_chains.QC.required_config[0]`：★ **必须配 `related_biz_no → GR 单号`，否则 `L07`「检验结论」列永远为空**",
@@ -82,7 +83,6 @@
         }
       ]
     },
-
     {
       "id": "inspection",
       "label": "检验信息",
@@ -140,7 +140,6 @@
         }
       ]
     },
-
     {
       "id": "conclusion",
       "label": "判定结论",
@@ -201,7 +200,6 @@
         }
       ]
     },
-
     {
       "id": "attachment",
       "label": "附件",
@@ -219,7 +217,6 @@
       ]
     }
   ],
-
   "checks": [
     {
       "id": "related_gr_must_exist",
@@ -228,7 +225,8 @@
       "else": "★ **不静默通过**：拒绝并提示「关联验收单 {no} 不存在」",
       "origin": "chain",
       "origin_ref": "`chain.json#doc_chains.QC.required_config[0]`",
-      "severity": "hard", "carried_by_kind": "submit",
+      "severity": "hard",
+      "carried_by_kind": "submit",
       "note": "★★ **三点说清**：① **必须存在** —— 否则「检验」失去了被检验的对象；② **等值不前缀** —— 前缀会让 `GR-2609-0001` 的查询命中 `GR-2609-00011`（`README` 定案 #15/#28 同族：**前缀匹配＝串单／越权**）；③ ★★ **查不到时不得 fail-open** —— 「查不到就放行」等于这条校验不存在（`N-027` 已确立的口径：**fail-open＝假校验**）。"
     },
     {
@@ -238,7 +236,8 @@
       "else": "★ 拒绝：判定结论必填",
       "origin": "chain",
       "origin_ref": "`chain.json#doc_chains.QC.required_config[1]`",
-      "severity": "hard", "carried_by_kind": "submit",
+      "severity": "hard",
+      "carried_by_kind": "submit",
       "note": "★ 这条看似平凡，却是**整张单存在的理由** —— QC 的产出就是「一个判定」。★ 与 `related_gr_must_exist` 合起来正好对应 `chain.json` 写明的**两个必配项**：**一个指明对象（哪张 GR），一个给出结论**。"
     },
     {
@@ -248,7 +247,8 @@
       "else": "★ 拒绝：抽检须填抽检数量；全检不得填抽检数量",
       "origin": "code",
       "origin_ref": "本表 `inspection_method` / `sample_quantity` 的 `rule`",
-      "severity": "hard", "carried_by_kind": "submit",
+      "severity": "hard",
+      "carried_by_kind": "submit",
       "note": "★ **双向**约束（⟺ 而非 ⇒）：只写「抽检⇒填数量」会漏掉「全检却填了数量」这种自相矛盾。★ 与 `CT` 的 `prepay_pair` 同款写法（**成对字段必须一起出现、也必须一起不出现**）。"
     },
     {
@@ -258,7 +258,8 @@
       "else": "★ 拒绝：判定为非合格时须填写不合格描述",
       "origin": "code",
       "origin_ref": "本表 `defect_description.rule`",
-      "severity": "hard", "carried_by_kind": "submit",
+      "severity": "hard",
+      "carried_by_kind": "submit",
       "note": "★ 判「不合格」却写不出哪里不合格 ⇒ 该判定**不可复核**。★ 注意方向：**合格时不要求**（避免让质检为了过校验写废话）。"
     },
     {
@@ -268,7 +269,8 @@
       "else": "★ **不静默通过**：标记本次落账失败并告警（不得只记日志）",
       "origin": "chain",
       "origin_ref": "`chain.json#doc_chains.QC`（结论并入 `L07`）＋ `ledger-mapping.json#ledgers.L07.fields[inspection_conclusion]`",
-      "severity": "hard", "carried_by_kind": "code",
+      "severity": "hard",
+      "carried_by_kind": "code",
       "order_requirement": "★★ **执行顺序（2026-10-01 补 —— 因 mimo 在实现中如实提出）**：本判据必须在**落账动作之后**执行。★ 现有架构**落账在终态（`finalize`）**，而 GR／QC **无审批链** ⇒ 提交即终态；⇒ 调用点位于提交处理器**并不矛盾**，但**顺序必须是「先落账、后自检」** —— ★ 若顺序颠倒，会**拦住所有提交**（行还没写，自检必然失败）⇒ 属**误拦**，与漏拦同样致命。",
       "note": "★★★ **这条是本表单最重要的一条** —— 它防的正是「**没有数据与没有违规不可区分**」（`README` 定案 #51）：\n· 若落账动作漏掉，`L07`「检验结论」列**恒空**，而台账看起来**完全正常**；\n· 事后无人能区分「这批货就是没检验」与「检验了但没写进去」—— ★ **两种情况的处置完全不同，却长得一样**。\n★ 落账自检与 `SS`／`PC` 的 `ledger_l09_written` 同款（**同一族：凡是「某张单应产出某个值」的地方，都要一条「是否真的产出了」的自检**）。"
     },
@@ -283,7 +285,6 @@
       "note": "★★ **为什么必须是 `soft`**：本单**允许一对多**（同一 GR 可分批／分项检验）⇒ 硬拦会**误伤合法的分批检验**。★ 这里体现的是「**允许多份**是设计，重复录入是风险」—— 两者表象相同，**只能提示、不能拦**。"
     }
   ],
-
   "known_gaps": [
     {
       "gap": "★ **工具表 `表单字段清单` 未列 QC 字段组** ⇒ 本表字段系**推导**而来",

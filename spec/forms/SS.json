@@ -58,6 +58,8 @@
           "required": true,
           "source": "system",
           "immutable": true,
+          "carried_by_kind": "code",
+          "carried_by": "httpapi#handleApprovalSubmit 取 `idn.OpenID`（飞书免登身份）写入 `t_instance.applicant_open_id` 规范列；★ 客户端 `body.Fields[\"applicant\"]` **写不进规范列**（实测探针）",
           "origin": "tool_table",
           "origin_ref": "通用表头（同 PR）",
           "note": "★ 本单的提交人是**采购经办人**（`chain.json#routes.sole_source.nodes[0].actor = purchaser`），不是需求提出人",
@@ -70,6 +72,8 @@
           "required": true,
           "source": "system",
           "immutable": true,
+          "carried_by_kind": "code",
+          "carried_by": "httpapi#handleApprovalSubmit 取 `idn.Department` 写入 `t_instance.department` 规范列；★★ **但客户端同名值会残留 `ext_json`**（2026-10-03 实测：`{\"applicant\":\"ou_攻击者\"}` 与规范列并存）⇒ 见 `N-038` 交办收口",
           "origin": "tool_table",
           "origin_ref": "通用表头（同 PR）",
           "critical_note": "★★ 本字段**用于条件分支判定** —— 决定「主管领导」是谁（综合运营部／质检技术部 → 项目总经理；生产部／销售部 → 副总）。见 `chain.json#roles.supervisor`（`N-016` 已结构化）"
@@ -81,6 +85,8 @@
           "required": true,
           "source": "system",
           "immutable": true,
+          "carried_by_kind": "structural",
+          "carried_by": "★ 契约键（Q14 单一键）：`CT/QC/RFQ/SUB/SS/BJ` 的关联单据**存在性由提交期 hard 判据逐项等值查**（`related_*_must_exist` 系）⇒ 填不存在的单号**过不了提交**；★ 填「另一个存在的单号」属业务错配，非本字段可独力造成",
           "origin": "tool_table",
           "origin_ref": "单据清单 R9 ＋ PO R30（禁止无源下单）",
           "rule": "★ 从**已批准的 PR** 带入；★ 对应 §四 的两个采购方均须引用本单",
@@ -94,6 +100,8 @@
           "source": "system",
           "enum_ref": "spec/enums.json#procure_methods",
           "immutable": true,
+          "carried_by_kind": "structural",
+          "carried_by": "★ 由 `SS` 存在性推导（`not_single_source` 判据：SS 存在 ⇒ 方式不得为「单一来源」）；★ 取值受 `constants.json` 枚举约束",
           "origin": "resolution",
           "origin_ref": "R-20#14",
           "rule": "★ 本单固定为「**单一来源**」（值域取并集 5 值中的该项）—— 由单据类型决定，不可手改"
@@ -152,6 +160,8 @@
           "required": true,
           "source": "computed",
           "immutable": true,
+          "carried_by_kind": "code",
+          "carried_by": "httpapi#injectPCSSSystemFields → `chain.ChangeTierOf`（PC＝max(变更,原合同)·SS＝amount）；★★ **但 `putSysField` 语义是「非空不覆盖」⇒ 客户端可篡改**（实测降档成立）⇒ `N-038`",
           "origin": "resolution",
           "origin_ref": "R-22 ＋ chain.json 分档",
           "rule": "★ 由 `amount_cents` 算出（`tier_of`），表单带入、不得手选",
@@ -164,6 +174,8 @@
           "required": true,
           "source": "system",
           "immutable": true,
+          "carried_by_kind": "code",
+          "carried_by": "`N-013` 已接线：★ 由标的分类/金额阈值派生，客户端值不参与判定",
           "origin": "resolution",
           "origin_ref": "N-013 裁定（同 PR）",
           "rule": "★ 从关联 PR 带入",
@@ -302,6 +314,8 @@
           "required": true,
           "source": "system",
           "immutable": true,
+          "carried_by_kind": "code",
+          "carried_by": "`flow#applyNodeFieldMapTx` 写 `ext[rule.ByKey]`＝`actor`（审批人，已鉴权）",
           "origin": "code",
           "origin_ref": "代码侧（通用留痕）",
           "rule": "取节点操作人，不可手改"
@@ -313,6 +327,8 @@
           "required": true,
           "source": "system",
           "immutable": true,
+          "carried_by_kind": "code",
+          "carried_by": "`flow#applyNodeFieldMapTx` 写 `ext[rule.AtKey]`＝系统时刻",
           "origin": "code",
           "origin_ref": "代码侧（通用留痕）",
           "rule": "取节点审批时间，不可手改"
@@ -355,6 +371,8 @@
           "required": true,
           "source": "system",
           "immutable": true,
+          "carried_by_kind": "manual",
+          "carried_by": "L09 台账标记时点，★ 由 `ops_supervisor` 在台账报送节点手工登记（`SS.approval_and_filing` 段）",
           "origin": "code",
           "origin_ref": "chain.json#routes.sole_source.nodes[4]（ledger = L09）",
           "rule": "落 `L09` 台账（`exception_type` = 独家采购）的时间"
@@ -381,7 +399,8 @@
       "else": "拒绝提交",
       "origin": "tool_table",
       "origin_ref": "单据清单 R9（唯一性说明 / 价格佐证）",
-      "severity": "hard", "carried_by_kind": "submit"
+      "severity": "hard",
+      "carried_by_kind": "submit"
     },
     {
       "id": "sole_source_attachment_when_authorized",
@@ -390,7 +409,8 @@
       "else": "拒绝提交",
       "origin": "code",
       "origin_ref": "代码侧补充",
-      "severity": "hard", "carried_by_kind": "submit"
+      "severity": "hard",
+      "carried_by_kind": "submit"
     },
     {
       "id": "related_pr_must_exist",
@@ -399,7 +419,8 @@
       "else": "★ **可见失败**（不 fail-open）—— 提示「关联需求单不存在或未批准」",
       "origin": "tool_table",
       "origin_ref": "PO R30「从已批准的 PR 生成，禁止无源下单」",
-      "severity": "hard", "carried_by_kind": "submit",
+      "severity": "hard",
+      "carried_by_kind": "submit",
       "note": "★ 与 CT 的同款判据同口径：**关联 PR 查不到 ⇒ 拒绝，不得静默放行**"
     },
     {
@@ -409,7 +430,10 @@
       "else": "拒绝进入下一节点",
       "origin": "resolution",
       "origin_ref": "chain.json#routes.sole_source.nodes[1]（required = true）",
-      "severity": "hard", "carried_by_kind": "pending_implementation"
+      "severity": "hard",
+      "carried_by_kind": "code",
+      "carried_by": "flow/designation.go#nodeFieldSpecFor L157-158（`SS×tech_opinion` ⇒ `tech_opinion` 必填，附带 `tech_opinion_by/at` 系统带入）→ #applyNodeFieldMapTx 缺值即拒、任务不推进、`ext_json` 无残留；service.go L508 调用点",
+      "verified_at": "9fd0227"
     },
     {
       "id": "pgm_final_required",
@@ -418,7 +442,10 @@
       "else": "拒绝",
       "origin": "institution",
       "origin_ref": "批复 A6（项目总经理终审）",
-      "severity": "hard", "carried_by_kind": "pending_implementation"
+      "severity": "hard",
+      "carried_by_kind": "code",
+      "carried_by": "flow/designation.go#nodeFieldSpecFor L159-161（`SS×pgm_final` ⇒ `pgm_final_opinion` 必填）→ #applyNodeFieldMapTx 缺值即拒",
+      "verified_at": "9fd0227"
     },
     {
       "id": "no_escalation_to_group",
@@ -427,7 +454,8 @@
       "else": "★ 拒绝（链配置被改）",
       "origin": "institution",
       "origin_ref": "批复 A6 ＋ R-28（只写湖南侧义务）",
-      "severity": "hard", "carried_by_kind": "structural",
+      "severity": "hard",
+      "carried_by_kind": "structural",
       "note": "★ 这是「湖南侧截止到项目总经理、不上抬集团」这条硬规则的**执行守卫** —— 没有它，链被改回「上抬集团」不会被发现"
     },
     {
@@ -437,7 +465,9 @@
       "else": "拒绝提交",
       "origin": "resolution",
       "origin_ref": "chain.json 分档（R-22）",
-      "severity": "hard", "carried_by_kind": "code", "carried_by": "internal/chain/route.go#TierOf（按 chain.json#thresholds.purchase.bands 闭区间）",
+      "severity": "hard",
+      "carried_by_kind": "code",
+      "carried_by": "internal/chain/route.go#TierOf（按 chain.json#thresholds.purchase.bands 闭区间）",
       "note": "★ 防止「按档位审批」被绕成「按最低档审批」"
     },
     {
@@ -457,7 +487,11 @@
       "else": "★ 告警（落账自检）",
       "origin": "resolution",
       "origin_ref": "ledger-mapping.json#ledgers.L09.producer",
-      "severity": "hard", "carried_by_kind": "pending_implementation",
+      "severity": "hard",
+      "carried_by_kind": "code",
+      "carried_by": "flow/finalize.go L154-191：`lt==\"L09\" && DocType==\"SS\"` ⇒ 校验 `exception_type` 必存；缺列 ⇒ Error 日志 + 审计 `ledger_l09_column_missing`（result=warn）+ 不中断终态。★ `exception_type` 值域由 httpapi/handlers_approval_pcss_inject.go L42 注入为常量 `\"独家采购\"`（SS 分支），本判据的值域要求由该注入点承载",
+      "verified_at": "9fd0227",
+      "caveat": "★★ **「存在性」已实现但「值域」不可靠**：注入点走 `putSysField`，而它**不覆盖客户端非空手填值**（实测：手填「紧急采购」后仍保留）⇒ 本判据的 `exception_type='独家采购'` 目前**可被前端伪造**。已并入 N-038；`carried_by_kind=code` 仅表示**落点存在**，不表示**该落点当前可信**",
       "note": "★ 与 `flow.finalize` 的落账后自检同口径 —— **「没有数据」不得与「没有违规」长得一样**"
     },
     {
@@ -467,7 +501,8 @@
       "else": "拒绝（硬拦截）",
       "origin": "resolution",
       "origin_ref": "R-27（B7 定案）＋ 制度第十四条",
-      "severity": "hard", "carried_by_kind": "submit",
+      "severity": "hard",
+      "carried_by_kind": "submit",
       "note": "★ **必须与 `PR.json` / `CT.json` 同款判据一致**（三处同口径）"
     },
     {
@@ -477,7 +512,8 @@
       "else": "无幂等保护",
       "origin": "code",
       "origin_ref": "mimo 审计：submit 须照抄 submission 的「占位 + 指纹 + 40900」模式",
-      "severity": "hard", "carried_by_kind": "submit"
+      "severity": "hard",
+      "carried_by_kind": "submit"
     }
   ],
   "known_gaps": [
