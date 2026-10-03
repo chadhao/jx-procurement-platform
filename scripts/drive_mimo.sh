@@ -1,0 +1,100 @@
+#!/usr/bin/env bash
+# drive_mimo.sh —— 驱动外部 Agent（mimo code）完成一轮交办：**目标判据 ＋ 中断自动续跑**
+#
+# ★ 为什么需要这个脚本（2026-10-03 实测教训）：
+#   mimo 执行到一半会 **interrupt** —— 命令行**正常返回、退出码 0**，看起来"跑完了"，
+#   而工作其实只做了一半。人类操作者当时的应对是**再补一句「继续」**。
+#   ⇒ **命令返回 ≠ 任务完成**。必须改判据：**看客观产物，不看进程退出**。
+#
+# 用法：
+#   bash scripts/drive_mimo.sh <议题ID> <指令文件> [最大尝试次数]
+# 例：
+#   bash scripts/drive_mimo.sh N-039 /tmp/n039/next-round.txt 5
+#
+# 完成判据（三条**全满足**才算完成，缺一即续跑）：
+#   ① 台账：COLLAB.md 的该议题段内出现 `MIMO-DONE`
+#   ② 提交：HEAD 已越过本次基线（＝对方真的提交了）
+#   ③ 门禁：bash scripts/check_all.sh 退出码 0
+#
+# 环境变量：
+#   MIMO_SESSION  会话 id（默认＝本项目长期会话；留空则新建会话）
+#   MIMO_BIN      mimo 可执行文件路径
+set -o pipefail
+
+REPO="$(cd "$(dirname "$0")/.." && pwd)"
+MIMO_BIN="${MIMO_BIN:-$HOME/.mimocode/bin/mimo}"
+MIMO_SESSION="${MIMO_SESSION:-ses_ffe5f18db08b1ffeuj4zuqyor4}"
+
+ISSUE="${1:?用法: drive_mimo.sh <议题ID> <指令文件> [最大尝试次数]}"
+PROMPT_FILE="${2:?缺少指令文件}"
+MAX="${3:-5}"
+LOG="${LOG:-/tmp/drive_mimo_${ISSUE//[^A-Za-z0-9]/_}.log}"
+
+SCHEME="bash scripts/check_all.sh"
+
+die() { echo "✗ $*" >&2; exit 1; }
+[ -f "$PROMPT_FILE" ] || die "指令文件不存在：$PROMPT_FILE"
+[ -x "$MIMO_BIN" ] || die "找不到 mimo：$MIMO_BIN"
+
+cd "$REPO" || die "无法进入仓库：$REPO"
+
+# ── 完成判据 ①：议题段内出现 MIMO-DONE ─────────────────────────────
+section_done() {
+  awk -v id="### $ISSUE" '
+    index($0, id) == 1 { inside = 1; next }
+    inside && /^### /   { inside = 0 }
+    inside && /MIMO-DONE/ { found = 1 }
+    END { exit !found }
+  ' COLLAB.md
+}
+
+# ── 完成判据 ③：门禁必绿 ──────────────────────────────────────────
+gate_ok() { $SCHEME >/dev/null 2>&1; }
+
+BASE="$(git rev-parse HEAD)"
+echo "═══ 驱动 mimo · 议题 $ISSUE ═══"
+echo "仓库     : $REPO"
+echo "会话     : ${MIMO_SESSION:-<新建>}"
+echo "基线 HEAD: $BASE"
+echo "日志     : $LOG"
+echo
+
+attempt=1
+while [ "$attempt" -le "$MAX" ]; do
+  if [ "$attempt" -eq 1 ]; then
+    PROMPT="$(cat "$PROMPT_FILE")"
+  else
+    # ★ 续跑：同一会话（它记得原任务）＋ 防重做措辞 ＋ 复述完成判据
+    PROMPT="继续 $ISSUE 未完成的项。★★ 已完成的项**不要重做**。完成判据（三条全满足）：① COLLAB.md 的 $ISSUE 段内写入你的回执且状态改 MIMO-DONE；② 提交代码（显式路径，禁止 git add -A）；③ 提交前跑 bash scripts/check_all.sh 必绿 8/8，然后推送 origin/main。★ 若中途被打断，直接从断点继续。"
+  fi
+
+  echo "── 第 $attempt/$MAX 次 ──"
+  {
+    echo; echo "════════ attempt $attempt · $(date '+%F %T') ════════"
+  } >> "$LOG"
+
+  # ★ 有意**不看退出码** —— 返回 0 不代表完成（见文件头）
+  if [ -n "$MIMO_SESSION" ]; then
+    "$MIMO_BIN" run -s "$MIMO_SESSION" --dir "$REPO" --yolo "$PROMPT" >>"$LOG" 2>&1 </dev/null
+  else
+    "$MIMO_BIN" run --dir "$REPO" --yolo "$PROMPT" >>"$LOG" 2>&1 </dev/null
+  fi
+
+  # ── 逐条判据，**缺哪条就报哪条**（可见失败，不许静默续跑）──
+  ok_sec=0; ok_git=0; ok_gate=0
+  section_done && ok_sec=1
+  [ "$(git rev-parse HEAD)" != "$BASE" ] && ok_git=1
+  gate_ok && ok_gate=1
+  echo "   判据：台账回执=$ok_sec  新提交=$ok_git  门禁绿=$ok_gate"
+
+  if [ "$ok_sec" = 1 ] && [ "$ok_git" = 1 ] && [ "$ok_gate" = 1 ]; then
+    echo "✓ 完成（第 $attempt 次）· HEAD=$(git rev-parse --short HEAD)"
+    exit 0
+  fi
+  attempt=$((attempt + 1))
+done
+
+echo "✗ 达最大尝试 $MAX 次仍未满足判据 —— **停手报人**（不无限重试）。" >&2
+echo "  最后一次状态：台账回执=$ok_sec 新提交=$ok_git 门禁绿=$ok_gate" >&2
+echo "  ★ 注意：门禁绿可能只是「还没改」，请勿据此认为无需处理。" >&2
+exit 1
