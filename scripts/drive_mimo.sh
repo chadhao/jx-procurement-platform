@@ -19,11 +19,18 @@
 # 环境变量：
 #   MIMO_SESSION  会话 id（默认＝本项目长期会话；留空则新建会话）
 #   MIMO_BIN      mimo 可执行文件路径
+#   MIMO_MODEL    模型 id（默认 xiaomi/mimo-v2.6-flash）
+#   MIMO_VARIANT  推理档（默认 high）—— 可选 low / medium / high
 set -o pipefail
 
 REPO="$(cd "$(dirname "$0")/.." && pwd)"
 MIMO_BIN="${MIMO_BIN:-$HOME/.mimocode/bin/mimo}"
 MIMO_SESSION="${MIMO_SESSION:-ses_ffe5f18db08b1ffeuj4zuqyor4}"
+# ★ 用户 2026-10-03 指定：mimo-v2.6-flash（窗口 1.05M＝「1M 上下文」，模型自带）
+#   ＋ 高强度思考。三者对应关系经 `mimo models xiaomi --verbose` 的 variants 元数据核实：
+#   low / medium / high → reasoningEffort: low / medium / high ⇒ 高强度＝high。
+MIMO_MODEL="${MIMO_MODEL:-xiaomi/mimo-v2.6-flash}"
+MIMO_VARIANT="${MIMO_VARIANT:-high}"
 
 ISSUE="${1:?用法: drive_mimo.sh <议题ID> <指令文件> [最大尝试次数]}"
 PROMPT_FILE="${2:?缺少指令文件}"
@@ -75,9 +82,11 @@ while [ "$attempt" -le "$MAX" ]; do
 
   # ★ 有意**不看退出码** —— 返回 0 不代表完成（见文件头）
   if [ -n "$MIMO_SESSION" ]; then
-    "$MIMO_BIN" run -s "$MIMO_SESSION" --dir "$REPO" --yolo "$PROMPT" >>"$LOG" 2>&1 </dev/null
+    "$MIMO_BIN" run -s "$MIMO_SESSION" --dir "$REPO" \
+      -m "$MIMO_MODEL" --variant "$MIMO_VARIANT" --yolo "$PROMPT" >>"$LOG" 2>&1 </dev/null
   else
-    "$MIMO_BIN" run --dir "$REPO" --yolo "$PROMPT" >>"$LOG" 2>&1 </dev/null
+    "$MIMO_BIN" run --dir "$REPO" \
+      -m "$MIMO_MODEL" --variant "$MIMO_VARIANT" --yolo "$PROMPT" >>"$LOG" 2>&1 </dev/null
   fi
 
   # ── 逐条判据，**缺哪条就报哪条**（可见失败，不许静默续跑）──
