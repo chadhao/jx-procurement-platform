@@ -553,10 +553,12 @@ func (d Deps) handleApprovalSubmit(c echo.Context) error {
 	// ---- 服务端算链（FR-M9-02）----
 	usageL1 := firstNonEmptyStr(body.UsageCategoryL1, body.PurposeClassL1)
 	usageL2 := firstNonEmptyStr(body.UsageCategoryL2, body.PurposeClassL2)
-	// ★ N-039 P0 ＋ N-040 裁定①②③：定档与落库一律服务端汇总值；
-	//   客户端顶层 amount_cents 不再要求（缺失＝正常）；传了且不一致 ⇒ 审计 warn
-	//   （amount_vs_server_sum_mismatch）＋仍以服务端值走（不拒单）。
+	// ★ N-039 P0 ＋ N-040 裁定①②③ ＋ N-041：定档与落库一律服务端汇总值；
+	//   客户端顶层 amount_cents 不再要求（缺失＝正常）；传了且不一致 ⇒ 记信号，
+	//   **Submit 成功后**以真实 biz_no 落审计 warn（N-041：占位符无法按单追查；
+	//   Submit 失败 ⇒ 不写 —— 无单据可查）。
 	amountForTier := body.AmountCents
+	prMismatchDetail := ""
 	if body.DocType == "PR" {
 		estimated, mismatch, perr := resolvePRAmountForTier(&body)
 		if perr != nil {
@@ -569,11 +571,7 @@ func (d Deps) handleApprovalSubmit(c echo.Context) error {
 				"server_sum_cents":    *estimated,
 				"doc_type":            "PR",
 			})
-			d.audit(ctx, &store.AuditLogRow{
-				Action: "amount_vs_server_sum_mismatch", Resource: "approval",
-				TargetID: "PR(unsaved)", Result: "warn",
-				DetailJSON: string(detail),
-			})
+			prMismatchDetail = string(detail)
 		}
 	}
 	facts := chain.Facts{
@@ -674,6 +672,15 @@ func (d Deps) handleApprovalSubmit(c echo.Context) error {
 			"Idempotency-Key 冲突：该键已用于另一次请求（请求载荷不一致）")
 	case err != nil:
 		return d.approvalError(c, err)
+	}
+	// N-041：金额不一致审计 —— Submit 成功后以**真实 biz_no** 为 TargetID 落 warn
+	//（失败分支已在上方 return ⇒ 不写：无单据可查，写了也无从追）。result 仍=warn。
+	if prMismatchDetail != "" {
+		d.audit(ctx, &store.AuditLogRow{
+			Action: "amount_vs_server_sum_mismatch", Resource: "approval",
+			TargetID: bizNo, Result: "warn",
+			DetailJSON: prMismatchDetail,
+		})
 	}
 	// N-027：提交后 hard 自检（contract_no_format —— 需生成后的 biz_no；失败=内部一致性破坏，可见 500）
 	if hasForm {
