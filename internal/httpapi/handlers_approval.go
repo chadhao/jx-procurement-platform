@@ -574,6 +574,11 @@ func (d Deps) handleApprovalSubmit(c echo.Context) error {
 			prMismatchDetail = string(detail)
 		}
 	}
+	// ---- PC/SS 提交期系统字段注入（N-036 生产者；★ N-044 T2 前移：必须在 chain.Compute
+	//      之前 —— PC×tier_approval 的 r15_max 档位就高需要 original/change 注入值）----
+	if verr := d.injectPCSSSystemFields(ctx, &body); verr != nil {
+		return fail(c, http.StatusBadRequest, codeBadRequest, verr.Error())
+	}
 	facts := chain.Facts{
 		DocType:                  body.DocType,
 		AmountCents:              amountForTier,
@@ -586,6 +591,18 @@ func (d Deps) handleApprovalSubmit(c echo.Context) error {
 		IsFixedAsset: boolFromBodyField(body.Fields, "is_fixed_asset"),
 		// T3 / R-26：CT 即有合同（强制 true）；其余按请求显式值。
 		HasContract: body.HasContract || body.DocType == "CT",
+	}
+	// ★ N-044 T2（r15_max 输入）：PC 注入后的两金额填入 Facts —— Compute/BuildNodes
+	// 消费 tier_expand.tier_source=r15_max 时就高定档（inject 已前移，值在此刻就绪）。
+	if body.DocType == "PC" {
+		if v, ok := toFloat64(body.Fields["change_amount_cents"]); ok {
+			c := int64(v)
+			facts.ChangeAmountCents = &c
+		}
+		if v, ok := toFloat64(body.Fields["original_contract_amount_cents"]); ok {
+			o := int64(v)
+			facts.OriginalContractAmountCents = &o
+		}
 	}
 	// 付款路径（T3）：priority 1→4，值从 spec/chain.json#payment_route_rule 读。
 	paymentRoute, pErr := chain.PaymentRouteOf(d.Spec, facts)
@@ -623,10 +640,6 @@ func (d Deps) handleApprovalSubmit(c echo.Context) error {
 		}
 	}
 
-	// ---- PC/SS 提交期系统字段注入（N-036 生产者；hash 前 ⇒ 指纹含注入值）----
-	if verr := d.injectPCSSSystemFields(ctx, &body); verr != nil {
-		return fail(c, http.StatusBadRequest, codeBadRequest, verr.Error())
-	}
 	// ---- N-042 权限位点：GR acceptors（PARTICIPATED）—— member_* 非空值收集为数组，
 	// 进 fields ⇒ Submit 时随 ext 落库；instance 规范列在 Submit 成功后同批写（见下）。
 	grAcceptorsJSON := ""

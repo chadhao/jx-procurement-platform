@@ -92,6 +92,16 @@ func BuildNodes(b *specload.Bundle, routeID string, f Facts) ([]RoleNode, error)
 			continue
 		}
 
+		// ---- N-044 档位审批链展开（tier_expand 取代复合 actor 与伪 ref） ----
+		//   required:true 的 tier_chain/tier_approval 此前落入「未知 actor」⇒ 不生成任务
+		//   （惰性必需节点）；现按 spec 的 tier_expand 逐角色 appendApproval。
+		if n.TierExpand != nil && n.TierExpand.Kind == "approval_chain" {
+			if err := expandTierApproval(b, f, n, appendApproval); err != nil {
+				return nil, err
+			}
+			continue
+		}
+
 		// ---- 一般节点 ----
 		if approverRoles[n.Actor] {
 			appendApproval(n.ID, n.Label, n.Actor, "")
@@ -142,6 +152,103 @@ func BuildNodes(b *specload.Bundle, routeID string, f Facts) ([]RoleNode, error)
 		}
 	}
 	return nodes, nil
+}
+
+// expandTierApproval 按节点的 tier_expand 展开档位审批链（N-044 · T1/T2）。
+//
+//	步骤：① tier_source 解析档位 → ② 取 thresholds.purchase.bands[id].approval_chain
+//	      → ③ 剔除 exclude_roles（用户口径：重复签批人只签一次）
+//	      → ④ 逐角色 appendApproval（复用既有范式）。
+//
+// ★ SourceNodeID 命名（T3，自定）：`<节点id>_<role>`（如 tier_chain_supervisor）——
+//
+//	与 expandContract 的 contract_supervisor/contract_pgm 同族、**可由 spec 派生**
+//
+// （节点 id 与角色 key 均来自 spec，代码零字面量）；冒号/点号不用（task_id
+//
+//	格式 {biz}-{node}-{assignee}-{round}-{seq} 下划线最稳）。
+//
+// ★ 与 flow 任务、nodeFieldSpecFor 的关系：展开节点 id 形如 tier_chain_supervisor，
+//
+//	**不等于**既有规则锚定的 tech_opinion/pgm_final/ledger_submit ⇒ 不误伤
+//
+// （本批不给展开节点加必填字段）。
+func expandTierApproval(b *specload.Bundle, f Facts, n specload.NodeDoc,
+	appendApproval func(sourceID, name, role, note string)) error {
+	if n.TierExpand == nil {
+		return nil
+	}
+	tierID, err := resolveTierForExpand(b, f, n.TierExpand.TierSource)
+	if err != nil {
+		return fmt.Errorf("%w: 节点 %s 档位解析失败: %s", ErrAmountMissing, n.ID, err)
+	}
+	chainRoles := bandApprovalChain(b, tierID)
+	if len(chainRoles) == 0 {
+		return fmt.Errorf("%w: 档位 %s 的 approval_chain 为空（spec thresholds 缺声明）", ErrRouteMissing, tierID)
+	}
+	exclude := map[string]bool{}
+	for _, r := range n.TierExpand.ExcludeRoles {
+		exclude[r] = true
+	}
+	note := fmt.Sprintf("tier_expand（N-044）：档位 %s", tierID)
+	for _, role := range chainRoles {
+		if exclude[role] {
+			continue
+		}
+		appendApproval(n.ID+"_"+role, n.Label, role, note)
+	}
+	return nil
+}
+
+// resolveTierForExpand tier_source → 档位 id。
+//
+//	amount_cents：同 chain.TierOf（缺金额 ⇒ 可见错误）。
+//	r15_max：R-15 就高 tier_of(max(change, original))；★ 两值齐全取 max；
+//	★ 仅单边可得 ⇒ 取可得侧（就高在可得集上退化 —— preview 时 original 常未注入，
+//	此为任务包 T2 授权的「如实单值 fallback」，非静默假定）；★ 全缺 ⇒ 用 AmountCents
+//	兜底（preview 顶层金额），仍缺 ⇒ 可见错误。
+func resolveTierForExpand(b *specload.Bundle, f Facts, source string) (string, error) {
+	switch source {
+	case "amount_cents":
+		if f.AmountCents == nil {
+			return "", fmt.Errorf("%w: tier_source=amount_cents 需要金额", ErrAmountMissing)
+		}
+		return TierOf(b, *f.AmountCents)
+	case "r15_max":
+		var candidates []int64
+		if f.ChangeAmountCents != nil {
+			candidates = append(candidates, *f.ChangeAmountCents)
+		}
+		if f.OriginalContractAmountCents != nil {
+			candidates = append(candidates, *f.OriginalContractAmountCents)
+		}
+		if len(candidates) == 0 && f.AmountCents != nil {
+			// 单值 fallback（任务包 T2 授权）：preview 两值均未注入时退回顶层金额。
+			candidates = append(candidates, *f.AmountCents)
+		}
+		if len(candidates) == 0 {
+			return "", fmt.Errorf("%w: tier_source=r15_max 无任何金额可就高（change/original/amount 均缺）", ErrAmountMissing)
+		}
+		maxV := candidates[0]
+		for _, v := range candidates[1:] {
+			if v > maxV {
+				maxV = v
+			}
+		}
+		return TierOf(b, maxV)
+	default:
+		return "", fmt.Errorf("%w: 未知 tier_source %q", ErrRouteMissing, source)
+	}
+}
+
+// bandApprovalChain 取指定档位的审批链（spec thresholds.purchase.bands[].approval_chain）。
+func bandApprovalChain(b *specload.Bundle, tierID string) []string {
+	for _, band := range b.Chain.Thresholds.Purchase.Bands {
+		if band.ID == tierID {
+			return band.ApprovalChain
+		}
+	}
+	return nil
 }
 
 // hasContractNodes 链上是否已含合同两级节点。

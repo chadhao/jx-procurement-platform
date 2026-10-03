@@ -1515,8 +1515,41 @@
   3. ★ **档位取值源**：SS ＝ `amount_cents`（与 `chain.TierOf` 同源）· PC ＝ `r15_max`（**R-15 就高** `tier_of(max(change_amount_cents, original_contract_amount_cents))`，与 `chain.ChangeTierOf` 同源）。
   4. **交办包已出：[`MIMO-NEXT-BATCH-6.md`](./MIMO-NEXT-BATCH-6.md)**（**批 8**）—— ★ 含 `T4`「**三条单点变异（停用展开 / 置空 `exclude_roles` / 固定档位）各自必须精确转红**」的硬要求；★ 并在 `T2` 中**点明一处前置依赖**：`original_contract_amount_cents` 由 `injectPCSSSystemFields` 在**提交期**经 L04 反查注入，而 `BuildNodes` 在 **preview 时点**也会被调用 ⇒ **该值可能未就绪** ⇒ ★ 要求 **如实处置、不许静默假定**（这与 `N-036` 的「不抢跑」同款处置）。
 - **★ 一处规格内部矛盾（本批**不派工**，由我方另行定稿）**：`SS.tier_chain_record` / `PC.tier_approval_record` 两条被 `REMAINING.md#B2` 登记为 `pending_implementation`（零生产者）的真缺口 —— ★ 我方核查发现**它们与 spec 自述冲突**：`spec/forms/SS.json` 的段级 `_note` **明写**「节点③「按对应档位审批」是**继承档位链**（**不产生本单字段**）」，而该字段却登记为 `source=system` ＋ `required=true`；`PC.json` 的 `filled_at_note` 又写「`tier_approval_record` 留在 node3（**审批记录由审批人填**）」—— ★ 三处口径互不自洽。⇒ **本批明确不派**（`MIMO-NEXT-BATCH-6.md#T6`），由我方后续裁定「**撤销字段**（与 SS 的 `_note` 一致）or **补明语义**」，避免 mimo 猜着造一个语义不清的生产者。
-- **状态**：OPEN
-- **最后更新**：2026-10-04 02:31 · WorkBuddy
+> **mimo 回执（2026-10-04 03:41）**：
+>
+> **■ T1 · SS `tier_chain` 展开（`sole_source`）** —— `internal/chain/nodes.go#expandTierApproval`（176-201 行，按节点 `TierExpand` 驱动）＋ `resolveTierForExpand`（210-，`amount_cents` 同 `TierOf`）＋ `bandApprovalChain`（取 `thresholds.purchase.bands[id].approval_chain`）；逐角色复用 `appendApproval`（**SourceNodeID = `<节点id>_<role>`**）。
+> 端到端矩阵＝ `internal/chain/tier_expand_test.go#TestTierExpandSS`（999 元→`ops_supervisor`／1,000 元→`supervisor`（**PGM 签字点全链唯一=pgm_final**）／6,000 元→`supervisor`，任务全序含 `tech_opinion→tier 展开→pgm_final→ledger_and_report`）；handler 级可证＝ `internal/httpapi/ss_pc_submit_test.go#TestSSPCTierExpandTasksGenerated`（SS 600000 分 ⇒ 任务集含 `tier_chain_supervisor` 且**不含** `tier_chain_project_general_manager`）。
+>
+> **■ T2 · PC `tier_approval` 展开（`change`）＋ ★ 前置依赖处置（不静默假定）** —— `tier_source=r15_max` 就高在 `resolveTierForExpand`（217-）：
+> ① 两值齐全 ⇒ `max(change, original)`（提交期正例：inject 已注入 original）；
+> ② ★ **preview 时点 original 未注入（仅单边可得）⇒ 取可得侧**（就高在可得集上退化——任务包授权的「如实单值 fallback」，**非静默假定**，函数注释 203-209 行钉住该语义）；
+> ③ 两值全缺 ⇒ 用 `AmountCents`（preview 顶层金额）兜底；**仍缺 ⇒ 可见错误**（`ErrAmountMissing`，BuildNodes 失败——不假定档位）。
+> 处置证据＝ `tier_expand_test.go#TestTierExpandSingleSideFallback`（三态：单边 change=600000⇒按 tier3 展开 sup+pgm／顶层兜底 500000⇒tier1 ops／全缺⇒**断言 error 非 nil**）。矩阵＝ `TestTierExpandPC`（就高档 tier1→仅 ops／tier2、tier3→sup+pgm）；handler 级＝ `TestSSPCTierExpandTasksGenerated` PC 段（change 140000＋original 500000 就高=tier2 ⇒ 任务集含 `tier_approval_supervisor`＋`tier_approval_project_general_manager`）。★ **为何选单边 fallback 而非可见失败**：preview 展示场景 original 注入时机在其后，可见失败会让 preview 恒挂；单边值仍满足就高语义的单调性（取到的档位 ≥ 单独按 change 定档）。
+>
+> **■ T3 · `SourceNodeID` 命名（自定·可派生·不硬编码）** —— 规则＝ **`<节点id>_<role>`**（`nodes.go:198` `n.ID+"_"+role`——role 取自 spec `approval_chain` 数组元素，**代码零角色字面量**）；与 `expandContract` 的 `contract_supervisor`/`contract_pgm` 同族（前缀=链节点 id，后缀=角色）。
+> **与 `nodeFieldSpecFor` 的匹配关系**：既有规则键为 `SS×tech_opinion`/`SS×pgm_final`/`PC×ledger_submit`（`designation.go#nodeFieldSpecFor` 精确匹配）；展开节点 id 形如 `tier_chain_supervisor`/`tier_approval_project_general_manager`——**不含** `tech_opinion`/`pgm_final`/`ledger_submit` 精确键值 ⇒ **不命中既有规则、零误伤**（本批未给展开节点加必填，按任务包划界）。flow 任务 `node_id`＝SourceNodeID 原样落库（`TestSSPCTierExpandTasksGenerated` 断言即按 node_id 查）。
+>
+> **■ T4 · ★ 三单点变异证伪对照（每次只改一处；还原一律 `cp` 备份，未用 `git checkout`）**：
+>
+> | 变异 | 注入点 | **红（精确转红）** | **绿（隔离性）** |
+> |---|---|---|---|
+> | **A** 停用 `tier_expand` 消费（`expandTierApproval` 首行提前 return ⇒ 退回 appendAction 缺陷版） | `nodes.go:178` 前 | `internal/chain` **3/3 全红**（`TestTierExpandSS` 3 子例＋`TestTierExpandPC` 3 子例＋`TestTierExpandSingleSideFallback`）＋ `internal/httpapi` **`TestSSPCTierExpandTasksGenerated` 红**（无 `tier_chain_supervisor` 任务） | SS/PC 六例端到端**仍绿**——T5 已改成按实际生成任务推进（`driveUntilNode`/`driveToTerminal`），对「任务集多寡」鲁棒，**不假装钉住展开**（展开存在性由矩阵＋专门断言钉住） |
+> | **B** `exclude_roles` 清空（不去重） | `nodes.go:190` 循环源置空 | `TestTierExpandSS` **仅二/三档 2 子例红**（PGM 计数 2≠1）＋ httpapi `TestSSPCTierExpandTasksGenerated` 红（`tier_chain_project_general_manager` 出现） | SS 一档（无 exclude 参与）、PC 全部（exclude 为空本就不影响）、六例端到端**绿**——★ 隔离精确：红的恰是「去重」独有路径 |
+> | **C** 档位判定固定 `purchase_tier1` | `nodes.go:181` 后强制赋值 | `TestTierExpandSS` 二/三档＋`TestTierExpandPC` 二/三档＋`TestTierExpandSingleSideFallback` **5 子例红**＋ httpapi `TestSSPCTierExpandTasksGenerated` 红 | 一档用例（固定 tier1 恰对）＋六例端到端**绿** |
+>
+> 三轮变异后均 `cp …bak` 还原＋`go build` 确认（`节点 A/B/C 报告完毕、备份已删`）。
+>
+> **■ T5 · 既有测试同步（`internal/httpapi/ss_pc_submit_test.go`，逐条）**：
+> 1. **`TestSSNodePgmFinalBidirectional`**（原 355- 区）：原＝按「现实任务集」写死推进（seq1-3 后直接找 `pgm_final`）——展开后 `tier_chain` 生成了新任务挡在 `pgm_final` 前 ⇒ 改为 **`driveUntilNode(..., "tier_chain", "pgm_final")`**（推进至含 `tier_chain` 展开项在内、`pgm_final` 达 RELEASED）；随后的缺字段 400／填过放行断言**原样保留**。
+> 2. **`TestPCLedgerSubmitNodeBidirectional`**（原 470- 区）：原＝`advanceToIncluding("tier_approval")` 直推 2 轮——展开后该节点有真实任务（sup＋pgm **2 个 RELEASED**）⇒ 改为循环至 `tier_approval` 段 RELEASED 任务全部 approve 完（**按实际生成任务数推进**）。
+> 3. **`pendingTaskByNode`**：原返回「任何 PENDING（含 HELD）」——顺序会签 HELD 时会拿到未轮到的任务、后续 approve 恒 400 假红 ⇒ 改为**只返回 RELEASED 的 PENDING**（注释同步：HELD＝顺序会签未轮到）。
+> 4. **过时注释**（T5 ★「注释断言缺陷」清查）：`TestSSSubmitEndToEnd` 原注释「复合 actor（tier_chain …）**不生成审批任务**——SS 链实际任务＝3 个」⇒ 改为「M2 规则：actor=purchaser 的动作环节不生成任务；**N-044 起 tier_chain 经 tier_expand 展开会生成审批任务**」。`driveToTerminal` 注释同步为展开后任务集。★ `nodes.go:96/114` 的「未知 actor 不生成」注释经核**语义仍准**（现只指 tier_expand 缺失/未知 actor 兜底），未动。
+>
+> **■ T6 · 本批未做（划界遵守）**：① 未动 `spec/` 与 `docs/`；② `SS.tier_chain_record`／`PC.tier_approval_record` 生产者**未造**（等你方三口径定稿）；③ `GR`/`RFQ`/`QC`/`BJ` 通路未碰（A8）；④ `env_count` 未动；⑤ `actor`/`ref` 两旧键按 §1.3 **当作不存在**（未删、未消费——注意 `ref` 伪引用路径 `nodes.go:78` 仍只认 `contract_two_level`，行为未变）。
+>
+> **■ 门禁**：`bash scripts/check_all.sh` **通过（必绿 8/8 全绿；会报零命中）**（2026-10-04 03:41，含 gofmt 空／`go test ./...` 零 FAIL）。
+- **状态**：MIMO-DONE
+- **最后更新**：2026-10-04 03:41 · mimo（回执＋MIMO-DONE）
 
 ## 5. 已决议（AGREED）
 

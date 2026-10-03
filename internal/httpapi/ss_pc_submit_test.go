@@ -266,6 +266,46 @@ func TestSSSubmitEndToEnd(t *testing.T) {
 	}
 }
 
+func mustListFlowTasks(t *testing.T, db *store.DB, bizNo string) []struct {
+	TaskID         string
+	NodeID         string
+	Status         string
+	ReleaseState   string
+	AssigneeOpenID string
+} {
+	t.Helper()
+	ts, err := db.ListFlowTasks(context.Background(), bizNo)
+	if err != nil {
+		t.Fatalf("ListFlowTasks(%s): %v", bizNo, err)
+	}
+	out := make([]struct {
+		TaskID         string
+		NodeID         string
+		Status         string
+		ReleaseState   string
+		AssigneeOpenID string
+	}, 0, len(ts))
+	for _, x := range ts {
+		out = append(out, struct {
+			TaskID         string
+			NodeID         string
+			Status         string
+			ReleaseState   string
+			AssigneeOpenID string
+		}{TaskID: x.TaskID, NodeID: x.NodeID, Status: x.Status, ReleaseState: x.ReleaseState, AssigneeOpenID: x.AssigneeOpenID})
+	}
+	return out
+}
+
+func containsStr(list []string, want string) bool {
+	for _, v := range list {
+		if v == want {
+			return true
+		}
+	}
+	return false
+}
+
 func instOfSS(t *testing.T, db *store.DB, bizNo string) string {
 	t.Helper()
 	inst, err := db.GetInstanceByBizNo(context.Background(), bizNo)
@@ -286,9 +326,8 @@ func TestSSNodeTechOpinionBidirectional(t *testing.T) {
 	}
 	bizNo, _ := mustData(t, env)["biz_no"].(string)
 
-	// ★ M2 规则：actor=purchaser 的环节（submit_reason）与复合 actor（tier_chain
-	//   "supervisor → project_general_manager"）**不生成审批任务** —— SS 链实际任务
-	//   ＝ tech_opinion / pgm_final / ledger_and_report；tech_opinion 首个即 RELEASED。
+	// ★ M2 规则：actor=purchaser 的动作环节（submit_reason）不生成审批任务。
+	//   （N-044 起 tier_chain 经 tier_expand 展开**会**生成审批任务——见 driveUntilNode。）
 	if tk0 := pendingTaskByNode(t, db, bizNo, "submit_reason"); tk0 != nil {
 		t.Error("submit_reason（purchaser 环节）不应生成审批任务（M2 规则）")
 	}
@@ -326,21 +365,21 @@ func TestSSNodePgmFinalBidirectional(t *testing.T) {
 	}
 	bizNo, _ := mustData(t, env)["biz_no"].(string)
 
-	// 推进到 pgm_final 前：只推**实际生成的任务**（M2 规则：submit_reason/tier_chain 无任务）
-	for i := 0; i < 4; i++ {
-		tk := pendingTaskByNode(t, db, bizNo, "tech_opinion")
-		if tk == nil {
-			break
+	// ★ N-044 展开后实际任务＝ tech_opinion → tier_chain 展开项 → pgm_final → ledger_and_report
+	//   ⇒ 按实际生成的任务推进到 pgm_final（不再写死步数 —— T5 同步）。
+	tk := driveUntilNode(t, e, db, auth, bizNo, "pgm_final", map[string]map[string]any{
+		"tech_opinion": {"tech_opinion": "符合"},
+	})
+	if tk == nil {
+		all, _ := db.ListFlowTasks(context.Background(), bizNo)
+		ids := []string{}
+		for _, x := range all {
+			ids = append(ids, x.NodeID+"/"+x.Status+"/"+x.ReleaseState)
 		}
-		code, env := postApproveOne(t, e, auth, bizNo, tk.AssigneeOpenID, tk.TaskID,
-			map[string]any{"tech_opinion": "符合"})
-		if code != http.StatusOK {
-			t.Fatalf("推进 tech_opinion: %d %s", code, env.Message)
-		}
+		t.Fatalf("未能推进到 pgm_final；任务清单=%v", ids)
 	}
 
 	// ① 应拦：pgm_final 空
-	tk := pendingTaskByNode(t, db, bizNo, "pgm_final")
 	if tk == nil {
 		t.Fatal("pgm_final 无 PENDING 任务（前序节点未推完？）")
 	}
@@ -362,7 +401,44 @@ func TestSSNodePgmFinalBidirectional(t *testing.T) {
 
 // ---------------- T2 · PC ----------------
 
-// pendingTaskByNode 取某节点当前 PENDING 任务（无则 nil）。
+// driveUntilNode 循环推进（N-044 展开后任务集变大 —— 按**实际生成的任务**推进），
+// 直到 targetNode 出现 PENDING 任务；每步以 assignee 身份走 HTTP approve，
+// 409（未到达/未轮到）视为顺序问题跳过而非失败。返回目标任务（超轮次返回 nil）。
+func driveUntilNode(t *testing.T, e *echo.Echo, db *store.DB, auth *access.Authenticator,
+	bizNo, targetNode string, fieldsByNode map[string]map[string]any) *store.FlowTask {
+	t.Helper()
+	for i := 0; i < 20; i++ {
+		if tk := pendingTaskByNode(t, db, bizNo, targetNode); tk != nil {
+			return tk
+		}
+		tasks, err := db.ListFlowTasks(context.Background(), bizNo)
+		if err != nil {
+			t.Fatal(err)
+		}
+		progressed := false
+		for _, tk := range tasks {
+			if tk.Status != "PENDING" || tk.ReleaseState == "HELD" || tk.NodeID == targetNode {
+				continue
+			}
+			fields := fieldsByNode[tk.NodeID]
+			if fields == nil {
+				fields = map[string]any{}
+			}
+			code, _ := postApproveOne(t, e, auth, bizNo, tk.AssigneeOpenID, tk.TaskID, fields)
+			if code == http.StatusOK {
+				progressed = true
+			}
+			// 409＝未到达/未轮到（顺序会签）——跳过等下一轮，不视为失败
+		}
+		if !progressed && i >= 3 {
+			break // 连续无进展（防死循环）
+		}
+	}
+	return pendingTaskByNode(t, db, bizNo, targetNode)
+}
+
+// pendingTaskByNode 取某节点**已释放**（RELEASED）的 PENDING 任务（无则 nil）——
+// HELD＝顺序会签未轮到，不可办理（否则 driveUntilNode 会拿未释放任务提前返回）。
 func pendingTaskByNode(t *testing.T, db *store.DB, bizNo, nodeID string) *store.FlowTask {
 	t.Helper()
 	tasks, err := db.ListFlowTasks(context.Background(), bizNo)
@@ -370,7 +446,7 @@ func pendingTaskByNode(t *testing.T, db *store.DB, bizNo, nodeID string) *store.
 		t.Fatal(err)
 	}
 	for i := range tasks {
-		if tasks[i].NodeID == nodeID && tasks[i].Status == "PENDING" {
+		if tasks[i].NodeID == nodeID && tasks[i].Status == "PENDING" && tasks[i].ReleaseState == "RELEASED" {
 			return &tasks[i]
 		}
 	}
@@ -455,13 +531,15 @@ func TestPCLedgerSubmitNodeBidirectional(t *testing.T) {
 	}
 	bizNo, _ := mustData(t, env)["biz_no"].(string)
 
-	// ★ M2 规则：submit_change（purchaser）/ tier_judge（system）不生成任务 ——
-	//   PC 链实际任务＝ tier_approval（node3）＋ ledger_submit（node4）。
-	if tk0 := pendingTaskByNode(t, db, bizNo, "submit_change"); tk0 != nil {
-		t.Error("submit_change（purchaser 环节）不应生成审批任务（M2 规则）")
-	}
-	// node3 tier_approval：**不带** resubmitted_to_group_at ⇒ 必须放行（不拦）
-	for i := 0; i < 3; i++ {
+	// ★ N-044 展开后实际任务＝ tier_approval 展开项（sup＋pgm，r15_max 采二档）→ ledger_submit。
+	//   node3 tier_approval **不带** resubmitted_to_group_at ⇒ 必须逐个放行（不拦 —— N-038-附三）；
+	//   推进到 node4 出现（不再写死步数 —— T5 同步）。
+	tk3 := driveUntilNode(t, e, db, auth, bizNo, "tier_approval", nil)
+	// tier_approval 可能还有同节点后续（会签第二人）：全部放行直到 ledger_submit 可达
+	for i := 0; i < 4; i++ {
+		if pendingTaskByNode(t, db, bizNo, "ledger_submit") != nil {
+			break
+		}
 		tk := pendingTaskByNode(t, db, bizNo, "tier_approval")
 		if tk == nil {
 			break
@@ -471,10 +549,16 @@ func TestPCLedgerSubmitNodeBidirectional(t *testing.T) {
 			t.Fatalf("node3 tier_approval 不应因缺登记日期被拦（N-038-附三）: %d %s", code, env.Message)
 		}
 	}
+	_ = tk3
 	// node4 ledger_submit：缺 ⇒ 400
 	tk4 := pendingTaskByNode(t, db, bizNo, "ledger_submit")
 	if tk4 == nil {
-		t.Fatal("ledger_submit 无 PENDING 任务（node3 未推完？）")
+		all, _ := db.ListFlowTasks(context.Background(), bizNo)
+		ids := []string{}
+		for _, x := range all {
+			ids = append(ids, x.NodeID+"/"+x.Status+"/"+x.ReleaseState)
+		}
+		t.Fatalf("ledger_submit 无 PENDING 任务（前序未推完？）；任务=%v", ids)
 	}
 	code, env = postApproveOne(t, e, auth, bizNo, tk4.AssigneeOpenID, tk4.TaskID, map[string]any{})
 	if code != http.StatusBadRequest {
@@ -489,5 +573,47 @@ func TestPCLedgerSubmitNodeBidirectional(t *testing.T) {
 	})
 	if code != http.StatusOK {
 		t.Fatalf("node4 填值应放行, 实为 %d（%s）", code, env.Message)
+	}
+}
+
+// TestSSPCTierExpandTasksGenerated N-044 完成判据①：handler 级端到端可证
+// tier_chain / tier_approval 经 tier_expand 真的生成审批任务（展开项
+// SourceNodeID = <节点id>_<role>，T3 命名）。
+func TestSSPCTierExpandTasksGenerated(t *testing.T) {
+	e, db, auth := newSSPCApp(t)
+	cookie := auth.Establish("ou_app")
+
+	// ---- SS：600000 分（采三档）⇒ tier_chain 展开 = supervisor（exclude_roles 剔 PGM）----
+	ssBody := strings.Replace(ssSubmitBody(), `"amount_cents":300000`, `"amount_cents":600000`, 1)
+	code, env := postSubmit(t, e, cookie, ssBody, "")
+	if code != http.StatusOK {
+		t.Fatalf("SS 提交: %d %s", code, env.Message)
+	}
+	ssBiz, _ := mustData(t, env)["biz_no"].(string)
+	ssIDs := []string{}
+	for _, x := range mustListFlowTasks(t, db, ssBiz) {
+		ssIDs = append(ssIDs, x.NodeID)
+	}
+	if !containsStr(ssIDs, "tier_chain_supervisor") {
+		t.Fatalf("SS 采三档 tier_chain 应展开 supervisor 任务（SourceNodeID=tier_chain_supervisor），实际任务=%v", ssIDs)
+	}
+	if containsStr(ssIDs, "tier_chain_project_general_manager") {
+		t.Fatalf("SS tier_chain 展开不得含 PGM（exclude_roles 去重，全链 PGM 唯一=pgm_final），实际=%v", ssIDs)
+	}
+
+	// ---- PC：change 140000 / orig 500000（R-15 就高=采二档 500000）⇒ tier_approval 展开 sup+pgm ----
+	pcs := strings.Replace(pcSubmitBody(""), `"amount_cents":100000`, `"amount_cents":700000`, 1)
+	pcs = strings.Replace(pcs, `"change_amount_cents":100000`, `"change_amount_cents":140000`, 1)
+	code, env = postSubmit(t, e, cookie, pcs, "")
+	if code != http.StatusOK {
+		t.Fatalf("PC 提交: %d %s", code, env.Message)
+	}
+	pcBiz, _ := mustData(t, env)["biz_no"].(string)
+	pcIDs := []string{}
+	for _, x := range mustListFlowTasks(t, db, pcBiz) {
+		pcIDs = append(pcIDs, x.NodeID)
+	}
+	if !containsStr(pcIDs, "tier_approval_supervisor") || !containsStr(pcIDs, "tier_approval_project_general_manager") {
+		t.Fatalf("PC 采三档 tier_approval 应展开 sup+pgm 两任务，实际任务=%v", pcIDs)
 	}
 }

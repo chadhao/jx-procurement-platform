@@ -71,6 +71,11 @@ type Facts struct {
 	// 同时驱动「合同审批两级照走」（触发条件＝是否签合同，不是金额）。
 	// CT 单据恒为 true（handler 侧强制）；其余单据由请求显式给出（缺省 false）。
 	HasContract bool
+	// ★ N-044（tier_source=r15_max）：PC 档位就高公式的两个输入 ——
+	// submit 期由 injectPCSSSystemFields 反查/注入后填入；preview 期可能缺省
+	//（fallback 见 resolveTierForExpand —— 如实单值回退，不静默假定）。
+	ChangeAmountCents           *int64
+	OriginalContractAmountCents *int64
 }
 
 // RoleNode 链计算的中间产物：角色级节点（含非审批环节，供 preview 展示全流程）。

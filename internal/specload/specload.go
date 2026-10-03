@@ -129,6 +129,9 @@ type Band struct {
 	LowerInclusive *int64 `json:"lower_inclusive"`
 	UpperInclusive *int64 `json:"upper_inclusive"`
 	RawText        string `json:"raw_text"`
+	// ApprovalChain 该档位的审批层级序列（N-044）—— 只列审批人角色 key，
+	// 已按角色去重（用户口径：重复签批人只签一次）；供 tier_expand 展开消费。
+	ApprovalChain []string `json:"approval_chain"`
 }
 
 type ContractApprovalDoc struct {
@@ -198,6 +201,17 @@ type NodeDoc struct {
 	// AgentAllowed 禁代理标记（N-031；chain.json#conventions.agent_allowed：缺省 true，
 	// 指针 nil 即缺省；显式 false ＝ 制度禁止代理 —— 业务名单在 spec，不在代码字面量）。
 	AgentAllowed *bool `json:"agent_allowed"`
+	// TierExpand 档位审批链展开（N-044 · 取代复合 actor 与伪 ref）：
+	// nil ＝ 本节点不做档位展开。键语义见 spec chain.json tier_expand.note。
+	TierExpand *TierExpand `json:"tier_expand"`
+}
+
+// TierExpand 节点级档位审批链展开声明（N-044）。
+type TierExpand struct {
+	Kind         string   `json:"kind"`          // 固定 approval_chain
+	TierSource   string   `json:"tier_source"`   // amount_cents | r15_max
+	ExcludeRoles []string `json:"exclude_roles"` // 展开后剔除的角色（重复签批去重）
+	Note         string   `json:"note"`
 }
 
 // NodeBranch 节点级条件分支：when 命中时 actor 被替换/行为修正。
