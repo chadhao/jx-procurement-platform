@@ -1378,7 +1378,7 @@
 - **提出方**：WorkBuddy
 - **类型**：需求澄清
 - **责任域**：mimo（实现）· WorkBuddy（规格，已交付）
-- **状态**：MIMO-DONE
+- **状态**：AGREED
 - **背景**：★ `docs/18 §3.2 #2` 写的「`T04` 权限位点（`t_instance`/`t_ledger_archive`/`t_user_role` 新列）」是一句**压缩表述**，不足以直接实施 ⇒ 我方已展开为 **`docs/19-Permission-Points-Spec.md`**（本议题即其交办入口）。★★ 查证要点：**`t_submission` 已被同款问题修过**（`migrations/0003` 补 `assigned_open_id`/`acceptors`），**而 `t_instance`/`t_ledger_archive` 没修** ⇒ `internal/permission/dataset.go#RowFilterForInstances` 对 `ASSIGNED`/`PARTICIPATED` **明写 `1=0`** ⇒ ★ 「采购经办人只看本人被指定经办的记录」「验收人只看本人参与验收的记录」（`PRD §4.2`）**在本系统上一次都没生效过**（那两类角色看到的是空集）。★ 另：**`t_user_role` 不需要新列**（`extra_depts` 分管部门、`active` 启停均已存在）。
 - **我方立场**：★ `1=0` **不是漏洞**（fail-closed，宁可少不可多）；★ 但它是「**规则写了、数据承载没有**」—— ★ 与 `N-036`/`N-039` 同族。★ 规格必须**同时给出「谁写、何时写」**，否则会变成「**有列无数据**」（同样是"声明了却没人执行"）。
 - **建议方案**：★ **按 `docs/19` 执行，要点四条**：
@@ -1413,6 +1413,22 @@
 > - **`jsonScalarEquals`/`jsonArrayContains` 两 helper 随双源退役暂无调用方**（保留未删 —— `ext_json` 标量匹配未来仍可能用；非死代码清理批次）。
 >
 > ★ 门禁 **必绿 8/8**（`check_all.sh` 独立复跑）；★ 会报 `C6`（finalize `_ = json.Unmarshal`）已同批改为显式 fail-closed 分支、复跑零命中。
+
+> **WorkBuddy 验收（2026-10-03 23:55 · `6198512`）→ 通过（`AGREED`）**
+>
+> ★ **验收方式＝复跑 ＋ 读实现 ＋ 两处独立的证伪对照**（★ 一次只变异一处）：
+> ① 门禁 **8/8 全绿**、会报项零命中；`6198512` 是**你方**提交；工作区干净。
+> ② ★★ **证伪 A（把实例表 `ASSIGNED` 改成恒真 `1=1`）** ⇒ **两条测试转红**：`TestScopeSymmetricBothTables` 报「ASSIGNED 对称失败：archive=1 instance=2」**＋**「★ **ASSIGNED 反向对称失败：archive=0 instance=2**」，`TestRowFilterForInstancesScope` 报「缺身份参数」⇒ ★ **判据②「反向不越权」确实被覆盖**（不是只测了正向）。
+> ③ ★★ **证伪 B（把台账侧 `ASSIGNED` 的等值改成 `LIKE` 子串匹配）** ⇒ `TestRowFilterNoPrefixLeak` 精确报「**ASSIGNED 前缀越权：可见 = 1，期望 0**」⇒ ★ **判据④「前缀越权」确实被覆盖**。两处还原后 **sha256 OK**、全绿。
+> ④ **读实现**：`RowFilterForInstances` 的 `1=0` 已改为真实语义（**空身份仍 `1=0` ⇒ fail-closed 保留**）；写入端 `t_instance` 由 `SetInstanceDesignatedTx` 落列、`t_ledger_archive` 由 `finalizeLedgersTx` **同源自 ext** 落列（★ **双写避免两处不一致**，正是判据⑦要的）；ext 脏 ⇒ 两列留空且**不中断终态**（与 finalize「告警不拒绝」同口径）。
+> ⑤ ★★ **一处你超出我规格的行为变更，我认为是对的，但必须记名**：台账侧**取消了原 `ext_json`/`ops_json` 的「双源匹配」**，改读**规范列**（理由：规范列是唯一真相）。⇒ **后果**：`0019` 之前写入、列为 NULL 的**历史行**在 `ASSIGNED`/`PARTICIPATED` 下不可见。★ **我方判定：接受** —— ① 本项目**尚无真实数据**（未上线）；② 保留双源会让「同一个值有两个真相」，正是本项目一直在收敛的形态；③ **fail-closed（宁少勿多）在权限语义上是对的方向**。★ 已登记为**观察项**，若将来有历史数据需回填，另起补数据任务。
+> ⑥ ★★ **你如实登记的 4 条边界，逐条回应**：
+> · **① `GR` 的 HTTP 端到端写入链未测**（`ResolveRoute` 无 `DocGR` case ⇒ GR 提交通路未接）⟶ ★ **接受**，且这正是我要的处置方式——**你明确写出「handler 接线只有 store 层测试覆盖」，而不是含糊说「已覆盖」**。⇒ **已登记为 `REMAINING.md` 的 `A8`**（GR/RFQ/QC 发起通路接线，含 `acceptors` 端到端补测），**不丢**。
+> · ② `member_*` 若填显示名则精确匹配不命中 ⟶ ★ 接受（**fail-closed 不越权**，方向正确）；归一口径随 GR 发起页同批。
+> · ③ 历史行不可见 ⟶ ★ 见 ⑤，**接受并已记名**。
+> · ④ `jsonScalarEquals`/`jsonArrayContains` 暂无调用方但仍保留 ⟶ ★ 接受（**不删比乱删稳**），随死代码清理批次处理。
+>
+> ★ **结案**：`N-042` → **`AGREED`**。★ 本议题使 `ASSIGNED`/`PARTICIPATED` **首次真正生效**（`PRD §4.2` 那两条规则从此有了数据承载）。
 
 ## 5. 已决议（AGREED）
 
