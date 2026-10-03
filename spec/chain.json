@@ -110,23 +110,38 @@
           "label": "采一档",
           "lower_inclusive": null,
           "upper_inclusive": 99999,
-          "raw_text": "< 1,000 元"
+          "raw_text": "< 1,000 元",
+          "approval_chain": [
+            "ops_supervisor"
+          ],
+          "approval_chain_basis": "routes.purchase_tier1.nodes[id=approve_petty_cash]（采一档＝备付金审批，综合运营主管；R-03：仅当申请人＝综合运营主管本人时该节点上抬至主管领导）"
         },
         {
           "id": "purchase_tier2",
           "label": "采二档",
           "lower_inclusive": 100000,
           "upper_inclusive": 500000,
-          "raw_text": "1,000 – 5,000 元"
+          "raw_text": "1,000 – 5,000 元",
+          "approval_chain": [
+            "supervisor",
+            "project_general_manager"
+          ],
+          "approval_chain_basis": "routes.purchase_tier2.nodes（主管领导审批 → 合同统一两级＝主管领导 → 项目总经理）⇒ 审批层级序列去重后为 supervisor → project_general_manager"
         },
         {
           "id": "purchase_tier3",
           "label": "采三档",
           "lower_inclusive": 500001,
           "upper_inclusive": null,
-          "raw_text": "> 5,000 元"
+          "raw_text": "> 5,000 元",
+          "approval_chain": [
+            "supervisor",
+            "project_general_manager"
+          ],
+          "approval_chain_basis": "routes.purchase_tier3.nodes（主管领导审批 → 主管领导复核 → 项目总经理确认拟成交单位 → 合同统一两级）⇒ 审批层级序列**按角色去重**后为 supervisor → project_general_manager"
         }
-      ]
+      ],
+      "approval_chain_note": "★★ **本键＝「该档位的审批层级序列」（`N-044`，2026-10-04 新增）** —— 供 `routes.sole_source.nodes[id=tier_chain]` 与 `routes.change.nodes[id=tier_approval]` 的 `tier_expand` 展开消费（原 `actor` 复合串 + `ref` 伪引用无法被解析，导致两节点**不生成审批任务**）。★ **只列审批人角色序列，不含动作环节**（申请人动作 / 系统校验 / 拨付 / 询比价 / 初审 / 提交集团等均不在此列）。★ **已按角色去重**：同一角色在档位链上多次出现（如采三档的 supervisor 初审＋复核、PGM 拟成交确认＋合同二级）**只列一次** —— 依据用户 2026-10-04 口径「流程上有重复的签批人，都是一次签批」。★ 消费端若再对 SS 去重（剔除 `project_general_manager`），见该节点 `tier_expand.exclude_roles`。"
     },
     "expense": {
       "amount_basis": "申请金额",
@@ -643,7 +658,15 @@
           "label": "按对应档位审批",
           "actor": "supervisor → project_general_manager",
           "required": true,
-          "ref": "routes.<对应档位>"
+          "ref": "routes.<对应档位>",
+          "tier_expand": {
+            "kind": "approval_chain",
+            "tier_source": "amount_cents",
+            "exclude_roles": [
+              "project_general_manager"
+            ],
+            "note": "★★ N-044（2026-10-04）：本键**取代**同节点的 `actor` 复合串与 `ref` 伪引用（两者无法被解析 ⇒ 该 `required: true` 节点**不生成审批任务**，即「惰性必需节点」）。★ 展开源＝`thresholds.purchase.bands[id=tier_of(SS.amount_cents)].approval_chain`（`tier_source=amount_cents`，与 `chain.TierOf` 同源）。★★ `exclude_roles=[project_general_manager]` ＝ **用户 2026-10-04 口径**「流程上有重复的签批人，都是一次签批」的落地：SS 链 `nodes[3]=pgm_final`（同为项目总经理）⇒ 档位链展开时**剔除 PGM 级**，全链 PGM 签字点**唯一＝`pgm_final`**。★ 实现消费本键后，由 WorkBuddy 删除 `actor`/`ref` 两旧键并新增判据（禁惰性必需节点）。"
+          }
         },
         {
           "seq": 4,
@@ -792,7 +815,13 @@
           "id": "tier_approval",
           "label": "按该档位审批",
           "actor": "supervisor → project_general_manager",
-          "required": true
+          "required": true,
+          "tier_expand": {
+            "kind": "approval_chain",
+            "tier_source": "r15_max",
+            "exclude_roles": [],
+            "note": "★★ N-044（2026-10-04）：本键**取代**同节点的 `actor` 复合串（该 `required: true` 节点此前**不生成审批任务** ⇒ PC 全链**连一个主管/总经理签字点都没有**，只剩综合运营主管的 `ledger_submit`）。★ 档位取值源＝本 route 的 `rules.tier_formula`（R-15 就高）⇒ `tier_of(max(change_amount_cents, original_contract_amount_cents))`，与 `chain.ChangeTierOf` 同源 ⇒ `tier_source=r15_max`。★ 展开源＝`thresholds.purchase.bands[id=上述档位].approval_chain`。★ `exclude_roles` 为空：PC 链**无** `pgm_final`，无重复签批面。★ 实现消费本键后，由 WorkBuddy 删除 `actor` 旧键并新增判据（禁惰性必需节点）。"
+          }
         },
         {
           "seq": 4,
