@@ -1,41 +1,43 @@
 package httpapi
 
-// N-039 P0 · PR 定档依据服务端权威化。
+// N-039 P0 · PR 定档依据服务端权威化 ＋ N-040 裁定①②④（口径调整）。
 //
 // ★ spec/forms/PR.json：`estimated_total_cents`（computed · immutable · **is_amount_basis**）
 // rule＝「公式汇总明细小计，禁止手填」· critical_note＝「该值是**分档判定的唯一依据**」。
-// ★ 口径（rule 原文）：行 `subtotal_cents` ＝ 单价 × 数量（**服务端算，不吃客户端行小计**），
-// 表头 `estimated_total_cents` ＝ Σ行小计；客户端顶层 `amount_cents` 与之**不一致 ⇒ 400
-// （fail-closed）**，定档（chain.Facts.AmountCents）与落库（flow.Submit）一律用服务端值。
-// ★ 低报降档路径由本函数闭环：伪造低报 ⇒ 与汇总不一致 ⇒ 可见拒绝，绝不静默采信。
+//
+// ★★ N-040 裁定后的口径（以裁定为准）：
+//   ① 定档（chain.Facts）与落库（flow.Submit）**一律取服务端按明细汇总值**；
+//   ② 客户端顶层 `amount_cents` **不再要求** —— 缺失＝正常，不报错
+//     （真实客户端 Submit.vue 本就不发该字段 —— N-040 查出的覆盖盲区）；
+//   ③ 客户端**若**传了且与汇总不一致 ⇒ **不 400**：返回 mismatch 信号，由 handler 落
+//     审计 warn（action=amount_vs_server_sum_mismatch）＋ **仍以服务端值定档落库**
+//     （服务端值已是权威，阻塞只增误伤；不一致本身是要可见的信号）；
+//   ④ 服务端汇总口径**不变**：行小计＝round(单价×数量)、忽略客户端行内 subtotal_cents、
+//     缺明细/结构非法 ⇒ fail-closed（没有定档依据就没有档位）。
 
 import (
 	"fmt"
 	"math"
 )
 
-// resolvePRAmountForTier N-039 P0 入口：服务端汇总 → 与客户端 amount_cents 交叉校验
-// （不一致 ⇒ fail-closed）→ 回写表头 estimated_total_cents（服务端权威恒覆盖）。
-// 返回供定档（chain.Facts）与落库（flow.Submit）使用的**服务端汇总值**。
-func resolvePRAmountForTier(body *approvalSubmitBody) (*int64, error) {
-	estimated, err := computePREstimatedTotal(body.Fields)
-	if err != nil {
-		return nil, err
+// resolvePRAmountForTier N-039/N-040 入口：服务端汇总 → 回写表头 estimated_total_cents
+// （服务端权威恒覆盖）→ 返回定档/落库用的服务端值。
+//   - error：仅服务端算不出汇总时（裁定④ fail-closed 面）；
+//   - mismatch：客户端传了顶层 amount_cents 且与汇总不一致（裁定③ —— 不是错误，
+//     handler 据此落审计 warn，定档落库照走服务端值）。
+func resolvePRAmountForTier(body *approvalSubmitBody) (estimated *int64, mismatch bool, err error) {
+	sum, cerr := computePREstimatedTotal(body.Fields)
+	if cerr != nil {
+		return nil, false, cerr
 	}
-	if body.AmountCents == nil || *body.AmountCents != estimated {
-		got := "null"
-		if body.AmountCents != nil {
-			got = fmt.Sprintf("%d", *body.AmountCents)
-		}
-		return nil, fmt.Errorf(
-			"amount_cents 与服务端按明细汇总的 estimated_total_cents 不一致（客户端=%s 服务端=%d）—— 定档依据唯一＝服务端汇总，fail-closed",
-			got, estimated)
+	if body.AmountCents != nil && *body.AmountCents != sum {
+		mismatch = true // 裁定③：可见信号，不拒单
 	}
 	if body.Fields == nil {
 		body.Fields = map[string]any{}
 	}
-	body.Fields["estimated_total_cents"] = estimated
-	return &estimated, nil
+	body.Fields["estimated_total_cents"] = sum
+	return &sum, mismatch, nil
 }
 
 // computePREstimatedTotal 按明细行（fields["detail"] 数组）服务端汇总 PR 定档依据。

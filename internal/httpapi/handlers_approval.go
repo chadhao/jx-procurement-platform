@@ -553,15 +553,28 @@ func (d Deps) handleApprovalSubmit(c echo.Context) error {
 	// ---- 服务端算链（FR-M9-02）----
 	usageL1 := firstNonEmptyStr(body.UsageCategoryL1, body.PurposeClassL1)
 	usageL2 := firstNonEmptyStr(body.UsageCategoryL2, body.PurposeClassL2)
-	// ★ N-039 P0：PR 定档依据服务端权威化 —— 汇总明细 → 与客户端 amount_cents 交叉校验
-	//   （fail-closed）→ 定档与落库一律用服务端汇总值（低报降档路径闭环）。
+	// ★ N-039 P0 ＋ N-040 裁定①②③：定档与落库一律服务端汇总值；
+	//   客户端顶层 amount_cents 不再要求（缺失＝正常）；传了且不一致 ⇒ 审计 warn
+	//   （amount_vs_server_sum_mismatch）＋仍以服务端值走（不拒单）。
 	amountForTier := body.AmountCents
 	if body.DocType == "PR" {
-		estimated, perr := resolvePRAmountForTier(&body)
+		estimated, mismatch, perr := resolvePRAmountForTier(&body)
 		if perr != nil {
 			return fail(c, http.StatusBadRequest, codeBadRequest, perr.Error())
 		}
 		amountForTier = estimated
+		if mismatch {
+			detail, _ := json.Marshal(map[string]any{
+				"client_amount_cents": *body.AmountCents,
+				"server_sum_cents":    *estimated,
+				"doc_type":            "PR",
+			})
+			d.audit(ctx, &store.AuditLogRow{
+				Action: "amount_vs_server_sum_mismatch", Resource: "approval",
+				TargetID: "PR(unsaved)", Result: "warn",
+				DetailJSON: string(detail),
+			})
+		}
 	}
 	facts := chain.Facts{
 		DocType:                  body.DocType,

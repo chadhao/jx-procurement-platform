@@ -30,8 +30,12 @@ func validateSubmitForm(form specload.FormDoc, provided map[string]any) error {
 			continue // 非提交时点（审批/拨付/后置/周期登记）
 		}
 		if sec.Repeating {
-			// ★ N-039：明细行组（PR#detail）的行字段承载在 fields["detail"] 数组内 ——
-			//   顶层不判（行级逐行必填属另一层，见 N-039 回执如实登记）。
+			// ★ N-040 裁定③：重复段契约 —— fields.<section_id> ＝ 数组 of 行对象；
+			//   **顶层不判**（行字段不在顶层），但**行级必填**：行内 required:true（或
+			//   conditional 命中）的 user 字段逐行校验，缺即 400 可见失败。
+			if err := validateRepeatingRows(sec, provided); err != nil {
+				return err
+			}
 			continue
 		}
 		for _, f := range sec.Fields {
@@ -75,6 +79,60 @@ func providedNonEmpty(provided map[string]any, name string) bool {
 	default:
 		return true
 	}
+}
+
+// validateRepeatingRows N-040 裁定③：重复段**行级必填**（fields.<section_id> 数组 of 行对象）。
+//   - 行数据缺失/非数组/空（且组内有 required user 字段）⇒ 400 可见失败；
+//   - 行内 required:true（无 conditional）逐行必填；required_conditional 对**行 map** 评估；
+//   - 行内 system/computed 字段不判（同顶层 source=user 限定）。
+func validateRepeatingRows(sec specload.SectionDoc, provided map[string]any) error {
+	hasRequired := false
+	for _, f := range sec.Fields {
+		if f.Source == "user" && f.Required && strings.TrimSpace(f.RequiredConditional) == "" {
+			hasRequired = true
+			break
+		}
+	}
+	raw, exists := provided[sec.ID]
+	if !exists || raw == nil {
+		if hasRequired {
+			return fmt.Errorf("明细「%s」（%s）缺失 —— 行内必填字段无处承载（契约：fields.%s ＝ 行对象数组）",
+				sec.Label, sec.ID, sec.ID)
+		}
+		return nil
+	}
+	rows, ok := raw.([]any)
+	if !ok {
+		return fmt.Errorf("明细「%s」（%s）必须是行对象数组，实际是 %T（N-040 契约）",
+			sec.Label, sec.ID, raw)
+	}
+	if len(rows) == 0 && hasRequired {
+		return fmt.Errorf("明细「%s」至少需要 1 行 —— 行内必填字段不能为空数组", sec.Label)
+	}
+	for i, r := range rows {
+		row, ok := r.(map[string]any)
+		if !ok {
+			return fmt.Errorf("明细「%s」第 %d 行不是对象", sec.Label, i+1)
+		}
+		for _, f := range sec.Fields {
+			if f.Source != "user" {
+				continue
+			}
+			cond := strings.TrimSpace(f.RequiredConditional)
+			if cond != "" {
+				match, parseable := evalSimpleEqual(cond, row)
+				if !parseable || !match {
+					continue
+				}
+			} else if !f.Required {
+				continue
+			}
+			if !providedNonEmpty(row, f.Name) {
+				return fmt.Errorf("明细「%s」第 %d 行字段「%s」（%s）必填", sec.Label, i+1, f.Label, f.Name)
+			}
+		}
+	}
+	return nil
 }
 
 // evalSimpleEqual 解析最简条件 `字段 == 值`（值截断到引号/空格/全角括号）。

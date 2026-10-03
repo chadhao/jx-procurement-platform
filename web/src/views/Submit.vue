@@ -41,18 +41,78 @@ const approvalCode = computed(() => {
 })
 
 // 提交时点字段：filled_at 为空的 section、source=user 的字段（与服务端校验口径一致）。
+// ★ N-040 裁定③：repeating section **不拍平** —— 行字段承载在 fields.<section_id>
+// 数组里（服务端行级必填），此处只收集非 repeating 的平铺字段。
 const visibleFields = computed(() => {
   const f = curForm.value
   if (!f) return []
   const out = []
   for (const sec of f.sections || []) {
     if (sec.filled_at) continue // 审批/拨付/后置/周期 section 不在提交时点渲染
+    if (sec.repeating) continue // 明细行组走 repeatingData（N-040 契约）
     for (const field of sec.fields || []) {
       if (field.source === 'user') out.push({ ...field, sectionLabel: sec.label })
     }
   }
   return out
 })
+
+// ---- N-040 裁定③ · 重复段最小可用明细录入 ----
+// 契约：fields.<section_id> = 数组 of 行对象（键＝行内字段名）。
+// 本轮＝最小可用（增删行 + 行内字段按 schema 渲染 + 提交组装数组）；
+// 完整明细 UI（拖拽/复制行/行内校验提示等）单独排期 —— 见 N-040 回执。
+const repeatingSections = computed(() => {
+  const f = curForm.value
+  if (!f) return []
+  return (f.sections || []).filter((s) => s.repeating && !s.filled_at)
+})
+// sectionId -> 行对象数组（每行一个 reactive 对象）
+const repeatingData = reactive({})
+
+function initRepeatingData() {
+  for (const k of Object.keys(repeatingData)) delete repeatingData[k]
+  for (const sec of repeatingSections.value) {
+    repeatingData[sec.id] = [{}]
+  }
+}
+
+function rowEditableFields(sec) {
+  return (sec.fields || []).filter((f) => f.source === 'user')
+}
+
+function addRepeatingRow(secId) {
+  if (!repeatingData[secId]) repeatingData[secId] = []
+  repeatingData[secId].push({})
+}
+
+function removeRepeatingRow(secId, idx) {
+  const rows = repeatingData[secId]
+  if (rows) rows.splice(idx, 1)
+}
+
+// 组装行数组：跳过完全空的行（用户点了「加行」没填不提交）；money 行内字段 元→分。
+function buildRepeatingPayload() {
+  const out = {}
+  for (const sec of repeatingSections.value) {
+    const rows = (repeatingData[sec.id] || []).filter((r) =>
+      rowEditableFields(sec).some((f) => {
+        const v = r[f.name]
+        return v !== undefined && v !== null && String(v).trim() !== ''
+      })
+    )
+    if (!rows.length) continue // 无有效行 ⇒ 不放键（行级必填由服务端 400 可见失败）
+    out[sec.id] = rows.map((r) => {
+      const row = {}
+      for (const f of rowEditableFields(sec)) {
+        const v = r[f.name]
+        if (v === undefined || v === null || v === '') continue
+        row[f.name] = isMoney(f) ? yuanToCents(v) : v
+      }
+      return row
+    })
+  }
+  return out
+}
 
 // ---- 用途分类联动（enums 权威：groups[].categories[].code/label/secondary）----
 const usageGroups = computed(() => {
@@ -116,6 +176,7 @@ function yuanToCents(v) {
 }
 function resetForm() {
   for (const k of Object.keys(fields)) delete fields[k]
+  initRepeatingData() // ★ N-040：换单据重建明细行组（repeatingData 按当前表单 schema 初始化）
   attachments.value = []
   preview.value = null
   previewHint.value = ''
@@ -185,6 +246,8 @@ async function doSubmit() {
     if (v === undefined || v === null || v === '') continue
     payloadFields[f.name] = isMoney(f) ? yuanToCents(v) : v
   }
+  // ★ N-040 裁定③：repeating 明细行组 → fields.<section_id> = 数组 of 行对象
+  Object.assign(payloadFields, buildRepeatingPayload())
   const payload = {
     doc_type: curDocType.value,
     approval_code: approvalCode.value,
@@ -235,6 +298,7 @@ onMounted(async () => {
     if (!curDocType.value || !meta.value.doc_types_available.includes(curDocType.value)) {
       curDocType.value = meta.value.doc_types_available[0] || ''
     }
+    initRepeatingData() // 初始进入也要按表单 schema 建明细行组
     schedulePreview()
   } catch (e) {
     err.value = e.message || String(e)
@@ -430,6 +494,82 @@ watch(() => [curDocType.value, fields.amount_cents, fields.usage_category_l1, fi
             >
           </label>
         </template>
+
+        <!-- ★ N-040 裁定③ · 重复段最小可用明细录入（repeating section → fields.<id> 数组）
+             完整明细 UI（拖拽排序/复制行/行内即时校验）单独排期 —— 见 COLLAB N-040 回执 -->
+        <div
+          v-for="sec in repeatingSections"
+          :key="sec.id"
+          class="repeating-block"
+        >
+          <div class="row">
+            <span class="lbl">
+              {{ sec.label || sec.id }}（明细行）
+              <em v-if="rowEditableFields(sec).some((f) => f.required)" class="req">*</em>
+            </span>
+            <span class="hint">行内必填字段缺行将被服务端 400 拒绝</span>
+          </div>
+          <div
+            v-for="(row, ri) in repeatingData[sec.id] || []"
+            :key="ri"
+            class="detail-row"
+          >
+            <template v-for="f in rowEditableFields(sec)" :key="f.name">
+              <!-- 金额（元输入 → 分提交；行内与顶层同口径） -->
+              <input
+                v-if="isMoney(f)"
+                v-model="row[f.name]"
+                class="inp"
+                type="number"
+                min="0"
+                step="0.01"
+                :placeholder="`${f.label}（元）`"
+              >
+              <select
+                v-else-if="f.type === 'constant_ref' && constants[f.name]"
+                v-model="row[f.name]"
+                class="inp"
+              >
+                <option value="">请选择</option>
+                <option v-for="v in constants[f.name]" :key="v" :value="v">{{ v }}</option>
+              </select>
+              <select
+                v-else-if="f.type === 'enum' && f.values && f.values.length"
+                v-model="row[f.name]"
+                class="inp"
+              >
+                <option value="">请选择</option>
+                <option v-for="v in f.values" :key="v" :value="v">{{ v }}</option>
+              </select>
+              <input
+                v-else-if="f.type === 'number'"
+                v-model.number="row[f.name]"
+                class="inp"
+                type="number"
+                :placeholder="f.label"
+              >
+              <input
+                v-else-if="f.type === 'date'"
+                v-model="row[f.name]"
+                class="inp"
+                type="date"
+              >
+              <input
+                v-else
+                v-model="row[f.name]"
+                class="inp"
+                type="text"
+                :placeholder="f.label"
+              >
+            </template>
+            <button type="button" class="ghost" @click="removeRepeatingRow(sec.id, ri)">
+              删行
+            </button>
+          </div>
+          <button type="button" class="ghost" @click="addRepeatingRow(sec.id)">
+            ＋ 添加一行
+          </button>
+        </div>
 
         <!-- 附件（提交时点有附件字段时展示上传位；服务端按 schema 校验条件必填） -->
         <div class="row">
