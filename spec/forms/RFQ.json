@@ -31,6 +31,8 @@
       "fields": [
         {
           "name": "biz_no",
+          "carried_by_kind": "code",
+          "carried_by": "服务端生成单据号（落 t_instance.biz_no；前缀与格式见 spec/forms 的 number_format）",
           "label": "询价单号",
           "type": "string",
           "required": true,
@@ -183,6 +185,8 @@
         },
         {
           "name": "invited_count",
+          "carried_by_kind": "code",
+          "carried_by": "★ handlers_approval_hardchecks.go:1185 —— 服务端由明细计数并与声明值**交叉核对**（同 BJ.quote_count 形态）",
           "label": "受邀家数",
           "type": "number",
           "required": true,

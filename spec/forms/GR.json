@@ -33,6 +33,8 @@
       "fields": [
         {
           "name": "biz_no",
+          "carried_by_kind": "code",
+          "carried_by": "服务端生成单据号（落 t_instance.biz_no；前缀与格式见 spec/forms 的 number_format）",
           "label": "验收单号",
           "type": "string",
           "required": true,
@@ -118,6 +120,8 @@
       "fields": [
         {
           "name": "member_purchaser",
+          "carried_by_kind": "code",
+          "carried_by": "handlers_approval_hardchecks.go:643-646 服务端按入库类型计算本单应到成员",
           "label": "采购经办人",
           "type": "person",
           "required": true,
@@ -129,6 +133,8 @@
         },
         {
           "name": "member_qc",
+          "carried_by_kind": "code",
+          "carried_by": "handlers_approval_hardchecks.go:643-646 服务端按入库类型计算本单应到成员",
           "label": "质检技术部",
           "type": "person",
           "required": false,
@@ -140,6 +146,8 @@
         },
         {
           "name": "member_warehouse",
+          "carried_by_kind": "code",
+          "carried_by": "handlers_approval_hardchecks.go:643-646 服务端按入库类型计算本单应到成员",
           "label": "库管",
           "type": "person",
           "required": false,
@@ -151,6 +159,8 @@
         },
         {
           "name": "member_ops",
+          "carried_by_kind": "code",
+          "carried_by": "handlers_approval_hardchecks.go:643-646 服务端按入库类型计算本单应到成员",
           "label": "综合运营部人员",
           "type": "person",
           "required": false,
@@ -179,6 +189,8 @@
         },
         {
           "name": "unit",
+          "carried_by_kind": "code",
+          "carried_by": "constant_ref：validateConstantRefs（handlers_approval_formcheck.go:138+）校验 active 并写 「字段名_snapshot」冻结值",
           "label": "计量单位",
           "type": "constant_ref",
           "required": true,

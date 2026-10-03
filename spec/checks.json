@@ -479,7 +479,7 @@
     {
       "id": "S16",
       "severity": "must-green",
-      "desc": "★★ **每个 `immutable: true` 且 `source ∈ {system, computed}` 的字段，都必须声明「谁来保证它不可篡改」**（2026-10-03，`N-038`）。\n★ **它治什么**：`immutable` 这个键在本项目**已写 55 处**，★ 且多处带 `critical_note` 明写「**篡改本值即可降档**」（`PC#applicable_tier` / `PC#original_contract_amount_cents`）—— ★ 但**整仓 Go 代码零消费端**（实测 `grep -rn 'immutable' --include=*.go` 只命中一个**同名判据 id** `BJ#selection_reason_immutable`，与字段无关）⇒ ★★ **`immutable` 是一句无人执行的承诺** —— 与 `N-036` 的「判据声明了却没人执行」**同族，但载体是字段而不是判据**。\n★★ **实测危害（2026-10-03 已复现）**：mimo `9fd0227` 的 `putSysField` 语义是「**非空不覆盖**」⇒ ★ 前端手填即可篡改 5 个字段：`applicable_tier`（**整条审批链走错档**）／`original_contract_amount_cents`（**档位就高的两个输入之一被换掉**）／`change_count_to_date` ／`is_anomaly_listed`（**规避异常清单**）／`exception_type`（**例外台账的例外类型被改**）—— ★ 都不是「少一条提示」，是**内控被绕过**。\n★ 声明字段：**`carried_by_kind`**（**与判据侧同一受控词表**，见 `S14`）＋ **`carried_by`**（落点，自由文本）。\n★★ **语义差异（务必分清）**：判据侧 `pending_implementation` ＝「承诺的**拒绝**不会发生」；★ 字段侧 `pending_implementation` ＝「**该字段的不可篡改性无任何机制保证**」—— ★ 后者**更靠前**，★ 因为它连「谁来发现篡改」都没有。\n★ 本判据**不检查运行时行为**（那属实现侧测试）—— ★ 它保证的是「**每条不可篡改承诺都有名字**」，★ 使「哪些还没做」从散文变成**可数清单**。",
+      "desc": "★★ **每个 `immutable: true` 且 `source ∈ {system, computed}` 的字段，都必须声明「谁来保证它不可篡改」**（2026-10-03，`N-038`）。\n★ **它治什么**：`immutable` 这个键在本项目**已写 55 处**，★ 且多处带 `critical_note` 明写「**篡改本值即可降档**」（`PC#applicable_tier` / `PC#original_contract_amount_cents`）—— ★ 但**整仓 Go 代码零消费端**（实测 `grep -rn 'immutable' --include=*.go` 只命中一个**同名判据 id** `BJ#selection_reason_immutable`，与字段无关）⇒ ★★ **`immutable` 是一句无人执行的承诺** —— 与 `N-036` 的「判据声明了却没人执行」**同族，但载体是字段而不是判据**。\n★★ **实测危害（2026-10-03 已复现）**：mimo `9fd0227` 的 `putSysField` 语义是「**非空不覆盖**」⇒ ★ 前端手填即可篡改 5 个字段：`applicable_tier`（**整条审批链走错档**）／`original_contract_amount_cents`（**档位就高的两个输入之一被换掉**）／`change_count_to_date` ／`is_anomaly_listed`（**规避异常清单**）／`exception_type`（**例外台账的例外类型被改**）—— ★ 都不是「少一条提示」，是**内控被绕过**。\n★ 声明字段：**`carried_by_kind`**（**与判据侧同一受控词表**，见 `S14`）＋ **`carried_by`**（落点，自由文本）。\n★★ **语义差异（务必分清）**：判据侧 `pending_implementation` ＝「承诺的**拒绝**不会发生」；★ 字段侧 `pending_implementation` ＝「**该字段的不可篡改性无任何机制保证**」—— ★ 后者**更靠前**，★ 因为它连「谁来发现篡改」都没有。\n★ 本判据**不检查运行时行为**（那属实现侧测试）—— ★ 它保证的是「**每条不可篡改承诺都有名字**」，★ 使「哪些还没做」从散文变成**可数清单**。\n★★★★ **2026-10-03 扩围（`N-039` 我方责任段 · `B1`）**：★ 原范围是 `immutable: true ∧ source ∈ {system,computed}` ⇒ 只覆盖 **54** 个字段实例，而 `source ∈ {system,computed}` **全量 96 个** ⇒ ★★ **漏掉 42 个**（含 `BA.anti_split_check_result` 拆单检查结果 · `SS.amount_cents` 单一来源定档依据 · `CT.contract_amount_cents` · `PR.subtotal_cents` · `SUB.contract_approved` 等 —— **敏感度不低于原 54 个**）。⇒ ★ **收掉 `immutable` 这个额外条件**，范围改为**全部 `source ∈ {system,computed}` 字段**。★ 判据的**有效范围本身就是覆盖面的上限** —— 问「`immutable` 有没有执行者」会漏掉「**没有声明 `immutable` 但同样没有生产者**」的那批。\n★★ **扩围同批完成 42 条声明**（`B2`）：`code` 22 · `pending_implementation` **8**（真缺口：`BA.record_date`/`BA.anti_split_check_result`/`BA.petty_cash_receiver`/`BA.is_key_sample_range`/`BA.is_monthly_supplier_rollover_warned`/`CT.approval_levels`/`PC.tier_approval_record`/`PR.stock_qty`/`SA.actual_vs_approved_diff_cents`/`SS.tier_chain_record` —— ★ 实为 10 条，见下）；\n★ 另有一类**必须记名但不算 `pending_implementation`**：`BJ.quote_count`/`RFQ.invited_count`/`CT.contract_amount_cents`/`SS.amount_cents`/`SUB.amount_cents`/`SUB.contract_approved` —— ★ **「服务端只校验、不生产」**，其 `carried_by` 已逐条注明「**非服务端生产**」，与 `N-040` 同族（客户端值仍可决定该值）。",
       "primitive": "array_each_required",
       "args": {
         "file": "spec/forms/*.json",
@@ -487,12 +487,8 @@
         "required_keys": [
           "carried_by_kind"
         ],
-        "when_key": "immutable",
+        "when_key": "source",
         "when_in": [
-          "true"
-        ],
-        "when_key2": "source",
-        "when_in2": [
           "system",
           "computed"
         ]

@@ -32,6 +32,8 @@
       "fields": [
         {
           "name": "biz_no",
+          "carried_by_kind": "code",
+          "carried_by": "服务端生成单据号（落 t_instance.biz_no；前缀与格式见 spec/forms 的 number_format）",
           "label": "合同编号",
           "type": "string",
           "required": true,
@@ -119,6 +121,8 @@
         },
         {
           "name": "usage_category_l1",
+          "carried_by_kind": "code",
+          "carried_by": "handlers_approval.go:491-494 由 body/purpose_class 归一后回填 provided",
           "label": "用途分类（一级）",
           "type": "enum",
           "required": true,
@@ -131,6 +135,8 @@
         },
         {
           "name": "usage_category_l2",
+          "carried_by_kind": "code",
+          "carried_by": "handlers_approval.go:755 回填 provided",
           "label": "二级明细",
           "type": "enum",
           "required": true,
@@ -186,6 +192,8 @@
         },
         {
           "name": "contract_amount_cents",
+          "carried_by_kind": "code",
+          "carried_by": "★ 由客户端 provided 供（handlers_approval_hardchecks.go:274 读取）＋ amount_vs_pr 容差校验；**非服务端生产** —— 与 N-040 同族关注点",
           "label": "合同金额",
           "type": "money_cents",
           "required": true,
@@ -203,6 +211,8 @@
         },
         {
           "name": "approval_levels",
+          "carried_by_kind": "pending_implementation",
+          "carried_by": "★ Go 侧零命中：审批级数无生产点（computed）",
           "label": "审批层级",
           "type": "string",
           "required": true,
@@ -218,6 +228,8 @@
         },
         {
           "name": "approval_record_ref",
+          "carried_by_kind": "code",
+          "carried_by": "handlers_biz.go:241/261 —— 审批时点产生的白名单列（审批记录引用）",
           "label": "合同审批记录",
           "type": "string",
           "required": true,

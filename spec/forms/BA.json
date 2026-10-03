@@ -37,6 +37,8 @@
       "fields": [
         {
           "name": "biz_no",
+          "carried_by_kind": "code",
+          "carried_by": "服务端生成单据号（落 t_instance.biz_no；前缀与格式见 spec/forms 的 number_format）",
           "label": "备案单号",
           "type": "string",
           "required": true,
@@ -74,6 +76,8 @@
         },
         {
           "name": "record_date",
+          "carried_by_kind": "pending_implementation",
+          "carried_by": "★ Go 侧零命中：spec 声明 source=system，但无任何生产点（口径见制度第五十九条 L01「日期」）",
           "label": "备案日期",
           "type": "date",
           "required": true,
@@ -225,6 +229,8 @@
         },
         {
           "name": "anti_split_check_result",
+          "carried_by_kind": "pending_implementation",
+          "carried_by": "★★ Go 侧零命中：拆单检查结果无生产点 —— 属内控红线项，须实现",
           "label": "防拆分／次数校验结果",
           "type": "computed",
           "required": true,
@@ -259,6 +265,8 @@
       "fields": [
         {
           "name": "petty_cash_receiver",
+          "carried_by_kind": "pending_implementation",
+          "carried_by": "★ Go 侧零命中：备付金领取人无生产点",
           "label": "签领人",
           "type": "person",
           "required": true,
@@ -331,6 +339,8 @@
       "fields": [
         {
           "name": "is_key_sample_range",
+          "carried_by_kind": "pending_implementation",
+          "carried_by": "★ Go 侧零命中：无生产点",
           "label": "是否落入 800–1,000 元重点抽查区间",
           "type": "boolean",
           "required": false,
@@ -366,6 +376,8 @@
         },
         {
           "name": "is_monthly_supplier_rollover_warned",
+          "carried_by_kind": "pending_implementation",
+          "carried_by": "★ Go 侧零命中：无生产点",
           "label": "是否落入当月同供应商累计转档预警",
           "type": "boolean",
           "required": false,

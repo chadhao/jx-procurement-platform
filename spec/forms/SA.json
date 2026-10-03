@@ -29,6 +29,8 @@
       "fields": [
         {
           "name": "biz_no",
+          "carried_by_kind": "code",
+          "carried_by": "服务端生成单据号（落 t_instance.biz_no；前缀与格式见 spec/forms 的 number_format）",
           "label": "申请单号",
           "type": "string",
           "required": true,
@@ -186,6 +188,8 @@
         },
         {
           "name": "actual_vs_approved_diff_cents",
+          "carried_by_kind": "pending_implementation",
+          "carried_by": "★ Go 侧零命中：实际与批准差额无生产点（computed）",
           "label": "实际金额与申请额差异",
           "type": "money_cents",
           "required": false,

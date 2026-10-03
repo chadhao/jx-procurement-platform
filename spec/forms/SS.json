@@ -41,6 +41,8 @@
       "fields": [
         {
           "name": "biz_no",
+          "carried_by_kind": "code",
+          "carried_by": "服务端生成单据号（落 t_instance.biz_no；前缀与格式见 spec/forms 的 number_format）",
           "label": "单据号",
           "type": "string",
           "required": true,
@@ -119,6 +121,8 @@
         },
         {
           "name": "usage_category_l1",
+          "carried_by_kind": "code",
+          "carried_by": "handlers_approval.go:491-494 归一后回填 provided",
           "label": "用途分类（一级）",
           "type": "enum",
           "required": true,
@@ -132,6 +136,8 @@
         },
         {
           "name": "usage_category_l2",
+          "carried_by_kind": "code",
+          "carried_by": "handlers_approval.go:755 回填 provided",
           "label": "二级明细",
           "type": "enum",
           "required": true,
@@ -143,6 +149,8 @@
         },
         {
           "name": "amount_cents",
+          "carried_by_kind": "code",
+          "carried_by": "★ 取自 body.amount_cents（客户端）；SS 侧经 L04 反查与 fail-closed 收口 —— **非服务端生产**（N-040 同族）",
           "label": "金额",
           "type": "money_cents",
           "required": true,
@@ -344,6 +352,8 @@
       "fields": [
         {
           "name": "tier_chain_record",
+          "carried_by_kind": "pending_implementation",
+          "carried_by": "★ Go 侧零命中：档位链记录无生产点",
           "label": "档位审批记录",
           "type": "string",
           "required": true,

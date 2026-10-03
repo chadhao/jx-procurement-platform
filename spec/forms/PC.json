@@ -65,6 +65,8 @@
       "fields": [
         {
           "name": "biz_no",
+          "carried_by_kind": "code",
+          "carried_by": "服务端生成单据号（落 t_instance.biz_no；前缀与格式见 spec/forms 的 number_format）",
           "label": "单据号",
           "type": "string",
           "required": true,
@@ -412,6 +414,8 @@
         },
         {
           "name": "usage_category_l1",
+          "carried_by_kind": "code",
+          "carried_by": "handlers_approval.go:491-494 归一后回填 provided",
           "label": "用途分类（一级）",
           "type": "enum",
           "required": true,
@@ -471,6 +475,8 @@
       "fields": [
         {
           "name": "tier_approval_record",
+          "carried_by_kind": "pending_implementation",
+          "carried_by": "★ Go 侧零命中：档位审批记录无生产点（N-015 同族：L03 designated_* 已解，本条未做）",
           "label": "档位审批记录",
           "type": "string",
           "required": true,

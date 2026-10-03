@@ -41,6 +41,8 @@
       "fields": [
         {
           "name": "biz_no",
+          "carried_by_kind": "code",
+          "carried_by": "服务端生成单据号（落 t_instance.biz_no；前缀与格式见 spec/forms 的 number_format）",
           "label": "申请单号",
           "type": "string",
           "required": true,
@@ -316,6 +318,8 @@
         },
         {
           "name": "subtotal_cents",
+          "carried_by_kind": "code",
+          "carried_by": "★ 服务端不落该值：由 handlers_approval_pr_amount.go#computePREstimatedTotal 按 单价×数量 现算（客户端行内值显式忽略，N-039/N-040）",
           "label": "小计",
           "type": "money_cents",
           "required": false,
@@ -326,6 +330,8 @@
         },
         {
           "name": "stock_qty",
+          "carried_by_kind": "pending_implementation",
+          "carried_by": "★ Go 侧零命中：spec 声明 system，疑需库存源 ⇒ 真缺口",
           "label": "现有库存量（自动带出）",
           "type": "number",
           "required": false,

@@ -32,6 +32,8 @@
       "fields": [
         {
           "name": "biz_no",
+          "carried_by_kind": "code",
+          "carried_by": "服务端生成单据号（落 t_instance.biz_no；前缀与格式见 spec/forms 的 number_format）",
           "label": "流转单号",
           "type": "string",
           "required": true,
@@ -96,6 +98,8 @@
         },
         {
           "name": "amount_cents",
+          "carried_by_kind": "code",
+          "carried_by": "★ 取自 body.amount_cents（客户端）；SUB 有 ≥100,000 前置与移交条件校验（N-040 同族）",
           "label": "金额",
           "type": "money_cents",
           "required": true,
@@ -107,6 +111,8 @@
         },
         {
           "name": "payment_method",
+          "carried_by_kind": "code",
+          "carried_by": "chain/route.go:105-113 按 spec 支付方式双语归一判定；落账列由 SUB 落账写入",
           "label": "付款方式",
           "type": "enum",
           "required": true,
@@ -138,6 +144,8 @@
         },
         {
           "name": "contract_approved",
+          "carried_by_kind": "code",
+          "carried_by": "★ handlers_approval_hardchecks.go:855 从 provided 读取（客户端布尔）⇒ **非服务端生产**（N-040 同族）",
           "label": "合同审批已完成",
           "type": "boolean",
           "required": true,
@@ -225,6 +233,8 @@
       "fields": [
         {
           "name": "submit_group_at",
+          "carried_by_kind": "code",
+          "carried_by": "handlers_approval_hardchecks.go:931-937 运营表种子行落账时写入",
           "label": "提交集团日期",
           "type": "date",
           "required": true,
