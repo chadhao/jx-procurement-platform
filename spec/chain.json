@@ -358,7 +358,6 @@
           "seq": 2,
           "id": "contract_two_level",
           "label": "合同审批（两级：主管领导 → 项目总经理）",
-          "actor": "supervisor → project_general_manager",
           "required": true,
           "ref": "contract_two_level",
           "doc": "CT"
@@ -436,7 +435,6 @@
           "seq": 5,
           "id": "contract_two_level",
           "label": "合同审批（两级）",
-          "actor": "supervisor → project_general_manager",
           "required": true,
           "ref": "contract_two_level",
           "doc": "CT"
@@ -656,9 +654,7 @@
           "seq": 3,
           "id": "tier_chain",
           "label": "按对应档位审批",
-          "actor": "supervisor → project_general_manager",
           "required": true,
-          "ref": "routes.<对应档位>",
           "tier_expand": {
             "kind": "approval_chain",
             "tier_source": "amount_cents",
@@ -814,7 +810,6 @@
           "seq": 3,
           "id": "tier_approval",
           "label": "按该档位审批",
-          "actor": "supervisor → project_general_manager",
           "required": true,
           "tier_expand": {
             "kind": "approval_chain",

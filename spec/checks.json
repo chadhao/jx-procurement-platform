@@ -1,7 +1,7 @@
 {
-  "version": "1.10",
+  "version": "1.11",
   "generated_by": "WorkBuddy",
-  "date": "2026-10-03",
+  "date": "2026-10-04",
   "scope": "spec/",
   "supersedes": "scripts/check_spec.py 的内联判据（本清单是判据的**唯一来源**）",
   "_format_note": "★★ **格式决定：用 JSON 而非 YAML**（对 N-011 提议的 `checks.yaml` 的偏离）——\n① **不引入新依赖**：本项目 Python 门禁一律 **stdlib-only**（`check_md_tables.py` / `check_collab.py` / `audit_silent.py` 均无第三方依赖），YAML 需 PyYAML；\n② **Go 侧更省事**：`encoding/json` 是标准库，YAML 要引 `gopkg.in/yaml.v3`；\n③ 与 `spec/` 其余文件格式统一。\n★ 结构与「可执行声明式清单」的设计**完全按 N-011 约定**，**仅容器格式变化**。若 mimo 认为必须 YAML，请开议题并说明依赖引入方案。",
@@ -506,6 +506,20 @@
           "desc"
         ]
       }
+    },
+    {
+      "id": "S19",
+      "severity": "must-green",
+      "desc": "★★ **节点 `actor` 不得是复合串**（`N-044` 收尾；★ 与 `N-045` 配套）—— ★ 治「复合 `actor` 落入『未知 actor 不生成任务』⇒ `required:true` 的**惰性必需节点**」：`N-044` 实测 `routes.sole_source.nodes[2]`（`tier_chain`）与 `routes.change.nodes[2]`（`tier_approval`）的 `actor` 写作 `\"supervisor → project_general_manager\"` ⇒ `internal/chain/nodes.go` 既非 `approverRoles`、也非 `isActionActor` ⇒ 落 `appendAction` ⇒ **只记 NodeName、不生成 flow 任务**（`required:true` 却无人审）。★ 本判据是该**机制**的机检守卫：任何节点（**无论由 `ref` 还是 `tier_expand` 驱动**）一律不得用复合串充当 `actor`。★★ **局限（如实登记，不可当作完整版）**：本判据只认「复合串」这一**已知形态**，**不是**完整的「禁惰性必需节点」——★ 完整版（`actor` 取值须 ⊆ 合法 actor 白名单：`applicant`/`system`/`purchaser` ＋ 5 个审批角色）**阻塞于 `N-045`**：`routes.emergency.nodes[4]`（`backfill_approval`）的 `actor=\"按档位审批人\"` 同属惰性必需节点，但**不含 `→` ⇒ 本判据不报**；且其档位取值源（label：『按对应档位补审批（不得降档）』）尚需口径 ⇒ `N-045` 先行。★ 判据不是越严越好，而是越准越好：与其写一条会误伤合法用法的白名单判据，不如**如实登记为两段**。",
+      "primitive": "pattern_absent",
+      "args": {
+        "file": "spec/chain.json",
+        "collect": "routes.*.nodes[*].actor",
+        "forbidden_regex": [
+          "→"
+        ],
+        "min_hits": 1
+      }
     }
   ],
   "consumer_obligations": {
@@ -564,6 +578,11 @@
       "version": "1.10",
       "date": "2026-10-03",
       "change": "★★ **修 V1.8 埋下的形状错**：`primitives.array_each_required` 多包一层（与其余 9 条扁平形状不一致；★★ 两侧引擎都只查键存在、**不查值形状** ⇒ 隐形 ＋ 门禁 8/8 全绿）；★ 配套**新增 `S18`**（`primitives[*]` 须含 `desc` ⇒ 治「说明文档读不到」；★ 口径经实测收窄过一次：初版要求「恰含 `desc`＋`args`」**与 mimo 既有探针互斥**，已改为只要求 `desc`）。\n★ 另新增 **`S16`**（每个 `immutable:true`＋`source∈{system,computed}` 的字段必须声明 `carried_by_kind` —— ★ 治「`immutable` 是无人执行的承诺」；实测整仓 Go 零消费端、且已复现**两条独立篡改路径**：① `putSysField` 「非空不覆盖」⇒ 5 字段可前端篡改（含**降档**）；② `applyBizFields` default 分支 ⇒ 客户端伪造的 `applicant` **残留 `ext_json`、与规范列并存矛盾**）。★ 配套：`array_each_required` 新增**「条件面为空」守卫**（`S16` 的 `when_in` 写错即零命中零违规 ⇒ 该守卫的活体证明）与 `allow_empty_match` 参数 —— ★ 二者登记在 `primitives` 与 `consumer_obligations`，**不是独立判据**。\n★ **`forms/*.json` 54 个 immutable 系统字段已逐条声明**（`code` 33／`structural` 9／`manual` 4／★★ **`pending_implementation` 8** —— 8 条是「声明了不可篡改、却无任何生产点」的**真缺口**，含 `is_reset_as_new_purchase`（判据已拦、标记无人算））。★ 判据 20 → **22**、原语仍 **10**（零引擎新增）。"
+    },
+    {
+      "version": "1.11",
+      "date": "2026-10-04",
+      "change": "★ **`N-044` 收尾**：新增 **`S19`**（`pattern_absent`：节点 `actor` 不得为复合串 `A → B`）—— ★ 这是 `N-044` 的**机制机检守卫**（原缺陷＝复合 `actor` 落『未知 actor』⇒ `required:true` 却无人审）。★ 同批删除 `sole_source.nodes[2]`/`change.nodes[2]` 的复合 `actor` 与伪 `ref`，并删 `purchase_tier2/3` 两处 `contract_two_level` 的复合 `actor`（由 `ref` 驱动、`actor` 惰性）。★★ **局限已如实登记**：完整版「禁惰性必需节点」（actor 白名单）**阻塞于 `N-045`** —— `routes.emergency.nodes[4].actor=\"按档位审批人\"` 同属惰性必需节点但不含 `→`，本判据不报。★ 判据 **22 → 23**、原语仍 **10**（零引擎新增）。"
     }
   ]
 }

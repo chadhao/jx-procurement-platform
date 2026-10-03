@@ -27,7 +27,8 @@
 | **B4** | `spec/acceptance.csv`（`N-017`） | 状态 `WK-DONE`，**须核实是否已交付** | 自然语言类 `checks` 有可机判载体 |
 | **B5** | `spec/institution-anchors.json`（`N-006`） | 待产（`COLLAB §1`） | 制度条款 ↔ 判据双向可追溯 |
 | **B6** | `spec/openapi.yaml` | 待产（`COLLAB §1`） | 与 `docs/05-API` 一致且可机检 |
-| **B7** | ★★ **`N-044` 惰性必需节点**：`SS.tier_chain` / `PC.tier_approval` 声明 `required: true` 却**不生成审批任务** | ✅ **已定性**（2026-10-04，`N-043` 验收期**证伪对照实测**）：复合 `actor`（`"supervisor → project_general_manager"`）既非审批角色、也非动作 actor ⇒ `internal/chain/nodes.go:104` 落 `appendAction`（只记 `NodeName`）⇒ **`SS` 少「按档位审批」整级、`PC` 少「按该档位审批」整级** | ✅ **我方规格已出**（2026-10-04 02:31）：`thresholds.purchase.bands[*].approval_chain` ＋ `sole_source.nodes[2]`/`change.nodes[2]` 的 `tier_expand`（★ **只新增键** ⇒ 门禁 **8/8 全绿**）；★ 用户口径「重复的签批人只签一次」⇒ `exclude_roles=[project_general_manager]`。⏳ **剩两步**：① mimo 实现（交办包 [`MIMO-NEXT-BATCH-6.md`](./MIMO-NEXT-BATCH-6.md)）；② 我方收尾（删两旧键 ＋ 落「禁惰性必需节点」判据 `S19`） |
+| **B7** | ★★ **`N-044` 惰性必需节点**：`SS.tier_chain` / `PC.tier_approval` 声明 `required: true` 却**不生成审批任务** | ✅ **已定性**（2026-10-04，`N-043` 验收期**证伪对照实测**）：复合 `actor`（`"supervisor → project_general_manager"`）既非审批角色、也非动作 actor ⇒ `internal/chain/nodes.go:104` 落 `appendAction`（只记 `NodeName`）⇒ **`SS` 少「按档位审批」整级、`PC` 少「按该档位审批」整级** | ✅ **我方规格已出**（2026-10-04 02:31）：`thresholds.purchase.bands[*].approval_chain` ＋ `sole_source.nodes[2]`/`change.nodes[2]` 的 `tier_expand`（★ **只新增键** ⇒ 门禁 **8/8 全绿**）；★ 用户口径「重复的签批人只签一次」⇒ `exclude_roles=[project_general_manager]`。✅ **全闭环**（2026-10-04 03:58）：① mimo 实现 **`db18374`**（`expandTierApproval` 逐角色展开；handler 级可证 ＋ **三处单点变异精确转红**）⇒ **我方验收通过**（`AGREED`）；② **我方收尾**＝删 **5 个失效键** ＋ 落 **`S19`**（`checks.json` V1.11；★ **窄版：禁复合 `actor`**）—— ★ **红→绿同批实证**（加判据 ⇒ Python 4 处 ＋ Go 同时红；删键 ⇒ 复绿 8/8）。★★ **遗留**：完整版「禁惰性必需节点」（`actor` ⊆ 白名单）**阻塞于 `N-045`** ⇒ 见 `B8` |
+| **B8** | ★★ **`N-045`：`emergency.backfill_approval` 第三处惰性必需节点 ＋ 完整版「禁惰性必需节点」判据** | ✅ **已定性**（2026-10-04，`N-044` **收尾期实测**）：`spec/chain.json#routes.emergency.nodes[4]`（`required: true`、`actor="按档位审批人"`、**无 `ref`/`tier_expand`**）⇒ `nodes.go:114` 落 `appendAction` ⇒ **不生成审批任务**；★ 与 `N-044` 同类但**不含 `→`** ⇒ `S19` **静默**；★ `emergency` 路由**未被任何 `doc_chains` 引用**（当前不可达） | ⏳ **卡口径（`C9`）**：「按对应档位补审批（**不得降档**）」的**档位取值源**需用户/业务定（我方倾向「关联 PR 档位 ∪ 就高」）；★ **口径到位前不派工**；到位后 ⇒ 落 `tier_expand`（同 `N-044` 范式）＋ 把 `S19` 升级为**完整版**（★ **必须与修复同批**，否则当场红） |
 
 ---
 
@@ -73,6 +74,7 @@
 | **C5** | `Q4` 数据出境合规**书面结论** | 属**法务/合规**结论，非技术判断 | ❌ 不阻塞（挡上线） |
 | **C6** | `Q19` 三单匹配容差 | 需**集团财务给数** | ⚠️ 挡**该条判据**的阈值定稿，不挡其余 |
 | **C7** | 待决策清单 **A 组 5 项**（`A1` 代理人名单 / `A2` 报销时限 / `A3` 集团流程启动条件 / `A4` `unit` 候选集 / `A5` 集团归口） | ★ 全部是**人名 / 集团书面 / 制度未给的候选集** —— ★ **我方已明确表态"不自行编造"**（`A2` 是**唯一卡住制度定稿**的一项） | ❌ 不阻塞代码；★ `A2` 卡**制度定稿** |
+| **C9** | `N-045` 的**档位取值源**：「紧急采购事后按对应档位补审批（**不得降档**）」 —— 取关联 PR 的档位 / 取就高 / 其他 | ★ 属**业务口径**（不是能从 `spec` 推出的）：★ 我方有**倾向值**（① 关联 PR 档位 ＋ ② `max(补录金额, 关联 PR 金额)` **就高**）但**未获批准** ⇒ ★ **不得自称「按推荐」**（同 §3.2 立场的纪律） | ❌ **不阻塞代码**（`emergency` 链**当前不可达**）；★ 卡 `N-045` 与**完整版判据** |
 
 ★ **处理方式**：`C2–C7` 一律标为 **「待外部输入 · 不阻塞开发」**，**不阻塞批 2–7 的推进**；等外部输入到位时回填。
 ★ **绝不用"按推荐"去覆盖我方没有推荐值的事项** —— 那等于替你编造集团口径。
@@ -105,6 +107,7 @@
 | **批 6** | **A5**（完整明细 UI 增强）· **A6**（核实 `N-035`） | 无 |
 | **批 7** | **B4 / B5 / B6**（`acceptance.csv` · `institution-anchors.json` · `openapi.yaml`） | 无 |
 | **批 8** | ★★ **`N-044` 惰性必需节点修复**（`SS`/`PC` 档位审批整级缺失）—— 见 §1 的 **`B7`** | ★ **用户口径 2026-10-04 已到**（「流程上有重复的签批人，都是一次签批呀」⇒ 采纳**去重**案）；★ 我方规格**已出**（`bands[*].approval_chain` ＋ 两节点 `tier_expand`，**只新增键** ⇒ 门禁绿）⇒ **本批可派工**，任务包 [`MIMO-NEXT-BATCH-6.md`](./MIMO-NEXT-BATCH-6.md)；★★ **本批提前于批 5** —— 它是**已证实的实现缺陷**（`required: true` 却无人审），优先级高于批 5 的规格工作 |
+| **批 9** | ★★ **`N-045` 第三处惰性必需节点**（`emergency.backfill_approval`）＋ `S19` 升级为**完整版** | ★ **待用户口径（`C9`）** —— 口径未定前**停手不派工** |
 
 ★ **每批的门禁与验收方式（固定动作，不因批量而放宽）**：
 1. 我出**交办**（写进 `COLLAB.md`，含判据与边界）；
@@ -122,5 +125,6 @@
 | 日期 | 变更 |
 |---|---|
 | 2026-10-04 02:31 | ★★ **`N-044` 规格批（`B7`）我方先行部分完成** —— ★ 用户 2026-10-04 口径「**流程上有重复的签批人，都是一次签批呀**」⇒ 采纳**去重**案。★ `spec/chain.json` **只新增键**：`thresholds.purchase.bands[*].approval_chain`（`tier1=[ops_supervisor]` · `tier2/3=[supervisor,project_general_manager]`；**只列审批人**、**已按角色去重**）＋ `sole_source.nodes[2]`/`change.nodes[2]` 的 `tier_expand`（`tier_source` ＝ `amount_cents`/`r15_max`；SS `exclude_roles=[project_general_manager]`）⇒ ★ **门禁 8/8 全绿 ＋ 会报零命中**（判据 / Go 包 / 净检出**零波动**）。★ 旧键（复合 `actor` ＋ 伪 `ref`）**刻意保留** —— 删它们须与「禁惰性必需节点」判据（拟 `S19`）**同批**。★ 交付 **`MIMO-NEXT-BATCH-6.md`**（批 8）⇒ ★ **批 8 提前于批 5 派工**（已证实的实现缺陷优先）。★ 另发现 `SS.tier_chain_record`/`PC.tier_approval_record` 的**规格内部矛盾**（`SS.json#_note` 与 `PC.json#filled_at_note` 三处不自洽）⇒ **本批不派、我方另行定稿**。 |
+| 2026-10-04 03:58 | ★★★ **批 8（`N-044`）验收通过 ⇒ 结案（`AGREED`）＋ 我方收尾；★★ 收尾期新发现 ⇒ 新开 `N-045`** —— mimo `db18374`（`expandTierApproval` 按 `bands[*].approval_chain` 逐角色展开 · `SourceNodeID=<节点id>_<role>` · `amount_cents`/`r15_max` 双源 ＋ 单边 fallback、全缺**可见失败** · handler 侧 inject **前移**至 `chain.Compute` 之前）；我方**三次独立复跑门禁全 8/8** ＋ **三处单点变异 A/B/C 精确转红、隔离性成立** ＋ `sha256sum -c` 还原（★ **未用 `git checkout --`**）。★ **我方收尾**：新增 **`S19`**（`checks.json` V1.11：`routes.*.nodes[*].actor` 禁复合串；★ **红→绿同批实证** —— 加判据 ⇒ **Python 报 4 处 ＋ Go `go test` 同时转红**（零引擎改动、两侧自动一致），删 5 键 ⇒ **复绿 8/8**）＋ 删 **5 个失效键**（`sole_source.tier_chain` 复合 `actor` ＋ 伪 `ref` · `change.tier_approval` 复合 `actor` · `purchase_tier2/3.contract_two_level` 复合 `actor`）。★★ **新开 `N-045`**：`emergency.backfill_approval`（`required: true`、`actor="按档位审批人"`）＝**第三处惰性必需节点**；★ `emergency` **未被 `doc_chains` 引用** ⇒ 当前不可达；★ 卡「不得降档」档位源口径 ⇒ 新增 **`B8` / `C9` / 批 9**。 |
 | 2026-10-04 02:08 | ★★ **批 4（`A4` · `N-043`）验收通过 ⇒ 结案（`AGREED`）**（mimo `655fdf1`；独立复跑门禁 ×3 全 8/8 ＋ 四轮单点变异 ＋ `sha256 -c` 还原）。★★ **验收期的证伪对照挖出新发现**：变异「给 `PC×tier_approval` 加必填」**不转红** ⇒ 实测反证该节点**根本不生成审批任务** ⇒ 新开 **`N-044`**（惰性必需节点）⇒ 新增 §1 的 **`B7`** 与 §5 的 **批 8**（★ 其中一个口径**需用户确认**：SS 档位链 PGM 与 `pgm_final` 是否重复签批 ⇒ **已上报，未得口径前不派工**）。 |
 | 2026-10-03 23:10 | 首版：B/A/C/D 四档 ＋ 批 1–7 执行顺序 |
