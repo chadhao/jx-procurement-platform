@@ -57,6 +57,18 @@ section_done() {
   ' COLLAB.md
 }
 
+# ── 完成判据 ②：**对方**真的提交了 ────────────────────────────────
+# ★ 2026-10-03 修正：原来只比 HEAD != BASE ⇒ 会把**我方自己的提交**算成对方完成
+#   （实测：驱动运行期间我方提交了 provider 修正，被判成「新提交=1」）。
+#   ⇒ 追加**作者校验**：最新提交的 subject 不得以 `[WorkBuddy]` 开头（§3 #3 署名前缀）。
+mimo_committed() {
+  [ "$(git rev-parse HEAD)" != "$BASE" ] || return 1
+  case "$(git log -1 --pretty=%s)" in
+    "[WorkBuddy]"*) return 1 ;;   # 我方提交，不算对方完成
+    *) return 0 ;;
+  esac
+}
+
 # ── 完成判据 ③：门禁必绿 ──────────────────────────────────────────
 gate_ok() { $SCHEME >/dev/null 2>&1; }
 
@@ -94,7 +106,7 @@ while [ "$attempt" -le "$MAX" ]; do
   # ── 逐条判据，**缺哪条就报哪条**（可见失败，不许静默续跑）──
   ok_sec=0; ok_git=0; ok_gate=0
   section_done && ok_sec=1
-  [ "$(git rev-parse HEAD)" != "$BASE" ] && ok_git=1
+  mimo_committed && ok_git=1
   gate_ok && ok_gate=1
   echo "   判据：台账回执=$ok_sec  新提交=$ok_git  门禁绿=$ok_gate"
 
