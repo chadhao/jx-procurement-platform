@@ -1,7 +1,7 @@
 {
-  "version": "1.0",
+  "version": "1.1",
   "generated_by": "WorkBuddy",
-  "date": "2026-09-29",
+  "date": "2026-10-04",
   "sources": {
     "tool_table": "采购与费用审批体系配置工具表_v3.0.xlsx → sheet「台账与看板设计」R4–R15（12 张台账）＋ R2（张数口径）",
     "institution": "费用管理办法V3.0 第五十九条（第 691–702 行，业务视角 11 张）· 第三十七条（第 472 行）· 第六十一条（第 717 行）",
@@ -856,6 +856,20 @@
           "label": "变更链（历次变更次数 / 累计金额 / 所取档位）",
           "writable": false,
           "resolution": "R-21#7：★ 制度第五十二条要求「台账须能按合同号查看历次变更的次数、累计金额与所取档位」⇒ 补入；不补则「档位就高」缺数据支撑、化整为零难发现"
+        },
+        {
+          "name": "is_anomaly_listed",
+          "label": "是否进入异常清单",
+          "writable": false,
+          "note": "★ 补登记（2026-10-04 · `B3`/`N-038` 第 4 项）：该列**此前从未登记**，而它既是 `flow/finalize.go` 落账后自检的 6 列之一（`lt==\"L09\" && DocType==\"PC\"`），也是「已列异常」的唯一机读锚点。★ 生产者＝`httpapi#injectPCSSSystemFields`（90 天窗口聚合，含本次 ≥2 ⇒ true）。★ 依 `N-034` 教训「为看板/口径指定数据源时，字段必须先在本文件登记」 —— 不登记则取数口径**悬空**"
+        },
+        {
+          "name": "anomaly_note",
+          "label": "异常变更专项说明",
+          "writable": true,
+          "writer": "综合运营主管",
+          "when": "月度报送时",
+          "note": "★★ **`B3` 落点（2026-10-04）：制度第五十三条「例外事项的统计与复盘」的「月度报送专项说明」在本系统的承载列** —— ★ 与既有唯一可写列 `is_emergency_closed`（紧急单销假）**同范式**：`writable: true` ＋ `writer` ＋ `when`，**不新增单据类型**（避免第二份真相）。★ 存储＝`t_ledger_ops.ops_json` 的键（`field_key` ＝本 `label`），写入走台账页既有通用通道；字段定义经 `docs/reference/config-mapping.sample.json#ledger_field` 登记。★ **绑定守卫**：`cmd/jxapproval#TestUnregisteredWritableLedgerFields`（spec 可写列 ↔ 配置登记**双向绑定**：本列 `writable: true` 而配置未登记 ⇒ 门禁红）"
         }
       ],
       "split_note": "实例级台账，单表"

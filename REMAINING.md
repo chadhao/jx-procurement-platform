@@ -1,8 +1,8 @@
 # 剩余需求拆分与批次计划（Remaining Work Plan）
 
-> **依据**：`COLLAB.md §4` 议题状态（仅 `N-038`/`N-041` 为 OPEN）· `docs/18 §3.2` 未闭合项 · `spec/` 缺口普查 · 用户 2026-10-03 授权
+> **依据**：`COLLAB.md §4` 议题状态（仅 **`N-045`/`N-046`** 为 OPEN）· `docs/18 §3.2` 未闭合项 · `spec/` 缺口普查 · 用户 2026-10-03 授权
 > **授权口径（用户原话）**：「所有剩余需求拆分、梳理，并开发、测试推送完毕。中间不需要我授权……只有在遇到**重大需求调整**的情况下，再让我介入」
-> **更新**：2026-10-03 23:10（★ 时间取自机器时钟，**不凭估计顺推**）
+> **更新**：2026-10-04 04:57（★ 时间取自机器时钟，**不凭估计顺推**）
 
 ---
 
@@ -23,7 +23,7 @@
 |---|---|---|---|
 | **B1** | ★ **`S16` 扩围** | ★ 只覆盖 `immutable=true` 的 **54/96** 个 `source∈{system,computed}` 字段实例 ⇒ **漏 42**（`N-039` 我方责任段） | 判据改为覆盖全 96；**门禁 8/8 仍绿**（须与 B2 同批落地，否则当场红） |
 | **B2** | ★ **42 个盲区字段逐条定性** | 只读普查：**32 个** Go 侧有出现（需人读判定是否真生产点）· **10 个零命中**（`BA.anti_split_check_result`／`BA.petty_cash_receiver`／`BA.record_date`／`BA.is_key_sample_range`／`BA.is_monthly_supplier_rollover_warned`／`CT.approval_levels`／`PC.tier_approval_record`／`PR.stock_qty`／`SA.actual_vs_approved_diff_cents`／`SS.tier_chain_record`） | 每条给出 `carried_by_kind` ＋ 落点或"真缺口"结论 |
-| **B3** | ★ **`anomaly_monthly_report` 落点口径** | 判据 `pending_implementation`；`t_submission` 无异常/专项说明列，看板无异常清单指标（`N-039` 拆分说明） | spec 给出落点（表列 or 看板指标），可机检 |
+| **B3** | ★ **`anomaly_monthly_report` 落点口径** | 判据 `pending_implementation`；`t_submission` 无异常/专项说明列，看板无异常清单指标（`N-039` 拆分说明） | ✅ **已定稿并落地（2026-10-04 04:57，批 5）**：**落点＝表列** —— `spec/ledger-mapping.json` **V1.1** 给 `L09` 新增**可写列 `anomaly_note`**（「异常变更专项说明」，`writable: true`、`writer: 综合运营主管`、`when: 月度报送时`；★ 与既有 `is_emergency_closed` **同范式**、**零新增单据类型**）；字段定义已登记 `docs/reference/config-mapping.sample.json#ledger_field`。判据 `anomaly_monthly_report` ⇒ `carried_by_kind` **`pending_implementation` → `manual`** ＋ 落点写进 `carried_by`。★ **机检成立（实测双向）**：`writable: true` 而不登记字段定义 ⇒ `cmd/jxapproval#TestUnregisteredWritableLedgerFields` **红**；补登记 ⇒ **复绿 8/8**。★ 顺带**补登记 `is_anomaly_listed`**（`flow/finalize.go` 落账自检 6 列之一却**从未登记**）。★ **仍缺的「列示面」另立 `N-046`**（看板 16 无「采购变更异常」指标；★ 须与实现同批） |
 | **B4** | `spec/acceptance.csv`（`N-017`） | 状态 `WK-DONE`，**须核实是否已交付** | 自然语言类 `checks` 有可机判载体 |
 | **B5** | `spec/institution-anchors.json`（`N-006`） | 待产（`COLLAB §1`） | 制度条款 ↔ 判据双向可追溯 |
 | **B6** | `spec/openapi.yaml` | 待产（`COLLAB §1`） | 与 `docs/05-API` 一致且可机检 |
@@ -42,7 +42,8 @@
 | **A4** | **`SS`/`PC` 提交通道与审批时点判据** | `N-027` 未做项（随发起批 / `M9`） | 中 | 当时按"契约先做、表现层后做"切分 |
 | **A5** | **完整明细 UI 增强**（行级错误定位 / 拖拽排序 / 复制行 / 批量粘贴） | `N-040` 边界（mimo 已如实登记） | 中 | 当前为"最小可用"，行级错误靠服务端 400 文案 |
 | **A6** | `N-035` 「自批自派」拦截 —— **先核实是否已落** | `N-035`（AGREED） | 小 | 若已落则只需关闭议题 |
-| **A7** | `N-038` 项④剩余：`PC#anomaly_monthly_report` 服务端侧 | `N-038`（OPEN，须先有 B3 口径） | 小 | **依赖 B3** |
+| **A7** | `N-038` 项④剩余：`PC#anomaly_monthly_report` 服务端侧 | `N-038`（OPEN，须先有 B3 口径） | ~~小~~ **零代码** | ★★ **改判（2026-10-04）：无需代码实现** —— `B3` 落点选**表列**（`L09.anomaly_note` 可写列）⇒ 写入走**台账页既有通用通道**（`t_ledger_ops.ops_json`），缺的只是一条**字段定义**（已登记进样例配置基线）。★ 唯一遗留＝把该字段定义**导入运行库**（配置导入通道；属运维步骤，非开发）⇒ **本项闭环** |
+| **A9** | ★★ **看板 16 补「采购变更异常」指标**（`N-046`） | `B3` 定稿期发现（`COLLAB §4 · N-046`） | 小 | ★ **必须与实现同批** —— 实测：单独把指标加进 `spec/dashboard.json#dashboards[16].indicators` ⇒ `internal/httpapi#TestDashboardAlertKeysMatchSpec` **精确转红**（『输出指标数 = 11, spec 指标数 = 12』）。★ 拟补定义已写入 `spec/forms/PC.json#known_gaps` 末条（`key=change_anomaly_listed` · `render=alert` · `formula`＝`L09.exception_type=采购变更 ∧ 是否进入异常清单=true` 的单数 · **须守卫**）
 | **A8** | **GR / RFQ / QC 发起通路接线**（★ 含 `acceptors` 的 handler 端到端补测 —— `N-042` 回执如实登记的边界①） | `N-042` 验收 | 中 | `ResolveRoute` 暂无 `DocGR` case；`t_instance.acceptors` 的 HTTP 链路未端到端 |
 
 ---
@@ -103,11 +104,12 @@
 | **批 2** | **A1**（`N-041`，小项，先跑通一轮） | 无 |
 | **批 3** | **A2 ＋ A3**（批次三：权限位点 ＋ 人员管理页 —— 用户明确要求） | 无 |
 | **批 4** | ✅ **A4**（`SS`/`PC` 提交通道与审批时点判据）—— **已完成**：`N-043`（mimo `655fdf1`）2026-10-04 02:08 我方验收通过 ⇒ `AGREED` | 无 |
-| **批 5** | **B3 → A7**（月度报送口径 → 服务端落地） | B3 先出 |
+| **批 5** | **B3 → A7**（月度报送口径 → 服务端落地） | ✅ **已完成（2026-10-04 04:57，**全在我方**）**：`B3` 落点＝**表列**（`L09.anomaly_note`）⇒ **`A7` 无需代码**（写入走既有通用通道）；判据 `carried_by_kind` → `manual`；门禁 8/8。★ **列示面另立 `A9`/`N-046`**（须与实现同批） |
 | **批 6** | **A5**（完整明细 UI 增强）· **A6**（核实 `N-035`） | 无 |
 | **批 7** | **B4 / B5 / B6**（`acceptance.csv` · `institution-anchors.json` · `openapi.yaml`） | 无 |
 | **批 8** | ★★ **`N-044` 惰性必需节点修复**（`SS`/`PC` 档位审批整级缺失）—— 见 §1 的 **`B7`** | ★ **用户口径 2026-10-04 已到**（「流程上有重复的签批人，都是一次签批呀」⇒ 采纳**去重**案）；★ 我方规格**已出**（`bands[*].approval_chain` ＋ 两节点 `tier_expand`，**只新增键** ⇒ 门禁绿）⇒ **本批可派工**，任务包 [`MIMO-NEXT-BATCH-6.md`](./MIMO-NEXT-BATCH-6.md)；★★ **本批提前于批 5** —— 它是**已证实的实现缺陷**（`required: true` 却无人审），优先级高于批 5 的规格工作 |
 | **批 9** | ★★ **`N-045` 第三处惰性必需节点**（`emergency.backfill_approval`）＋ `S19` 升级为**完整版** | ★ **待用户口径（`C9`）** —— 口径未定前**停手不派工** |
+| **批 10** | ★★ **`A9` / `N-046`：看板 16 补「采购变更异常」指标**（三种例外类型在事后监管面的对称性） | ★ **无外部前置**；★ **本批必须「spec ＋ 实现」同批**（实测 11≠12 即红）；★ 建议**下一轮**由我方先落 spec ＋ 出任务包，同轮派工 |
 
 ★ **每批的门禁与验收方式（固定动作，不因批量而放宽）**：
 1. 我出**交办**（写进 `COLLAB.md`，含判据与边界）；
@@ -124,6 +126,7 @@
 
 | 日期 | 变更 |
 |---|---|
+| 2026-10-04 04:57 | ★★★ **批 5 闭环（`B3` → `A7`，**全在我方，未派工**）；`N-038` 结案；新开 `N-046`/`A9`/批 10** —— ★★ **`B3` 落点定稿＝表列**：`spec/ledger-mapping.json` **V1.1** 给 `L09` 新增**可写列 `anomaly_note`**（「异常变更专项说明」，`writer: 综合运营主管`、`when: 月度报送时`）＋ **补登记 `is_anomaly_listed`**（落账自检 6 列之一却从未登记）；字段定义登记进 `docs/reference/config-mapping.sample.json`；判据 `PC#anomaly_monthly_report` ⇒ **`pending_implementation` → `manual`** ＋ 落点/裁定/拆分写进 `carried_by`/`verify_note`。★ **选「表列」而非「看板指标」的三条理由**（①判据诉求是**文本**说明、指标承不了；②有 `is_emergency_closed` **现成同范式**；③**零新增单据类型**）。★★ **两次独立探针把「落点不是空话」验掉**：① `writable: true` 不登记字段定义 ⇒ `TestUnregisteredWritableLedgerFields` **红**，补登记 ⇒ **复绿 8/8**；② 单独给看板 16 加指标 ⇒ `TestDashboardAlertKeysMatchSpec` **精确转红**『输出 11 ≠ spec 12』⇒ ★ **据此把 `N-046` 定性为「须与实现同批」**。★★ **顺手清掉一笔规格债**：**8 条 `pending_implementation` → `code`**（`spec/forms/PC.json` V1.1 七条 ＋ `spec/forms/PR.json` V1.1 一条）—— ★ 取证＝**逐条读实现 ＋ 跑 `TestInjectPCSSSystemFields`**（逐字段断言全 PASS），**非按名 grep**。★★★ **本轮教训：「写了没人读」的反面＝「实现了没人回填」** —— `special_explanation_required` 规格里一直写「**无生产点** ＋ 阈值待集团确认」，而 rule **早已写明**、实现随 `N-039`（`c1eb311`）**已落且过测** ⇒ **`carried_by_kind` 必须与实现验收同批回填**。★ 门禁 **必绿 8/8 ＋ 会报零命中**（判据 / Go 包 / 净检出**零波动**）。★ 台账：`COLLAB.md`（`§1` 六处 ＋ `N-038` 结案说明 ＋ 新 `N-046` ＋ 附录 C）· `REMAINING.md`（`§1 B3` · `§2 A7 改判/A9` · `§5 批 5✅/批 10` · 本节） |
 | 2026-10-04 02:31 | ★★ **`N-044` 规格批（`B7`）我方先行部分完成** —— ★ 用户 2026-10-04 口径「**流程上有重复的签批人，都是一次签批呀**」⇒ 采纳**去重**案。★ `spec/chain.json` **只新增键**：`thresholds.purchase.bands[*].approval_chain`（`tier1=[ops_supervisor]` · `tier2/3=[supervisor,project_general_manager]`；**只列审批人**、**已按角色去重**）＋ `sole_source.nodes[2]`/`change.nodes[2]` 的 `tier_expand`（`tier_source` ＝ `amount_cents`/`r15_max`；SS `exclude_roles=[project_general_manager]`）⇒ ★ **门禁 8/8 全绿 ＋ 会报零命中**（判据 / Go 包 / 净检出**零波动**）。★ 旧键（复合 `actor` ＋ 伪 `ref`）**刻意保留** —— 删它们须与「禁惰性必需节点」判据（拟 `S19`）**同批**。★ 交付 **`MIMO-NEXT-BATCH-6.md`**（批 8）⇒ ★ **批 8 提前于批 5 派工**（已证实的实现缺陷优先）。★ 另发现 `SS.tier_chain_record`/`PC.tier_approval_record` 的**规格内部矛盾**（`SS.json#_note` 与 `PC.json#filled_at_note` 三处不自洽）⇒ **本批不派、我方另行定稿**。 |
 | 2026-10-04 03:58 | ★★★ **批 8（`N-044`）验收通过 ⇒ 结案（`AGREED`）＋ 我方收尾；★★ 收尾期新发现 ⇒ 新开 `N-045`** —— mimo `db18374`（`expandTierApproval` 按 `bands[*].approval_chain` 逐角色展开 · `SourceNodeID=<节点id>_<role>` · `amount_cents`/`r15_max` 双源 ＋ 单边 fallback、全缺**可见失败** · handler 侧 inject **前移**至 `chain.Compute` 之前）；我方**三次独立复跑门禁全 8/8** ＋ **三处单点变异 A/B/C 精确转红、隔离性成立** ＋ `sha256sum -c` 还原（★ **未用 `git checkout --`**）。★ **我方收尾**：新增 **`S19`**（`checks.json` V1.11：`routes.*.nodes[*].actor` 禁复合串；★ **红→绿同批实证** —— 加判据 ⇒ **Python 报 4 处 ＋ Go `go test` 同时转红**（零引擎改动、两侧自动一致），删 5 键 ⇒ **复绿 8/8**）＋ 删 **5 个失效键**（`sole_source.tier_chain` 复合 `actor` ＋ 伪 `ref` · `change.tier_approval` 复合 `actor` · `purchase_tier2/3.contract_two_level` 复合 `actor`）。★★ **新开 `N-045`**：`emergency.backfill_approval`（`required: true`、`actor="按档位审批人"`）＝**第三处惰性必需节点**；★ `emergency` **未被 `doc_chains` 引用** ⇒ 当前不可达；★ 卡「不得降档」档位源口径 ⇒ 新增 **`B8` / `C9` / 批 9**。 |
 | 2026-10-04 02:08 | ★★ **批 4（`A4` · `N-043`）验收通过 ⇒ 结案（`AGREED`）**（mimo `655fdf1`；独立复跑门禁 ×3 全 8/8 ＋ 四轮单点变异 ＋ `sha256 -c` 还原）。★★ **验收期的证伪对照挖出新发现**：变异「给 `PC×tier_approval` 加必填」**不转红** ⇒ 实测反证该节点**根本不生成审批任务** ⇒ 新开 **`N-044`**（惰性必需节点）⇒ 新增 §1 的 **`B7`** 与 §5 的 **批 8**（★ 其中一个口径**需用户确认**：SS 档位链 PGM 与 `pgm_final` 是否重复签批 ⇒ **已上报，未得口径前不派工**）。 |

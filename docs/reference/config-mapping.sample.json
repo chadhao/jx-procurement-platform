@@ -287,6 +287,12 @@
       "field_key": "提交集团日期",
       "is_sensitive": false,
       "remark": "★ 同上"
+    },
+    {
+      "ledger_type": "L09",
+      "field_key": "异常变更专项说明",
+      "is_sensitive": false,
+      "remark": "★ 2026-10-04 补（`B3` · 制度第五十三条「例外事项的统计与复盘」）：月度报送「专项说明」的承载列。★ 与 `紧急单是否已核销闭合` 同范式（L09 可写列，写入者＝综合运营主管、时点＝月度报送时）。★ `field_key` 必须与 `spec/ledger-mapping.json#ledgers.L09.fields[name=anomaly_note].label` **逐字一致**（`N-024` 教训：比对口径是 label，不是 name）"
     }
   ]
 }
