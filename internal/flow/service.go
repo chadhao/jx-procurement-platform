@@ -504,6 +504,10 @@ func (s *Service) act(ctx context.Context, bizNo, taskID, actor, opType, reason 
 			if err := s.applyDesignationTx(ctx, tx, inst, task, fields, actor, at); err != nil {
 				return err
 			}
+			// ⑦ SS 节点时点字段（N-036 缺口 5/6）：tech_opinion / pgm_final 非空强制。
+			if err := s.applySSNodeFieldsTx(ctx, tx, inst, task, fields, actor, at); err != nil {
+				return err
+			}
 		}
 
 		newTaskStatus := TaskApproved

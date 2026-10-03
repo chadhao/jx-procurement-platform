@@ -602,6 +602,11 @@ func (d Deps) handleApprovalSubmit(c echo.Context) error {
 		}
 	}
 
+	// ---- PC/SS 提交期系统字段注入（N-036 生产者；hash 前 ⇒ 指纹含注入值）----
+	if verr := d.injectPCSSSystemFields(ctx, &body); verr != nil {
+		return fail(c, http.StatusBadRequest, codeBadRequest, verr.Error())
+	}
+
 	// ---- 幂等（Idempotency-Key；d9 照 submission 模式）----
 	idemKey := strings.TrimSpace(c.Request().Header.Get("Idempotency-Key"))
 	idemHash := ""
@@ -1091,7 +1096,8 @@ func (d Deps) approvalError(c echo.Context, err error) error {
 		errors.Is(err, flow.ErrNodeNotReached):
 		return fail(c, http.StatusConflict, codeApprovalConflict, err.Error())
 	case errors.Is(err, flow.ErrInvalidSubmit), errors.Is(err, flow.ErrInvalidToken),
-		errors.Is(err, flow.ErrInvalidDesignation), errors.Is(err, store.ErrStagingNotBindable):
+		errors.Is(err, flow.ErrInvalidDesignation), errors.Is(err, flow.ErrInvalidNodeField),
+		errors.Is(err, store.ErrStagingNotBindable):
 		return fail(c, http.StatusBadRequest, codeBadRequest, err.Error())
 	default:
 		return fail(c, http.StatusInternalServerError, codeInternal, err.Error())

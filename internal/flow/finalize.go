@@ -145,6 +145,49 @@ func (s *Service) finalizeLedgersTx(ctx context.Context, tx *sql.Tx, inst *store
 			}); err != nil {
 				return err
 			}
+			continue
+		}
+		// ★ L09 列自检（N-036 · PC/SS#ledger_l09_written · else=「告警」——
+		//   与行存在性同款形态：审计 warn ＋ Error 日志，不中断终态）。
+		//   断言的列由**提交期注入**生产（httpapi#injectPCSSSystemFields）——
+		//   缺列＝生产者被绕过/判据被误删，必须可见。
+		if lt == "L09" && (inst.DocType == "PC" || inst.DocType == "SS") {
+			var extRaw string
+			if err := tx.QueryRowContext(ctx,
+				`SELECT COALESCE(ext_json,'{}') FROM t_ledger_archive
+WHERE ledger_type='L09' AND biz_no = ?`, inst.BizNo).Scan(&extRaw); err != nil {
+				return err
+			}
+			l9ext := map[string]any{}
+			if err := json.Unmarshal([]byte(extRaw), &l9ext); err == nil {
+				need := []string{"exception_type"}
+				if inst.DocType == "PC" {
+					need = append(need, "change_chain", "change_count_to_date",
+						"is_anomaly_listed", "resubmitted_to_group_at", "applicable_tier")
+				}
+				var missing []string
+				for _, k := range need {
+					v, ok := l9ext[k]
+					if !ok || v == nil {
+						missing = append(missing, k)
+					}
+				}
+				if len(missing) > 0 {
+					s.log.Error("finalize L09 列自检：生产者列缺失（台账自检判据告警）",
+						"biz_no", inst.BizNo, "doc_type", inst.DocType, "missing", missing)
+					detail, _ := json.Marshal(map[string]any{"ledger_type": "L09", "missing": missing})
+					if err := s.db.InsertAuditTx(ctx, tx, &store.AuditLogRow{
+						Action:     "ledger_l09_column_missing",
+						Resource:   "t_ledger_archive",
+						TargetID:   inst.BizNo,
+						Result:     "warn",
+						DetailJSON: string(detail),
+						CreatedAt:  at,
+					}); err != nil {
+						return err
+					}
+				}
+			}
 		}
 	}
 	return nil
