@@ -110,6 +110,29 @@ export const createAdminUser = (payload) => api.post('/api/admin/users', payload
 export const patchAdminUser = (openId, payload) =>
   api.patch(`/api/admin/users/${encodeURIComponent(openId)}`, payload)
 
+// ---- 运营性常量（T2 · R-24；只停用不删 —— DELETE 恒 40900，故不封装删除）----
+
+/** 列出某常量表（table ∈ spec/constants.json；响应含 {table:{key,label,...}, items[]}）。 */
+export const fetchConstants = (table, status) =>
+  api.get('/api/admin/constants', { table, ...(status ? { status } : {}) })
+
+/** 新增常量行（role_display_name 禁止新增 —— 后端 40000）。 */
+export const createConstant = (payload) => api.post('/api/admin/constants', payload)
+
+/** 改名 / 排序 / 停用启用（PUT /{id}）。 */
+export const patchConstant = (id, payload) => api.put(`/api/admin/constants/${id}`, payload)
+
+// ---- 角色代理人（N-028 · 授权配置；只停用不删 ⇒ 不封装删除）----
+
+/** 列出代理人（响应含 items[] / eligible_roles[] / feature_enabled）。 */
+export const fetchRoleAgents = (params) => api.get('/api/admin/role-agents', params)
+
+/** 登记代理人（agent_open_id 值域＝通讯录镜像，前端点选、后端硬校验）。 */
+export const createRoleAgent = (payload) => api.post('/api/admin/role-agents', payload)
+
+/** 改人 / 备注 / 停用启用。 */
+export const patchRoleAgent = (id, payload) => api.put(`/api/admin/role-agents/${id}`, payload)
+
 /** 注销。 */
 export const logout = () => api.post('/auth/logout')
 

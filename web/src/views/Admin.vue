@@ -8,6 +8,13 @@ import {
   fetchAdminUsers,
   createAdminUser,
   patchAdminUser,
+  fetchApprovalMeta,
+  fetchConstants,
+  createConstant,
+  patchConstant,
+  fetchRoleAgents,
+  createRoleAgent,
+  patchRoleAgent,
 } from '../api'
 import { session } from '../store'
 import { fmtTime } from '../utils'
@@ -150,8 +157,124 @@ async function saveUser(u) {
   }
 }
 
+// ---- ③ 运营性常量（T2 · R-24：只停用不删；role_display_name 禁新增归 chain.json#roles）----
+// ★ 表清单不写死 —— 取自 meta#constants 的 keys（spec/constants.json 是唯一真相）。
+const constTables = ref([]) // [{key, activeValues}]
+const constTable = ref('')
+const constItems = ref([])
+const constTableMeta = ref(null) // {label, delete_policy, used_by}
+const newConst = reactive({ value: '', sort_order: 0 })
+
+async function loadConstTables() {
+  const data = await fetchApprovalMeta()
+  const c = (data && data.constants) || {}
+  constTables.value = Object.keys(c).map((k) => ({ key: k, activeValues: c[k] }))
+  if (!constTable.value && constTables.value.length) constTable.value = constTables.value[0].key
+}
+
+async function loadConstants() {
+  if (!constTable.value) return
+  err.value = ''
+  try {
+    const data = await fetchConstants(constTable.value)
+    constTableMeta.value = data.table || null
+    constItems.value = data.items || []
+  } catch (e) {
+    err.value = e.message || String(e)
+  }
+}
+
+async function addConstant() {
+  err.value = ''
+  msg.value = ''
+  try {
+    await createConstant({
+      table: constTable.value,
+      value: newConst.value,
+      sort_order: Number(newConst.sort_order) || 0,
+    })
+    msg.value = `已新增：${constTable.value} / ${newConst.value}`
+    newConst.value = ''
+    await loadConstants()
+  } catch (e) {
+    err.value = e.message || String(e)
+  }
+}
+
+async function saveConstant(row) {
+  err.value = ''
+  msg.value = ''
+  try {
+    await patchConstant(row.id, { value: row.value, sort_order: row.sort_order, status: row.status })
+    msg.value = `已保存：${row.value}（${row.status}）`
+    await loadConstants()
+  } catch (e) {
+    err.value = e.message || String(e)
+  }
+}
+
+async function switchConstTable(k) {
+  constTable.value = k
+  await loadConstants()
+}
+
+// ---- ④ 角色代理人（N-028 · 授权配置；feature_enabled=false ⇒ 页签显式标注未启用）----
+const agents = ref([])
+const agentFeature = ref(false)
+const eligibleRoles = ref([])
+const newAgent = reactive({ role_key: '', agent_open_id: '', note: '' })
+
+async function loadAgents() {
+  err.value = ''
+  try {
+    const data = await fetchRoleAgents()
+    agents.value = data.items || []
+    eligibleRoles.value = data.eligible_roles || []
+    agentFeature.value = !!data.feature_enabled
+  } catch (e) {
+    err.value = e.message || String(e)
+  }
+}
+
+async function addAgent() {
+  err.value = ''
+  msg.value = ''
+  try {
+    await createRoleAgent({
+      role_key: newAgent.role_key,
+      agent_open_id: newAgent.agent_open_id,
+      note: newAgent.note,
+    })
+    msg.value = `已登记代理人：${newAgent.role_key} → ${newAgent.agent_open_id}`
+    Object.assign(newAgent, { role_key: '', agent_open_id: '', note: '' })
+    await loadAgents()
+  } catch (e) {
+    err.value = e.message || String(e)
+  }
+}
+
+async function saveAgent(row) {
+  err.value = ''
+  msg.value = ''
+  try {
+    await patchRoleAgent(row.id, { note: row.note, state: row.state })
+    msg.value = `已保存：${row.role_key}（${row.state}）`
+    await loadAgents()
+  } catch (e) {
+    err.value = e.message || String(e)
+  }
+}
+
 async function loadAll() {
-  await Promise.all([loadRules(), loadUsers()])
+  await Promise.all([loadRules(), loadUsers(), loadConstTables(), loadAgents()])
+  await loadConstants()
+}
+
+// 切页签时按需刷新（数据小，直接重拉）
+async function goTab(tab) {
+  activeTab.value = tab
+  if (tab === 'constants') await loadConstants()
+  if (tab === 'agents') await loadAgents()
 }
 
 onMounted(loadAll)
@@ -171,6 +294,12 @@ onMounted(loadAll)
           </button>
           <button :class="activeTab === 'users' ? 'primary' : 'ghost'" @click="activeTab = 'users'">
             人员角色
+          </button>
+          <button :class="activeTab === 'constants' ? 'primary' : 'ghost'" @click="goTab('constants')">
+            常量管理
+          </button>
+          <button :class="activeTab === 'agents' ? 'primary' : 'ghost'" @click="goTab('agents')">
+            角色代理人
           </button>
           <span class="muted">改数据即生效，无需重启（缓存自动失效）</span>
         </div>
@@ -236,7 +365,7 @@ onMounted(loadAll)
       </div>
 
       <!-- ② 人员角色 -->
-      <div v-else class="panel">
+      <div v-if="activeTab === 'users'" class="panel">
         <h2>人员角色（open_id ↔ 角色 / 部门 / 分管部门）</h2>
         <div class="toolbar">
           <input v-model="newUser.open_id" placeholder="open_id" />
@@ -281,6 +410,128 @@ onMounted(loadAll)
             </tr>
           </tbody>
         </table>
+      </div>
+
+      <!-- ③ 运营性常量（T2 · R-24：只停用不删；role_display_name 禁新增 —— 归 chain.json#roles） -->
+      <div v-if="activeTab === 'constants'" class="panel">
+        <h2>运营性常量（改了不影响流程线的字典）</h2>
+        <div class="toolbar">
+          <select :value="constTable" @change="switchConstTable($event.target.value)">
+            <option value="" disabled>选择常量表</option>
+            <option v-for="t in constTables" :key="t.key" :value="t.key">{{ t.key }}</option>
+          </select>
+          <input
+            v-if="constTable !== 'role_display_name'"
+            v-model="newConst.value"
+            placeholder="新值"
+          />
+          <input
+            v-if="constTable !== 'role_display_name'"
+            v-model.number="newConst.sort_order"
+            type="number"
+            placeholder="排序"
+            style="width: 72px"
+          />
+          <button
+            v-if="constTable !== 'role_display_name'"
+            class="primary"
+            :disabled="!newConst.value"
+            @click="addConstant"
+          >
+            新增
+          </button>
+          <span v-if="constTable === 'role_display_name'" class="muted">
+            角色显示名禁止新增（归 chain.json#roles；此处仅可改名 / 停用）
+          </span>
+        </div>
+        <p v-if="constTableMeta" class="muted">
+          {{ constTableMeta.label }} · 删除策略：{{ constTableMeta.delete_policy }} ·
+          消费方：{{ constTableMeta.used_by }} —— 本页不提供删除按钮（后端 DELETE 恒 40900，只停用不删）
+        </p>
+        <div v-if="!constItems.length" class="empty">该表暂无条目</div>
+        <table v-else>
+          <thead>
+            <tr>
+              <th>值</th>
+              <th>排序</th>
+              <th>状态</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="row in constItems" :key="row.id">
+              <td><input v-model="row.value" /></td>
+              <td><input v-model.number="row.sort_order" type="number" style="width: 72px" /></td>
+              <td>
+                <select v-model="row.status">
+                  <option value="active">active（生效）</option>
+                  <option value="retired">retired（停用）</option>
+                </select>
+              </td>
+              <td><button class="ghost" @click="saveConstant(row)">保存</button></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <!-- ④ 角色代理人（N-028 · 授权配置；feature_enabled=false ⇒ 显式标注未启用 —— README #24） -->
+      <div v-if="activeTab === 'agents'" class="panel">
+        <h2>角色代理人（授权配置 —— 决定「谁能审」，区别于运营性常量）</h2>
+        <div v-if="!agentFeature" class="tag" style="background: #fffbe6; border-color: #ffe58f">
+          ★ 代理人功能未启用（feature_enabled=false）：正向消费端（代理人转交 / 回退）随 M9
+          落地后开启 —— 依据 README 定案 #24「无消费端＝假配置」。本页当前仅作登记与查看。
+        </div>
+        <div class="toolbar">
+          <select v-model="newAgent.role_key">
+            <option value="" disabled>选择角色</option>
+            <option v-for="r in eligibleRoles" :key="r" :value="r">{{ r }}</option>
+          </select>
+          <select v-model="newAgent.agent_open_id">
+            <option value="" disabled>点选代理人（镜像内用户，不手填 open_id）</option>
+            <option v-for="u in users" :key="u.open_id" :value="u.open_id">
+              {{ u.name || u.open_id }}（{{ u.open_id }}）
+            </option>
+          </select>
+          <input v-model="newAgent.note" placeholder="备注（可选）" />
+          <button
+            class="primary"
+            :disabled="!newAgent.role_key || !newAgent.agent_open_id"
+            @click="addAgent"
+          >
+            登记
+          </button>
+        </div>
+        <div v-if="!agents.length" class="empty">暂无代理人登记</div>
+        <table v-else>
+          <thead>
+            <tr>
+              <th>角色</th>
+              <th>代理人</th>
+              <th>备注</th>
+              <th>状态</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="row in agents" :key="row.id">
+              <td>{{ row.role_key }}</td>
+              <td>{{ row.agent_open_id }}</td>
+              <td><input v-model="row.note" placeholder="备注" /></td>
+              <td>
+                <select v-model="row.state">
+                  <option value="active">active（生效）</option>
+                  <option value="retired">retired（停用）</option>
+                </select>
+              </td>
+              <td><button class="ghost" @click="saveAgent(row)">保存</button></td>
+            </tr>
+          </tbody>
+        </table>
+        <p class="muted">
+          护栏（后端硬校验）：每角色至多 1 名生效代理人 · 相邻两级不得同一人代理 ·
+          备付金两节点不适用 · 只停用不删（无删除按钮）·
+          <strong>代理人不参与审批人解析</strong>（签批人不可用只阻断 40010，不替补 —— 用户定案）。
+        </p>
       </div>
     </template>
   </div>
