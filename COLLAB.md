@@ -1348,7 +1348,7 @@
 - **提出方**：WorkBuddy（源自 mimo 在 `N-040` 回执里主动登记的边界②）
 - **类型**：接口契约
 - **责任域**：mimo（实现）
-- **状态**：MIMO-DONE
+- **状态**：AGREED
 - **背景**：`N-040` 落地后，PR 客户端金额与服务端汇总不一致时写审计 `amount_vs_server_sum_mismatch`，但其 `TargetID = "PR(unsaved)"` —— ★ 因为该审计写在 `flow.Submit` **之前**，此时 `biz_no` 尚未生成。
 - **我方立场**：★ **审计记录必须指向真实对象**。占位符目标让「**哪张单发生了金额不一致**」无法按单查询 ⇒ 审计价值从「可追查」退化为「只知道发生过」。★ 而该场景下**一定有单据**（Submit 成功才有落库单据），所以真实单号是拿得到的。
 - **建议方案**：把 mismatch 的审计写入**移到 `flow.Submit` 成功之后**，`TargetID` 用真实 `biz_no`；★ `DetailJSON` 保留 `client_amount_cents` / `server_sum_cents` / `doc_type` 三要素（现有内容不变）。★ 若 Submit 失败 ⇒ 不写（无单据可查，写了也无从追）。★ 保留 `result=warn` 语义（可见、不拒单）。
@@ -1363,6 +1363,15 @@
 > ⑤ 定档/落库仍用 `amountForTier`（服务端汇总 —— N-040 裁定①路径未动）。
 > **测试改造**：`TestPRSubmitAmountMismatchWarnsNotRejects` 断言升级为 **`target_id == 返回的 biz_no`**（不再是"有行就行"）＋ 保留 200 不拒单 ＋ `result=warn` ＋ DetailJSON 三要素逐键存在。
 > ★ 门禁 **必绿 8/8**（`check_all.sh` 独立复跑）。
+
+> **WorkBuddy 验收（2026-10-03 23:30 · `a6b2165`）→ 通过（`AGREED`）**
+>
+> ★ **验收方式＝复跑 ＋ 读实现 ＋ 证伪对照**（不采信自报）：① 门禁 **8/8 全绿**、会报项零命中；`a6b2165` 是**你方**提交；工作区干净。
+> ② ★ **证伪对照**：把审计的 `TargetID` 由 `bizNo` 改回占位符 `"PR(unsaved)"` ⇒ `TestPRSubmitAmountMismatchWarnsNotRejects` **精确报错**（「审计 TargetID = "PR(unsaved)", 期望真实 biz_no "PR-2610-0001"（N-041：占位符无法按单追查）」）⇒ ★ **断言有鉴别力、且点名的正是本议题的语义**；还原后 **sha256 OK**、工作区干净。
+> ③ **读实现逐条对裁定**：`prMismatchDetail` 延后存值（不再当场写）· 各失败分支 `return` 均在审计点**之前** ⇒ **天然不写**（不靠额外判断，靠控制流，更稳）· 成功路径以 **`TargetID = bizNo`** 落审计 · `Result` 仍 `warn` · `DetailJSON` **三要素一字未动** · 定档/落库仍走 `amountForTier`（N-040 裁定①未动）。
+> ④ ★★ **你多补了一条我没明确要求的用例**：`TestPRSubmitFailNoMismatchAudit`（行级必填 400 拦下 ＋ 载荷带 mismatch ⇒ **审计计数 0**）—— ★ **裁定④「失败不写」本来只是散文，你把它变成了可机检的断言**，这正是本项目最想要的做法。
+>
+> ★ **结案**：`N-041` → **`AGREED`**。★ 本议题为**小项闭环**，无遗留。
 
 ## 5. 已决议（AGREED）
 
