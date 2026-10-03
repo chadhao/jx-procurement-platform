@@ -80,10 +80,6 @@ WHERE ledger_type='L04' AND biz_no = ?`, contractNo).Scan(&amtCents, &l04Ext)
 	putSysField(fields, "applicable_tier", tier)
 
 	// ③ 同合同历史变更聚合（L09 · json_extract 等值 + json_valid 守卫）
-	type histRow struct {
-		ext  string
-		date string
-	}
 	var hist []histRow
 	rows, qerr := d.DB.QueryContext(ctx, `
 SELECT COALESCE(ext_json,'{}'), COALESCE(biz_date,'') FROM t_ledger_archive
@@ -128,15 +124,49 @@ ORDER BY biz_no`, contractNo)
 		"count": count, "cumulative_change_cents": cumulative, "tier": tier,
 	})
 	putSysField(fields, "exception_type", "采购变更")
+
+	// ---- N-038 附一（已定口径 5 项，逐条按 spec rule）----
+	// total_change_cents ＝ 历次变更差额累计 ＋ 本次差额（＝上面的 cumulative）
+	putSysField(fields, "total_change_cents", cumulative)
+	// new_total_cents ＝ original + total（rule 原文）
+	putSysField(fields, "new_total_cents", amtCents+cumulative)
+	// last_change_at ＝ 上一次变更时间；**无历次为空**（rule 原文 —— 不写伪值）
+	if last := lastChangeAt(hist); last != "" {
+		putSysField(fields, "last_change_at", last)
+	}
+	// is_reset_as_new_purchase ＝ new_total > original × 1.5（制度第五十二条 150%）
+	newTotal := amtCents + cumulative
+	putSysField(fields, "is_reset_as_new_purchase", float64(newTotal) > float64(amtCents)*1.5)
+	// is_engineering_category ＝ usage_category_l1 ∈ {P05, P06}（用途分类；
+	// 值从 L04.ext 的 usage_category_l1 带入 —— CT 已按 B6 从 PR 带入 ⇒ 合同行 ext 有）
+	if l1, _ := ext["usage_category_l1"].(string); l1 != "" {
+		putSysField(fields, "is_engineering_category", l1 == "P05" || l1 == "P06")
+	}
 	return nil
 }
 
-// putSysField 只写系统字段：**不覆盖非空手填值**（user 字段误塞同名时保用户值 ——
-// system 字段本就不该由前端可信，但覆盖为空值优先）。
-func putSysField(fields map[string]any, key string, v any) {
-	if cur, ok := fields[key]; ok && cur != nil && cur != "" {
-		return
+// histRow L09 历史行（ext 原文 + 落账日期）。
+type histRow struct {
+	ext  string
+	date string
+}
+
+// lastChangeAt 取历史最近一次变更时间（按 biz_date 降序的首条；空 = 无历次）。
+func lastChangeAt(hist []histRow) string {
+	for i := len(hist) - 1; i >= 0; i-- {
+		if hist[i].date != "" {
+			return hist[i].date
+		}
 	}
+	return ""
+}
+
+// putSysField 服务端权威**恒覆盖**（N-038 项①）：`source=system|computed` 字段的
+// 权威值来自服务端计算 —— 客户端同名值一律被覆盖（OrgVerify 范式：服务端值在
+// applyBizFields 之后覆盖 ⇒ 伪造无效）。
+// ★ 原实现「不覆盖非空手填值」被 WB 变异探针实测打穿：applicable_tier 可降档为
+// tier1、金额/次数/异常标记/例外类型均可伪造 —— 缺陷已被写进注释与测试 ④，一并反转。
+func putSysField(fields map[string]any, key string, v any) {
 	fields[key] = v
 }
 

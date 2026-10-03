@@ -88,11 +88,67 @@ VALUES('L09','PC-2609-0001','I-PC-1','PC','生产部','ou_a',200000,
 		t.Fatal("L04 无等值合同应 fail-closed（可见失败），不可静默注入垃圾 original")
 	}
 
-	// ④ 已有非空值不覆盖（user 手填值保真）
-	keep := &approvalSubmitBody{DocType: "SS", Fields: map[string]any{"exception_type": "已填值"}}
-	_ = d.injectPCSSSystemFields(ctx, keep)
-	if keep.Fields["exception_type"] != "已填值" {
-		t.Errorf("非空手填值不应被覆盖: %v", keep.Fields["exception_type"])
+	// ④ ★ N-038 反转：服务端权威**恒覆盖**（原「不覆盖非空」被 WB 变异探针打穿 ——
+	//    applicable_tier 可降档、伪造类型可残留 ⇒ 测试断言与注释一并反转）。
+	forged := &approvalSubmitBody{DocType: "PC", Fields: map[string]any{
+		"contract_no":                    "CT-2609-0001",
+		"change_amount_cents":            float64(300000),
+		"applicable_tier":                "purchase_tier1", // 伪造降档
+		"original_contract_amount_cents": float64(1),       // 伪造金额
+		"change_count_to_date":           float64(1),
+		"is_anomaly_listed":              false,
+		"exception_type":                 "伪造类型",
+	}}
+	if err := d.injectPCSSSystemFields(ctx, forged); err != nil {
+		t.Fatal(err)
+	}
+	gf := forged.Fields
+	if gf["applicable_tier"] == "purchase_tier1" {
+		t.Error("伪造降档未被服务端权威覆盖 —— putSysField 又退回「不覆盖」了（N-038 ①）")
+	}
+	if gf["applicable_tier"] != "purchase_tier2" {
+		t.Errorf("applicable_tier = %v, 期望服务端计算值 purchase_tier2", gf["applicable_tier"])
+	}
+	if gf["exception_type"] != "采购变更" {
+		t.Errorf("exception_type = %v, 期望服务端权威值 采购变更", gf["exception_type"])
+	}
+	if gf["is_anomaly_listed"] != true {
+		t.Errorf("is_anomaly_listed = %v, 期望服务端计算值 true", gf["is_anomaly_listed"])
+	}
+
+	// ⑤ N-038 附一（已定口径 5 项）断言
+	f5 := forged.Fields
+	if f5["total_change_cents"] != int64(500000) {
+		t.Errorf("total_change_cents = %v, 期望 500000（历史 20 万＋本次 30 万）", f5["total_change_cents"])
+	}
+	if f5["new_total_cents"] != int64(1000000) {
+		t.Errorf("new_total_cents = %v, 期望 1000000（原 50 万＋累计 50 万）", f5["new_total_cents"])
+	}
+	// last_change_at：无历史才空 —— 本例有历史（2026-10-01）
+	if v, _ := f5["last_change_at"].(string); v == "" {
+		t.Errorf("last_change_at 应取上次变更日期，实为空: %v", f5["last_change_at"])
+	}
+	// is_reset: newTotal 1000000 vs 500000*1.5=750000 ⇒ true
+	if v, _ := f5["is_reset_as_new_purchase"].(bool); !v {
+		t.Errorf("is_reset_as_new_purchase = %v, 期望 true（100 万 > 75 万）", f5["is_reset_as_new_purchase"])
+	}
+	// is_engineering_category：L04 ext 无 usage ⇒ 不写（不伪造）；补 ext 用例
+	if _, has := f5["is_engineering_category"]; has {
+		t.Errorf("L04.ext 无 usage_category_l1 时不伪造 engineering 标记: %v", f5["is_engineering_category"])
+	}
+	if _, err := d.DB.ExecContext(ctx,
+		`UPDATE t_ledger_archive SET ext_json = '{"related_biz_no":"PR-2609-0001","usage_category_l1":"P06"}'
+WHERE ledger_type='L04' AND biz_no='CT-2609-0001'`); err != nil {
+		t.Fatal(err)
+	}
+	f2 := &approvalSubmitBody{DocType: "PC", Fields: map[string]any{
+		"contract_no": "CT-2609-0001", "change_amount_cents": float64(300000),
+	}}
+	if err := d.injectPCSSSystemFields(ctx, f2); err != nil {
+		t.Fatal(err)
+	}
+	if v, _ := f2.Fields["is_engineering_category"].(bool); !v {
+		t.Errorf("usage=P06 ⇒ is_engineering_category 应 true, 实为 %v", f2.Fields["is_engineering_category"])
 	}
 }
 

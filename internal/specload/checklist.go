@@ -312,8 +312,11 @@ func runOne(c checkDef, files map[string][]byte, decoded map[string]any) []strin
 		// 单键表达不了 —— 本原语设计时的实测需求）。
 		whenKey2, _ := argStringOpt(c.Args, "when_key2")
 		whenIn2 := argStrings(c.Args, "when_in2")
+		// N-038 项③（V1.10 · S17）：条件面为空守卫的豁免开关。
+		allowEmpty := argBool(c.Args, "allow_empty_match", false)
 		problems := []string{}
 		seen := 0
+		matched := 0
 		for _, name := range sortedStrKeys(decoded) {
 			if !globMatch(pat, name) {
 				continue
@@ -352,6 +355,7 @@ func runOne(c checkDef, files map[string][]byte, decoded map[string]any) []strin
 						continue
 					}
 				}
+				matched++
 				for _, k := range required {
 					if _, exists := m[k]; !exists {
 						problems = append(problems, fmt.Sprintf(
@@ -364,6 +368,15 @@ func runOne(c checkDef, files map[string][]byte, decoded map[string]any) []strin
 		if seen == 0 {
 			problems = append(problems, fmt.Sprintf("[%s] collect=%q 在 file=%q 下收集到 0 项（清单声明写错不许静默通过）",
 				c.ID, collect, pat))
+		}
+		// N-038 项③（V1.10 · S17 · 条件面为空守卫）：collect 有项但**条件一项不匹配**
+		// ⇒ 当 when_in 字面量写错（如 ["True"] vs JSON 布尔 true）时零命中零报错、
+		// 判据完全空转 —— 两种病要分开报：collect 空=清单写错，条件空=**条件写错**。
+		// 豁免＝args 显式 allow_empty_match:true（判据 desc 须说明依据）。
+		if seen > 0 && matched == 0 && !allowEmpty {
+			problems = append(problems, fmt.Sprintf(
+				"[%s] 条件面为空：collect=%d 项但 when 条件匹配 0 项（疑似 when_in 字面量写错 —— 写错的条件判据完全空转；确属预期请设 allow_empty_match=true 并在 desc 说明）",
+				c.ID, seen))
 		}
 		return problems
 

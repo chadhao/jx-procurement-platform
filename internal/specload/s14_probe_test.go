@@ -121,3 +121,47 @@ func TestArrayEachRequiredProbe(t *testing.T) {
 		t.Fatalf("collect 0 项未报错（应报清单写错）: %v", err)
 	}
 }
+
+// TestArrayEachRequiredEmptyConditionGuard N-038 项③（V1.10 · S17）：
+// 条件面为空守卫 —— collect 有项但 when 一项不匹配（如 when_in 字面量写错）
+// ⇒ 必报；args 声明 allow_empty_match=true ⇒ 豁免（判据 desc 须说明依据）。
+func TestArrayEachRequiredEmptyConditionGuard(t *testing.T) {
+	base := loadReal(t).ProblemsRaw
+	inject := func(files map[string][]byte, whenIn []any, allowEmpty bool) {
+		mutateJSON(t, files, "spec/checks.json", func(m map[string]any) {
+			prims, _ := m["primitives"].(map[string]any)
+			prims["array_each_required"] = map[string]any{"desc": "probe (N-038 S17)"}
+			checks, _ := m["checks"].([]any)
+			args := map[string]any{
+				"file": "spec/forms/PR.json", "collect": "checks[*]",
+				"required_keys": []any{"carried_by_kind"},
+				"when_key":      "when", "when_in": whenIn,
+			}
+			if allowEmpty {
+				args["allow_empty_match"] = true
+			}
+			m["checks"] = append(checks, map[string]any{
+				"id": "S17-probe", "severity": "must-green",
+				"primitive": "array_each_required", "args": args,
+			})
+		})
+	}
+
+	// ① when_in 写错（无任何 when 命中）⇒ 条件面为空守卫必报
+	files := cloneFiles(base)
+	inject(files, []any{"no_such_when_value"}, false)
+	_, err := loadFiles(files)
+	if err == nil {
+		t.Fatal("条件面为空（when_in 写错）未报 —— 判据将完全空转（S17 治的病）")
+	}
+	if !strings.Contains(err.Error(), "S17-probe") || !strings.Contains(err.Error(), "条件面为空") {
+		t.Fatalf("错误未含 S17-probe/条件面为空: %v", err)
+	}
+
+	// ② allow_empty_match=true ⇒ 豁免（正向对照）
+	files = cloneFiles(base)
+	inject(files, []any{"no_such_when_value"}, true)
+	if _, err := loadFiles(files); err != nil {
+		t.Fatalf("allow_empty_match=true 应豁免: %v", err)
+	}
+}

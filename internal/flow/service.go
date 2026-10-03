@@ -900,6 +900,14 @@ func validateSubmit(in SubmitInput) error {
 //
 // 返回 ext_json（JSON 字符串；无字段时 "{}"）。
 // ★ 不写 `t_instance_field`（③ 下已弃用）；映射结果**必须被真正消费**，杜绝"映射无人读"的静默 P0。
+// reservedInstanceIdentityKeys 身份类键 —— **永不**由提交 fields 写入 ext_json
+// （N-038 项②：规范列 t_instance.applicant_open_id/department 才是权威，
+// ext 残留同名值 = 同单两份矛盾身份）。新增身份键在此登记。
+var reservedInstanceIdentityKeys = map[string]bool{
+	"applicant":            true, // open_id（伪造实测路径②）
+	"applicant_department": true, // 部门（伪造实测路径②）
+}
+
 func applyBizFields(inst *store.Instance, fields map[string]any) (string, error) {
 	if inst == nil || len(fields) == 0 {
 		return "{}", nil
@@ -932,9 +940,14 @@ func applyBizFields(inst *store.Instance, fields map[string]any) (string, error)
 				inst.PurposeClassL2 = s
 			}
 		default:
-			if key != "" {
-				ext[key] = v
+			// ★ N-038 项②：客户端伪造的**规范列同义键**不得残留 ext_json ——
+			//   否则同一张单据出现两份矛盾的「申请人」（规范列=真实身份、ext=伪造值）。
+			//   applicant/applicant_department 由会话/组织权威解析（identityFrom），
+			//   fields 里的同名值一律丢弃（OrgVerify 范式：服务端权威、客户端无效）。
+			if key == "" || reservedInstanceIdentityKeys[key] {
+				continue
 			}
+			ext[key] = v
 		}
 	}
 	if len(ext) == 0 {
