@@ -245,10 +245,13 @@ type FormDoc struct {
 }
 
 type SectionDoc struct {
-	ID       string     `json:"id"`
-	Label    string     `json:"label"`
-	FilledAt string     `json:"filled_at"`
-	Fields   []FieldDoc `json:"fields"`
+	ID       string `json:"id"`
+	Label    string `json:"label"`
+	FilledAt string `json:"filled_at"`
+	// Repeating 明细行组（如 PR#detail）：行字段承载在 fields["detail"] **数组**里，
+	// 顶层不再逐字段判必填（N-039：定档汇总的输入形态）。
+	Repeating bool       `json:"repeating"`
+	Fields    []FieldDoc `json:"fields"`
 }
 
 type FieldDoc struct {

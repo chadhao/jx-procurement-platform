@@ -92,13 +92,15 @@ func newPRSubmitApp(t *testing.T) (*echo.Echo, *store.DB, *access.Authenticator)
 	return e, db, auth
 }
 
+// ★ N-039：明细行在 fields.detail **数组**内（repeating section）；顶层 amount_cents
+// 必须等于服务端汇总（100000×1=100000 分）——%s 注入在 fields 顶层（designated_by 等）。
 const prSubmitBodyFmt = `{"doc_type":"PR","approval_code":"code-pr","amount_cents":100000,` +
 	`"usage_category_l1":"P01","fields":{` +
 	`"usage_category_l1":"P01","usage_category_l2":"主原料","requirement_type":"常规",` +
 	`"purpose":"补一批滤布","required_date":"2026-12-01","urgent_level":"常规",` +
 	`"budget_subject":"生产预算","is_safety_or_special_equipment":false,"is_fixed_asset":false,` +
-	`"material_name_spec":"滤布 1200mm","unit":"吨","quantity":1,` +
-	`"estimated_unit_price_cents":100000%s}}`
+	`"detail":[{"material_name_spec":"滤布 1200mm","unit":"吨","quantity":1,` +
+	`"estimated_unit_price_cents":100000}]%s}}`
 
 func TestPRSubmitNoSelfPurchaser(t *testing.T) {
 	e, _, auth := newPRSubmitApp(t)

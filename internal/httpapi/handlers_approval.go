@@ -553,9 +553,19 @@ func (d Deps) handleApprovalSubmit(c echo.Context) error {
 	// ---- 服务端算链（FR-M9-02）----
 	usageL1 := firstNonEmptyStr(body.UsageCategoryL1, body.PurposeClassL1)
 	usageL2 := firstNonEmptyStr(body.UsageCategoryL2, body.PurposeClassL2)
+	// ★ N-039 P0：PR 定档依据服务端权威化 —— 汇总明细 → 与客户端 amount_cents 交叉校验
+	//   （fail-closed）→ 定档与落库一律用服务端汇总值（低报降档路径闭环）。
+	amountForTier := body.AmountCents
+	if body.DocType == "PR" {
+		estimated, perr := resolvePRAmountForTier(&body)
+		if perr != nil {
+			return fail(c, http.StatusBadRequest, codeBadRequest, perr.Error())
+		}
+		amountForTier = estimated
+	}
 	facts := chain.Facts{
 		DocType:                  body.DocType,
-		AmountCents:              body.AmountCents,
+		AmountCents:              amountForTier,
 		UsageCategoryL1:          usageL1,
 		PaymentMethodInput:       body.PaymentMethodInput,
 		Department:               firstNonEmptyStr(body.Department, idn.Department),
@@ -626,7 +636,7 @@ func (d Deps) handleApprovalSubmit(c echo.Context) error {
 		PrevBizNo:       body.PrevBizNo,
 		ApplicantOpenID: idn.OpenID,
 		Department:      firstNonEmptyStr(body.Department, idn.Department),
-		AmountCents:     body.AmountCents,
+		AmountCents:     amountForTier, // N-039：PR＝服务端明细汇总值（其余单据同 body 值）
 		PurposeClassL1:  usageL1,
 		PurposeClassL2:  usageL2,
 		Supplier:        body.Supplier,

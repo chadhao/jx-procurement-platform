@@ -56,14 +56,20 @@ func (d Deps) injectPCFields(ctx context.Context, body *approvalSubmitBody) erro
 	}
 	// ① L04 合同行：amount ＋ ext.related_biz_no（json_valid 守卫 —— 同 repo_contract 先例）
 	var amtCents int64
+	var l04Supplier string
 	var l04Ext string
 	err := d.DB.QueryRowContext(ctx, `
-SELECT amount_cents, COALESCE(ext_json,'{}') FROM t_ledger_archive
-WHERE ledger_type='L04' AND biz_no = ?`, contractNo).Scan(&amtCents, &l04Ext)
+SELECT amount_cents, COALESCE(supplier,''), COALESCE(ext_json,'{}') FROM t_ledger_archive
+WHERE ledger_type='L04' AND biz_no = ?`, contractNo).Scan(&amtCents, &l04Supplier, &l04Ext)
 	if err != nil {
 		return fmt.Errorf("合同 %s 在合同台账（L04）无等值记录，不可注入原合同金额（不可手改字段无源）", contractNo)
 	}
 	putSysField(fields, "original_contract_amount_cents", amtCents)
+	// N-039 项②：original_supplier ← L04.supplier（rule：从合同台账带入；
+	// 空值不写 —— 不伪造「无供应商」为伪值）。
+	if l04Supplier != "" {
+		putSysField(fields, "original_supplier", l04Supplier)
+	}
 	ext := map[string]any{}
 	if err := json.Unmarshal([]byte(l04Ext), &ext); err == nil {
 		if rb, _ := ext["related_biz_no"].(string); rb != "" {
@@ -142,6 +148,10 @@ ORDER BY biz_no`, contractNo)
 	if l1, _ := ext["usage_category_l1"].(string); l1 != "" {
 		putSysField(fields, "is_engineering_category", l1 == "P05" || l1 == "P06")
 	}
+	// N-039 项②：special_explanation_required ＝ total_change_cents > original × 0.3
+	// （rule 原文；total＝cumulative＝Σ历史+本次，与 total_change_cents 注入同值）。
+	putSysField(fields, "special_explanation_required",
+		float64(cumulative) > float64(amtCents)*0.3)
 	return nil
 }
 

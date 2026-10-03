@@ -29,6 +29,11 @@ func validateSubmitForm(form specload.FormDoc, provided map[string]any) error {
 		if strings.TrimSpace(sec.FilledAt) != "" {
 			continue // 非提交时点（审批/拨付/后置/周期登记）
 		}
+		if sec.Repeating {
+			// ★ N-039：明细行组（PR#detail）的行字段承载在 fields["detail"] 数组内 ——
+			//   顶层不判（行级逐行必填属另一层，见 N-039 回执如实登记）。
+			continue
+		}
 		for _, f := range sec.Fields {
 			if f.Source != "user" {
 				continue // system/approver 字段不在提交时点校验

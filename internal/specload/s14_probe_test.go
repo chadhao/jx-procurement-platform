@@ -122,7 +122,7 @@ func TestArrayEachRequiredProbe(t *testing.T) {
 	}
 }
 
-// TestArrayEachRequiredEmptyConditionGuard N-038 项③（V1.10 · S17）：
+// TestArrayEachRequiredEmptyConditionGuard N-038 项③（V1.10 · 条件面为空守卫）：
 // 条件面为空守卫 —— collect 有项但 when 一项不匹配（如 when_in 字面量写错）
 // ⇒ 必报；args 声明 allow_empty_match=true ⇒ 豁免（判据 desc 须说明依据）。
 func TestArrayEachRequiredEmptyConditionGuard(t *testing.T) {
@@ -130,7 +130,7 @@ func TestArrayEachRequiredEmptyConditionGuard(t *testing.T) {
 	inject := func(files map[string][]byte, whenIn []any, allowEmpty bool) {
 		mutateJSON(t, files, "spec/checks.json", func(m map[string]any) {
 			prims, _ := m["primitives"].(map[string]any)
-			prims["array_each_required"] = map[string]any{"desc": "probe (N-038 S17)"}
+			prims["array_each_required"] = map[string]any{"desc": "probe (N-038 条件面为空守卫)"}
 			checks, _ := m["checks"].([]any)
 			args := map[string]any{
 				"file": "spec/forms/PR.json", "collect": "checks[*]",
@@ -141,7 +141,7 @@ func TestArrayEachRequiredEmptyConditionGuard(t *testing.T) {
 				args["allow_empty_match"] = true
 			}
 			m["checks"] = append(checks, map[string]any{
-				"id": "S17-probe", "severity": "must-green",
+				"id": "EmptyCond-probe", "severity": "must-green",
 				"primitive": "array_each_required", "args": args,
 			})
 		})
@@ -152,10 +152,10 @@ func TestArrayEachRequiredEmptyConditionGuard(t *testing.T) {
 	inject(files, []any{"no_such_when_value"}, false)
 	_, err := loadFiles(files)
 	if err == nil {
-		t.Fatal("条件面为空（when_in 写错）未报 —— 判据将完全空转（S17 治的病）")
+		t.Fatal("条件面为空（when_in 写错）未报 —— 判据将完全空转（条件面为空守卫治的病）")
 	}
-	if !strings.Contains(err.Error(), "S17-probe") || !strings.Contains(err.Error(), "条件面为空") {
-		t.Fatalf("错误未含 S17-probe/条件面为空: %v", err)
+	if !strings.Contains(err.Error(), "EmptyCond-probe") || !strings.Contains(err.Error(), "条件面为空") {
+		t.Fatalf("错误未含 EmptyCond-probe/条件面为空: %v", err)
 	}
 
 	// ② allow_empty_match=true ⇒ 豁免（正向对照）

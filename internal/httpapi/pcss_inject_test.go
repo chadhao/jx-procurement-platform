@@ -20,8 +20,8 @@ func TestInjectPCSSSystemFields(t *testing.T) {
 	// seed：L04 合同行（biz_no=合同号 · amount=50 万分 · ext.related_biz_no=PR）
 	if _, err := d.DB.ExecContext(ctx, `
 INSERT INTO t_ledger_archive(ledger_type,biz_no,instance_code,source_doc_type,department,applicant_open_id,
-  amount_cents,ext_json,biz_date,created_at,updated_at)
-VALUES('L04','CT-2609-0001','I-CT-1','CT','生产部','ou_a',500000,
+  amount_cents,supplier,ext_json,biz_date,created_at,updated_at)
+VALUES('L04','CT-2609-0001','I-CT-1','CT','生产部','ou_a',500000,'原供应商甲',
   '{"related_biz_no":"PR-2609-0001","contract_no":"CT-2609-0001"}','2026-10-01','2026-10-01','2026-10-01')`); err != nil {
 		t.Fatal(err)
 	}
@@ -149,6 +149,30 @@ WHERE ledger_type='L04' AND biz_no='CT-2609-0001'`); err != nil {
 	}
 	if v, _ := f2.Fields["is_engineering_category"].(bool); !v {
 		t.Errorf("usage=P06 ⇒ is_engineering_category 应 true, 实为 %v", f2.Fields["is_engineering_category"])
+	}
+
+	// N-039 项②：original_supplier ← L04.supplier；special_explanation_required = total > orig×0.3
+	if v := f5["original_supplier"]; v != "原供应商甲" {
+		t.Errorf("original_supplier = %v, 期望 L04.supplier 原供应商甲", v)
+	}
+	// total=500000, orig=500000 ⇒ 500000 > 150000 ⇒ true
+	if v, _ := f5["special_explanation_required"].(bool); !v {
+		t.Errorf("special_explanation_required = %v, 期望 true（累计变更 50 万 > 原合同 50 万×0.3）", f5["special_explanation_required"])
+	}
+	// 反向：累计不足 30% ⇒ false（不误标）
+	if _, err := d.DB.ExecContext(ctx,
+		`DELETE FROM t_ledger_archive WHERE ledger_type='L09'`); err != nil {
+		t.Fatal(err)
+	}
+	f3 := &approvalSubmitBody{DocType: "PC", Fields: map[string]any{
+		"contract_no": "CT-2609-0001", "change_amount_cents": float64(100000),
+	}}
+	if err := d.injectPCSSSystemFields(ctx, f3); err != nil {
+		t.Fatal(err)
+	}
+	// 无历史 ⇒ total=本次 100000；orig=500000 ⇒ 100000 > 150000? 否 ⇒ false
+	if v, _ := f3.Fields["special_explanation_required"].(bool); v {
+		t.Errorf("special_explanation_required = true, 期望 false（10 万 < 50 万×0.3）: %v", f3.Fields)
 	}
 }
 
