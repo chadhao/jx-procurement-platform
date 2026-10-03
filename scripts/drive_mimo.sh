@@ -26,10 +26,12 @@ set -o pipefail
 REPO="$(cd "$(dirname "$0")/.." && pwd)"
 MIMO_BIN="${MIMO_BIN:-$HOME/.mimocode/bin/mimo}"
 MIMO_SESSION="${MIMO_SESSION:-ses_ffe5f18db08b1ffeuj4zuqyor4}"
+# ★★ provider 实测：`xiaomi/`（直连 API）报 Insufficient account balance ⇒ 用
+#   套餐 provider `xiaomi-token-plan-cn/`（`mimo providers list` 两个都配了凭据）。
 # ★ 用户 2026-10-03 指定：mimo-v2.6-flash（窗口 1.05M＝「1M 上下文」，模型自带）
 #   ＋ 高强度思考。三者对应关系经 `mimo models xiaomi --verbose` 的 variants 元数据核实：
 #   low / medium / high → reasoningEffort: low / medium / high ⇒ 高强度＝high。
-MIMO_MODEL="${MIMO_MODEL:-xiaomi/mimo-v2.6-flash}"
+MIMO_MODEL="${MIMO_MODEL:-xiaomi-token-plan-cn/mimo-v2.6-flash}"
 MIMO_VARIANT="${MIMO_VARIANT:-high}"
 
 ISSUE="${1:?用法: drive_mimo.sh <议题ID> <指令文件> [最大尝试次数]}"
