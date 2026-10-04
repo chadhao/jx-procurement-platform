@@ -3,7 +3,7 @@
   "label": "物资采购申请单",
   "prefix": "PR",
   "number_format": "PR-YYMM-####",
-  "version": "1.2",
+  "version": "1.3",
   "date": "2026-10-04",
   "generated_by": "WorkBuddy",
   "sources": {
@@ -427,9 +427,9 @@
     },
     {
       "id": "safety_branch",
-      "severity": "soft",
-      "carried_by_kind": "pending_implementation",
-      "carried_by": "★ **待接线**（`N-052` 批 13）：承载字段 `qualification_doc` **已于本批补入**（`required_conditional` 同批落地 ⇒ 提交期通用校验已能拦「选是却两空」）；★ 判据**求值器尚未注册** ⇒ 暂**不得**标 `hard`（`when` 以 `submit` 开头而无求值器 ⇒ `evaluateHardChecks` 当场 fail-closed，已实测）；★ 求值器落地后由我方重判 `hard` ＋ `code`（与 `BA#safety_certificate` 同范式）",
+      "severity": "hard",
+      "carried_by_kind": "code",
+      "carried_by": "`internal/httpapi/handlers_approval_hardchecks.go#checkPRSafetyBranch`（`N-052` 批 13 · `A13`：求值器已注册并经 **SA/PR 端到端用例**验证，`internal/httpapi/hardchecks_n052_test.go`）—— ★ **已激活为 `hard`**（2026-10-04，我方收尾）：`is_safety_or_special_equipment` 为布尔 `true` ⇒ `qualification_doc` 非空，条件**在求值器内判**、未命中放行（不反向，与 `BA#safety_certificate` 同范式）。★ **双把守**：字段级 `required_conditional`（`validateSubmitForm`，**先执行**）＋ 本求值器（`evaluateHardChecks`，**后执行**）—— 前者对「选是却两空」已在提交期拦下，后者是**独立第二道**（防结构化路径被绕过）。★ 此前 → ★ **待接线**：承载字段 `qualification_doc` 已于 `e69e77a` 补入，但判据**求值器未注册** ⇒ 暂不得标 `hard`（`when` 以 `submit` 开头而无求值器 ⇒ `evaluateHardChecks` 当场 fail-closed，已实测）",
       "when": "submit",
       "assert": "is_safety_or_special_equipment == true ⇒ 须附资质文件或说明",
       "else": "拒绝提交",
