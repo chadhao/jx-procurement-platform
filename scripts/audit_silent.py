@@ -5,13 +5,15 @@
 静默缺陷 = **不报错、但结果错或空**。它的共同形态是「生产者/消费者不对称」：
 某列/键/映射/接口**有人写没人读**、或**有人读没人写**、或**配了但没有消费端**。
 
-本脚本做 8 项机械检查（每项都可能误报，须人工确认；但"零命中"是可信的）：
+本脚本做 9 项机械检查（每项都可能误报，须人工确认；但"零命中"是可信的）：
 
   C1  迁移里定义、但 Go 代码从不引用的列          → 死列 / 预留列
   C2  仅出现在 INSERT/UPDATE 上下文、从无 SELECT 的列 → 有人写没人读
   C3  PassthroughBizFields 里没有任何读取者的名字   → 映射落库但无人消费
   C4  threshold 键是否有消费端（对照代码里的消费表）
   C5  注册的路由 ↔ API 文档双向差集
+  C9  机读契约 spec/openapi.json ↔ 人读正本 docs/05-API.md 的真值一致性（正本指纹 ＋ 双向路由差集）
+      ★ 复用生成器 scripts/gen_openapi.py 的映射（**不重写抽取规则**，避免第三份真相）
   C6  被吞掉的错误（`_ = x` 且 x 不是 Close/Release/Rollback 等）
   C7  定义了但从未被返回的错误码常量
   C8  测试里直接造台账行（绕过真实 Ingest 路径）的位点
@@ -20,6 +22,7 @@
 退出码：0 = 无命中；1 = 有命中（供 CI 用；命中需人工判定是否真缺陷）
 """
 import io
+import json
 import os
 import re
 import sys
@@ -461,16 +464,85 @@ def check_test_fixture_bypass():
                        '（用例在验证生产上走不到的路径）' % (rel(p), ln, lt))
 
 
+# ---------------------------------------------------------------- C9
+# ★★ 2026-10-04 新增（`REMAINING.md#B6` / `COLLAB.md#N-051`）：
+#   `spec/openapi.json`（机读契约）↔ `docs/05-API.md`（人读正本）的**真值一致性**。
+# ★ 为什么放在这里而不是新脚本：本项与 `C5` 同族（都是「契约 ↔ 实现/正本 的双向差集」），
+#   同属「会报既存问题、不阻塞总判定」这一档（`check_all.sh` 的 `report` 组）。
+# ★★ 为什么**复用生成器**而不是重写抽取：`md → json` 的映射规则只应有**一份实现**
+#   （`scripts/gen_openapi.py`）。若这里再写一遍，就是**第三份真相** —— 迟早与生成器不一致，
+#   且不一致时无法判断谁错。⇒ 本项只做「**文件是否仍等于生成器的输出**」。
+#   ★ 判据代价：生成器被删/被改签名 ⇒ 本项**报错可见**（而不是静默变成"无人检查"）。
+def check_openapi_alignment():
+    gen_py = os.path.join(ROOT, 'scripts', 'gen_openapi.py')
+    out_p = os.path.join(ROOT, 'spec', 'openapi.json')
+    doc_p = os.path.join(ROOT, 'docs', '05-API.md')
+    for need, what in ((gen_py, 'scripts/gen_openapi.py（生成器）'),
+                       (out_p, 'spec/openapi.json（机读契约）'),
+                       (doc_p, 'docs/05-API.md（人读正本）')):
+        if not os.path.exists(need):
+            hit('C9', '缺 %s' % what)
+    if not (os.path.exists(gen_py) and os.path.exists(out_p) and os.path.exists(doc_p)):
+        return
+
+    sys.path.insert(0, os.path.join(ROOT, 'scripts'))
+    try:
+        import gen_openapi  # noqa: E402
+    except Exception as e:                       # 生成器不可用 ⇒ 必须可见，不能静默
+        hit('C9', '无法导入生成器 scripts/gen_openapi.py：%r' % (e,))
+        return
+
+    try:
+        doc_json, routes, _wk, _wd, _amb, _syn, _n = gen_openapi.build()
+    except SystemExit as e:
+        hit('C9', '生成器无法从正本重建契约（SystemExit %s）' % (e,))
+        return
+    try:
+        have = json.loads(read(out_p))
+    except Exception as e:
+        hit('C9', 'spec/openapi.json 不可解析：%r' % (e,))
+        return
+
+    # ① 正本指纹：正本被改过而机读契约未重生 ⇒ 立刻可见（这正是「索引失真」的窗口）
+    want_sha = doc_json['x-source']['doc_sha256']
+    have_sha = (have.get('x-source') or {}).get('doc_sha256')
+    if have_sha != want_sha:
+        hit('C9', 'docs/05-API.md 与 spec/openapi.json 的 `x-source.doc_sha256` 不一致 ⇒ '
+                  '**正本改过、机读契约未重生**（跑 `python scripts/gen_openapi.py`）'
+                  '（正本 %s / 契约 %s）' % (want_sha[:12], (have_sha or '缺失')[:12]))
+
+    # ② 路由集合双向差集（★ 逐字比路径写法，比归一后更严）
+    want = set()
+    for m, pth, _k, _ln in routes:
+        want.add((m, pth))
+    got = set()
+    for pth, item in (have.get('paths') or {}).items():
+        if not isinstance(item, dict):
+            continue
+        for meth in item:
+            got.add((meth.upper(), pth))
+    for m, pth in sorted(want - got):
+        hit('C9', '正本声明 `%s %s`，但 spec/openapi.json **未收录**（机读契约缺该路由）' % (m, pth))
+    for m, pth in sorted(got - want):
+        hit('C9', 'spec/openapi.json 收录 `%s %s`，但**正本未声明**（★ 第二份真相 —— '
+                  '机读契约不得超出人读正本）' % (m, pth))
+
+    # ③ 路由条数（★ 双向差集为空时二者必然相等；此处独立再算一次，防"都空"的假绿）
+    if len(want) == 0:
+        hit('C9', '生成器从正本**未提取到任何路由** ⇒ 抽取规则可能已失效（不是"全部一致"）')
+
+
 def main():
     check_columns()
     check_passthrough_bizfields()
     check_thresholds()
     check_routes()
+    check_openapi_alignment()
     check_swallowed_errors()
     check_error_codes()
     check_test_fixture_bypass()
 
-    order = ['C1', 'C2', 'C3', 'C4', 'C5', 'C6', 'C7', 'C8a', 'C8b']
+    order = ['C1', 'C2', 'C3', 'C4', 'C5', 'C9', 'C6', 'C7', 'C8a', 'C8b']
     print('===== 静默缺陷机械排查（只读）=====')
     print('扫描：%d 个非测试 .go / %d 个测试 .go / %d 个迁移\n' % (
         len(SRC), len(TESTSRC), len(MIG)))

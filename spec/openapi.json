@@ -1,0 +1,4980 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "采购与费用审批平台（自建侧）· 接口契约（机读形态）",
+    "version": "1.0.0",
+    "description": "★ 本文件是 `docs/05-API.md`（**人读正本**）的**机读形态**，由 `scripts/gen_openapi.py` **机械生成** —— **禁止手工编辑**；改接口请改正本后 `python scripts/gen_openapi.py` 重生。\n★ 本文件**不新增、不放松任何判据**：凡是正本没写的（逐端点请求/响应字段类型、枚举值域、必填性），本文件一律**不填**（见 `x-known-gaps`），由正本的表格文字承载。\n★ 一致性由两处**独立**把关：门禁「会报」项 `C9`（`scripts/audit_silent.py`：本文件 ↔ 正本**双向**路由差集）与常驻探针 `scripts/_probe_n051.py`（重现一致性 ＋ 路径参数完备性 ＋ operationId 唯一性 ＋ 正反例）。"
+  },
+  "servers": [
+    {
+      "url": "/",
+      "description": "同源部署（前端 `internal/webui/dist` 内嵌于同一二进制）"
+    }
+  ],
+  "tags": [
+    {
+      "name": "3.1 鉴权"
+    },
+    {
+      "name": "3.2 台账（M4）"
+    },
+    {
+      "name": "3.3 看板（M5）"
+    },
+    {
+      "name": "3.4 实例（M2）"
+    },
+    {
+      "name": "3.5 报送（M6）"
+    },
+    {
+      "name": "3.6 备付金（M1）"
+    },
+    {
+      "name": "3.7 审计（M7）"
+    },
+    {
+      "name": "3.8 内部运维端点（★ 需管理凭据，非飞书免登）"
+    },
+    {
+      "name": "3.9 系统管理（M5，★ 仅「系统管理员」角色）"
+    },
+    {
+      "name": "3.10 集团报销跟踪（M1）"
+    },
+    {
+      "name": "3.12 附件（M0 / FR-M0-09 · B39 最小集）"
+    },
+    {
+      "name": "3.13 审批流转（我方页面 · **转向 ③ 新增**）"
+    },
+    {
+      "name": "3.14 回调（入站面 · **转向 ③ 新增**）"
+    },
+    {
+      "name": "3.15 组织查询（人员 / 部门 · 2026-09-28 新增）"
+    }
+  ],
+  "security": [
+    {
+      "sessionCookie": []
+    }
+  ],
+  "paths": {
+    "/api/auth/authorize-url": {
+      "get": {
+        "operationId": "get_api_auth_authorize_url",
+        "tags": [
+          "3.1 鉴权"
+        ],
+        "summary": "下发飞书免登**授权页 URL**：生成随机 state（crypto/rand 16 字节，存 HttpOnly Cookie jx_oauth_state，10 分钟）→ 按官方拼装 https://accounts.feishu.cn/open-apis/authen/v1/authorize?client_id=…&response_type=code&redirect_uri=<URL编码>&state=…",
+        "security": [],
+        "x-auth-domain": "公开（不进 `requireSession` 组，§3.1）",
+        "x-error-codes": [
+          40000,
+          50000
+        ],
+        "x-related-fr": [
+          "FR-M0-10"
+        ],
+        "x-doc-ref": "docs/05-API.md#L123-L134",
+        "responses": {
+          "200": {
+            "description": "成功（`code=0`）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiEnvelope"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "错误码 40000（HTTP 400；含义见 docs/05-API.md §2.1 错误码表）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "错误码 50000（HTTP 500；含义见 docs/05-API.md §2.1 错误码表）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "未列举的错误码（统一错误包裹 `code != 0`；完整码表见 docs/05-API.md §2.1）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/auth/feishu/callback": {
+      "get": {
+        "operationId": "get_auth_feishu_callback",
+        "tags": [
+          "3.1 鉴权"
+        ],
+        "summary": "飞书免登回调",
+        "security": [],
+        "x-auth-domain": "公开（不进 `requireSession` 组，§3.1）",
+        "x-error-codes": [
+          40000,
+          40101
+        ],
+        "x-related-fr": [
+          "FR-M0-10"
+        ],
+        "x-doc-ref": "docs/05-API.md#L135-L145",
+        "responses": {
+          "302": {
+            "description": "登录成功后 302 回跳原目标页（`jx_oauth_redirect`；取不到/非法 ⇒ 回落 `/`）；失败/拒绝授权同样 302 至登录错误页（见 §3.1）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiEnvelope"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "错误码 40000（HTTP 400；含义见 docs/05-API.md §2.1 错误码表）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "错误码 40101（HTTP 401；含义见 docs/05-API.md §2.1 错误码表）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "未列举的错误码（统一错误包裹 `code != 0`；完整码表见 docs/05-API.md §2.1）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/auth/logout": {
+      "post": {
+        "operationId": "post_auth_logout",
+        "tags": [
+          "3.1 鉴权"
+        ],
+        "summary": "注销会话",
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "x-auth-domain": "飞书免登会话（§1.2；`open_id` 未映射 ⇒ 40101）",
+        "x-error-codes": [
+          40100
+        ],
+        "x-related-fr": [
+          "FR-M0-10"
+        ],
+        "x-doc-ref": "docs/05-API.md#L146-L156",
+        "responses": {
+          "200": {
+            "description": "成功（`code=0`）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "错误码 40100（HTTP 401；含义见 docs/05-API.md §2.1 错误码表）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "未列举的错误码（统一错误包裹 `code != 0`；完整码表见 docs/05-API.md §2.1）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/me": {
+      "get": {
+        "operationId": "get_api_me",
+        "tags": [
+          "3.1 鉴权"
+        ],
+        "summary": "返回当前会话身份、角色、可见范围摘要（供前端展示降级）",
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "x-auth-domain": "飞书免登会话（§1.2；`open_id` 未映射 ⇒ 40101）",
+        "x-error-codes": [
+          40100,
+          40101
+        ],
+        "x-related-fr": [
+          "FR-M0-10",
+          "FR-M5-04"
+        ],
+        "x-doc-ref": "docs/05-API.md#L157-L167",
+        "responses": {
+          "200": {
+            "description": "成功（`code=0`）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "错误码 40100 / 40101（HTTP 401；含义见 docs/05-API.md §2.1 错误码表）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "未列举的错误码（统一错误包裹 `code != 0`；完整码表见 docs/05-API.md §2.1）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/ledger/{table}": {
+      "get": {
+        "operationId": "get_api_ledger_table",
+        "tags": [
+          "3.2 台账（M4）"
+        ],
+        "summary": "台账列表查询",
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "x-auth-domain": "飞书免登会话（§1.2；`open_id` 未映射 ⇒ 40101）",
+        "parameters": [
+          {
+            "name": "table",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "x-error-codes": [
+          40300,
+          40301,
+          40000
+        ],
+        "x-related-fr": [
+          "FR-M4-01",
+          "FR-M4-04",
+          "FR-M4-05",
+          "FR-M5-02",
+          "FR-M5-03",
+          "FR-M7-01"
+        ],
+        "x-doc-ref": "docs/05-API.md#L170-L183",
+        "responses": {
+          "200": {
+            "description": "成功（`code=0`）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiEnvelope"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "错误码 40000（HTTP 400；含义见 docs/05-API.md §2.1 错误码表）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "错误码 40300 / 40301（HTTP 403；含义见 docs/05-API.md §2.1 错误码表）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "未列举的错误码（统一错误包裹 `code != 0`；完整码表见 docs/05-API.md §2.1）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/ledger/{table}/{id}": {
+      "get": {
+        "operationId": "get_api_ledger_table_id",
+        "tags": [
+          "3.2 台账（M4）"
+        ],
+        "summary": "单条台账记录查询",
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "x-auth-domain": "飞书免登会话（§1.2；`open_id` 未映射 ⇒ 40101）",
+        "parameters": [
+          {
+            "name": "table",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "x-error-codes": [
+          40301,
+          40400
+        ],
+        "x-related-fr": [
+          "FR-M5-02",
+          "FR-M5-03",
+          "FR-M7-01"
+        ],
+        "x-doc-ref": "docs/05-API.md#L184-L194",
+        "responses": {
+          "200": {
+            "description": "成功（`code=0`）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "错误码 40301（HTTP 403；含义见 docs/05-API.md §2.1 错误码表）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "错误码 40400（HTTP 404；含义见 docs/05-API.md §2.1 错误码表）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "未列举的错误码（统一错误包裹 `code != 0`；完整码表见 docs/05-API.md §2.1）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "operationId": "patch_api_ledger_table_id",
+        "tags": [
+          "3.2 台账（M4）"
+        ],
+        "summary": "**仅运营表可写字段**的登记/回填（付款凭据号、抽查状态、经办状态、集团侧人工字段等）",
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "x-auth-domain": "飞书免登会话（§1.2；`open_id` 未映射 ⇒ 40101）",
+        "parameters": [
+          {
+            "name": "table",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "x-error-codes": [
+          40300,
+          40901,
+          40000
+        ],
+        "x-related-fr": [
+          "FR-M1-03",
+          "FR-M4-03",
+          "FR-M4-09",
+          "FR-M6-07"
+        ],
+        "x-doc-ref": "docs/05-API.md#L195-L210",
+        "responses": {
+          "200": {
+            "description": "成功（`code=0`）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiEnvelope"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "错误码 40000（HTTP 400；含义见 docs/05-API.md §2.1 错误码表）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "错误码 40300（HTTP 403；含义见 docs/05-API.md §2.1 错误码表）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "错误码 40901（HTTP 409；含义见 docs/05-API.md §2.1 错误码表）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "未列举的错误码（统一错误包裹 `code != 0`；完整码表见 docs/05-API.md §2.1）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/dashboard/{id}": {
+      "get": {
+        "operationId": "get_api_dashboard_id",
+        "tags": [
+          "3.3 看板（M5）"
+        ],
+        "summary": "看板指标数据",
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "x-auth-domain": "飞书免登会话（§1.2；`open_id` 未映射 ⇒ 40101）",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "x-error-codes": [
+          40300,
+          50300
+        ],
+        "x-related-fr": [
+          "FR-M5-01",
+          "FR-M5-05",
+          "FR-M5-06",
+          "FR-M5-07",
+          "FR-M5-08"
+        ],
+        "x-doc-ref": "docs/05-API.md#L213-L224",
+        "responses": {
+          "200": {
+            "description": "成功（`code=0`）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "错误码 40300（HTTP 403；含义见 docs/05-API.md §2.1 错误码表）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "错误码 50300（HTTP 503；含义见 docs/05-API.md §2.1 错误码表）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "未列举的错误码（统一错误包裹 `code != 0`；完整码表见 docs/05-API.md §2.1）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/dashboard/{id}/export": {
+      "get": {
+        "operationId": "get_api_dashboard_id_export",
+        "tags": [
+          "3.3 看板（M5）"
+        ],
+        "summary": "看板数据导出",
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "x-auth-domain": "飞书免登会话（§1.2；`open_id` 未映射 ⇒ 40101）",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "x-error-codes": [
+          40300,
+          42900
+        ],
+        "x-related-fr": [
+          "FR-M7-03",
+          "FR-M5-06"
+        ],
+        "x-doc-ref": "docs/05-API.md#L225-L236",
+        "responses": {
+          "200": {
+            "description": "成功（`code=0`）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "错误码 40300（HTTP 403；含义见 docs/05-API.md §2.1 错误码表）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "错误码 42900（HTTP 429；含义见 docs/05-API.md §2.1 错误码表）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "未列举的错误码（统一错误包裹 `code != 0`；完整码表见 docs/05-API.md §2.1）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/instances": {
+      "get": {
+        "operationId": "get_api_instances",
+        "tags": [
+          "3.4 实例（M2）"
+        ],
+        "summary": "实例列表查询",
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "x-auth-domain": "飞书免登会话（§1.2；`open_id` 未映射 ⇒ 40101）",
+        "x-error-codes": [
+          40300,
+          40301
+        ],
+        "x-related-fr": [
+          "FR-M2-01",
+          "FR-M2-03",
+          "FR-M2-05",
+          "FR-M5-02",
+          "FR-M5-03"
+        ],
+        "x-doc-ref": "docs/05-API.md#L239-L249",
+        "responses": {
+          "200": {
+            "description": "成功（`code=0`）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "错误码 40300 / 40301（HTTP 403；含义见 docs/05-API.md §2.1 错误码表）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "未列举的错误码（统一错误包裹 `code != 0`；完整码表见 docs/05-API.md §2.1）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/instances/{instance_code}": {
+      "get": {
+        "operationId": "get_api_instances_instance_code",
+        "tags": [
+          "3.4 实例（M2）"
+        ],
+        "summary": "单实例详情（含当前状态、业务单号归档、approval_code→doc_type 映射结果）",
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "x-auth-domain": "飞书免登会话（§1.2；`open_id` 未映射 ⇒ 40101）",
+        "parameters": [
+          {
+            "name": "instance_code",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "x-error-codes": [
+          40301,
+          40400
+        ],
+        "x-related-fr": [
+          "FR-M2-01",
+          "FR-M2-04",
+          "FR-M2-06"
+        ],
+        "x-doc-ref": "docs/05-API.md#L250-L260",
+        "responses": {
+          "200": {
+            "description": "成功（`code=0`）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "错误码 40301（HTTP 403；含义见 docs/05-API.md §2.1 错误码表）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "错误码 40400（HTTP 404；含义见 docs/05-API.md §2.1 错误码表）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "未列举的错误码（统一错误包裹 `code != 0`；完整码表见 docs/05-API.md §2.1）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/instances/{instance_code}/fields": {
+      "get": {
+        "operationId": "get_api_instances_instance_code_fields",
+        "tags": [
+          "3.4 实例（M2）"
+        ],
+        "summary": "实例表单字段（**键值对**，按映射表转业务字段名",
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "x-auth-domain": "飞书免登会话（§1.2；`open_id` 未映射 ⇒ 40101）",
+        "parameters": [
+          {
+            "name": "instance_code",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "x-error-codes": [
+          40301,
+          40400
+        ],
+        "x-related-fr": [
+          "FR-M2-02",
+          "FR-M2-05"
+        ],
+        "x-doc-ref": "docs/05-API.md#L261-L275",
+        "responses": {
+          "200": {
+            "description": "成功（`code=0`）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "错误码 40301（HTTP 403；含义见 docs/05-API.md §2.1 错误码表）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "错误码 40400（HTTP 404；含义见 docs/05-API.md §2.1 错误码表）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "未列举的错误码（统一错误包裹 `code != 0`；完整码表见 docs/05-API.md §2.1）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/instances/{instance_code}/prefill": {
+      "get": {
+        "operationId": "get_api_instances_instance_code_prefill",
+        "tags": [
+          "3.4 实例（M2）"
+        ],
+        "summary": "按 keys 回显该实例 ext_json 中**可预填键**的值（缺省键不出现）",
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "x-auth-domain": "飞书免登会话（§1.2；`open_id` 未映射 ⇒ 40101）",
+        "parameters": [
+          {
+            "name": "instance_code",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "x-error-codes": [
+          40000,
+          40301,
+          40400
+        ],
+        "x-related-fr": [
+          "FR-M9-03"
+        ],
+        "x-doc-ref": "docs/05-API.md#L276-L290",
+        "responses": {
+          "200": {
+            "description": "成功（`code=0`）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiEnvelope"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "错误码 40000（HTTP 400；含义见 docs/05-API.md §2.1 错误码表）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "错误码 40301（HTTP 403；含义见 docs/05-API.md §2.1 错误码表）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "错误码 40400（HTTP 404；含义见 docs/05-API.md §2.1 错误码表）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "未列举的错误码（统一错误包裹 `code != 0`；完整码表见 docs/05-API.md §2.1）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/instances/{instance_code}/timeline": {
+      "get": {
+        "operationId": "get_api_instances_instance_code_timeline",
+        "tags": [
+          "3.4 实例（M2）"
+        ],
+        "summary": "状态变更史（**含驳回重提完整链条**：首次提交→驳回(含意见)→重提→通过）",
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "x-auth-domain": "飞书免登会话（§1.2；`open_id` 未映射 ⇒ 40101）",
+        "parameters": [
+          {
+            "name": "instance_code",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "x-error-codes": [
+          40301,
+          40400
+        ],
+        "x-related-fr": [
+          "FR-M3-04",
+          "FR-M3-05",
+          "FR-M7-02"
+        ],
+        "x-doc-ref": "docs/05-API.md#L291-L302",
+        "responses": {
+          "200": {
+            "description": "成功（`code=0`）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "错误码 40301（HTTP 403；含义见 docs/05-API.md §2.1 错误码表）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "错误码 40400（HTTP 404；含义见 docs/05-API.md §2.1 错误码表）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "未列举的错误码（统一错误包裹 `code != 0`；完整码表见 docs/05-API.md §2.1）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/submission/{id}/receipt": {
+      "post": {
+        "operationId": "post_api_submission_id_receipt",
+        "tags": [
+          "3.5 报送（M6）"
+        ],
+        "summary": "",
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "x-auth-domain": "飞书免登会话（§1.2；`open_id` 未映射 ⇒ 40101）",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "x-doc-ref": "docs/05-API.md#L305",
+        "x-doc-note": "正本中该路由**无独立 `####` 小节**（仅有 §3.13 全路径清单行/正文提及）⇒ 逐端点字段与语义以正本为准",
+        "responses": {
+          "200": {
+            "description": "成功（`code=0`）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiEnvelope"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "未列举的错误码（统一错误包裹 `code != 0`；完整码表见 docs/05-API.md §2.1）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/submission/{id}/group": {
+      "post": {
+        "operationId": "post_api_submission_id_group",
+        "tags": [
+          "3.5 报送（M6）"
+        ],
+        "summary": "",
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "x-auth-domain": "飞书免登会话（§1.2；`open_id` 未映射 ⇒ 40101）",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "x-doc-ref": "docs/05-API.md#L305",
+        "x-doc-note": "正本中该路由**无独立 `####` 小节**（仅有 §3.13 全路径清单行/正文提及）⇒ 逐端点字段与语义以正本为准",
+        "responses": {
+          "200": {
+            "description": "成功（`code=0`）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiEnvelope"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "未列举的错误码（统一错误包裹 `code != 0`；完整码表见 docs/05-API.md §2.1）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/submission/{id}/reject": {
+      "post": {
+        "operationId": "post_api_submission_id_reject",
+        "tags": [
+          "3.5 报送（M6）"
+        ],
+        "summary": "",
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "x-auth-domain": "飞书免登会话（§1.2；`open_id` 未映射 ⇒ 40101）",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "x-doc-ref": "docs/05-API.md#L305",
+        "x-doc-note": "正本中该路由**无独立 `####` 小节**（仅有 §3.13 全路径清单行/正文提及）⇒ 逐端点字段与语义以正本为准",
+        "responses": {
+          "200": {
+            "description": "成功（`code=0`）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiEnvelope"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "未列举的错误码（统一错误包裹 `code != 0`；完整码表见 docs/05-API.md §2.1）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/submission": {
+      "post": {
+        "operationId": "post_api_submission",
+        "tags": [
+          "3.5 报送（M6）"
+        ],
+        "summary": "提交集团登记（含关联单据清单、事项类型、金额、付款方式、湖南侧完成日期）",
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "x-auth-domain": "飞书免登会话（§1.2；`open_id` 未映射 ⇒ 40101）",
+        "x-error-codes": [
+          40300,
+          40000,
+          40900
+        ],
+        "x-related-fr": [
+          "FR-M6-01",
+          "FR-M6-02",
+          "FR-M6-05",
+          "FR-M6-03"
+        ],
+        "x-doc-ref": "docs/05-API.md#L307-L317",
+        "responses": {
+          "200": {
+            "description": "成功（`code=0`）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiEnvelope"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "错误码 40000（HTTP 400；含义见 docs/05-API.md §2.1 错误码表）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "错误码 40300（HTTP 403；含义见 docs/05-API.md §2.1 错误码表）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "错误码 40900（HTTP 409；含义见 docs/05-API.md §2.1 错误码表）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "未列举的错误码（统一错误包裹 `code != 0`；完整码表见 docs/05-API.md §2.1）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "operationId": "get_api_submission",
+        "tags": [
+          "3.5 报送（M6）"
+        ],
+        "summary": "报送记录列表 / 月度「已提交未付款」对账清单",
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "x-auth-domain": "飞书免登会话（§1.2；`open_id` 未映射 ⇒ 40101）",
+        "x-error-codes": [
+          40300
+        ],
+        "x-related-fr": [
+          "FR-M6-03",
+          "FR-M6-04",
+          "FR-M6-08"
+        ],
+        "x-doc-ref": "docs/05-API.md#L318-L328",
+        "responses": {
+          "200": {
+            "description": "成功（`code=0`）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "错误码 40300（HTTP 403；含义见 docs/05-API.md §2.1 错误码表）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "未列举的错误码（统一错误包裹 `code != 0`；完整码表见 docs/05-API.md §2.1）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/submission/{id}/package": {
+      "get": {
+        "operationId": "get_api_submission_id_package",
+        "tags": [
+          "3.5 报送（M6）"
+        ],
+        "summary": "**报送凭证包导出**（关联单据清单 + 移交凭证 + 湖南侧完成日期 + 付款方式等）",
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "x-auth-domain": "飞书免登会话（§1.2；`open_id` 未映射 ⇒ 40101）",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "x-error-codes": [
+          40300,
+          40400
+        ],
+        "x-related-fr": [
+          "FR-M6-06",
+          "FR-M7-03"
+        ],
+        "x-doc-ref": "docs/05-API.md#L329-L342",
+        "responses": {
+          "200": {
+            "description": "成功（`code=0`）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "错误码 40300（HTTP 403；含义见 docs/05-API.md §2.1 错误码表）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "错误码 40400（HTTP 404；含义见 docs/05-API.md §2.1 错误码表）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "未列举的错误码（统一错误包裹 `code != 0`；完整码表见 docs/05-API.md §2.1）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/petty-cash/balance": {
+      "get": {
+        "operationId": "get_api_petty_cash_balance",
+        "tags": [
+          "3.6 备付金（M1）"
+        ],
+        "summary": "备付金余额**只读**展示（做法 A：综合运营主管审批前查看）",
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "x-auth-domain": "飞书免登会话（§1.2；`open_id` 未映射 ⇒ 40101）",
+        "x-error-codes": [
+          40300
+        ],
+        "x-related-fr": [
+          "FR-M1-04",
+          "FR-M1-07"
+        ],
+        "x-doc-ref": "docs/05-API.md#L345-L356",
+        "responses": {
+          "200": {
+            "description": "成功（`code=0`）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "错误码 40300（HTTP 403；含义见 docs/05-API.md §2.1 错误码表）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "未列举的错误码（统一错误包裹 `code != 0`；完整码表见 docs/05-API.md §2.1）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/petty-cash/receipt": {
+      "post": {
+        "operationId": "post_api_petty_cash_receipt",
+        "tags": [
+          "3.6 备付金（M1）"
+        ],
+        "summary": "备付金签领登记（签领人 / 金额 / 日期），关联采购报备单",
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "x-auth-domain": "飞书免登会话（§1.2；`open_id` 未映射 ⇒ 40101）",
+        "x-error-codes": [
+          40300,
+          40000
+        ],
+        "x-related-fr": [
+          "FR-M1-01",
+          "FR-M1-05"
+        ],
+        "x-doc-ref": "docs/05-API.md#L357-L367",
+        "responses": {
+          "200": {
+            "description": "成功（`code=0`）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiEnvelope"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "错误码 40000（HTTP 400；含义见 docs/05-API.md §2.1 错误码表）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "错误码 40300（HTTP 403；含义见 docs/05-API.md §2.1 错误码表）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "未列举的错误码（统一错误包裹 `code != 0`；完整码表见 docs/05-API.md §2.1）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/petty-cash/monthly-close": {
+      "post": {
+        "operationId": "post_api_petty_cash_monthly_close",
+        "tags": [
+          "3.6 备付金（M1）"
+        ],
+        "summary": "备付金月核销（按月登记签领、支出与核销后余额）",
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "x-auth-domain": "飞书免登会话（§1.2；`open_id` 未映射 ⇒ 40101）",
+        "x-error-codes": [
+          40300,
+          40000,
+          40900
+        ],
+        "x-related-fr": [
+          "FR-M1-07"
+        ],
+        "x-doc-ref": "docs/05-API.md#L368-L378",
+        "responses": {
+          "200": {
+            "description": "成功（`code=0`）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiEnvelope"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "错误码 40000（HTTP 400；含义见 docs/05-API.md §2.1 错误码表）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "错误码 40300（HTTP 403；含义见 docs/05-API.md §2.1 错误码表）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "错误码 40900（HTTP 409；含义见 docs/05-API.md §2.1 错误码表）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "未列举的错误码（统一错误包裹 `code != 0`；完整码表见 docs/05-API.md §2.1）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/audit/logs": {
+      "get": {
+        "operationId": "get_api_audit_logs",
+        "tags": [
+          "3.7 审计（M7）"
+        ],
+        "summary": "审计日志查询（操作日志 + 状态变更史 + 越权留痕 + 导出留痕）",
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "x-auth-domain": "飞书免登会话（§1.2；`open_id` 未映射 ⇒ 40101）",
+        "x-error-codes": [
+          40300
+        ],
+        "x-related-fr": [
+          "FR-M7-01",
+          "FR-M7-02",
+          "FR-M7-03",
+          "FR-M7-04"
+        ],
+        "x-doc-ref": "docs/05-API.md#L381-L391",
+        "responses": {
+          "200": {
+            "description": "成功（`code=0`）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "错误码 40300（HTTP 403；含义见 docs/05-API.md §2.1 错误码表）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "未列举的错误码（统一错误包裹 `code != 0`；完整码表见 docs/05-API.md §2.1）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/healthz": {
+      "get": {
+        "operationId": "get_healthz",
+        "tags": [
+          "3.8 内部运维端点（★ 需管理凭据，非飞书免登）"
+        ],
+        "summary": "存活探针：进程存活 + 启动自检四项快照（**回调面连通 / 长连接 / DB 可写 / 单实例**）",
+        "security": [
+          {
+            "internalToken": []
+          }
+        ],
+        "x-auth-domain": "内部运维（管理凭据 `X-Internal-Token`，**不参与飞书免登**，§3.8）",
+        "x-related-fr": [
+          "FR-M8-02",
+          "FR-M0-05"
+        ],
+        "x-doc-ref": "docs/05-API.md#L396-L406",
+        "responses": {
+          "200": {
+            "description": "成功（`code=0`）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiEnvelope"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "未列举的错误码（统一错误包裹 `code != 0`；完整码表见 docs/05-API.md §2.1）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/internal/org/sync": {
+      "post": {
+        "operationId": "post_internal_org_sync",
+        "tags": [
+          "3.8 内部运维端点（★ 需管理凭据，非飞书免登）"
+        ],
+        "summary": "手动触发**通讯录镜像全量同步**（无视 JX_ORG_SYNC_STALE_HOURS 阈值强制拉取；docs/08 实施批次一）",
+        "security": [
+          {
+            "internalToken": []
+          }
+        ],
+        "x-auth-domain": "内部运维（管理凭据 `X-Internal-Token`，**不参与飞书免登**，§3.8）",
+        "x-error-codes": [
+          50000,
+          50300
+        ],
+        "x-doc-ref": "docs/05-API.md#L407-L417",
+        "responses": {
+          "200": {
+            "description": "成功（`code=0`）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiEnvelope"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "错误码 50000（HTTP 500；含义见 docs/05-API.md §2.1 错误码表）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "错误码 50300（HTTP 503；含义见 docs/05-API.md §2.1 错误码表）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "未列举的错误码（统一错误包裹 `code != 0`；完整码表见 docs/05-API.md §2.1）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/readyz": {
+      "get": {
+        "operationId": "get_readyz",
+        "tags": [
+          "3.8 内部运维端点（★ 需管理凭据，非飞书免登）"
+        ],
+        "summary": "就绪探针：是否可以接收并处理事件",
+        "security": [
+          {
+            "internalToken": []
+          }
+        ],
+        "x-auth-domain": "内部运维（管理凭据 `X-Internal-Token`，**不参与飞书免登**，§3.8）",
+        "x-error-codes": [
+          50300
+        ],
+        "x-related-fr": [
+          "FR-M8-02",
+          "FR-M1-05"
+        ],
+        "x-doc-ref": "docs/05-API.md#L418-L427",
+        "responses": {
+          "200": {
+            "description": "成功（`code=0`）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiEnvelope"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "错误码 50300（HTTP 503；含义见 docs/05-API.md §2.1 错误码表）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "未列举的错误码（统一错误包裹 `code != 0`；完整码表见 docs/05-API.md §2.1）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/internal/sync/reconcile": {
+      "post": {
+        "operationId": "post_internal_sync_reconcile",
+        "tags": [
+          "3.8 内部运维端点（★ 需管理凭据，非飞书免登）"
+        ],
+        "summary": "★ **已退役** —— 原\"手动触发对账补拉\"不再提供",
+        "security": [
+          {
+            "internalToken": []
+          }
+        ],
+        "x-auth-domain": "内部运维（管理凭据 `X-Internal-Token`，**不参与飞书免登**，§3.8）",
+        "x-related-fr": [
+          "FR-M0-07",
+          "FR-M0-08"
+        ],
+        "x-doc-ref": "docs/05-API.md#L428-L438",
+        "responses": {
+          "410": {
+            "description": "**入口已退役**（`410 Gone`，body 指明权威入口；退役后仍校验管理凭据，见 §3.8）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiEnvelope"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "未列举的错误码（统一错误包裹 `code != 0`；完整码表见 docs/05-API.md §2.1）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/internal/approval/check": {
+      "post": {
+        "operationId": "post_internal_approval_check",
+        "tags": [
+          "3.8 内部运维端点（★ 需管理凭据，非飞书免登）"
+        ],
+        "summary": "手动触发**审批对账**（对 external_instances/check 的 diff **判方向**后重推，04a §9.2）",
+        "security": [
+          {
+            "internalToken": []
+          }
+        ],
+        "x-auth-domain": "内部运维（管理凭据 `X-Internal-Token`，**不参与飞书免登**，§3.8）",
+        "x-related-fr": [
+          "FR-M0-07",
+          "FR-M0-08"
+        ],
+        "x-doc-ref": "docs/05-API.md#L439-L451",
+        "responses": {
+          "200": {
+            "description": "成功（`code=0`）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiEnvelope"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "未列举的错误码（统一错误包裹 `code != 0`；完整码表见 docs/05-API.md §2.1）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/internal/sync/subscribe": {
+      "post": {
+        "operationId": "post_internal_sync_subscribe",
+        "tags": [
+          "3.8 内部运维端点（★ 需管理凭据，非飞书免登）"
+        ],
+        "summary": "手动（重）订阅审批事件（逐个 approval_code）",
+        "security": [
+          {
+            "internalToken": []
+          }
+        ],
+        "x-auth-domain": "内部运维（管理凭据 `X-Internal-Token`，**不参与飞书免登**，§3.8）",
+        "x-related-fr": [
+          "FR-M0-03",
+          "FR-M0-04"
+        ],
+        "x-doc-ref": "docs/05-API.md#L452-L461",
+        "responses": {
+          "200": {
+            "description": "成功（`code=0`）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiEnvelope"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "未列举的错误码（统一错误包裹 `code != 0`；完整码表见 docs/05-API.md §2.1）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/internal/events/{id}/replay": {
+      "post": {
+        "operationId": "post_internal_events_id_replay",
+        "tags": [
+          "3.8 内部运维端点（★ 需管理凭据，非飞书免登）"
+        ],
+        "summary": "人工重放死信事件（复用原 payload 重投 worker）",
+        "security": [
+          {
+            "internalToken": []
+          }
+        ],
+        "x-auth-domain": "内部运维（管理凭据 `X-Internal-Token`，**不参与飞书免登**，§3.8）",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "x-related-fr": [
+          "FR-M3-07"
+        ],
+        "x-doc-ref": "docs/05-API.md#L462-L472",
+        "responses": {
+          "200": {
+            "description": "成功（`code=0`）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiEnvelope"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "未列举的错误码（统一错误包裹 `code != 0`；完整码表见 docs/05-API.md §2.1）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/internal/dev/inject-event": {
+      "post": {
+        "operationId": "post_internal_dev_inject_event",
+        "tags": [
+          "3.8 内部运维端点（★ 需管理凭据，非飞书免登）"
+        ],
+        "summary": "开发/冒烟用：手工注入一条 approval_instance 事件，端到端验证「事件 → 落库 → 台账／看板」（B13）",
+        "security": [
+          {
+            "internalToken": []
+          }
+        ],
+        "x-auth-domain": "内部运维（管理凭据 `X-Internal-Token`，**不参与飞书免登**，§3.8）",
+        "x-related-fr": [
+          "FR-M3-01",
+          "FR-M3-03"
+        ],
+        "x-doc-ref": "docs/05-API.md#L473-L488",
+        "responses": {
+          "200": {
+            "description": "成功（`code=0`）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiEnvelope"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "未列举的错误码（统一错误包裹 `code != 0`；完整码表见 docs/05-API.md §2.1）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/admin/permission-rules": {
+      "get": {
+        "operationId": "get_api_admin_permission_rules",
+        "tags": [
+          "3.9 系统管理（M5，★ 仅「系统管理员」角色）"
+        ],
+        "summary": "读取「角色 × 资源」权限矩阵（row_scope、column_allow / column_deny、writable_fields、effective_from）",
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "x-auth-domain": "飞书免登会话（§1.2；`open_id` 未映射 ⇒ 40101）",
+        "x-error-codes": [
+          40300
+        ],
+        "x-related-fr": [
+          "FR-M5-09"
+        ],
+        "x-doc-ref": "docs/05-API.md#L494-L503",
+        "responses": {
+          "200": {
+            "description": "成功（`code=0`）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "错误码 40300（HTTP 403；含义见 docs/05-API.md §2.1 错误码表）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "未列举的错误码（统一错误包裹 `code != 0`；完整码表见 docs/05-API.md §2.1）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "operationId": "put_api_admin_permission_rules",
+        "tags": [
+          "3.9 系统管理（M5，★ 仅「系统管理员」角色）"
+        ],
+        "summary": "**批量保存**权限矩阵（按 resource × role 覆盖）",
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "x-auth-domain": "飞书免登会话（§1.2；`open_id` 未映射 ⇒ 40101）",
+        "x-error-codes": [
+          40000,
+          40300
+        ],
+        "x-related-fr": [
+          "FR-M5-09",
+          "FR-M5-11"
+        ],
+        "x-doc-ref": "docs/05-API.md#L504-L515",
+        "responses": {
+          "200": {
+            "description": "成功（`code=0`）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiEnvelope"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "错误码 40000（HTTP 400；含义见 docs/05-API.md §2.1 错误码表）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "错误码 40300（HTTP 403；含义见 docs/05-API.md §2.1 错误码表）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "未列举的错误码（统一错误包裹 `code != 0`；完整码表见 docs/05-API.md §2.1）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/admin/users": {
+      "get": {
+        "operationId": "get_api_admin_users",
+        "tags": [
+          "3.9 系统管理（M5，★ 仅「系统管理员」角色）"
+        ],
+        "summary": "人员角色管理：列出 / 新增 / 修改 t_user_role（角色、部门、分管部门、启用停用）",
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "x-auth-domain": "飞书免登会话（§1.2；`open_id` 未映射 ⇒ 40101）",
+        "x-error-codes": [
+          40000,
+          40300,
+          40400
+        ],
+        "x-related-fr": [
+          "FR-M5-10",
+          "FR-M5-11"
+        ],
+        "x-doc-ref": "docs/05-API.md#L516-L526",
+        "responses": {
+          "200": {
+            "description": "成功（`code=0`）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiEnvelope"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "错误码 40000（HTTP 400；含义见 docs/05-API.md §2.1 错误码表）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "错误码 40300（HTTP 403；含义见 docs/05-API.md §2.1 错误码表）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "错误码 40400（HTTP 404；含义见 docs/05-API.md §2.1 错误码表）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "未列举的错误码（统一错误包裹 `code != 0`；完整码表见 docs/05-API.md §2.1）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "operationId": "post_api_admin_users",
+        "tags": [
+          "3.9 系统管理（M5，★ 仅「系统管理员」角色）"
+        ],
+        "summary": "人员角色管理：列出 / 新增 / 修改 t_user_role（角色、部门、分管部门、启用停用）",
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "x-auth-domain": "飞书免登会话（§1.2；`open_id` 未映射 ⇒ 40101）",
+        "x-error-codes": [
+          40000,
+          40300,
+          40400
+        ],
+        "x-related-fr": [
+          "FR-M5-10",
+          "FR-M5-11"
+        ],
+        "x-doc-ref": "docs/05-API.md#L516-L526",
+        "responses": {
+          "200": {
+            "description": "成功（`code=0`）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiEnvelope"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "错误码 40000（HTTP 400；含义见 docs/05-API.md §2.1 错误码表）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "错误码 40300（HTTP 403；含义见 docs/05-API.md §2.1 错误码表）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "错误码 40400（HTTP 404；含义见 docs/05-API.md §2.1 错误码表）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "未列举的错误码（统一错误包裹 `code != 0`；完整码表见 docs/05-API.md §2.1）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/admin/users/{open_id}": {
+      "patch": {
+        "operationId": "patch_api_admin_users_open_id",
+        "tags": [
+          "3.9 系统管理（M5，★ 仅「系统管理员」角色）"
+        ],
+        "summary": "人员角色管理：列出 / 新增 / 修改 t_user_role（角色、部门、分管部门、启用停用）",
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "x-auth-domain": "飞书免登会话（§1.2；`open_id` 未映射 ⇒ 40101）",
+        "parameters": [
+          {
+            "name": "open_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "x-error-codes": [
+          40000,
+          40300,
+          40400
+        ],
+        "x-related-fr": [
+          "FR-M5-10",
+          "FR-M5-11"
+        ],
+        "x-doc-ref": "docs/05-API.md#L516-L526",
+        "responses": {
+          "200": {
+            "description": "成功（`code=0`）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiEnvelope"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "错误码 40000（HTTP 400；含义见 docs/05-API.md §2.1 错误码表）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "错误码 40300（HTTP 403；含义见 docs/05-API.md §2.1 错误码表）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "错误码 40400（HTTP 404；含义见 docs/05-API.md §2.1 错误码表）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "未列举的错误码（统一错误包裹 `code != 0`；完整码表见 docs/05-API.md §2.1）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/admin/constants": {
+      "get": {
+        "operationId": "get_api_admin_constants",
+        "tags": [
+          "3.9 系统管理（M5，★ 仅「系统管理员」角色）"
+        ],
+        "summary": "常量表增删改查：GET?table=unit[&status=] 列出 · POST {table,value,sort_order?} 新增 · PUT {value?,sort_order?,status?} 改名/排序/**停用** · DELETE **永远 409**（只停用不删）",
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "x-auth-domain": "飞书免登会话（§1.2；`open_id` 未映射 ⇒ 40101）",
+        "x-error-codes": [
+          40000,
+          40300,
+          40400,
+          40900
+        ],
+        "x-doc-ref": "docs/05-API.md#L527-L541",
+        "responses": {
+          "200": {
+            "description": "成功（`code=0`）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiEnvelope"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "错误码 40000（HTTP 400；含义见 docs/05-API.md §2.1 错误码表）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "错误码 40300（HTTP 403；含义见 docs/05-API.md §2.1 错误码表）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "错误码 40400（HTTP 404；含义见 docs/05-API.md §2.1 错误码表）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "错误码 40900（HTTP 409；含义见 docs/05-API.md §2.1 错误码表）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "未列举的错误码（统一错误包裹 `code != 0`；完整码表见 docs/05-API.md §2.1）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "operationId": "post_api_admin_constants",
+        "tags": [
+          "3.9 系统管理（M5，★ 仅「系统管理员」角色）"
+        ],
+        "summary": "常量表增删改查：GET?table=unit[&status=] 列出 · POST {table,value,sort_order?} 新增 · PUT {value?,sort_order?,status?} 改名/排序/**停用** · DELETE **永远 409**（只停用不删）",
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "x-auth-domain": "飞书免登会话（§1.2；`open_id` 未映射 ⇒ 40101）",
+        "x-error-codes": [
+          40000,
+          40300,
+          40400,
+          40900
+        ],
+        "x-doc-ref": "docs/05-API.md#L527-L541",
+        "responses": {
+          "200": {
+            "description": "成功（`code=0`）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiEnvelope"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "错误码 40000（HTTP 400；含义见 docs/05-API.md §2.1 错误码表）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "错误码 40300（HTTP 403；含义见 docs/05-API.md §2.1 错误码表）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "错误码 40400（HTTP 404；含义见 docs/05-API.md §2.1 错误码表）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "错误码 40900（HTTP 409；含义见 docs/05-API.md §2.1 错误码表）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "未列举的错误码（统一错误包裹 `code != 0`；完整码表见 docs/05-API.md §2.1）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/admin/constants/{id}": {
+      "put": {
+        "operationId": "put_api_admin_constants_id",
+        "tags": [
+          "3.9 系统管理（M5，★ 仅「系统管理员」角色）"
+        ],
+        "summary": "常量表增删改查：GET?table=unit[&status=] 列出 · POST {table,value,sort_order?} 新增 · PUT {value?,sort_order?,status?} 改名/排序/**停用** · DELETE **永远 409**（只停用不删）",
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "x-auth-domain": "飞书免登会话（§1.2；`open_id` 未映射 ⇒ 40101）",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "x-error-codes": [
+          40000,
+          40300,
+          40400,
+          40900
+        ],
+        "x-doc-ref": "docs/05-API.md#L527-L541",
+        "responses": {
+          "200": {
+            "description": "成功（`code=0`）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiEnvelope"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "错误码 40000（HTTP 400；含义见 docs/05-API.md §2.1 错误码表）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "错误码 40300（HTTP 403；含义见 docs/05-API.md §2.1 错误码表）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "错误码 40400（HTTP 404；含义见 docs/05-API.md §2.1 错误码表）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "错误码 40900（HTTP 409；含义见 docs/05-API.md §2.1 错误码表）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "未列举的错误码（统一错误包裹 `code != 0`；完整码表见 docs/05-API.md §2.1）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "operationId": "delete_api_admin_constants_id",
+        "tags": [
+          "3.9 系统管理（M5，★ 仅「系统管理员」角色）"
+        ],
+        "summary": "常量表增删改查：GET?table=unit[&status=] 列出 · POST {table,value,sort_order?} 新增 · PUT {value?,sort_order?,status?} 改名/排序/**停用** · DELETE **永远 409**（只停用不删）",
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "x-auth-domain": "飞书免登会话（§1.2；`open_id` 未映射 ⇒ 40101）",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "x-error-codes": [
+          40000,
+          40300,
+          40400,
+          40900
+        ],
+        "x-doc-ref": "docs/05-API.md#L527-L541",
+        "responses": {
+          "200": {
+            "description": "成功（`code=0`）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiEnvelope"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "错误码 40000（HTTP 400；含义见 docs/05-API.md §2.1 错误码表）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "错误码 40300（HTTP 403；含义见 docs/05-API.md §2.1 错误码表）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "错误码 40400（HTTP 404；含义见 docs/05-API.md §2.1 错误码表）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "错误码 40900（HTTP 409；含义见 docs/05-API.md §2.1 错误码表）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "未列举的错误码（统一错误包裹 `code != 0`；完整码表见 docs/05-API.md §2.1）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/admin/role-agents": {
+      "get": {
+        "operationId": "get_api_admin_role_agents",
+        "tags": [
+          "3.9 系统管理（M5，★ 仅「系统管理员」角色）"
+        ],
+        "summary": "角色代理人增删改查：GET 列出（可按 role_key / state 过滤）· POST {role_key, agent_open_id, note?} 新增 · PUT {agent_open_id?, note?, state?} 改人 / 备注 / **停用** · DELETE **永远 409**（只停用不删）",
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "x-auth-domain": "飞书免登会话（§1.2；`open_id` 未映射 ⇒ 40101）",
+        "x-error-codes": [
+          40000,
+          40300,
+          40400,
+          40900
+        ],
+        "x-doc-ref": "docs/05-API.md#L542-L560",
+        "responses": {
+          "200": {
+            "description": "成功（`code=0`）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiEnvelope"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "错误码 40000（HTTP 400；含义见 docs/05-API.md §2.1 错误码表）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "错误码 40300（HTTP 403；含义见 docs/05-API.md §2.1 错误码表）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "错误码 40400（HTTP 404；含义见 docs/05-API.md §2.1 错误码表）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "错误码 40900（HTTP 409；含义见 docs/05-API.md §2.1 错误码表）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "未列举的错误码（统一错误包裹 `code != 0`；完整码表见 docs/05-API.md §2.1）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "operationId": "post_api_admin_role_agents",
+        "tags": [
+          "3.9 系统管理（M5，★ 仅「系统管理员」角色）"
+        ],
+        "summary": "角色代理人增删改查：GET 列出（可按 role_key / state 过滤）· POST {role_key, agent_open_id, note?} 新增 · PUT {agent_open_id?, note?, state?} 改人 / 备注 / **停用** · DELETE **永远 409**（只停用不删）",
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "x-auth-domain": "飞书免登会话（§1.2；`open_id` 未映射 ⇒ 40101）",
+        "x-error-codes": [
+          40000,
+          40300,
+          40400,
+          40900
+        ],
+        "x-doc-ref": "docs/05-API.md#L542-L560",
+        "responses": {
+          "200": {
+            "description": "成功（`code=0`）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiEnvelope"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "错误码 40000（HTTP 400；含义见 docs/05-API.md §2.1 错误码表）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "错误码 40300（HTTP 403；含义见 docs/05-API.md §2.1 错误码表）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "错误码 40400（HTTP 404；含义见 docs/05-API.md §2.1 错误码表）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "错误码 40900（HTTP 409；含义见 docs/05-API.md §2.1 错误码表）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "未列举的错误码（统一错误包裹 `code != 0`；完整码表见 docs/05-API.md §2.1）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/admin/role-agents/{id}": {
+      "put": {
+        "operationId": "put_api_admin_role_agents_id",
+        "tags": [
+          "3.9 系统管理（M5，★ 仅「系统管理员」角色）"
+        ],
+        "summary": "角色代理人增删改查：GET 列出（可按 role_key / state 过滤）· POST {role_key, agent_open_id, note?} 新增 · PUT {agent_open_id?, note?, state?} 改人 / 备注 / **停用** · DELETE **永远 409**（只停用不删）",
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "x-auth-domain": "飞书免登会话（§1.2；`open_id` 未映射 ⇒ 40101）",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "x-error-codes": [
+          40000,
+          40300,
+          40400,
+          40900
+        ],
+        "x-doc-ref": "docs/05-API.md#L542-L560",
+        "responses": {
+          "200": {
+            "description": "成功（`code=0`）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiEnvelope"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "错误码 40000（HTTP 400；含义见 docs/05-API.md §2.1 错误码表）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "错误码 40300（HTTP 403；含义见 docs/05-API.md §2.1 错误码表）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "错误码 40400（HTTP 404；含义见 docs/05-API.md §2.1 错误码表）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "错误码 40900（HTTP 409；含义见 docs/05-API.md §2.1 错误码表）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "未列举的错误码（统一错误包裹 `code != 0`；完整码表见 docs/05-API.md §2.1）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "operationId": "delete_api_admin_role_agents_id",
+        "tags": [
+          "3.9 系统管理（M5，★ 仅「系统管理员」角色）"
+        ],
+        "summary": "角色代理人增删改查：GET 列出（可按 role_key / state 过滤）· POST {role_key, agent_open_id, note?} 新增 · PUT {agent_open_id?, note?, state?} 改人 / 备注 / **停用** · DELETE **永远 409**（只停用不删）",
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "x-auth-domain": "飞书免登会话（§1.2；`open_id` 未映射 ⇒ 40101）",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "x-error-codes": [
+          40000,
+          40300,
+          40400,
+          40900
+        ],
+        "x-doc-ref": "docs/05-API.md#L542-L560",
+        "responses": {
+          "200": {
+            "description": "成功（`code=0`）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiEnvelope"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "错误码 40000（HTTP 400；含义见 docs/05-API.md §2.1 错误码表）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "错误码 40300（HTTP 403；含义见 docs/05-API.md §2.1 错误码表）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "错误码 40400（HTTP 404；含义见 docs/05-API.md §2.1 错误码表）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "错误码 40900（HTTP 409；含义见 docs/05-API.md §2.1 错误码表）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "未列举的错误码（统一错误包裹 `code != 0`；完整码表见 docs/05-API.md §2.1）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/admin/approval/defs/sync": {
+      "post": {
+        "operationId": "post_api_admin_approval_defs_sync",
+        "tags": [
+          "3.9 系统管理（M5，★ 仅「系统管理员」角色）"
+        ],
+        "summary": "三方审批定义装载（主通道，docs/16 §2-C 通道①）：读 t_config_mapping(map_kind='approval_code') 清单（正本＝docs/reference/config-mapping.sample.json 的 approval_code 节，11 类）→ 逐条注册/更新到飞书 external_approvals 并落 t_approval_def（**幂等**：approval_code 命中即更新，不产生第二条定义）",
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "x-auth-domain": "飞书免登会话（§1.2；`open_id` 未映射 ⇒ 40101）",
+        "x-related-fr": [
+          "FR-M0-13"
+        ],
+        "x-doc-ref": "docs/05-API.md#L561-L574",
+        "responses": {
+          "200": {
+            "description": "成功（`code=0`）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiEnvelope"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "未列举的错误码（统一错误包裹 `code != 0`；完整码表见 docs/05-API.md §2.1）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/reimbursement": {
+      "post": {
+        "operationId": "post_api_reimbursement",
+        "tags": [
+          "3.10 集团报销跟踪（M1）"
+        ],
+        "summary": "集团报销跟踪登记（人工）",
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "x-auth-domain": "飞书免登会话（§1.2；`open_id` 未映射 ⇒ 40101）",
+        "x-error-codes": [
+          40300,
+          40000
+        ],
+        "x-related-fr": [
+          "FR-M1-02"
+        ],
+        "x-doc-ref": "docs/05-API.md#L584-L595",
+        "responses": {
+          "200": {
+            "description": "成功（`code=0`）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiEnvelope"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "错误码 40000（HTTP 400；含义见 docs/05-API.md §2.1 错误码表）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "错误码 40300（HTTP 403；含义见 docs/05-API.md §2.1 错误码表）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "未列举的错误码（统一错误包裹 `code != 0`；完整码表见 docs/05-API.md §2.1）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "operationId": "get_api_reimbursement",
+        "tags": [
+          "3.10 集团报销跟踪（M1）"
+        ],
+        "summary": "集团报销跟踪列表（分页）",
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "x-auth-domain": "飞书免登会话（§1.2；`open_id` 未映射 ⇒ 40101）",
+        "x-error-codes": [
+          40300
+        ],
+        "x-related-fr": [
+          "FR-M1-02"
+        ],
+        "x-doc-ref": "docs/05-API.md#L596-L606",
+        "responses": {
+          "200": {
+            "description": "成功（`code=0`）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "错误码 40300（HTTP 403；含义见 docs/05-API.md §2.1 错误码表）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "未列举的错误码（统一错误包裹 `code != 0`；完整码表见 docs/05-API.md §2.1）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/reimbursement/{id}": {
+      "patch": {
+        "operationId": "patch_api_reimbursement_id",
+        "tags": [
+          "3.10 集团报销跟踪（M1）"
+        ],
+        "summary": "更新报销跟踪记录（集团侧付款字段人工登记）",
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "x-auth-domain": "飞书免登会话（§1.2；`open_id` 未映射 ⇒ 40101）",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "x-error-codes": [
+          40300,
+          40000,
+          40400
+        ],
+        "x-related-fr": [
+          "FR-M1-02"
+        ],
+        "x-doc-ref": "docs/05-API.md#L607-L618",
+        "responses": {
+          "200": {
+            "description": "成功（`code=0`）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiEnvelope"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "错误码 40000（HTTP 400；含义见 docs/05-API.md §2.1 错误码表）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "错误码 40300（HTTP 403；含义见 docs/05-API.md §2.1 错误码表）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "错误码 40400（HTTP 404；含义见 docs/05-API.md §2.1 错误码表）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "未列举的错误码（统一错误包裹 `code != 0`；完整码表见 docs/05-API.md §2.1）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/instances/{code}/attachments": {
+      "get": {
+        "operationId": "get_api_instances_code_attachments",
+        "tags": [
+          "3.12 附件（M0 / FR-M0-09 · B39 最小集）"
+        ],
+        "summary": "列出该实例的附件**元数据**（**不拉取文件本体**，不触发任何飞书调用）",
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "x-auth-domain": "飞书免登会话（§1.2；`open_id` 未映射 ⇒ 40101）",
+        "parameters": [
+          {
+            "name": "code",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "x-error-codes": [
+          40300,
+          40301,
+          40000
+        ],
+        "x-doc-ref": "docs/05-API.md#L626-L634",
+        "responses": {
+          "200": {
+            "description": "成功（`code=0`）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiEnvelope"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "错误码 40000（HTTP 400；含义见 docs/05-API.md §2.1 错误码表）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "错误码 40300 / 40301（HTTP 403；含义见 docs/05-API.md §2.1 错误码表）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "未列举的错误码（统一错误包裹 `code != 0`；完整码表见 docs/05-API.md §2.1）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/attachment/{file_id}": {
+      "get": {
+        "operationId": "get_api_attachment_file_id",
+        "tags": [
+          "3.12 附件（M0 / FR-M0-09 · B39 最小集）"
+        ],
+        "summary": "**下载附件**：主存命中直接返回",
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "x-auth-domain": "飞书免登会话（§1.2；`open_id` 未映射 ⇒ 40101）",
+        "parameters": [
+          {
+            "name": "file_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "x-error-codes": [
+          40300,
+          40301,
+          50200
+        ],
+        "x-doc-ref": "docs/05-API.md#L635-L647",
+        "responses": {
+          "200": {
+            "description": "成功（`code=0`）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "错误码 40300 / 40301（HTTP 403；含义见 docs/05-API.md §2.1 错误码表）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "未列举的错误码（统一错误包裹 `code != 0`；完整码表见 docs/05-API.md §2.1）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/contract/{biz_no}/changes": {
+      "get": {
+        "operationId": "get_api_contract_biz_no_changes",
+        "tags": [
+          "3.12 附件（M0 / FR-M0-09 · B39 最小集）"
+        ],
+        "summary": "按**合同号**回溯历次变更：**次数 / 累计变更金额 / 所取档位**（制度第五十二条）",
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "x-auth-domain": "飞书免登会话（§1.2；`open_id` 未映射 ⇒ 40101）",
+        "parameters": [
+          {
+            "name": "biz_no",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "x-error-codes": [
+          40000,
+          40300
+        ],
+        "x-related-fr": [
+          "FR-M4-07"
+        ],
+        "x-doc-ref": "docs/05-API.md#L648-L661",
+        "responses": {
+          "200": {
+            "description": "成功（`code=0`）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiEnvelope"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "错误码 40000（HTTP 400；含义见 docs/05-API.md §2.1 错误码表）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "错误码 40300（HTTP 403；含义见 docs/05-API.md §2.1 错误码表）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "未列举的错误码（统一错误包裹 `code != 0`；完整码表见 docs/05-API.md §2.1）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/approval/submit": {
+      "post": {
+        "operationId": "post_api_approval_submit",
+        "tags": [
+          "3.13 审批流转（我方页面 · **转向 ③ 新增**）"
+        ],
+        "summary": "我方提交：**服务端算链** → 表单结构化校验 → **生成编号** + 建实例 + **首推飞书**（04a §3）",
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "x-auth-domain": "飞书免登会话（§1.2；`open_id` 未映射 ⇒ 40101）",
+        "x-error-codes": [
+          40000,
+          40100,
+          40101,
+          40900,
+          40901
+        ],
+        "x-related-fr": [
+          "FR-M2-01",
+          "FR-M9-02"
+        ],
+        "x-doc-ref": "docs/05-API.md#L674-L688",
+        "responses": {
+          "200": {
+            "description": "成功（`code=0`）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiEnvelope"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "错误码 40000（HTTP 400；含义见 docs/05-API.md §2.1 错误码表）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "错误码 40100 / 40101（HTTP 401；含义见 docs/05-API.md §2.1 错误码表）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "错误码 40900 / 40901（HTTP 409；含义见 docs/05-API.md §2.1 错误码表）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "未列举的错误码（统一错误包裹 `code != 0`；完整码表见 docs/05-API.md §2.1）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/approval/meta": {
+      "get": {
+        "operationId": "get_api_approval_meta",
+        "tags": [
+          "3.13 审批流转（我方页面 · **转向 ③ 新增**）"
+        ],
+        "summary": "下发表单 schema（spec/forms/*.json 内嵌）→ 前端 meta 驱动渲染",
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "x-auth-domain": "飞书免登会话（§1.2；`open_id` 未映射 ⇒ 40101）",
+        "x-related-fr": [
+          "FR-M9-03"
+        ],
+        "x-doc-ref": "docs/05-API.md#L689-L697",
+        "responses": {
+          "200": {
+            "description": "成功（`code=0`）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiEnvelope"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "未列举的错误码（统一错误包裹 `code != 0`；完整码表见 docs/05-API.md §2.1）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/approval/preview": {
+      "post": {
+        "operationId": "post_api_approval_preview",
+        "tags": [
+          "3.13 审批流转（我方页面 · **转向 ③ 新增**）"
+        ],
+        "summary": "分档 + 流程线 + 审批链 + 审批人**预览**",
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "x-auth-domain": "飞书免登会话（§1.2；`open_id` 未映射 ⇒ 40101）",
+        "x-error-codes": [
+          40000
+        ],
+        "x-related-fr": [
+          "FR-M9-02"
+        ],
+        "x-doc-ref": "docs/05-API.md#L698-L707",
+        "responses": {
+          "200": {
+            "description": "成功（`code=0`）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiEnvelope"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "错误码 40000（HTTP 400；含义见 docs/05-API.md §2.1 错误码表）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "未列举的错误码（统一错误包裹 `code != 0`；完整码表见 docs/05-API.md §2.1）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/approval/attachments": {
+      "post": {
+        "operationId": "post_api_approval_attachments",
+        "tags": [
+          "3.13 审批流转（我方页面 · **转向 ③ 新增**）"
+        ],
+        "summary": "上传 → **暂存**（t_attachment_staging + objectstore staging/{open_id}/{fid}）",
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "x-auth-domain": "飞书免登会话（§1.2；`open_id` 未映射 ⇒ 40101）",
+        "x-related-fr": [
+          "FR-M0-09",
+          "FR-M9-03"
+        ],
+        "x-doc-ref": "docs/05-API.md#L708-L717",
+        "responses": {
+          "200": {
+            "description": "成功（`code=0`）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiEnvelope"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "未列举的错误码（统一错误包裹 `code != 0`；完整码表见 docs/05-API.md §2.1）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/approval/attachments/{file_id}": {
+      "get": {
+        "operationId": "get_api_approval_attachments_file_id",
+        "tags": [
+          "3.13 审批流转（我方页面 · **转向 ③ 新增**）"
+        ],
+        "summary": "上传 → **暂存**（t_attachment_staging + objectstore staging/{open_id}/{fid}）",
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "x-auth-domain": "飞书免登会话（§1.2；`open_id` 未映射 ⇒ 40101）",
+        "parameters": [
+          {
+            "name": "file_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "x-related-fr": [
+          "FR-M0-09",
+          "FR-M9-03"
+        ],
+        "x-doc-ref": "docs/05-API.md#L708-L717",
+        "responses": {
+          "200": {
+            "description": "成功（`code=0`）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiEnvelope"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "未列举的错误码（统一错误包裹 `code != 0`；完整码表见 docs/05-API.md §2.1）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/approval/{biz_no}/approve": {
+      "post": {
+        "operationId": "post_api_approval_biz_no_approve",
+        "tags": [
+          "3.13 审批流转（我方页面 · **转向 ③ 新增**）"
+        ],
+        "summary": "★ **我方页面两键**（补 docs/11 R11）",
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "x-auth-domain": "飞书免登会话（§1.2；`open_id` 未映射 ⇒ 40101）",
+        "parameters": [
+          {
+            "name": "biz_no",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "x-error-codes": [
+          40100,
+          40301,
+          40400,
+          40901
+        ],
+        "x-related-fr": [
+          "FR-M0-15",
+          "FR-M9-18"
+        ],
+        "x-doc-ref": "docs/05-API.md#L718-L729",
+        "responses": {
+          "200": {
+            "description": "成功（`code=0`）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "错误码 40100（HTTP 401；含义见 docs/05-API.md §2.1 错误码表）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "错误码 40301（HTTP 403；含义见 docs/05-API.md §2.1 错误码表）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "错误码 40400（HTTP 404；含义见 docs/05-API.md §2.1 错误码表）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "错误码 40901（HTTP 409；含义见 docs/05-API.md §2.1 错误码表）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "未列举的错误码（统一错误包裹 `code != 0`；完整码表见 docs/05-API.md §2.1）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/approval/{biz_no}/reject": {
+      "post": {
+        "operationId": "post_api_approval_biz_no_reject",
+        "tags": [
+          "3.13 审批流转（我方页面 · **转向 ③ 新增**）"
+        ],
+        "summary": "POST /api/approval/{biz_no}/reject（§3.13 全路径清单）",
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "x-auth-domain": "飞书免登会话（§1.2；`open_id` 未映射 ⇒ 40101）",
+        "parameters": [
+          {
+            "name": "biz_no",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "x-doc-ref": "docs/05-API.md#L753",
+        "x-doc-note": "正本中该路由**无独立 `####` 小节**（仅有 §3.13 全路径清单行/正文提及）⇒ 逐端点字段与语义以正本为准",
+        "responses": {
+          "200": {
+            "description": "成功（`code=0`）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiEnvelope"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "未列举的错误码（统一错误包裹 `code != 0`；完整码表见 docs/05-API.md §2.1）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/approval/{biz_no}/transfer": {
+      "post": {
+        "operationId": "post_api_approval_biz_no_transfer",
+        "tags": [
+          "3.13 审批流转（我方页面 · **转向 ③ 新增**）"
+        ],
+        "summary": "POST /api/approval/{biz_no}/transfer（§3.13 全路径清单）",
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "x-auth-domain": "飞书免登会话（§1.2；`open_id` 未映射 ⇒ 40101）",
+        "parameters": [
+          {
+            "name": "biz_no",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "x-doc-ref": "docs/05-API.md#L754",
+        "x-doc-note": "正本中该路由**无独立 `####` 小节**（仅有 §3.13 全路径清单行/正文提及）⇒ 逐端点字段与语义以正本为准",
+        "responses": {
+          "200": {
+            "description": "成功（`code=0`）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiEnvelope"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "未列举的错误码（统一错误包裹 `code != 0`；完整码表见 docs/05-API.md §2.1）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/approval/{biz_no}/addsign": {
+      "post": {
+        "operationId": "post_api_approval_biz_no_addsign",
+        "tags": [
+          "3.13 审批流转（我方页面 · **转向 ③ 新增**）"
+        ],
+        "summary": "POST /api/approval/{biz_no}/addsign（§3.13 全路径清单）",
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "x-auth-domain": "飞书免登会话（§1.2；`open_id` 未映射 ⇒ 40101）",
+        "parameters": [
+          {
+            "name": "biz_no",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "x-doc-ref": "docs/05-API.md#L755",
+        "x-doc-note": "正本中该路由**无独立 `####` 小节**（仅有 §3.13 全路径清单行/正文提及）⇒ 逐端点字段与语义以正本为准",
+        "responses": {
+          "200": {
+            "description": "成功（`code=0`）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiEnvelope"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "未列举的错误码（统一错误包裹 `code != 0`；完整码表见 docs/05-API.md §2.1）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/approval/{biz_no}/rollback": {
+      "post": {
+        "operationId": "post_api_approval_biz_no_rollback",
+        "tags": [
+          "3.13 审批流转（我方页面 · **转向 ③ 新增**）"
+        ],
+        "summary": "POST /api/approval/{biz_no}/rollback（§3.13 全路径清单）",
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "x-auth-domain": "飞书免登会话（§1.2；`open_id` 未映射 ⇒ 40101）",
+        "parameters": [
+          {
+            "name": "biz_no",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "x-doc-ref": "docs/05-API.md#L756",
+        "x-doc-note": "正本中该路由**无独立 `####` 小节**（仅有 §3.13 全路径清单行/正文提及）⇒ 逐端点字段与语义以正本为准",
+        "responses": {
+          "200": {
+            "description": "成功（`code=0`）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiEnvelope"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "未列举的错误码（统一错误包裹 `code != 0`；完整码表见 docs/05-API.md §2.1）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/approval/{biz_no}/cancel": {
+      "post": {
+        "operationId": "post_api_approval_biz_no_cancel",
+        "tags": [
+          "3.13 审批流转（我方页面 · **转向 ③ 新增**）"
+        ],
+        "summary": "POST /api/approval/{biz_no}/cancel（§3.13 全路径清单）",
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "x-auth-domain": "飞书免登会话（§1.2；`open_id` 未映射 ⇒ 40101）",
+        "parameters": [
+          {
+            "name": "biz_no",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "x-doc-ref": "docs/05-API.md#L757",
+        "x-doc-note": "正本中该路由**无独立 `####` 小节**（仅有 §3.13 全路径清单行/正文提及）⇒ 逐端点字段与语义以正本为准",
+        "responses": {
+          "200": {
+            "description": "成功（`code=0`）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiEnvelope"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "未列举的错误码（统一错误包裹 `code != 0`；完整码表见 docs/05-API.md §2.1）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/approval/tasks": {
+      "get": {
+        "operationId": "get_api_approval_tasks",
+        "tags": [
+          "3.13 审批流转（我方页面 · **转向 ③ 新增**）"
+        ],
+        "summary": "我方「我的待办」列表（★ **命名已定 ＝ /tasks**",
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "x-auth-domain": "飞书免登会话（§1.2；`open_id` 未映射 ⇒ 40101）",
+        "x-related-fr": [
+          "FR-M9-14"
+        ],
+        "x-doc-ref": "docs/05-API.md#L767-L776",
+        "responses": {
+          "200": {
+            "description": "成功（`code=0`）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiEnvelope"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "未列举的错误码（统一错误包裹 `code != 0`；完整码表见 docs/05-API.md §2.1）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/approval/{biz_no}": {
+      "get": {
+        "operationId": "get_api_approval_biz_no",
+        "tags": [
+          "3.13 审批流转（我方页面 · **转向 ③ 新增**）"
+        ],
+        "summary": "单实例审批详情",
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "x-auth-domain": "飞书免登会话（§1.2；`open_id` 未映射 ⇒ 40101）",
+        "parameters": [
+          {
+            "name": "biz_no",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "x-error-codes": [
+          40301,
+          40400
+        ],
+        "x-related-fr": [
+          "FR-M2-01",
+          "FR-M2-04",
+          "FR-M9-14"
+        ],
+        "x-doc-ref": "docs/05-API.md#L777-L786",
+        "responses": {
+          "200": {
+            "description": "成功（`code=0`）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "错误码 40301（HTTP 403；含义见 docs/05-API.md §2.1 错误码表）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "错误码 40400（HTTP 404；含义见 docs/05-API.md §2.1 错误码表）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "未列举的错误码（统一错误包裹 `code != 0`；完整码表见 docs/05-API.md §2.1）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/approval/defs": {
+      "get": {
+        "operationId": "get_api_approval_defs",
+        "tags": [
+          "3.13 审批流转（我方页面 · **转向 ③ 新增**）"
+        ],
+        "summary": "三方审批定义清单（t_approval_def）",
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "x-auth-domain": "飞书免登会话（§1.2；`open_id` 未映射 ⇒ 40101）",
+        "x-related-fr": [
+          "FR-M0-13"
+        ],
+        "x-doc-ref": "docs/05-API.md#L787-L794",
+        "responses": {
+          "200": {
+            "description": "成功（`code=0`）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiEnvelope"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "未列举的错误码（统一错误包裹 `code != 0`；完整码表见 docs/05-API.md §2.1）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/approval/external/callback": {
+      "post": {
+        "operationId": "post_approval_external_callback",
+        "tags": [
+          "3.14 回调（入站面 · **转向 ③ 新增**）"
+        ],
+        "summary": "飞书 → 我方：action_callback_url",
+        "security": [],
+        "x-auth-domain": "独立入站面（**绕开会话/OIDC 中间件**；业务层校验定义下发的 `token`，§3.14）",
+        "x-error-codes": [
+          40000,
+          40900,
+          50000,
+          40300
+        ],
+        "x-related-fr": [
+          "FR-M0-15"
+        ],
+        "x-doc-ref": "docs/05-API.md#L797-L809",
+        "responses": {
+          "200": {
+            "description": "成功（`code=0`）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiEnvelope"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "错误码 40000（HTTP 400；含义见 docs/05-API.md §2.1 错误码表）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "错误码 40300（HTTP 403；含义见 docs/05-API.md §2.1 错误码表）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "错误码 40900（HTTP 409；含义见 docs/05-API.md §2.1 错误码表）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "错误码 50000（HTTP 500；含义见 docs/05-API.md §2.1 错误码表）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "未列举的错误码（统一错误包裹 `code != 0`；完整码表见 docs/05-API.md §2.1）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/org/users": {
+      "get": {
+        "operationId": "get_api_org_users",
+        "tags": [
+          "3.15 组织查询（人员 / 部门 · 2026-09-28 新增）"
+        ],
+        "summary": "可选人员清单（转交 / 加签目标选择器）",
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "x-auth-domain": "飞书免登会话（§1.2；`open_id` 未映射 ⇒ 40101）",
+        "x-error-codes": [
+          40100,
+          50000
+        ],
+        "x-doc-ref": "docs/05-API.md#L867-L877",
+        "responses": {
+          "200": {
+            "description": "成功（`code=0`）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "错误码 40100（HTTP 401；含义见 docs/05-API.md §2.1 错误码表）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "错误码 50000（HTTP 500；含义见 docs/05-API.md §2.1 错误码表）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "未列举的错误码（统一错误包裹 `code != 0`；完整码表见 docs/05-API.md §2.1）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/org/departments": {
+      "get": {
+        "operationId": "get_api_org_departments",
+        "tags": [
+          "3.15 组织查询（人员 / 部门 · 2026-09-28 新增）"
+        ],
+        "summary": "部门清单（选择器的「部门下拉」级联筛选源）",
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "x-auth-domain": "飞书免登会话（§1.2；`open_id` 未映射 ⇒ 40101）",
+        "x-error-codes": [
+          40100,
+          50000
+        ],
+        "x-doc-ref": "docs/05-API.md#L878-L889",
+        "responses": {
+          "200": {
+            "description": "成功（`code=0`）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "错误码 40100（HTTP 401；含义见 docs/05-API.md §2.1 错误码表）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "错误码 50000（HTTP 500；含义见 docs/05-API.md §2.1 错误码表）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "未列举的错误码（统一错误包裹 `code != 0`；完整码表见 docs/05-API.md §2.1）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "sessionCookie": {
+        "type": "apiKey",
+        "in": "cookie",
+        "name": "jx_session",
+        "description": "飞书免登会话 Cookie（HttpOnly / Secure / SameSite=Lax，§1.2）。★ 角色**不缓存在会话里**，每请求实时解析（`t_user_role`），停用/改角色即时生效。"
+      },
+      "internalToken": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "X-Internal-Token",
+        "description": "内部运维端点管理凭据 `JX_INTERNAL_TOKEN`（§3.8）。★ **不得**再依赖「仅绑定回环/内网」做鉴权（`04a §17.6`）——回环绑定只作纵深防御、**不替代 token**。"
+      }
+    },
+    "schemas": {
+      "ApiEnvelope": {
+        "type": "object",
+        "description": "统一响应包裹（§2）：`code=0` 表示成功。",
+        "required": [
+          "code",
+          "message",
+          "trace_id"
+        ],
+        "properties": {
+          "code": {
+            "type": "integer",
+            "description": "0 = 成功；非 0 = 错误码（见 §2.1）"
+          },
+          "data": {
+            "nullable": true,
+            "description": "业务数据；错误时通常为 `null`（★ 例外：`form_errors` / `unresolved_roles`，见 §4.6）"
+          },
+          "message": {
+            "type": "string",
+            "description": "可读文案（成功为 `ok`）"
+          },
+          "trace_id": {
+            "type": "string",
+            "description": "链路追踪 id"
+          }
+        }
+      },
+      "ApiError": {
+        "type": "object",
+        "description": "出错时的统一包裹（§2「错误包裹」）：`code != 0`、附 `trace_id`。★ `data` 在两类明细下为对象：`code=40000` ⇒ `data.form_errors`（§4.6）；`code=40010` ⇒ `data.unresolved_roles`（§3.13）。**按 `code` 严格分流、不混用字段名**。",
+        "required": [
+          "code",
+          "message",
+          "trace_id"
+        ],
+        "properties": {
+          "code": {
+            "type": "integer",
+            "enum": [
+              40000,
+              40100,
+              40101,
+              40300,
+              40301,
+              40400,
+              40900,
+              40901,
+              41000,
+              42900,
+              50000,
+              50300
+            ],
+            "description": "错误码（取值来自 §2.1 错误码表）"
+          },
+          "data": {
+            "nullable": true,
+            "description": "错误明细；无明细时为 `null`"
+          },
+          "message": {
+            "type": "string"
+          },
+          "trace_id": {
+            "type": "string"
+          }
+        }
+      },
+      "FormError": {
+        "type": "object",
+        "description": "`POST /api/approval/submit` 因表单结构化校验 / PR 明细金额不通过返回 `400` + `code=40000` 时，`data.form_errors[*]` 的元素（§4.6）。★ 数组语义：当前实现遇首错即返 ⇒ **恒 1 元素**，消费方须**按数组遍历**。",
+        "required": [
+          "scope",
+          "section_id",
+          "row_index",
+          "field_name",
+          "kind",
+          "label"
+        ],
+        "properties": {
+          "scope": {
+            "type": "string",
+            "enum": [
+              "field",
+              "row",
+              "rows",
+              "amount"
+            ],
+            "description": "受控词（§4.6）：顶层字段 / 重复段行内 / 重复段整体 / PR 明细金额"
+          },
+          "section_id": {
+            "type": "string",
+            "description": "段 id；顶层字段为空串"
+          },
+          "row_index": {
+            "type": "integer",
+            "description": "**1 起算**行号；非行级为 `0`"
+          },
+          "field_name": {
+            "type": "string",
+            "description": "字段名；非字段级为空串"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "required",
+              "struct",
+              "value"
+            ],
+            "description": "必填未填 / 形态非法 / 取值非法"
+          },
+          "label": {
+            "type": "string",
+            "description": "人读定位串（与服务端文案同源，可直接展示）"
+          }
+        }
+      },
+      "UnresolvedRoles": {
+        "type": "array",
+        "description": "审批链算不到人时的阻断明细（`400` + `code=40010` + `data.unresolved_roles`，§3.13）。★ 与 `form_errors` 是**两类明细**：字段名不同、按 `code` 分流。★ 元素为角色 id（`chain.json#roles` 键）；元素形状在正本以 `[]` 标注。",
+        "items": {
+          "type": "string"
+        }
+      }
+    },
+    "responses": {
+      "err_40000": {
+        "description": "40000 参数校验失败 —— 缺参、类型错、金额越界",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ApiError"
+            }
+          }
+        }
+      },
+      "err_40100": {
+        "description": "40100 未登录 / 会话失效 —— 无有效 Cookie（TC-09）",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ApiError"
+            }
+          }
+        }
+      },
+      "err_40101": {
+        "description": "40101 未映射角色 —— open_id 不在 t_user_role（TC-32）",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ApiError"
+            }
+          }
+        }
+      },
+      "err_40300": {
+        "description": "40300 无权限（资源级） —— 该角色无该看板/接口权限（TC-06/07）",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ApiError"
+            }
+          }
+        }
+      },
+      "err_40301": {
+        "description": "40301 行级越权 —— 按 ID 访问他人/他部门记录（TC-06）",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ApiError"
+            }
+          }
+        }
+      },
+      "err_40400": {
+        "description": "40400 资源不存在 —— 实例/台账记录不存在",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ApiError"
+            }
+          }
+        }
+      },
+      "err_40900": {
+        "description": "40900 冲突 —— **幂等键冲突（同一键用于不同请求载荷）**、唯一约束（重复事件写入 / 业务单号重复）",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ApiError"
+            }
+          }
+        }
+      },
+      "err_40901": {
+        "description": "40901 状态不允许该操作 —— 向只读同步存档表写入（TC-31）、已提交再改状态",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ApiError"
+            }
+          }
+        }
+      },
+      "err_41000": {
+        "description": "41000 **入口已退役** —— 调用**已退役端点**（如 POST /internal/sync/reconcile；**body 指明权威入口**）。Batch B-2 新增",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ApiError"
+            }
+          }
+        }
+      },
+      "err_42900": {
+        "description": "42900 限流 —— 触发速率限制（对应飞书 429 语义的可观测化）",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ApiError"
+            }
+          }
+        }
+      },
+      "err_50000": {
+        "description": "50000 服务器内部错误 —— 未预期异常",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ApiError"
+            }
+          }
+        }
+      },
+      "err_50300": {
+        "description": "50300 服务不可用 / 未就绪 —— 自检未过、DB 不可写（TC-28）",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ApiError"
+            }
+          }
+        }
+      }
+    }
+  },
+  "x-source": {
+    "human_readable_authority": "docs/05-API.md",
+    "doc_version": "?",
+    "doc_lines": 1223,
+    "doc_sha256": "bda650698baf5b99b3d82fd08c5f47353756e1dc0e6c7059dbb9086e9ff5ae82",
+    "generator": "scripts/gen_openapi.py",
+    "route_count": 69,
+    "router_go_route_count": 69
+  },
+  "x-generation": {
+    "declaration_sites": [
+      "§3 各区段 `#### `METHOD /path`` 小节标题（强声明）",
+      "§3.13「★ 全路径清单（C5 契约锚）」表格行（强声明）",
+      "正文反引号包裹的 `METHOD /path`（弱声明；**仅未被强声明覆盖时**计入）"
+    ],
+    "noise_filter": "弱声明降噪：已被强声明覆盖者丢弃（排除正文举例，如 `GET /api/ledger/L11/{id}`）；非我方前缀（`/open-apis/…` 等飞书外部路径）一律排除",
+    "weak_declarations_kept": [
+      {
+        "route": "POST /api/submission/{id}/receipt",
+        "line": 305
+      },
+      {
+        "route": "POST /api/submission/{id}/group",
+        "line": 305
+      },
+      {
+        "route": "POST /api/submission/{id}/reject",
+        "line": 305
+      }
+    ],
+    "weak_declarations_dropped": [
+      {
+        "route": "GET /api/ledger/L11/{id}",
+        "line": 172,
+        "reason": "归一后**按通配等价**已被强声明覆盖（正文举例，非独立路由）"
+      }
+    ],
+    "success_status_overrides": [
+      {
+        "route": "GET /auth/feishu/callback",
+        "status": 302,
+        "reason": "登录成功后 302 回跳原目标页（`jx_oauth_redirect`；取不到/非法 ⇒ 回落 `/`）；失败/拒绝授权同样 302 至登录错误页（见 §3.1）"
+      },
+      {
+        "route": "POST /internal/sync/reconcile",
+        "status": 410,
+        "reason": "**入口已退役**（`410 Gone`，body 指明权威入口；退役后仍校验管理凭据，见 §3.8）"
+      }
+    ],
+    "routes_without_endpoint_block": [
+      "POST /api/submission/{id}/receipt (line 305)",
+      "POST /api/submission/{id}/group (line 305)",
+      "POST /api/submission/{id}/reject (line 305)"
+    ],
+    "prose_mentions_of_known_routes": 72,
+    "ambiguous_declarations": [
+      {
+        "route": "POST approval/submit",
+        "sites": [
+          "heading@674",
+          "table313@747"
+        ]
+      },
+      {
+        "route": "GET approval/meta",
+        "sites": [
+          "heading@689",
+          "table313@748"
+        ]
+      },
+      {
+        "route": "POST approval/preview",
+        "sites": [
+          "heading@698",
+          "table313@749"
+        ]
+      },
+      {
+        "route": "POST approval/attachments",
+        "sites": [
+          "heading@708",
+          "table313@750"
+        ]
+      },
+      {
+        "route": "GET approval/attachments/*",
+        "sites": [
+          "heading@708",
+          "table313@751"
+        ]
+      },
+      {
+        "route": "POST approval/*/approve",
+        "sites": [
+          "heading@718",
+          "table313@752"
+        ]
+      },
+      {
+        "route": "GET approval/tasks",
+        "sites": [
+          "table313@758",
+          "heading@767"
+        ]
+      },
+      {
+        "route": "GET approval/*",
+        "sites": [
+          "table313@759",
+          "heading@777"
+        ]
+      },
+      {
+        "route": "GET approval/defs",
+        "sites": [
+          "table313@760",
+          "heading@787"
+        ]
+      },
+      {
+        "route": "GET org/users",
+        "sites": [
+          "table313@761",
+          "heading@867"
+        ]
+      },
+      {
+        "route": "GET org/departments",
+        "sites": [
+          "table313@762",
+          "heading@878"
+        ]
+      },
+      {
+        "route": "POST approval/external/callback",
+        "sites": [
+          "table313@763",
+          "heading@797"
+        ]
+      }
+    ],
+    "synonym_spellings": []
+  },
+  "x-known-gaps": [
+    "**逐端点请求/响应 schema 未做（V1.0 划界）**：正本 §3 的小节表格是**散文形态**（「响应字段」行是自由文本），无机器可读的字段类型 ⇒ 本文件只搬运该文本（`x-request-body` / `x-response-fields` 等），**不臆造 schema**。",
+    "`requestBody` 仅在正本明确给出 JSON 示例/键名时才会出现；当前版本**未做**。",
+    "`components.responses.err_*` 由 §2.1 错误码表**全量**生成（不受端点引用面限制），故存在「正本有该错误码、但本文件无端点引用它」的条目 —— 这是**正本的既有事实**，不是漂移。",
+    "★ **正本自身待收敛项**（本文件如实镜像、不做单侧修正）：① 路径参数命名不一致 —— §3.4 用 `{instance_code}`、§3.12 用 `{code}`，二者指向同一路由；② §3.13 正文写 `error_detail.unresolved_roles[]`（标 N-018 过渡），而 §4.6 定稿为 `data.unresolved_roles` —— **同一概念两种键路径**（登记见 `COLLAB.md#N-051`）。"
+  ]
+}

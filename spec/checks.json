@@ -1,5 +1,5 @@
 {
-  "version": "1.13",
+  "version": "1.14",
   "generated_by": "WorkBuddy",
   "date": "2026-10-04",
   "scope": "spec/",
@@ -541,6 +541,55 @@
         "collect": "clauses[*].spec[*].at",
         "min_hits": 1
       }
+    },
+    {
+      "id": "S21",
+      "severity": "must-green",
+      "desc": "★★ **接口契约（`B6` / `N-051`）的机读形态必须结构完整 —— 根骨架（`spec/openapi.json`）**：\n★ 该文件是 `docs/05-API.md`（人读正本）的**机读形态**，由 `scripts/gen_openapi.py` **机械生成**；\n★ 本判据只保证「**它还是一份 OpenAPI 文档、而不是被截断/改形的 JSON**」——\n  根须含 `openapi`（版本声明）· `info`（标题/版本/描述）· `servers` · `security`（默认鉴权域）·\n  `paths`（路由表）· `components`（`securitySchemes` ＋ `schemas`）· `x-source`（**溯源块**：人读正本路径、正本版本、正本 sha256、路由条数）。\n★★ **为什么需要它**：`S1`（`json_parse`）只保证「能解析」，★ **不保证「还是那个东西」** ——\n  把 `paths` 整段删掉，JSON 依然合法、`S1` 依然绿。★ 本判据让「契约被悄悄掏空」变成**可见失败**。\n★★ **它**不**治什么（如实登记，不可当作已覆盖）**：① **不**校验路由集与正本一致 ——\n  该一致性由**两道独立机制**把关：★ 门禁「会报」项 `C9`（`scripts/audit_silent.py`：本文件 ↔ 正本**双向**差集）\n  与常驻探针 `scripts/_probe_n051.py`（重现一致性 ＋ 正反例）；★ **尚未**升级为 `must-green` 判据，\n  原因是它需要**读 Markdown 的新原语**（＝两侧同批的引擎工作，见 `N-051`）；\n  ② **不**校验逐端点请求/响应 `schema`（正本 §3 的字段说明是**散文**，无机器可读类型 ⇒ 本版**不臆造**，登记于该文件 `x-known-gaps`）。\n★ 依据：`spec/openapi.json`（`x-source` 指向 `docs/05-API.md`）；`N-051`；`_format_note`（本仓库 spec **一律 JSON** —— YAML 需 PyYAML/`yaml.v3`，会落在门禁之外）。",
+      "primitive": "required_keys",
+      "args": {
+        "file": "spec/openapi.json",
+        "scope": "",
+        "keys": [
+          "openapi",
+          "info",
+          "servers",
+          "security",
+          "paths",
+          "components",
+          "x-source"
+        ]
+      }
+    },
+    {
+      "id": "S22",
+      "severity": "must-green",
+      "desc": "★★ **每个 operation 必须自描述（`spec/openapi.json#paths.*.*`）**：\n★ 每个 operation（`paths.<路径>.<方法>`）须同时具备：`operationId`（**全文件唯一**，由生成器保证并在此间接约束）·\n  `summary` · `tags` · `security` · `responses`。\n★★ **为什么是这五项**：它们是**消费方无需读中文散文就能用的最小集** ——\n  `operationId` 供客户端代码生成与日志关联；`tag` 供分组（本文件按正本 §3.x 区段打标，**可反查章节**）；\n  `security` 供调用方判断鉴权域（会话 Cookie / `X-Internal-Token` / 公开）；`responses` 供错误分流。\n★ **`summary` 的来源**：逐字取自正本该小节「用途」行的**首句切片**（**不重写、不缩写**）——\n  ★ 正本**仍是唯一权威**；本字段是索引，不是第二份定义。\n★★ **它**不**治什么**：★ **不**校验 `summary` 与正本一致（那需要读 Markdown 的原语，见 `N-051`）；\n  ★ **不**校验 `security` 判定是否正确（判定规则在生成器里，`x-auth-domain` 附出处）；\n  ★ **不**校验 `responses` 的状态码是否覆盖正本所列错误码 ⇒ **本判据只拦「整块缺失」，不拦「内容漂移」**。\n★ 依据：`spec/openapi.json`；生成器 `scripts/gen_openapi.py`；`N-051`。",
+      "primitive": "required_keys",
+      "args": {
+        "file": "spec/openapi.json",
+        "scope": "paths.*.*",
+        "keys": [
+          "operationId",
+          "summary",
+          "tags",
+          "security",
+          "responses"
+        ]
+      }
+    },
+    {
+      "id": "S23",
+      "severity": "must-green",
+      "desc": "★ **每个 operation 的 `responses` 必须有兜底分支 `default`（`spec/openapi.json`）**：\n★ 正本 §2「错误包裹」是一条**总则**：出错时 `code != 0`、`data` 为空、附 `trace_id` ——\n  ★ 它**不按端点枚举**，因此**不可能**被逐端点的错误码行穷举完（§2.1 只列了 12 个码，实际失败模式更多）。\n★★ **`default` 的语义**：★ 「本端点**未逐一列举**的错误，仍按统一错误包裹返回」——\n  ★ 这正是 OpenAPI 里 `default` 的标准含义，**与 §2 总则一一对应**。\n★★ **为什么需要它**：★ 若只有具体状态码分支，则「**未列举的失败**」在契约里**没有落点** ⇒\n  ★ 消费方（前端错误处理 / 客户端生成器）会把「没写」读成「不会发生」—— ★ 那是**契约级的静默**。\n★ **它**不**治什么**：★ **不**校验 `default` 的 `content` 指向的 `ApiError` 形状（那由 `components.schemas` 自证）；\n  ★ **不**校验具体状态码分支是否齐全（同上，属 `S22` 已划出的「内容漂移」盲区）。\n★ 依据：`docs/05-API.md §2`（错误包裹总则）＋ `§2.1`（错误码表）；`spec/openapi.json`；`N-051`。",
+      "primitive": "required_keys",
+      "args": {
+        "file": "spec/openapi.json",
+        "scope": "paths.*.*.responses",
+        "keys": [
+          "default"
+        ]
+      }
     }
   ],
   "consumer_obligations": {
@@ -614,6 +663,11 @@
       "version": "1.13",
       "date": "2026-10-04",
       "change": "★★★ **`N-006` 第 2 重机制收官 ⇒ 新增第 11 原语 `path_exists` ＋ 首条消费者 `S20`**（`N-048`，两侧同批）：★ 原语语义＝「锚点指针 `<文件>#<点路径>` 必须可解析（文件存在 ∧ 可 JSON 解析 ∧ 命中 ≥1 节点）」，点路径段语法与**切分规则**（方括号内不按 `.` 切）以 `spec/institution-anchors.json#conventions` 为唯一规格来源。★★ **为什么必须新原语**：`ref_exists` 只比**单个目标 dict 的键集合**，而锚点落点**分散在任意 spec 文件、任意深度** ⇒ ★ 既有 10 个原语**全都表达不了**；★ 且 Go 侧未知原语 fail-closed ＋ Python 侧 META 比对「声明 vs 实现」⇒ **单侧落即净检出红**。★★★ **验收期实测逼出的两侧分歧（本轮最值钱的一条）**：★ 段归一**顺序**不同 —— Python 旧实现**先换 `[*]`→`*`、再拆 `name[k]` 尾缀** ⇒ `checks[*]` 折成**裸键 `checks*`**（命中 0）；Go **先拆尾缀**（正确）。★ 真锚点（158 条）**零 `[*]` 形态** ⇒ 分歧**只潜伏在未出现的形态上**，★「两侧各跑一遍都对」**抓不住** （★ 与 `N-038`/`N-047` 同族：**结论必须来自实跑，不能来自推断**）⇒ ★ 两侧各留**回归钉**（Go `TestPathExistsStarBracketSegment` · Python `scripts/_probe_n048.py`），Go 侧钉经**单点变异实测**（改回反序 ⇒ **恰该 1 条转红**）。★ 判据 **23 → 24**、原语 **10 → 11**。★ 同步把索引文件升 **V1.1**（`conventions.gate` 由「待启用」→ **已启用**；`known_gaps.no_gate_yet` **销项**，保留历史对照）。"
+    },
+    {
+      "version": "1.14",
+      "date": "2026-10-04",
+      "change": "★★★ **接口契约的机读形态入库 ⇒ 新增 `S21`/`S22`/`S23`（`REMAINING.md#B6` / `N-051`）**：★ 交付 `spec/openapi.json` **V1.0**（OpenAPI 3.0.3，**69 条路由**），由 **`scripts/gen_openapi.py`** 从 `docs/05-API.md`（**人读正本 V2.20**）**机械生成** —— ★ **禁止手工编辑**（避免第二份真相）。★★ **为什么是 `openapi.json` 而不是 `openapi.yaml`**：★ 本仓库 `_format_note` 早已定案 —— spec **一律 JSON**（YAML 需 PyYAML / `gopkg.in/yaml.v3`，★ 会把这件最该被机检的契约**落在门禁之外**）；★ 且 `S1`（`spec/**/*.json`）**自动覆盖**新文件 ⇒ 零额外接入成本（★ 对照：`.yaml` 对门禁**完全不可见**）。★★ **新增三条判据的边界（**宁准勿宽**）**：`S21` 根骨架（防契约被掏空）；`S22` 每 operation 自描述（`operationId`/`summary`/`tags`/`security`/`responses`）；`S23` 每 operation 必须具备兜底分支 `default`（对应正本 §2「错误包裹」总则 —— ★ 它**不按端点枚举**，只有 `default` 能承接「未列举的失败」）。★★ **诚实划界（不可当作已覆盖）**：① **路由集与正本的一致性** **不在**本清单内 —— 由门禁「会报」项 `C9`（`scripts/audit_silent.py`：**双向**差集）＋ 常驻探针 `scripts/_probe_n051.py` 把关；★ **升级为 must-green 需要「读 Markdown」的新原语 ⇒ 属两侧同批工作**（登记 `N-051`）；② 逐端点 `requestBody`/`schema` **本版不做**（正本 §3 的字段说明是**散文**，无机器可读类型 ⇒ **不臆造**，登记 `x-known-gaps`）；③ `summary` 取自正本「用途」行**首句切片**，★ 正本仍是唯一权威。★ 依据文件：`spec/openapi.json`（`x-source`/`x-generation`/`x-known-gaps`）· `scripts/gen_openapi.py`。"
     }
   ]
 }
