@@ -2,6 +2,7 @@ package specload
 
 // N-053 落地段③ · T2：Load 装载面扩到 .csv 的回归钉（L1–L4）。
 // ★ 目的：证明 CSV 真的进了 files map、且没有把 .md 等误装进来。
+// ★ 2026-10-05（我方同批）：判据 S26 已落地引用该原语 ⇒ L4 由「缺 CSV 仍 OK」**翻转为「缺 CSV ⇒ 报错」**。
 
 import (
 	"encoding/csv"
@@ -103,11 +104,11 @@ func TestLoaderCSVScopeL3JSONCountUnchanged(t *testing.T) {
 	}
 }
 
-// L4 负向（当前语义）：去掉 acceptance.csv 的同源 files ⇒ 因 checks.json 尚未引用
-// S26 ⇒ err == nil。
-// ★ 注释备案：我方落地 S26 后此例语义会自然翻转为「缺 CSV ⇒ 报错」，
-// 届时由我方同批更新本用例（任务包 §1 T2 L4 明示 —— 本批不写会红的用例）。
-func TestLoaderCSVScopeL4MissingCSVStillOK(t *testing.T) {
+// L4 负向（★ 2026-10-05 我方同批翻转后的语义）：去掉 acceptance.csv 的同源 files ⇒
+// checks.json 的 S26 取不到台账 ⇒ loadFiles 必须**报错**（fail-closed，不许静默通过）。
+// ★ 历史备案：本批（批 18 · Go 装载面扩 .csv）落地时 checks.json **尚未引用** S26 ⇒ 当时本用例
+// 断言 err==nil；我方同批落 S26 后按任务包 §1 T2 L4 的备案**就地翻转**为「缺 CSV ⇒ 报错」。
+func TestLoaderCSVScopeL4MissingCSVNowFails(t *testing.T) {
 	base, err := Load(specfs.FS)
 	if err != nil {
 		t.Fatalf("Load: %v", err)
@@ -122,8 +123,12 @@ func TestLoaderCSVScopeL4MissingCSVStillOK(t *testing.T) {
 	if _, ok := files["spec/acceptance.csv"]; ok {
 		t.Fatal("L4 构造失败：CSV 仍在 files 内")
 	}
-	if _, err := loadFiles(files); err != nil {
-		t.Fatalf("L4：去 CSV 后当前应 err==nil（checks.json 未引用 S26）—— 实为：%v"+
-			"（若我方已落 S26，此例应翻转为报错，请同批更新本用例）", err)
+	_, err = loadFiles(files)
+	if err == nil {
+		t.Fatal("L4：缺 CSV 必须 fail-closed（S26 已引用该原语）—— 实为 err==nil（静默通过）")
 	}
+	if !strings.Contains(err.Error(), "S26") || !strings.Contains(err.Error(), "acceptance.csv") {
+		t.Fatalf("L4：报错应点明 S26 与 acceptance.csv，实为：%v", err)
+	}
+	t.Logf("L4：缺 CSV 已 fail-closed：%v", err)
 }

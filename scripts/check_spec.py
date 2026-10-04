@@ -32,6 +32,17 @@ scripts/check_spec.py —— `spec/` 机读规格门禁（**清单执行器**）
    （只有 3 处注释提及）⇒ 台账与真源之间**没有机械校验、全靠人眼**。⇒ 新增 `_ledger_vs_forms()`：
    `[META]` 自查类、**不引入新原语**、不触碰 Go 侧加载器（无「两侧同批」问题）。
    ★ 探针自证：拿**修复前**的台账跑 ⇒ **8 处逐条报出**；复位后 ⇒ 0 处（见议题 `N-053`）。
+ · ★★ **2026-10-05 第 7 例（把兜底升级为正式判据 ⇒ 同一判定只剩一处来源）**：议题 `N-053` 批 17 第 ③ 步 ——
+   上面的 `_ledger_vs_forms()` **连同 `LEDGER`/`LEDGER_COLS` 常量一并删除**，其四条语义**原样搬进
+   `checks.json#S26`**（第 12 原语 `csv_col_eq_json_by_key`）⇒ ★ 该判定不再有「两条来源」，
+   与本文件「不自持判据」的定位一致（`N-011`「消灭第三份真相」）。
+   ★★ **等价性不是推断**：`scripts/_probe_n053.py` 拿**修复前**的台账（`ef532dc` 版本）跑 `S26`
+   ⇒ **逐条报出 32 处**，与迁移前 `_ledger_vs_forms()` 在**同一夹具**上的 **32 处逐项对应**；
+   ★ 并做**缺口存在性反证**（把 `S26` 从清单摘掉 ⇒ 同一篡改**静默放行**）。
+   ★★ **落地时实测逼出的一处硬约束（值得记住）**：Go 侧 `Load()` 原先**只装载 `*.json`**
+   ⇒ `spec/acceptance.csv` **不在** Go 的 `files` 面内 ⇒ ★ 本原语一被清单引用，Go 侧
+   **14 个测试当场全红**（`[S26] CSV 文件不在装载面`）⇒ ★★ **「先扩装载面、再引原语」的次序不可颠倒**
+   —— 这是 `N-011`/`N-048` 同型的「两侧同批」约束在**装载层**的表现（该装载面修复已先由 mimo 落地）。
 
 用法：python scripts/check_spec.py [checks.json 路径]
 退出码：0 = 全部 must-green 通过；1 = 有违规；2 = 清单/目录不可用
@@ -139,6 +150,24 @@ def _scalar_str(v):
     if isinstance(v, str):
         return v
     return None
+
+
+def _dig(node, key_path):
+    """
+    按**点路径**逐段下钻取单值（★ 与 Go 侧 `dig`（`internal/specload/checklist.go:1104`）**逐字同口径**）：
+    每段必须是 dict 的键；**取不到**（中途不是 dict / 键不存在）⇒ 返回 `None`。
+
+    ★ 为什么不复用 `sel(node, toks(path))`：`sel` 是实现**点路径选择器**（支持 `*`/`**`/`[k=v]`）的通用取值器，
+      返回**值列表**；而本文件里 `json_key[*]`/`pairs[*].json_field` 的语义是 Go 的 `dig` —— **朴素 `split(".")`
+      + 逐段 key 查找**。★ 两者在**含 `*` 或 `[` 的键名**上会分叉 ⇒ ★ 必须与 Go 同口径，否则
+      「同一份清单，两侧相反结论」。★ 缺键返回 `None`（＝不可比），由调用方报错，**不静默跳过**。
+    """
+    cur = node
+    for seg in key_path.split("."):
+        if not isinstance(cur, dict) or seg not in cur:
+            return None
+        cur = cur[seg]
+    return cur
 
 
 # ------------------------------------------------- 原语引擎（★ 数量不写死，以声明为准）
@@ -591,6 +620,169 @@ def prim_path_exists(args):
     return probs
 
 
+def prim_csv_col_eq_json_by_key(args):
+    """★ 第 12 原语（`N-053`）：**CSV 台账某行的某列 == 以 `json_key` 拼键的 JSON 真源对象的某字段**。
+
+    用途：断言 `spec/acceptance.csv`（判据级验收台账，`N-017`）的 `severity` / `carrier_kind`
+      与真源 `spec/forms/*.json#checks` 的 `severity` / `carried_by_kind` **逐条一致**（行集双向相等）。
+
+    ★ **为什么必须新增原语**：要断言的形态是「**CSV 行**的列 == 以 `(doc_type, check_id)` 为键的
+      **JSON 对象**的字段」，★★ **而既有 11 个原语无一能表达** —— `cross_equal_by_key` 按 **JSON** 取数；
+      `path_exists` 只判**指针可解析**；`coverage` / `enum_subset` 只作用于**单文件 scope**；
+      `set_covers` 只做「集合包含」、不做跨格式联接。
+
+    ★★ **立项依据 ＝ 真实事故（批 12 实测，非假想）**：该表随批 12 更新时**漏落 `BA` 8 行**
+      （`severity` 仍 `(未声明)`、`BA#amount_tier1_only` 的 `carrier_kind` 仍 `pending_implementation`），
+      ★ **却通过了当时全部 8 道必绿门禁** —— 根因：**全仓没有任何脚本读这张表**。
+      ★ 台账自称「可机械核对」，其价值**全在**这一点；★ 漂移的恰是 `severity`（**决定判据跑不跑**）。
+
+    ★★ **args（与 Go 侧 `case "csv_col_eq_json_by_key"` 逐字同口径）**：
+      `file`（CSV 路径）· `key_cols`（按 **CSV 表头名**取键列）· `json_glob`（真源文件通配）·
+      `json_collect`（每个匹配文件内的点路径，收集**对象数组**）· `json_key`（元素为「被收集对象上的
+      字段路径」或保留记号 **`$file_stem`** ＝文件名去扩展名；按序拼成键）·
+      `pairs`（`{csv_col, json_field, map?}`；`map` ＝ **JSON 侧字面量 → CSV 侧字面量**）·
+      `require_same_row_set`（默认 `True`：键集合**双向相等**）· `csv_cols_expected`（可省，数据行列数）。
+
+    ★★ **语义（逐条，与 `checks.json#_pending_primitive_note` 一致）**：
+      ① 建真源索引：逐文件收集，**键重复 ⇒ 报错**（★ 不静默取后者）；② 逐 CSV 数据行按 `key_cols` 建键，
+      **键不在真源 ⇒ 报错**；③ `require_same_row_set` 为真时**真源键未登记 ⇒ 报错**；
+      ④ 每个 `pairs`：**JSON 字段值的标量归一先过 `map` 归一**，**再**与 CSV 值比较；
+      ⑤ `csv_cols_expected` 不符 ⇒ 报错。
+    ★ **标量归一复用 `_scalar_str`**（与 Go 的 `scalarString` 同口径）—— ★ 不得自造，否则两侧相反结论。
+    ★ **fail-closed**：CSV 缺失 / `json_glob` **命中 0 个文件** / `json_collect` **命中 0 项** / **键重复**
+      ⇒ **一律报错**（★ 不许把「声明写错」静默成「通过」）。
+    ★ 语义正本 ＝ `spec/checks.json#primitives.csv_col_eq_json_by_key.desc`（本函数的 docstring 是其摘要，
+      冲突时以清单为准 —— 本项目「清单是唯一真相」）。
+    """
+    import csv as _csv
+
+    cid, probs = _cid(args), []
+    csv_path = args.get("file") or ""
+    key_cols = args.get("key_cols") or []
+    json_glob = args.get("json_glob") or ""
+    json_collect = args.get("json_collect") or ""
+    json_key = args.get("json_key") or []
+    pairs = args.get("pairs") or []
+    same_row_set = args.get("require_same_row_set", True)
+    cols_expected = args.get("csv_cols_expected", -1)
+
+    # ① 参数完整性（缺一即报 —— 不静默返回空）
+    if not str(csv_path).strip() or not key_cols or not str(json_glob).strip() \
+            or not str(json_collect).strip() or not json_key or not pairs:
+        return ["[%s] 参数不完整（必填：file/key_cols/json_glob/json_collect/json_key/pairs）" % cid]
+
+    # ② CSV 读取（首行表头；★ 列数不固定 —— 由 csv_cols_expected 逐行自检）
+    path = abs_path(csv_path)
+    if not os.path.isfile(path):
+        return ["[%s] CSV 文件不存在或不可读：%s" % (cid, csv_path)]
+    with open(path, "r", encoding="utf-8", newline="") as fh:
+        recs = list(_csv.reader(fh))
+    if not recs:
+        return ["[%s] %s CSV 为空（无表头）" % (cid, csv_path)]
+    col_idx = {}
+    for i, h in enumerate(recs[0]):
+        col_idx[h] = i
+    for kc in key_cols:
+        if kc not in col_idx:
+            return ["[%s] %s 表头缺键列 %r" % (cid, csv_path, kc)]
+    pair_idx = []
+    for pr in pairs:
+        col = pr.get("csv_col")
+        if col not in col_idx:
+            return ["[%s] %s 表头缺比对列 %r" % (cid, csv_path, col)]
+        pair_idx.append(col_idx[col])
+
+    # ③ 真源索引
+    matched = expand(json_glob)
+    if not matched:
+        return ["[%s] json_glob %r 命中 0 个文件（声明写错不许静默通过）" % (cid, json_glob)]
+    key_sep = "\x1f"
+    index = {}
+    src_total = 0
+    for name in matched:
+        stem = os.path.splitext(os.path.basename(name))[0]
+        try:
+            root = load_json(name)
+        except Exception as e:
+            probs.append("[%s] %s 不可解析：%s" % (cid, rel(name), e))
+            continue
+        hits = sel(root, toks(json_collect))
+        if not hits:
+            probs.append("[%s] %s 内 json_collect %r 命中 0 项（收集面写错不许静默通过）"
+                         % (cid, rel(name), json_collect))
+            continue
+        for h in hits:
+            if not isinstance(h, dict):
+                probs.append("[%s] %s 的 %s 命中非对象项（%s）—— 键只能建在对象上"
+                             % (cid, rel(name), json_collect, type(h).__name__))
+                continue
+            parts = []
+            for ek in json_key:
+                if ek == "$file_stem":
+                    parts.append(stem)
+                else:
+                    s = _scalar_str(_dig(h, ek))
+                    parts.append(s if s is not None else "")
+            key = key_sep.join(parts)
+            if key in index:
+                probs.append("[%s] 真源键重复（不静默取后者）：%r（%s）" % (cid, key, rel(name)))
+                continue
+            index[key] = (h, rel(name))
+            src_total += 1
+    if src_total == 0 and not probs:
+        probs.append("[%s] json_collect 合计命中 0 项" % cid)
+
+    # ④ 逐 CSV 数据行
+    csv_keys = set()
+    for ri, rec in enumerate(recs[1:]):
+        row_no = ri + 2                      # 1-based 行号（表头 = 1）
+        if len(rec) == 1 and rec[0] == "":
+            continue                         # 全空行跳过（不当数据行）
+        if cols_expected >= 0 and len(rec) != cols_expected:
+            probs.append("[%s] %s 第 %d 行列数 = %d，期望 %d"
+                         % (cid, csv_path, row_no, len(rec), cols_expected))
+            # ★ 不 continue：列数错不阻断该行的键登记/比对（同 Go 侧）—— 否则 require_same_row_set
+            #   会连带报出「未登记」第 2 条、掩盖根因。
+        key_parts = []
+        for kc in key_cols:
+            idx = col_idx[kc]
+            key_parts.append(rec[idx] if idx < len(rec) else "")
+        key = key_sep.join(key_parts)
+        if key in csv_keys:
+            probs.append("[%s] CSV 键重复（第 %d 行）：%r" % (cid, row_no, key))
+            continue
+        csv_keys.add(key)
+        if key not in index:
+            probs.append("[%s] 键不在真源（%s 第 %d 行）：doc_type=%r check_id=%r（按 key_cols 联接）"
+                         % (cid, csv_path, row_no, key_parts[0], key_sep.join(key_parts[1:])))
+            continue
+        obj, from_file = index[key]
+        for i, pr in enumerate(pairs):
+            idx = pair_idx[i]
+            csv_val = rec[idx] if idx < len(rec) else ""
+            json_val = _scalar_str(_dig(obj, pr.get("json_field")))
+            if json_val is None:
+                probs.append("[%s] %s 第 %d 行 键 %r 列 %r：真源字段 %r 非标量/缺失（不可比）—— CSV=%r"
+                             % (cid, csv_path, row_no, key, pr.get("csv_col"),
+                                pr.get("json_field"), csv_val))
+                continue
+            mp = pr.get("map") or {}
+            if mp and json_val in mp:
+                json_val = mp[json_val]      # ★ 键＝JSON 侧字面量、值＝CSV 侧字面量
+            if csv_val != json_val:
+                probs.append("[%s] %s 第 %d 行 键 %r 列 %r 不一致：CSV=%r vs 真源 %s.%s=%r"
+                             % (cid, csv_path, row_no, key, pr.get("csv_col"), csv_val,
+                                from_file, pr.get("json_field"), json_val))
+
+    # ⑤ require_same_row_set：真源键未登记 ⇒ 逐条报
+    if same_row_set:
+        for key in sorted(index):
+            if key not in csv_keys:
+                probs.append("[%s] 真源判据未登记（require_same_row_set）：%r（来源 %s）"
+                             % (cid, key, index[key][1]))
+    return probs
+
+
 PRIMITIVES = {
     "json_parse": prim_json_parse,
     "required_keys": prim_required_keys,
@@ -603,6 +795,7 @@ PRIMITIVES = {
     "set_covers": prim_set_covers,
     "array_each_required": prim_array_each_required,
     "path_exists": prim_path_exists,
+    "csv_col_eq_json_by_key": prim_csv_col_eq_json_by_key,
 }
 
 
@@ -652,75 +845,11 @@ def _self_audit_cid_literals():
     return []
 
 
-LEDGER = "spec/acceptance.csv"
-LEDGER_COLS = 11
-
-
-def _ledger_vs_forms():
-    """
-    ★ 台账 ↔ 真源 交叉校验（议题 `N-053`）：`spec/acceptance.csv` 的 `severity` / `carrier_kind`
-      必须与 `spec/forms/*.json#checks` 的 `severity` / `carried_by_kind` **逐条一致**（行集也须相等）。
-
-    为什么必须有这道校验（★ 本项目的实测教训，不是假想）：
-      · 该表自称「判据级验收台账」（`N-017`），它的**全部价值在于可被机械核对**；
-      · ★ **2026-10-04 批 12 实测**：首批只落了 15 行，`BA` 8 行漏落 —— `severity` 列仍写
-        `(未声明)`、`BA#amount_tier1_only` 的 `carrier_kind` 仍写 `pending_implementation`，
-        而 `spec/forms/BA.json` 同期**已落** `hard` / `code`；
-      · ★★ **而它通过了全部 8 道必绿门禁** —— 因为**全仓没有任何脚本读这张表**（只有 3 处注释提及）
-        ⇒ 台账与真源之间**没有机械校验，全靠人眼** ⇒ 必然静默漂移。
-
-    映射口径（`spec/README.md §3.1` 明文）：`forms` 侧 `carried_by_kind == "submit"`
-      （＝引擎自动执行）⇒ 本表记 `code`（它有真正的运行时执行体）。
-
-    形态说明：这是 `[META]` **自查类**校验（与 `_self_audit_cid_literals()` 同类），
-      **不是** `checks.json` 判据、**不引入新原语** ⇒ 不触碰 Go 侧加载器（无「两侧同批」问题）。
-      ★ 若日后要把它升级为 `checks.json` 里的正式判据，**需新原语** ⇒ 届时须两侧同批（见 `N-053`）。
-    """
-    import csv as _csv
-
-    path = abs_path(LEDGER)
-    if not os.path.isfile(path):
-        return ["[META] 找不到判据级验收台账 %s（★ 它是 `spec/` 的必交付项）" % LEDGER]
-
-    truth = {}
-    for p in expand("spec/forms/*.json"):
-        doc = load_json(p)
-        dt = os.path.basename(p)[:-5]
-        for c in doc.get("checks") or []:
-            truth[(dt, c.get("id"))] = (c.get("severity"), c.get("carried_by_kind"))
-
-    bad = []
-    seen = set()
-    with open(path, "r", encoding="utf-8", newline="") as fh:
-        for ln, row in enumerate(_csv.reader(fh), start=1):
-            if ln == 1 or not row:
-                continue                       # 表头 / 空行
-            if len(row) != LEDGER_COLS:
-                bad.append("第 %d 行列数为 %d（应 %d）" % (ln, len(row), LEDGER_COLS))
-                continue
-            key = (row[0], row[1])
-            if key in seen:
-                bad.append("第 %d 行 %s#%s **重复登记**" % (ln, key[0], key[1]))
-            seen.add(key)
-            if key not in truth:
-                bad.append("第 %d 行 %s#%s 在 `spec/forms/*.json` 中**不存在**" % (ln, key[0], key[1]))
-                continue
-            sev, kind = truth[key]
-            exp_kind = "code" if kind == "submit" else kind
-            if row[4] != sev:
-                bad.append("第 %d 行 %s#%s 的 `severity`＝%r ≠ 真源 %r"
-                           % (ln, key[0], key[1], row[4], sev))
-            if row[8] != exp_kind:
-                bad.append("第 %d 行 %s#%s 的 `carrier_kind`＝%r ≠ 真源 %r（`carried_by_kind`＝%r）"
-                           % (ln, key[0], key[1], row[8], exp_kind, kind))
-
-    for key in sorted(set(truth) - seen):
-        bad.append("真源判据 %s#%s **未登记**在 %s" % (key[0], key[1], LEDGER))
-
-    if bad:
-        return ["[META] 台账 %s 与真源 `spec/forms/*.json#checks` 不一致（%d 处）：\n    " % (LEDGER, len(bad))
-                + "\n    ".join(bad)]
-    return []
+# ★ 2026-10-05（`N-053` 第 ③ 步）：原 `_ledger_vs_forms()` 兜底（上文「第 6 例」）**连同
+#   `LEDGER`/`LEDGER_COLS` 常量一并删除** —— 其四条语义已**原样搬进 `checks.json#S26`（第 12 原语
+#   `csv_col_eq_json_by_key`）** ⇒ ★ 该判定不再有「两条来源」，与本文件「不自持判据」的定位一致。
+#   ★ 等价性由 `scripts/_probe_n053.py` 实测：修复前台账（`ef532dc`）⇒ `S26` 逐条报出 **32 处**，
+#   与迁移前兜底在同一夹具上的 **32 处逐项对应**；★ 并做缺口存在性反证（摘掉 `S26` ⇒ 静默放行）。
 
 
 def check(cl_path):
@@ -757,8 +886,6 @@ def check(cl_path):
     # ★ 源码自审：判据 ID 不得硬编码
     problems += _self_audit_cid_literals()
 
-    # ★ 台账自审：spec/acceptance.csv 必须与 spec/forms/*.json#checks 逐条一致（N-053）
-    problems += _ledger_vs_forms()
 
     ran = 0
     for c in checks:
