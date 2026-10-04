@@ -1,5 +1,5 @@
 {
-  "version": "1.16",
+  "version": "1.17",
   "generated_by": "WorkBuddy",
   "date": "2026-10-04",
   "scope": "spec/",
@@ -619,6 +619,7 @@
       }
     }
   ],
+  "_min_hits_note": "★★ **`min_hits` 参数语义（裁定：**逐文件** · `N-055`）** —— ★ `min_hits`（默认 1）的判据是「**被 `file` glob 匹配到的每一个文件**，其 `collect` 命中数都须 ≥ `min_hits`」，**不是**「全部文件汇总后的总数 ≥ `min_hits`」。★ 立项理由（见 `change_log` v1.2）：**杜绝「`collect` 声明写错 ＝ 静默通过」**。★★ 两侧实现必须同语义：Python `scripts/check_spec.py#_hits_guard` **在 `for f in expand(file)` 循环体内**调用（＝逐文件）；★ Go `internal/specload/checklist.go` 走 `collectAcross` ＋ `minHitsProblems`（＝跨文件汇总）⇒ **待按本语义修正**（批 15 · `MIMO-NEXT-BATCH-14.md`）。★★ **适用范围**：`coverage` / `enum_subset` / `ref_exists` / `range_contiguous` / `pattern_absent` / `set_covers` / `path_exists` 七个 collect 型原语；★ `cross_equal_by_key` 的 `min_hits` 是**配对计数**，不属本条。★★ **代价（如实）**：当 `collect` 只在**部分**文件里有值、且该分布是**合法事实**时，`min_hits` 必须写 `0`（`S5b` —— `QC`/`RFQ`/`BJ` 的 `ledger` 就是 `[]`；`S25` —— `payload_form` 当前仅 `SA.json` 一处）⇒ 这些判据**失去「`collect` 写错」的守卫**，由同族的存在性判据互补（`S5d` / `S24`）。",
   "consumer_obligations": {
     "python_side": "`scripts/check_spec.py` 是**清单执行器**：不自持判据，只实现 `primitives` 引擎并逐条执行 `checks`。",
     "go_side": "mimo 的 spec 加载器实现同一组原语的 Go 版、读同一份 `checks.json`。★ **原语语义以本文件 `desc` 裁决**；不一致即两侧漂移，必要时开议题。\n★★ **2026-10-03 新增一项同批义务（`N-038`）**：★ `array_each_required` 须实现**「条件面为空」守卫** —— ★ `seen > 0` 且「两个 `when` 都通过的项数为 0」⇒ 报错（除非 args 写 `allow_empty_match: true`）。★ **为什么必须两侧同批**：★ Python 侧已实现，★ 若 Go 侧不实现，则 **`spec` 门禁（Python）与 `go test` 侧（Go）对同一份 spec 给出不同结论** —— ★ 而这正是本项目最贵的失败模式（「同一套判据两份实现必然漂移」）。★ 同时 Go 侧须认 `S16`（新判据，`collect=sections[*].fields[*]` ＋ 双键条件 `immutable=true ∧ source∈{system,computed}`）。",
@@ -626,6 +627,11 @@
     "on_emitting_a_violation": "★★ **两侧引擎在报违规时，必须把「当前判据的真实 `id`」写进消息前缀** —— 例如 `[S5c] …`，**不得硬编码某个 ID 字面量、也不得写原语名**。★ 理由（实测事故）：同一原语会被**多条判据**复用（现 16 条判据复用 8 个原语），一旦硬编码，`S5c` 报出来的会是 `[S8/S11]` —— **排查者照错误 ID 去查，必然被带偏；这比『不报错』更坏**。Python 侧实现＝执行器注入 `args[\"__cid__\"]` ＋ `_self_audit_cid_literals()` 源码自审（禁止回潮）；Go 侧请同口径实现。"
   },
   "change_log": [
+    {
+      "version": "1.17",
+      "date": "2026-10-04",
+      "change": "★★ **裁定 `min_hits` 的应然语义 ＝ 逐文件**（`N-055`）—— ★★ **起因＝批 14 落 `S25` 时实测逼出**（非推断）：`S25.min_hits` 写 `1` ⇒ **Python 报 8 处红 / Go 全绿** ⇒ **同一份判据、两侧相反结论**。★ **裁定依据（判据＝数据，以本文件为裁决；三条独立）**：① 本文件 `change_log` **v1.6** 明文「该 `min_hits` 的**每文件语义**本身是既有设计（`S5c` 等同款）」；② Python 源码 `scripts/check_spec.py#prim_array_each_required` 头注「`set_covers.min_hits` 是**逐文件**计数（不是全局），表达不了『一条不缺』」；③ `_hits_guard` 写在 `for f in expand(file)` **循环体内** ⇒ 实现即逐文件。⇒ ★★ **Go 侧当前为跨文件汇总（`collectAcross` `checklist.go:482` ＋ `minHitsProblems` `checklist.go:866`）⇒ 与设计不符、待修**（任务包 `MIMO-NEXT-BATCH-14.md` · 批 15）。★★ **本版只声明语义、不动任何 `checks[*].args`**（`S25` 仍 `min_hits: 0`；★ 其代价与依据已写入新增的 `_min_hits_note`）⇒ **门禁保持 8/8 ＋ 会报零命中**（★ 改动为声明性，仍走 `S1` 的 JSON 可解析面）。★ 另如实登记（次级、非阻塞）：逐文件化后多文件 glob 会产出**多条同文案**报错，而 `_hits_guard` 的文案**未带文件名** ⇒ 不可分辨是哪张表单 —— 待后续轮次处置。"
+    },
     {
       "version": "1.8",
       "date": "2026-10-01",
