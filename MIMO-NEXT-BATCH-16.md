@@ -124,3 +124,13 @@
 2. 逐行走查实现（args 解析 · 归一是否复用 `scalarString` · 三条 fail-closed · 键重复是否报错）；
 3. ★★ **三条单点变异我方自做**（M1/M2/M3，一次只变异一处）＋ `cp` 备份 ＋ `sha256sum -c` 还原；
 4. 独立复跑 `go test ./internal/specload -count=1` ＋ 断言 T2 九条用例的**鉴别力**（C2/C4 等在对应变异下必须转红）。
+
+---
+
+## §4 交办纪律（★ 硬性，与 §1–§3 同等效力）
+
+1. ★ **工作范围仅限本仓库目录** —— 即 `C:\Users\haoduan\workspace\jx-procurement-platform`（当前仓库树内）；★ **不得读写仓库外任何路径**（含 RaiDrive 网络盘 `Z:` 及一切挂载盘）。
+2. ★ **以 `COLLAB.md` 为准** —— 若与本机记忆、对话上下文、或其它文档冲突时，**一律以 `COLLAB.md` 台账为最高依据**；动手前先读 `COLLAB.md §1`（当前状态）与 `§4 · N-053` 段。
+3. ★ **提交前必跑 `bash scripts/check_all.sh` ⇒ 必绿 8/8 ＋ 会报零命中**；★ **红了不入库**（先修到绿再提交）。
+4. ★ **只用显式路径提交** —— `git add <显式文件路径>…`（本批应为 `internal/specload/checklist.go` ＋ 新建 `internal/specload/csv_col_eq_json_by_key_test.go` ＋ `COLLAB.md`）；★★ **禁止 `git add -A` / `git add .`**。
+5. ★ **完成后回写 `COLLAB.md` 台账**（本议题追加回执块 ＋ 打 `MIMO-DONE` 标记，★ **状态字段留 `OPEN`** —— 结案由我方验收后判定）**并推送 `origin/main`**。
