@@ -37,7 +37,7 @@ type Bundle struct {
 	Constants   *ConstantsDoc
 	Authority   *AuthorityDoc
 	Dashboard   *DashboardDoc
-	ProblemsRaw map[string][]byte // 全部 spec/**/*.json 原始字节（键 "spec/xxx.json"，测试/诊断用）
+	ProblemsRaw map[string][]byte // 全部 spec/**/*.json ＋ *.csv 原始字节（键 "spec/xxx.json|.csv"，测试/诊断用；N-053 装载面）
 }
 
 // EnumsDoc 只带 version（M3 深度解析时扩展）；其余内容经 Raw 保留。
@@ -307,7 +307,9 @@ type CheckDoc struct {
 // Load
 // ---------------------------------------------------------------------------
 
-// Load 从 fsys（生产环境传 specfs.FS）读取 spec/**/*.json 并做 S1–S12 全量断言。
+// Load 从 fsys（生产环境传 specfs.FS）读取 spec/**/*.json ＋ *.csv（N-053 落地段③：
+// CSV 装载面 —— S26 将按 files["spec/acceptance.csv"] 取台账；★ 只放宽到 .csv，
+// .md 等仍不装载）并做 S1–S12 全量断言。
 // 任一判据不过即返回聚合错误 —— 调用方（bootstrap）应拒启。
 func Load(fsys fs.FS) (*Bundle, error) {
 	files := map[string][]byte{}
@@ -315,7 +317,7 @@ func Load(fsys fs.FS) (*Bundle, error) {
 		if err != nil {
 			return err
 		}
-		if d.IsDir() || !strings.HasSuffix(path, ".json") {
+		if d.IsDir() || !(strings.HasSuffix(path, ".json") || strings.HasSuffix(path, ".csv")) {
 			return nil
 		}
 		b, rerr := fs.ReadFile(fsys, path)

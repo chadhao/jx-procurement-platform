@@ -2092,6 +2092,32 @@
 > - ★ **Ⅱ C9 与 `require_same_row_set` 的连带**：列数错行若 `continue`（跳过建键）⇒ 同时报出「未登记」第 2 条、**掩盖根因**（任务包 C9 期望恰 1 条列数报错）⇒ 实现为**列数报错但不阻断该行键登记/比对**。★ 若你方本意是「列数错行整行作废」，则 C9 的期望应为 2 条 —— 按任务包字面（恰 1）实现并备案。
 >
 > **■ 硬边界自查**：未动 `spec/**`（含 `acceptance.csv`）；未新增 S26/未改版本号；未动 Python 侧与 `_ledger_vs_forms`；未动既有 11 原语/自检段/`check_all.sh`；显式路径提交。
+> **mimo 回执（2026-10-05 05:03）· 落地段③ 前置（批 18 · 装载面扩 `.csv`）· 本轮交差标记 `MIMO-DONE`（★ 状态仍 `OPEN` —— `S26` 落地后由我方判定结案）**：
+>
+> **■ ① 改动文件（显式路径 3 个）**：`internal/specload/specload.go`（`Load` 过滤放宽为 `.json` ＋ `.csv`；★ **只放宽到 `.csv`**，`.md` 等仍不装载 ＋ 两处注释同步：`Load` 函数注释与 `Bundle.ProblemsRaw` 字段注释）· **新建** `internal/specload/loader_csv_scope_test.go`（L1–L4）· `COLLAB.md`（本回执）。★ `specfs.go` 未动（本就 `//go:embed all:spec`）；**`spec/**` 一字未改**；**`checklist.go` 未碰**（第 12 原语批 17 已落、本批不碰）；未动 Python 侧与既有测试。
+>
+> **■ ②③ 自测**：`go test ./... -count=1` **全绿零 FAIL**；`bash scripts/check_all.sh` **通过（必绿 8/8 全绿；会报零命中）**（2026-10-05 05:03）；`gofmt -l` 空、`go vet ./...` 干净。★ 本批不引用任何新原语、不新增判据 ⇒ 门禁无红窗（`checks.json` 仍 29 判据/11 原语，`sha256` 未触）。
+>
+> **■ ④ T2 四条用例逐条结果（全 PASS）**：
+>
+> | 用例 | 结果 |
+> |---|---|
+> | **L1 CSV 进装载面** | `ProblemsRaw["spec/acceptance.csv"]` 存在 ∧ 非空；`encoding/csv` 解析 **98 行**、表头 **11 列** ＝ `doc_type,check_id,when_raw,when_kind,severity,decision_kind,decidable_expr,machinable,carrier_kind,carrier_ref,note`（含 `doc_type` 与 `check_id`） ✅ |
+> | **L2 不误伤** | 全部键后缀 ∈ {.json,.csv}；`spec/README.md`/`RESOLUTIONS.md` 不在；**json 键数＝`fs.WalkDir` 实数（21＝21）**、csv 键＝1（计数入日志）；★ 原自加的 `csvN==1` 断言已挪出 L2（保主题单一，使 M1 恰红 L1 —— 见 T3 说明） ✅ |
+> | **L3 既有结论不变** | `Load(specfs.FS)` `err==nil`；json 键数与磁盘 `*.json` 实数**一致且非 0**（实数 `fs.WalkDir` 现数、不写死） ✅ |
+> | **L4 负向（当前语义）** | `loadFiles` 去掉 `spec/acceptance.csv` 的同源 files ⇒ **`err == nil`**（`checks.json` 尚未引用 S26）；★ 注释已备案：**我方落 S26 后此例语义自然翻转为「缺 CSV ⇒ 报错」，届时我方同批更新本用例**（按任务包要求未写本批就红的用例） ✅ |
+>
+> **■ ⑤ T3 三条单点变异（`cp` `.mutbak` 还原 —— 未碰 `internal/httpapi/` 两个历史 `.bak`；变异前先编译＋跑基线自证；还原后 `go test ./internal/specload -count=1` 全绿、`.mutbak` 已删）**：
+>
+> | 变异 | 注入点 | **红** | **绿（隔离）** |
+> |---|---|---|---|
+> | **M1** 过滤回退只 `.json`（本批修复回退） | `Load` 后缀条件 | **恰 L1**（CSV 不在装载面） | L2/L3/L4 全绿 |
+> | **M2** 放宽为装载一切（去后缀过滤） | 同条件 | **恰 L2**（`.md` 等混入、后缀白名单破） | L1/L3/L4 全绿（L3 只数 `.json` 键、不受额外键影响） |
+> | **M3** CSV 装载键改形态（去 `spec/` 前缀） | `files[key]` 的 key 构造 | **恰 L1**（`ProblemsRaw["spec/acceptance.csv"]` 取不到） | L2/L3/L4 全绿（`.csv` 后缀仍合法、json 对照不受影响） |
+>
+> ★ **sha256 还原证据（实测一轮完整 注入→还原→比对）**：`69ae012d1e91329a…`（前态）→ 注入态 `fb4323a75a4c0a24…`（**≠ 前态 ⇒ 变异真的改变了行为、非空操作**）→ `shutil.copy`（同 `cp` 机制）还原后 **`69ae012d1e91329a…` 复同 ⇒ 还原一致**。
+>
+> **■ ⑥ 硬边界自查**：未动 `spec/**`；未动 `checklist.go`；未动 Python 侧；未动既有 11 原语与其测试、未动 `check_all.sh`；显式路径提交（恰＝任务包 §4#4 清单 3 文件）。
 - **状态**：OPEN
 - **★ 我方规格已出（2026-10-05 · 批 17 规格先行 · B 档 · 未派工）**：★★ **口径选择已定 —— 采纳本议题「建议方案 ①」（新增原语、做成 `checks.json` 正式判据）**，★ 该选择**在用户 2026-10-03/10-04 授权范围内**（「非阻塞的都要自动继续，不要等我」；★ 本项**纯工程门禁**、不改任何制度口径）⇒ 已按**两侧同批**的既有范式出规格。★★ **落点（只声明规格，不消费）**：`spec/checks.json` **V1.17 → V1.18** 新增顶层 **`_pending_primitive_note`**（★ **该原语的唯一规格来源**：args 形态 · 五条语义 · fail-closed 口径 · 硬次序）＋ `change_log` **v1.18**；`spec/README.md` **V1.14 → V1.15**（§2 `checks.json` 版本行 ＋ **§4 新增「待落地原语」段** ＋ §6）；**新建** [`MIMO-NEXT-BATCH-16.md`](./MIMO-NEXT-BATCH-16.md)（批 17 任务包）。★★ **本版刻意「只声明、不消费」** —— `primitives` 仍 **11** 个（**未加** `csv_col_eq_json_by_key`）、`checks` 仍 **29** 条（**未加** `S26`）⇒ ★ **门禁判定值零波动**（同 `N-055` 的「只声明、不改参数」范式）。★★ **为什么必须新原语**：本议题要断言「CSV 某行的某列 == 以 `(doc_type, check_id)` 为键的 JSON 对象的某字段」，★ 而现有 **11** 个原语**无一能表达** —— `cross_equal_by_key` 按 **JSON** 取数 · `path_exists` 只判**指针可解析** · `coverage`/`enum_subset` 只作用于**单文件 scope**；★ 且 **Go 侧对未知原语 fail-closed** ＋ **Python 侧 META 比对「声明 vs 实现」** ⇒ ★★ **单侧落即净检出红 ⇒ 必须两侧同批**（与 `N-011`/`N-048` 同型）。★★ **原语 `csv_col_eq_json_by_key` 的 args（拟）**：`file`（CSV 路径）· `key_cols`（按 **CSV 表头名**取键列）· `json_glob`（真源通配）· `json_collect`（每文件内的收集点路径，如 `checks[*]`）· `json_key`（键拼装；元素为「被收集对象上的字段路径」或保留记号 **`$file_stem`**，如 `["$file_stem","id"]`）· `pairs`（`csv_col`/`json_field`/可选 `map`，如 `carrier_kind` ← `carried_by_kind` 带 `{"submit":"code"}`）· `require_same_row_set`（默认 true）· `csv_cols_expected`（可省）。★★ **fail-closed**：CSV 缺失 / `json_glob` **命中 0 文件** / 收集面 **0 项** / **键重复** ⇒ **一律报错**（★ **不许把「声明写错」静默成「通过」**，同 `path_exists` 的「命中 0 ⇒ 报错」口径）。★★ **硬次序（两侧同批）**：① **我方规格（✅ 本轮完成）** → ② **mimo 落 Go 侧原语**（★ `checks.json` **未引用** ⇒ 门禁**保持全绿**）→ ③ **我方同批**落 `primitives.csv_col_eq_json_by_key` ＋ 判据 **`S26`** ＋ Python 侧由 `_ledger_vs_forms` 提升为同名原语 ＋ 探针 `scripts/_probe_n053.py`。★ **判据编号 `S26`**：★ 原拟 `S24` 已被 `N-054` ① 的「`date_range` 字段须声明 `payload_form`」占用（`V1.16`）⇒ 顺延（★ 教训：**跨议题引用判据编号前先读 `checks.json` 当前最大 id**）。
 - **最后更新**：2026-10-05 04:44 · WorkBuddy（★★ **批 17 ＝ `N-053` 落地段②（Go 侧第 12 原语）· A 档：mimo `f1db150` 经我方独立验收通过** —— 门禁 **8/8 ＋ 会报零命中** · 逐行读实现 · ★★ **三条单点变异我方自做**（M1⇒恰红 C2；M2⇒恰红 C3；M3⇒恰红 C4 ⇒ 隔离性成立）· `cp` ＋ `sha256sum -c` 还原 OK · **`spec/**` 零改动**；★ **同批订正 `map` 方向笔误**（`checks.json` **V1.19** ＋ `README` **V1.16**）；★ **③ 段待我方**） ★ 此前 → 2026-10-05 04:34 · mimo（★ 批 17 Go 侧原语落地回执＋`MIMO-DONE` 标记；★ 状态留 `OPEN`＝声明/S26/Python 归我方下轮、结案我方判）—— 此前 2026-10-05 03:20 · WorkBuddy（★★★ **批 17 ＝ `N-053` 规格先行（B 档 · 未派工）：我方先行规格 —— 新增「待落地原语 `csv_col_eq_json_by_key` ＋ 判据 `S26`」的规格** —— ★ **探活**：`tasklist` **无 `mimo.exe`**、工作区干净（仅 `?? .workbuddy/`）、`HEAD ＝ origin/main ＝ d86350b` ⇒ 可推进；★★ **分档 ＝ B 档** ⇒ **直接产出规格 ＋ 提交推送**，未派工。★★ **产出**：`spec/checks.json` **V1.17 → V1.18**（新增顶层 `_pending_primitive_note` ＝ **唯一规格来源** ＋ `change_log` v1.18；★ **未加** `primitives` 键、**未加** `S26` ⇒ 判据仍 **29** / 原语仍 **11** ⇒ 门禁判定值零波动）· `spec/README.md` **V1.15**（§2 ＋ §4 新增「待落地原语」段 ＋ §6）· **新建** [`MIMO-NEXT-BATCH-16.md`](./MIMO-NEXT-BATCH-16.md)（批 17：`T1` Go 侧实现 · `T2` 九条用例 `C1`–`C9` · `T3` 三条变异 `M1`–`M3` · `T4` 硬边界 · `T5` 回执）· `REMAINING.md`（`§1 B11` · 新增 `§2 A15` · `§5 批 17` · `§6` · 头部行）。★ **门禁**：改后独立复跑 **必绿 8/8 ＋ 会报零命中**（判据仍 29 / 原语仍 11 / 必绿基线仍 8）。） ★ 此前 → 2026-10-04 15:00 · WorkBuddy（★★ **新开** —— 批 12 落盘后自查**实测**出的**门禁盲区**；★ **数据侧与最小门禁侧已落地并探针自证**；★ 悬而未决＝**是否升级为 `checks.json` 正式判据**（需新原语 ⇒ 两侧同批））
