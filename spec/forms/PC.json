@@ -711,7 +711,7 @@
     },
     {
       "gap": "★ **看板 16「异常预警面板」缺「采购变更异常」指标**（三种例外类型不对称）",
-      "status": "★★ **已定性、已定补法，待与实现同批落地**（`COLLAB §4 · N-046`）",
+      "status": "✅ **已落地（2026-10-04 · 批 10，spec 与实现同批）** —— ★ `spec/dashboard.json` 看板 16 已补第 12 个指标 `change_anomaly_listed`，实现（`internal/dashboard#buildAnomaly` ＋ 列级守卫 `countExtRegistered(r09,\"is_anomaly_listed\")`）由 mimo 落地、我方独立验收通过（**两处单点变异精确转红** ＋ `sha256` 还原）⇒ `COLLAB §4 · N-046` 结案 `AGREED`",
       "note": "★★ `spec/dashboard.json` 看板 16 已有 `emergency_purchase`（紧急采购）· `emergency_not_closed_24h`（紧急未闭合）· `sole_source`（独家采购）三条 alert，★ **唯独「采购变更异常」没有** —— 而制度第五十三条把**三条口子并列**（`is_anomaly_listed.critical_note` 原文：「采一档拆分、变更拆分**须一并执行，缺一不可**」）。⇒ 已列异常的采购变更**在事后监管面上看不见**。★★ **本条不可单独落 spec**：实测把指标加进 `indicators` ⇒ `internal/httpapi#TestDashboardAlertKeysMatchSpec` **精确转红**（『输出指标数 = 11, spec 指标数 = 12 —— 数量必须相等』，`dashboard_key_align_test.go:75`）⇒ **必须与 `internal/dashboard` 聚合实现同批**（与 `N-044` 的「判据与实现同批」同理）。★ 拟补定义：`key=change_anomaly_listed`、`render=alert`、`formula`＝`L09.exception_type = 采购变更` 且 `是否进入异常清单 = true` 的单数、`fields=[L09.例外类型, L09.是否进入异常清单]`。★ 另：本单的「专项说明」落点（`L09.anomaly_note`）**已落**，见 `checks#anomaly_monthly_report`"
     }
   ]
