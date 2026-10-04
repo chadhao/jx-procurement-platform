@@ -4,7 +4,7 @@
 scripts/check_spec.py —— `spec/` 机读规格门禁（**清单执行器**）。
 
 ★★ 本脚本**不自持判据** —— 判据全部来自 `spec/checks.json`（唯一来源）。
-   它只实现 `checks.json#primitives` 里的 **8 个原语引擎**，然后逐条执行 `checks`。
+   它只实现 `checks.json#primitives` 里声明的原语引擎（★ **数量不写死**，以声明为准），然后逐条执行 `checks`。
 
 ★ 为什么这么改（议题 `N-011` 的落地）：
  原实现把判据**硬编码在 Python 里**，Go 侧要用就得**按中文描述再实现一遍** ⇒
@@ -447,6 +447,126 @@ def prim_array_each_required(args):
     return probs
 
 
+def split_ptr_segs(ptr):
+    """★★ 点路径切分（`path_exists` 专用）：按 `.` 切段，**方括号 `[...]` 内部不切分**。
+
+    ★ 两条**实测**必要性（`N-048` 取证，`spec/institution-anchors.json` 立据）：
+      ① **字面键可含点**：`spec/params.json` 有 5 个含点扁平键
+         （如 `params.reporting.monthly_cutoff_day`）⇒ 须写作 `params.[reporting.monthly_cutoff_day]`；
+      ② **选择器值可含点**：`spec/checks.json#change_log[version=1.5]`。
+    ★ 不做此规定 ⇒ 两种写法都会被切错 ⇒ **命中 0 而红**（安全失败：不会静默取到错节点）。
+    """
+    segs, buf, depth = [], "", 0
+    for ch in ptr:
+        if ch == "[":
+            depth += 1
+            buf += ch
+        elif ch == "]":
+            depth -= 1
+            buf += ch
+        elif ch == "." and depth == 0:
+            if buf:
+                segs.append(buf)
+                buf = ""
+        else:
+            buf += ch
+    if buf:
+        segs.append(buf)
+    return segs
+
+
+def _ptr_walk(node, segs):
+    """`path_exists` 的指针求值：返回命中节点列表。段语义：
+      · `**`        递归下降
+      · `*` / `[*]` 全部子节点
+      · `[k=v]`     选择器：子节点中 `k` 的标量值 == `v` 者（≥1 命中）
+      · `[字面键]`  字面键（允许含 `.`）
+      · 裸键        普通对象键（不得含 `.`）
+    """
+    if not segs:
+        return [node]
+    head, rest = segs[0], segs[1:]
+    out = []
+    if head == "**":
+        out += _ptr_walk(node, rest)
+        for c in _children(node):
+            out += _ptr_walk(c, segs)
+        return out
+    if head == "*":
+        for c in _children(node):
+            out += _ptr_walk(c, rest)
+        return out
+    m = re.match(r"^\[(.*)\]$", head)
+    if m:
+        body = m.group(1)
+        if "=" in body:
+            k, v = body.split("=", 1)
+            for c in _children(node):
+                if isinstance(c, dict) and _scalar_str(c.get(k)) == v:
+                    out += _ptr_walk(c, rest)
+            return out
+        if isinstance(node, dict) and body in node:
+            out += _ptr_walk(node[body], rest)
+            return out
+        for c in _children(node):
+            if isinstance(c, dict) and body in c:
+                out += _ptr_walk(c[body], rest)
+        return out
+    if isinstance(node, dict) and head in node:
+        out += _ptr_walk(node[head], rest)
+    return out
+
+
+def prim_path_exists(args):
+    """★ 第 11 原语（`N-048`）：**锚点指针必须可解析** —— 收集到的每个字符串写成
+    `<spec 相对路径>#<点路径>`（省略 `#` ＝ 只校验文件存在），断言：**文件存在** ∧ **点路径命中 ≥1 个节点**。
+
+    为什么需要它：`spec/institution-anchors.json`（`N-006` 第 2 重机制）是**跨文件**的引用索引，
+      ★ 既有 10 个原语**都表达不了**「这条指针指向的文件/字段真实存在」——
+      `ref_exists` 只能比对**单个目标 dict 的键集合**，而锚点指向的落点**分散在任意文件、任意深度**。
+      ⇒ ★ 这正是 `N-006` 明写的「**接入门禁**（锚点指向的文件/字段不存在 ⇒ 红）」。
+
+    ★ 段语法（与 `spec/institution-anchors.json#conventions.segment_form` **逐字一致**）：
+      裸键（不得含点）· `[字面键]`（可含点）· `[k=v]`（选择器）· `*`/`[*]`（全部子节点）· `**`（递归下降）。
+    ★ 命中 0 ⇒ **报错**（与既有加固同口径：**不许把「声明写错」静默成「通过」**）。
+    ★ 语义须与 Go 侧 `internal/specload/checklist.go#case "path_exists"` **逐字对齐**（两侧共同契约）。
+    """
+    cid, probs = _cid(args), []
+    for f in expand(args["file"]):
+        refs = sel(load_json(f), toks(args["collect"]))
+        probs += _hits_guard(cid, args["collect"], refs, args)
+        for ref in refs:
+            if not isinstance(ref, str):
+                probs.append("[%s] %s `%s` 出现非字符串项（%s）—— 锚点必须是字符串指针"
+                             % (cid, rel(f), args["collect"], type(ref).__name__))
+                continue
+            if "#" in ref:
+                path, ptr = ref.split("#", 1)
+            else:
+                path, ptr = ref, ""
+            try:
+                doc = load_json(abs_path(path))
+            except Exception as e:
+                probs.append("[%s] 锚点 %r 指向的文件不存在或不可解析：%s" % (cid, ref, e))
+                continue
+            if not ptr.strip():
+                continue
+            segs = []
+            for s in split_ptr_segs(ptr):
+                s = s.replace("[*]", "*")
+                m = re.match(r"^(.*?)\[(.*)\]$", s)
+                if m:
+                    if m.group(1):
+                        segs.append(m.group(1))
+                    segs.append("[%s]" % m.group(2))
+                else:
+                    segs.append(s)
+            if not _ptr_walk(doc, segs):
+                probs.append("[%s] 锚点 %r 的点路径在 %s 内**命中 0 个节点**（字段不存在 / 改名 / 语法写错）"
+                             % (cid, ref, path))
+    return probs
+
+
 PRIMITIVES = {
     "json_parse": prim_json_parse,
     "required_keys": prim_required_keys,
@@ -458,6 +578,7 @@ PRIMITIVES = {
     "cross_equal_by_key": prim_cross_equal_by_key,
     "set_covers": prim_set_covers,
     "array_each_required": prim_array_each_required,
+    "path_exists": prim_path_exists,
 }
 
 
