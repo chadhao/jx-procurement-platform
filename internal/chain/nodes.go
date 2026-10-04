@@ -28,6 +28,11 @@ const tier3PlusAmountCents int64 = 20000000
 // 输入 routeID 必须是 ResolveRoute 的结果（不在此再判线）。
 // 输出 Seq 为审批任务序（1..N，IsApproval=false 的环节 Seq=0）。
 func BuildNodes(b *specload.Bundle, routeID string, f Facts) ([]RoleNode, error) {
+	// ★ N-056（A8）登记型：RouteID == "" ＝ 链为空 —— 零节点（必须在 Routes 查表之前，
+	//   否则会落 ErrRouteMissing；ResolveRoute 对 no_approval_chain 单据返回空串不报错）。
+	if routeID == "" {
+		return []RoleNode{}, nil
+	}
 	// ---- 合同统一两级（CT 单据 / T4）：不走 routes 表，直接由 contract_approval.order 展开 ----
 	//   审批任务＝supervisor_approval + pgm_approval（沿用 contract_supervisor/pgm 节点 id，
 	//   与 expandContract 同源 ⇒ R-26 的通用插入会因 hasContractNodes 命中而不再重复插入）；

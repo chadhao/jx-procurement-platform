@@ -140,6 +140,11 @@ type SubmitInput struct {
 	// StagingIDs 提交前上传的暂存附件 id（M6 / D4）：提交事务内绑定迁入 t_attachment；
 	// 任一不可绑定（非本人/已绑定/过期）⇒ 整体回滚（绝不静默丢附件）。
 	StagingIDs []string
+	// RegistrationOnly ★ N-056（A8）登记型单据（doc_chains.<doc>.no_approval_chain）：
+	//   链为空 ⇒ Nodes 零行是**合法形态**（M4「nodes 非空 400」契约的显式豁免 —— 由
+	//   handler 按链算结果 rc.Route.RouteID == "" 置位，flow 不读 spec 判定）；
+	//   该形态下 Submit 走「提交即终态」（见 Submit 内零任务分支）。
+	RegistrationOnly bool
 }
 
 // Service 审批领域服务。
@@ -313,6 +318,33 @@ func (s *Service) Submit(ctx context.Context, in SubmitInput) (string, error) {
 			OccurredAt:     at,
 		}); err != nil {
 			return err
+		}
+		// ★ N-056（A8）登记型单据（no_approval_chain）：零审批任务 ⇒ **提交即终态**。
+		//   条件＝传入审批节点为空（createTasksTx 循环不执行 ⇒ t_flow_task 零行）；
+		//   同事务直接 terminalizeTx（内部自动落账＋落账自检）—— 不留 PENDING 悬挂窗口。
+		//   依据＝ forms/GR.json#checks[id=ledger_l07_written].when 明文「提交即终态」；
+		//   不新增状态值（terminalizeTx 置既有 InstanceApproved）。
+		//   ★ 状态史：terminalizeTx 不写（既有约定在 Submit/act/Cancel 各迁移点写）
+		//   ⇒ 此处补一行（取 act 同范式，Status＝终态后值）；上方 PENDING/「提交」留痕
+		//   是 Submit 既有行为，保留不动。
+		if len(in.Nodes) == 0 {
+			if err := s.terminalizeTx(ctx, tx, inst, InstanceApproved, at, ""); err != nil {
+				return err
+			}
+			if _, _, err := s.db.AppendStatusHistory(ctx, tx, &store.StatusHistory{
+				InstanceCode:   inst.InstanceCode,
+				Status:         inst.Status,
+				OperatorOpenID: in.ApplicantOpenID,
+				Opinion:        "提交即终态（无审批链）",
+				OccurredAt:     at,
+			}); err != nil {
+				return err
+			}
+			// 事件：与 act 终态同范式（EventInstanceApproved）；emit 仍在事务提交后统一发。
+			events = append(events, FlowEvent{
+				Type: EventInstanceApproved, BizNo: bizNo, InstanceCode: inst.InstanceCode,
+				DocType: in.DocType, ActorOpenID: in.ApplicantOpenID, At: at,
+			})
 		}
 		_, err = s.db.InsertFlowOpLogTx(ctx, tx, &store.FlowOpLog{
 			BizNo: bizNo, OpType: OpSubmit, ActorOpenID: in.ApplicantOpenID,
@@ -867,7 +899,9 @@ func validateSubmit(in SubmitInput) error {
 	if strings.TrimSpace(in.ApprovalCode) == "" {
 		return fmt.Errorf("%w: approval_code 为空（无法校验三方定义）", ErrInvalidSubmit)
 	}
-	if len(in.Nodes) == 0 {
+	// ★ N-056：登记型（RegistrationOnly）Nodes 零行合法（链为空＝提交即终态）；
+	//   其余单据仍 fail-closed（M4 契约：nodes 非空 400 —— 链算失败不得空链提交）。
+	if len(in.Nodes) == 0 && !in.RegistrationOnly {
 		return fmt.Errorf("%w: 审批链为空", ErrInvalidSubmit)
 	}
 	seenSeq := map[int]bool{}

@@ -82,6 +82,24 @@ func ResolveRoute(b *specload.Bundle, f Facts) (RouteResult, error) {
 		}
 		return RouteResult{RouteID: dc.Route}, nil
 
+	case DocGR, DocQC, DocRFQ, DocBJ:
+		// ★ N-056（A8）登记型单据通路：判定只读 doc_chains.<doc>.no_approval_chain
+		//（唯一规格来源＝ conventions.no_approval_chain；★ 不读 env_count ——
+		// conventions.env_count 明文「语义待定，不得依赖」，且 GR=1 而 RFQ/BJ/QC=0
+		// 用它判会自相矛盾；★ 不得用 route=="" 当判定 —— 会把 SUB 卷进来）。
+		dc := b.Chain.DocChains[f.DocType]
+		if dc.NoApprovalChain {
+			return RouteResult{RouteID: ""}, nil // 登记型：链为空（不报错）
+		}
+		if dc.Route == "" {
+			// fail-closed：flag=false 且无 route ⇒ 机读规格不完整（可见失败）；
+			// 查不到 doc_chains 条目也落这里（零值 Route=="" ⇒ 同样可见失败，不静默当登记型）。
+			return RouteResult{}, fmt.Errorf(
+				"%w: doc_chains.%s 既未声明 no_approval_chain、也无 route（机读规格不完整）",
+				ErrRouteMissing, f.DocType)
+		}
+		return RouteResult{RouteID: dc.Route}, nil
+
 	default:
 		return RouteResult{}, fmt.Errorf("%w: %s", ErrUnsupportedDoc, f.DocType)
 	}

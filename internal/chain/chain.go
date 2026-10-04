@@ -34,6 +34,12 @@ const (
 	DocCT = "CT" // 合同 / 简式订单（批 3 · T4）
 	DocSS = "SS" // 单一来源理由书（N-036 接线批 ②：链算通路）
 	DocPC = "PC" // 采购变更单（同上）
+	// N-056（A8）登记型单据（doc_chains.<doc>.no_approval_chain == true）：
+	// 链为空、提交即终态；判定只读该键（不读 env_count —— conventions 明文不得依赖）。
+	DocGR  = "GR"
+	DocQC  = "QC"
+	DocRFQ = "RFQ"
+	DocBJ  = "BJ"
 )
 
 // 常见错误（handler 映射为 40000 + 中文明细；错误码枚举归 WorkBuddy，N-018）。

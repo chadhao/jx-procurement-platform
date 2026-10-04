@@ -668,6 +668,18 @@ func (d Deps) handleApprovalSubmit(c echo.Context) error {
 			if b, merr := json.Marshal(members); merr == nil {
 				grAcceptorsJSON = string(b)
 			}
+			// ★ N-056（A8）：GR#ledger_l07_written 落账后自检要求 ext 列
+			//   acceptance_members 非空（verifyGRPostSubmitL07 5 列之一）——
+			//   ★ 此前全仓无生产者（GR 从未走 HTTP 提交 ⇒ 自检从未真跑过；
+			//   本批首次端到端实测暴露）。生产者＝ member_* 非空值串接（与上方
+			//   acceptors 同源同段；gr_checks_test 的 seed 形态即「甲、乙、丙」）。
+			strs := make([]string, 0, len(members))
+			for _, m := range members {
+				if s, ok := m.(string); ok {
+					strs = append(strs, s)
+				}
+			}
+			body.Fields["acceptance_members"] = strings.Join(strs, "、")
 		}
 	}
 
@@ -696,10 +708,13 @@ func (d Deps) handleApprovalSubmit(c echo.Context) error {
 		Supplier:        body.Supplier,
 		BizFields:       body.Fields,
 		Nodes:           rc.Spec,
-		IdemKey:         idemKey,
-		IdemPayloadHash: idemHash,
-		OrgVerify:       orgVerify,
-		StagingIDs:      body.AttachmentIDs,
+		// ★ N-056：登记型（链算 RouteID=="" ＝ no_approval_chain）⇒ 零节点合法豁免；
+		//   判定只在链算层（chain 读 spec），flow 只消费该布尔。
+		RegistrationOnly: rc.Route.RouteID == "",
+		IdemKey:          idemKey,
+		IdemPayloadHash:  idemHash,
+		OrgVerify:        orgVerify,
+		StagingIDs:       body.AttachmentIDs,
 	})
 	switch {
 	case errors.Is(err, flow.ErrIdemReplay):

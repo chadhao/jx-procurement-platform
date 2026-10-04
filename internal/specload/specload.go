@@ -230,6 +230,11 @@ type DocChainDoc struct {
 	RouteByCondition string            `json:"route_by_condition"`
 	EnvCount         int               `json:"env_count"`
 	FinalApprover    string            `json:"final_approver"`
+	// NoApprovalChain ★ N-056（A8）登记型单据：true ＝ 无审批链（提交即终态）。
+	// 唯一规格来源＝spec/chain.json#conventions.no_approval_chain；当前 4 张：
+	// GR/QC/RFQ/BJ。★ 明示排除 SUB（无 route 但走独立通道 POST /api/submission）
+	// ⇒ 不得用「route == ""」当判定（会把 SUB 卷进来）。
+	NoApprovalChain bool `json:"no_approval_chain"`
 }
 
 // UnmarshalJSON 兼容 doc_chains 中的注释性字符串条目（如 "_note"）——

@@ -77,8 +77,11 @@ func TestResolveRoute(t *testing.T) {
 		// ★ N-036 接线批 ②：SS/PC 链算通路（线由 doc_chains.route 固定、不按金额判线）
 		{"SS_单一来源线", Facts{DocType: DocSS}, "sole_source", nil},
 		{"PC_采购变更线", Facts{DocType: DocPC}, "change", nil},
-		// RFQ 等其余单据仍未接入（不在本批范围 —— 接入须同批判据与通路）
-		{"批3之外单据(RFQ未接入)", Facts{DocType: "RFQ"}, "", ErrUnsupportedDoc},
+		// ★ N-056（A8）：RFQ 已接入为**登记型**（no_approval_chain ⇒ RouteID 空、不报错）——
+		//   与 SS/PC 的「固定线」同列；SUB 走独立通道（POST /api/submission）⇒ ResolveRoute
+		//   仍不认（default ⇒ ErrUnsupportedDoc），继续覆盖「批外/未接入」分支。
+		{"RFQ_登记型空链", Facts{DocType: DocRFQ}, "", nil},
+		{"批3之外单据(SUB独立通道未接入)", Facts{DocType: "SUB"}, "", ErrUnsupportedDoc},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {

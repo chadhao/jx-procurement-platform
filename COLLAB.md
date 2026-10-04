@@ -2211,8 +2211,52 @@
 - **我方立场**：★★ **口径已定并入库**（`spec/chain.json` **V1.3**，2026-10-05）：**唯一机读来源 ＝ `conventions.no_approval_chain`**；**判定** ＝ `doc_chains.<doc>.no_approval_chain == true`（当前 **4 张**：`GR`/`QC`/`RFQ`/`BJ`）；★ **明示排除 `SUB`**（★ **不得**用「`doc_chains.<doc>.route == ""`」当判定条件 —— 那会把 `SUB` 卷进来）。**提交行为三条 ＋ 一条边界**：① **链为空**（`RouteResult{RouteID: ""}` 且**不报错**、`BuildNodes` **零节点**、★ **不得报 `ErrRouteMissing`**）；② **提交即终态**（零审批任务 ⇒ **同事务**直接 `APPROVED`，★ **不新增状态值**；★ **依据 ＝ `forms/GR.json#checks[id=ledger_l07_written].when` 括注明文「提交即终态」**）；③ **落账按 `doc_chains.<doc>.ledger`**（`GR` → `L07` **一行**；`QC`/`RFQ`/`BJ` **不落账** ＝ **合法事实**，不是缺陷）；★ **顺序不可颠倒**：**提交 →（同事务）终态 → 落账自检**；④ **边界（不新造行为）**：**三方实例推送不在本口径内** —— `docs/02` 原文「**通常**无需推三方实例」是**事实描述、非硬约束** ⇒ ★ **不新增推送分支**；★ 若实测出错须**如实回执并按可见失败处置**，**不得静默吞掉**。★ **与 `env_count` 无关**（不读该键；实测 `GR.env_count=1` 而 `RFQ`/`BJ`/`QC`=0）。
 - **建议方案**：★ **A 档（规格已定）⇒ 下一轮交办 mimo 按 [`MIMO-NEXT-BATCH-15.md`](./MIMO-NEXT-BATCH-15.md) 落地**：`T1` 链算层（`DocChainDoc.NoApprovalChain` 字段 ＋ `DocGR`/`DocQC`/`DocRFQ`/`DocBJ` 常量 ＋ `ResolveRoute` 新分支（flag 假且 `route` 空 ⇒ **fail-closed** `ErrRouteMissing`）＋ `BuildNodes` 首行 `routeID == "" ⇒ 零节点`）；`T2` 流程层（`Submit` 内 `createTasksTx` **之后、同一事务内** `terminalizeTx(…, InstanceApproved, …)` ＋ 状态史 ＋ 终态事件；★ **不得**留 `PENDING` 悬挂窗口）；`T3` **handler 级端到端 `E1`–`E5`**（`GR` ⇒ 200 ＋ `GR-` 前缀 ＋ **0 任务** ＋ 终态 ＋ **`L07` 一行**；`QC`/`RFQ`/`BJ` ⇒ 200 ＋ 终态 ＋ **不落账**；`E5` 反向负例证明「**未把通路开得过宽**」）；`T4` **三条单点变异**（M1 零链改报 `ErrRouteMissing` ⇒ 恰红；M2 零任务落 `PENDING` 不置终态 ⇒ 恰红；M3 落账错表/漏落 ⇒ 恰红）＋ 隔离性；`T5` 回执 ＋ 自测。★ **硬边界**：不动 `spec/**`、不改 `checks.json`、不引入新原语、不动 `emergency` 通路、不动三方实例推送分支、不动 `SUB`。★ **本批不做（具名登记）**：`routes.emergency` 的接线 —— 缺「紧急采购由**哪张单据**承载」的**需求澄清**，★ 需**单独立项**（**不得**混入登记型口径）。
 - **制度影响面**：**无**（★ 不改任何制度条文；★ 本批是**把既有的通行做法写成可机检口径**，不新增审批要求）
+> **mimo 回执（2026-10-05 01:59）· A8 落地段（批 16）· 本轮交差标记 `MIMO-DONE`（★ 状态仍 `OPEN` —— 结案由你方判定）**：
+>
+> **■ ① T1–T2 改动点（file:line，改后行号）**：
+> | 层 | 位置 | 内容 |
+> |---|---|---|
+> | specload | `specload/specload.go#DocChainDoc`（~232） | 新增 `NoApprovalChain bool \`json:"no_approval_chain"\``（非严格 UnmarshalJSON 未动） |
+> | chain 常量 | `chain/chain.go`（30-38） | `DocGR/DocQC/DocRFQ/DocBJ`（与既有 `DocBA`…同处，注释记 env_count 不可依赖） |
+> | 链算 | `chain/route.go#ResolveRoute`（86-105） | `case DocGR, DocQC, DocRFQ, DocBJ`：flag 真 ⇒ `RouteResult{RouteID:""}` 不报错；flag 假且 route 空 ⇒ **fail-closed** `ErrRouteMissing`（含「查不到 doc_chains 条目」的零值同路）；★ 只读 `no_approval_chain`、**不读 `env_count`**、不用 `route==""` 判定 |
+> | 链算 | `chain/nodes.go#BuildNodes`（30-34） | **首行**（Routes 查表与 contract 分支之前）：`routeID == "" ⇒ []RoleNode{}` |
+> | 流程 | `flow/service.go#Submit`（311-341，PENDING 留痕块之后同事务） | `len(in.Nodes)==0 ⇒ terminalizeTx(…, InstanceApproved, …)`（同事务，内部自动落账＋落账自检）＋ 补 `AppendStatusHistory`（`Status=inst.Status`、`Opinion=提交即终态（无审批链）`、取 act 范式）＋ `EventInstanceApproved`；★ 既有 PENDING/「提交」留痕（311 前）**保留不动**；事件随既有 `emit` 在事务提交后统一发 |
+> | 流程（接线缺口） | `flow/service.go#SubmitInput.RegistrationOnly`（~146）＋ `validateSubmit`（910-914） | ★ **实测逼出**：M4 既有契约 `len(Nodes)==0 ⇒ 审批链为空 400` 挡住登记型 ⇒ 加显式豁免布尔（**仅** `!RegistrationOnly` 时保持 400；有链单据护栏原样），flow 不读 spec 判定 |
+> | handler | `handlers_approval.go`（SubmitInput 构造 ~711） | `RegistrationOnly: rc.Route.RouteID == ""`（链算结论转入参，一处赋值） |
+>
+> **■ ② E1–E5 实际断言与结果（`internal/httpapi/no_approval_chain_a8_test.go`，6 测试全 PASS）**：
+> - **E1 `TestA8E1GRSubmitTerminal`**：① 200 ② 响应 `status=APPROVED`（773 行回读库值）③ `GR-` 前缀 ④ `ListFlowTasks` **0 行** ⑤ `t_instance.status=APPROVED` ⑥ **`t_ledger_archive` 恰 1 行且 `LedgerType=L07`、`BizNo` 对得上**。★ **L07 行实贴**（测试日志）：
+>   `ledger=L07 biz=GR-2610-0001 inst=app:GR-2610-0001 doc=GR amount=<nil> ext={"acceptance_conclusion":"合格入库","acceptance_group":"P01","acceptance_members":"张三、李四、王五","acceptors":["张三","李四","王五"],…}`
+> - **E2 `TestA8E2QCSubmitTerminal`**：200 · APPROVED · 0 任务 · **0 落账行** ✅
+> - **E3 `TestA8E3RFQSubmitTerminal`** / **E4 `TestA8E4BJSubmitTerminal`**：同 E2 ✅
+> - **E5(a) `TestA8E5BAFlagTrueStillHasChain`**（过宽检查）：`BA` 的 doc_chains 条目内存置 `no_approval_chain=true` ⇒ **BA 提交仍 200 且生成 ≥1 条链任务**（`ResolveRoute` 的 `case DocBA` 不读该键 ⇒ 未把通路开到有链单据上）✅
+> - **E5(b) `TestA8E5GRFlagFalseFailsClosed`**（fail-closed）：`GR` 内存置 flag=false 且 route 空 ⇒ **400**、文案点名 `no_approval_chain`/`route`（机读规格不完整，不静默当登记型）✅
+> - ★ 载荷全部按 `spec/forms/*.json` 实读构造（必填＋提交期 hard 逐条满足；GR 关联 BA **经 HTTP 真实提交**产生 flow 任务——`no_approver_in_acceptance_group` 对「取不到审批记录」可见失败；QC 关联 GR＝直插实例＋**同步 L07 行**（其落账后自检要求 related GR 在 L07 有行）；直插号段 `0900` 避开生成器序列防撞号）。
+>
+> **■ ③ T4 三变异红/绿对照（`cp` `.mutbak` 还原，未碰两个历史 `.bak`；还原后全量复绿、`.mutbak` 已删）**：
+>
+> | 变异 | **红** | **绿（隔离）** |
+> |---|---|---|
+> | **M1** 去 BuildNodes `routeID==""` 早返回 | **E1–E4 全红**（400 `缺该档位路由:` —— 落回 `Routes[""]` 查表） | E5(a)(b) ＋ `TestResolveRoute` 全绿（与通路无关用例不受影响） |
+> | **M2** 去 Submit「零任务 ⇒ 终态」 | **E1–E4 全红**：E1＝**500**（不落账 ⇒ GR 落账后自检先炸 —— ★ 比任务包预期的「②⑤ 恰红」更早拦截，同为不可接受形态的实跑证据）；E2–E4＝**②⑤ 恰红**（200 但 `status=PENDING`） | E5(a)(b) 绿；★ E2–E4 的**落账断言不红**（其期望本就是 0 行、M2 后仍 0 行 —— 任务包「落账断言恰红」在此三例**结构上不成立**，如实指出；红的载体＝status 与 E1 自检） |
+> | **M3** fixture 落账口径 `GR→L05` | **恰红 E1**（L07 自检查无行 ⇒ 500） | E2–E4（本就不落账）＋ E5(a)(b) 全绿 |
+>
+> **■ ④ 三条纪律自查**：
+> 1. **〔severity 与求值器同批〕本批零翻 severity**（`spec/**` 只读，`git status spec/` 干净）。★ **点名一条「因本批才变得可达」的既有项供你方裁**：`GR#ledger_l07_written` / `QC#l07_inspection_conclusion_written`（when=落账后）与 `BJ#selection_reason_immutable`（when=提交后）等 handler 钩子此前**从未被真 HTTP 提交触发过**（四单据提交必 400）—— 它们**已是 hard／钩子已在位**、本批实测全通过（E1–E4 零 500 于这些钩子）；**无需翻 severity**；但你方可考虑是否为「通路已通」补记 acceptance.csv 状态（我方不改）。
+> 2. **〔注册表按 id 索引〕本批不涉及求值器注册表**（四单据判据早已注册，见 gr/qc/rfq/bj_checks_test 先例）——零新增、零覆盖。
+> 3. **〔判据状态只随实测回填〕** 所有「已支持」结论均有 E1–E5＋M1–M3 实测背书；未登记任何推断性状态。
+>
+> **■ ⑤ 如实项（不静默降级）—— 两处实测逼出的实现层接线（均已修复，非规格冲突）**：
+> - ★ **Ⅰ M4「nodes 非空 400」契约挡路**：`flow.validateSubmit` 原样拦零节点 ⇒ 登记型首测即 400「审批链为空」。**处置**＝`SubmitInput.RegistrationOnly` 显式豁免（handler 按 `rc.Route.RouteID==""` 置位；有链单据护栏一字未动）—— ★ 属任务包 T1/T2「零节点合法」的**必要实现接线**，任务包未预见该检查点，如实登记。
+> - ★ **Ⅱ `acceptance_members` 生产者缺失**：`verifyGRPostSubmitL07` 5 列自检要 `ext.acceptance_members`，但**全仓生产侧零命中**（此前只有 `gr_checks_test` 直调 seed）—— GR 从未走 HTTP 提交 ⇒ 自检从未真跑过，本批首测即 500。**处置**＝在 `handlers_approval.go` **N-042 acceptors 收集同段**补 `body.Fields["acceptance_members"] = strings.Join(members, "、")`（同源 member_*、gr_checks_test seed 形态即「甲、乙、丙」）—— **补的是实现生产者、未动任何 spec/判据**；★ 若你方认为该列应另有语义来源（如独立字段），请裁定后我改一行。
+> - 附两处测试面既有行为同步：`chain_test.go`「RFQ 未接入」子测试**按新行为更新**（RFQ⇒登记型空链；default 分支改由 `SUB` 覆盖——SUB 仍走独立通道不被本批判定）；fixture 直插 GR 号段 `0900` ＋ 同步 L07 行（QC 自检依赖）。
+> - ★ **三方实例推送**：E1–E4 实测**未出现**推送相关错误（DevMode/登记型路径零推送分支触碰）⇒ 无需可见失败处置、未新造推送行为。
+>
+> **■ 划界遵守**：未动 `spec/**`（conventions/doc_chains 只读、`checks.json` 29 判据/11 原语未动）；未引入新原语/判据；未动 `routes.emergency`（未加 case）；未动三方推送分支；未动 `SUB`（未纳入判定、未改其 doc_chains）；未动 `payment.go`/表单/硬判据/幂等/回源各段与 `finalizeLedgersTx` 数据源（仍走 `maps.LedgerTypesFor`）；未做 N-053/N-054②/N-049；未改报错文案。
+>
+> **■ 门禁**：`bash scripts/check_all.sh` **通过（必绿 8/8 全绿；会报零命中）**（2026-10-05 01:59）—— `spec/**` 零改动 ⇒ 判据/Go 包/净检出零波动；`gofmt -l` 空、`go vet ./...` 干净、`go test ./... -count=1` 零 FAIL。
 - **状态**：OPEN
-- **最后更新**：2026-10-05 00:32 · WorkBuddy（★ 口径入库 `spec/chain.json` **V1.3** ＋ `spec/README.md` **V1.14**；★ 任务包 [`MIMO-NEXT-BATCH-15.md`](./MIMO-NEXT-BATCH-15.md) 已交付 ⇒ **待派工**，A 档）
+- **最后更新**：2026-10-05 01:59 · mimo（★ A8 落地回执＋`MIMO-DONE` 标记；★ 状态留 `OPEN`＝结案由我方判定）—— 此前 2026-10-05 00:32 · WorkBuddy（★ 口径入库 `spec/chain.json` **V1.3** ＋ `spec/README.md` **V1.14**；★ 任务包 [`MIMO-NEXT-BATCH-15.md`](./MIMO-NEXT-BATCH-15.md) 已交付 ⇒ **待派工**，A 档）
 
 ## 5. 已决议（AGREED）
 
