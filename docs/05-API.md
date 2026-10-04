@@ -1046,6 +1046,8 @@ sequenceDiagram
 ★ **不在本契约内**：审批链算不到人 ⇒ `400` + `code=40010` + `data.unresolved_roles`（见 §3.13）—— ★ **另一类明细，字段名不同、不与之混用**；前端须按 `code` 分流。
 ★ **前端消费口径**（`web/src/views/Submit.vue`）：`code=40000` 且 `data.form_errors` 非空 ⇒ 逐条定位（`section_id` + `row_index` + `field_name`）并高亮；**取不到 `form_errors`（如 `40010`、网络失败）⇒ 回落显示 `message`**，不得因此不显示错误。
 
+★★ **当前可达性事实（2026-10-04 实测，非推断）**：`POST /api/approval/submit` 中 **PR 明细金额校验先于表单结构化校验执行**（`internal/httpapi/handlers_approval.go` 的 PR 金额段在表单校验段之前），且全仓**仅 `PR` 声明了 `repeating: true` 段** ⇒ 当 PR 的 `fields.detail` 缺失 / 非数组 / 空数组时，客户端收到的是 **`scope=amount`（`row_index=0`）**，**不是** `scope=rows`。★ `scope=rows` 的结构化产出**已实现**（`validateRepeatingRows`），只是**在 HTTP 出口当前不可达** —— 待非 PR 的 repeating 单据接入后自然可达。⇒ 消费方**必须同样接受 `scope=amount` ＋ `row_index=0`**（本页做法：命中段级 `.section-error` 高亮、不做行级滚动）。
+
 ---
 
 ## 5. 权限在接口层的落地
