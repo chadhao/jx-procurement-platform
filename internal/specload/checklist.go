@@ -198,6 +198,50 @@ func runOne(c checkDef, files map[string][]byte, decoded map[string]any) []strin
 		}
 		return problems
 
+	case "path_exists":
+		// N-048 · 第 11 原语：锚点指针必须可解析 —— collect 收集字符串指针
+		// "<spec 相对路径>#<点路径>"（省略 # ⇒ 只校验文件存在且可解析），
+		// 断言：文件存在 ∧ 可 JSON 解析 ∧ 点路径命中 ≥1 节点。
+		// ★ 语义与 scripts/check_spec.py#prim_path_exists 逐字对齐（两侧契约）；
+		// ★ 切分规则＝括号感知（splitPtrSegs，[...] 内不按 . 切）。
+		pat, _ := argString(c.Args, "file")
+		collect, _ := argString(c.Args, "collect")
+		minHits := argInt(c.Args, "min_hits", 1)
+		hits := collectAcross(decoded, pat, collect)
+		problems := minHitsProblems(c.ID, collect, hits, minHits)
+		for _, h := range hits {
+			ref, ok := h.(string)
+			if !ok {
+				problems = append(problems, fmt.Sprintf("[%s] %s 收集出现非字符串项（%T）—— 锚点必须是字符串指针", c.ID, collect, h))
+				continue
+			}
+			ref = strings.TrimSpace(ref)
+			targetPath, ptrPath, hasHash := strings.Cut(ref, "#")
+			targetPath = strings.TrimSpace(targetPath)
+			raw, exists := files[targetPath]
+			if !exists {
+				problems = append(problems, fmt.Sprintf("[%s] 锚点 %q 指向的文件不存在：%s", c.ID, ref, targetPath))
+				continue
+			}
+			root, parsed := decoded[targetPath]
+			if !parsed {
+				var v any
+				if err := json.Unmarshal(raw, &v); err != nil {
+					problems = append(problems, fmt.Sprintf("[%s] 锚点 %q 指向的文件不可解析（%s）：%v", c.ID, ref, targetPath, err))
+					continue
+				}
+				root = v // 预解码跳过但本文件实际可解析（理论不可达，兜底）
+			}
+			if !hasHash || strings.TrimSpace(ptrPath) == "" {
+				continue // 省略 # ⇒ 只校验文件存在且可解析
+			}
+			if len(pathHits(root, normalizePtrSegs(splitPtrSegs(ptrPath)))) == 0 {
+				problems = append(problems, fmt.Sprintf(
+					"[%s] 锚点 %q 的点路径在 %s 内**命中 0 个节点**（字段不存在 / 改名 / 语法写错）", c.ID, ref, targetPath))
+			}
+		}
+		return problems
+
 	case "range_contiguous":
 		pat, _ := argString(c.Args, "file")
 		collect, _ := argString(c.Args, "collect")
@@ -533,6 +577,142 @@ func parseSelector(sel string) []string {
 		segs = append(segs, p)
 	}
 	return segs
+}
+
+// splitPtrSegs ★ path_exists 专用点路径切分（N-048 §1.3）：按 "." 切段，
+// 但方括号 [...] 内部不切分 —— 两条实测必要性：
+// ① 字面键可含点（spec/params.json 的 reporting.monthly_cutoff_day 等 5 键）；
+// ② 选择器值可含点（checks.json#change_log[version=1.5]）。
+// 与 Python 侧 check_spec.py#split_ptr_segs 逐字同规则。
+func splitPtrSegs(ptr string) []string {
+	segs := []string{}
+	var buf strings.Builder
+	depth := 0
+	for _, r := range ptr {
+		switch {
+		case r == '[':
+			depth++
+			buf.WriteRune(r)
+		case r == ']':
+			if depth > 0 {
+				depth--
+			}
+			buf.WriteRune(r)
+		case r == '.' && depth == 0:
+			if buf.Len() > 0 {
+				segs = append(segs, buf.String())
+				buf.Reset()
+			}
+		default:
+			buf.WriteRune(r)
+		}
+	}
+	if buf.Len() > 0 {
+		segs = append(segs, buf.String())
+	}
+	return segs
+}
+
+// normalizePtrSegs 段归一（同 Python prim_path_exists 的预处理）：
+//   - 尾缀形 `name[k]`（如 checks[id=x]）拆为裸键 `name` ＋ 选择/字面段 `[k]`；
+//   - 独立段 `[*]` 归一为 `*`。
+//
+// ★ 与 Python 的顺序差异（如实登记）：Python 先 `replace("[*]","*")` 再拆尾缀，
+// 会把 `name[*]` 折成裸键 `name*`（miss）；本实现先拆尾缀 ⇒ `name[*]` → `name`+`*`
+// （数组元素，语义正确）。★ 实数据（institution-anchors 158 条）零 `[*]` 形态，
+// 两侧在真锚点上行为一致；未来若出现 `name[*]` 指针，Python 侧需同步调整顺序。
+func normalizePtrSegs(raw []string) []string {
+	out := make([]string, 0, len(raw)*2)
+	for _, s := range raw {
+		if s == "[*]" {
+			out = append(out, "*")
+			continue
+		}
+		if i := strings.LastIndex(s, "["); i > 0 && strings.HasSuffix(s, "]") {
+			name, br := s[:i], s[i:]
+			if name != "" {
+				out = append(out, name)
+			}
+			if br == "[*]" {
+				out = append(out, "*")
+			} else {
+				out = append(out, br)
+			}
+			continue
+		}
+		out = append(out, s)
+	}
+	return out
+}
+
+// pathHits ★ path_exists 的指针求值（同 Python _ptr_walk）：返回命中节点列表。
+// 段语义：`**` 递归 · `*`/`[*]` 全部子节点 · `[k=v]` 选择器（子节点中 k 的标量
+// 值 == v）· `[字面键]` 字面键（允许含点；dict 自身与数组元素两种宿主）· 裸键。
+func pathHits(node any, segs []string) []any {
+	if len(segs) == 0 {
+		return []any{node}
+	}
+	head, rest := segs[0], segs[1:]
+	out := []any{}
+	switch {
+	case head == "**":
+		out = append(out, pathHits(node, rest)...)
+		for _, c := range ptrChildren(node) {
+			out = append(out, pathHits(c, segs)...)
+		}
+	case head == "*":
+		for _, c := range ptrChildren(node) {
+			out = append(out, pathHits(c, rest)...)
+		}
+	case len(head) >= 2 && strings.HasPrefix(head, "[") && strings.HasSuffix(head, "]"):
+		body := head[1 : len(head)-1]
+		if k, v, hasKV := strings.Cut(body, "="); hasKV {
+			for _, c := range ptrChildren(node) {
+				if m, ok := c.(map[string]any); ok {
+					if sv, isScalar := scalarString(m[k]); isScalar && sv == v {
+						out = append(out, pathHits(c, rest)...)
+					}
+				}
+			}
+			return out
+		}
+		// 字面键：dict 自身优先
+		if m, ok := node.(map[string]any); ok {
+			if v, exists := m[body]; exists {
+				return pathHits(v, rest)
+			}
+		}
+		// 字面键：数组元素宿主（遍历子节点）
+		for _, c := range ptrChildren(node) {
+			if m, ok := c.(map[string]any); ok {
+				if v, exists := m[body]; exists {
+					out = append(out, pathHits(v, rest)...)
+				}
+			}
+		}
+	default:
+		if m, ok := node.(map[string]any); ok {
+			if v, exists := m[head]; exists {
+				out = append(out, pathHits(v, rest)...)
+			}
+		}
+	}
+	return out
+}
+
+// ptrChildren 取子节点（dict 值 / 数组元素）。
+func ptrChildren(node any) []any {
+	switch t := node.(type) {
+	case map[string]any:
+		out := make([]any, 0, len(t))
+		for _, v := range t {
+			out = append(out, v)
+		}
+		return out
+	case []any:
+		return t
+	}
+	return nil
 }
 
 // globMatch：`*` 匹配单段内任意字符，`**` 跨段匹配（含零段）。

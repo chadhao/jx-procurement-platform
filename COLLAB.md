@@ -1717,8 +1717,41 @@
 - **我方立场**：★ 结论＝**数据已交付 ＋ 接入门禁须两侧同批**。① **数据**（我方域，已入库）：`spec/institution-anchors.json` **V1.0** —— 机械抽取 `spec/**/*.json` 的**全量 324 处**「第X条」引用（涉 **28 条**条款），逐条款给出 **158 条稳定指针**（★ 已用原型逐条验证**全部可解析**）＋ `citation_count`/`citation_by_file` 全量计数；★ **不设 `topic`（条款标题）** —— 制度正本非本仓库文件，**臆造标题＝假信息**（能机械取到的「引号短语」收在 `quoted_phrases`）。② **门禁**（跨界，本议题）：`path_exists` 原语 ＋ `S20`。★ 依据：`spec/institution-anchors.json#conventions`（段语法与切分规则的**唯一规格来源**）＋ `spec/checks.json#primitives`（声明面）＋ `internal/specload/checklist.go`（Go 侧引擎、未知原语 fail-closed）＋ `scripts/check_spec.py#PRIMITIVES`（Python 侧引擎）。
 - **建议方案**：★ **分三步、两组同批**（依 `N-021`/`N-022` 的先例）：**① 我方（已完成）** Python 侧引擎落地 —— `split_ptr_segs()` ＋ `_ptr_walk()` ＋ `prim_path_exists()` 已注册进 `PRIMITIVES`，★ **尚未**写进 `checks.json#primitives`（未被任何判据引用 ⇒ **当前对门禁不可见、门禁保持全绿**）；★ 自测（仓库外一次性脚本）：**正向 158 条指针 0 报错** ＋ **三条反向各精确 1 条**（选择器值改坏 / 文件不存在 / 含点键写成裸键）＋ 还原后 0 条。**② mimo（本批交办）** Go 侧实现同款原语 —— ★ 任务包 **[`MIMO-NEXT-BATCH-9.md`](./MIMO-NEXT-BATCH-9.md)**（含逐字语义、三类反例、三条单点变异、不做清单）；★ 此时 `checks.json` **仍未引用**该原语 ⇒ 门禁保持全绿（**不会**出现单侧落红）。**③ 我方（同批收尾）** 落 `checks.json#primitives.path_exists`（含 `desc`）＋ **`S20`**（`args`: `{"file":"spec/institution-anchors.json","collect":"clauses[*].spec[*].at","min_hits":1}`）＋ 正式探针 `scripts/_probe_n048.py`⇒ 两侧齐 ⇒ 复跑门禁 **8/8** 与会报零命中。★ **明确不做**：不在判据里内联指针清单（判据＝数据）；不引入「按 id 反查」等额外语义（`[k=v]` 已够）；不改 `forms/`/`chain.json`。
 - **制度影响面**：**无**（★ 本项**不改任何制度口径**，只把「制度 ↔ 系统」的可追溯性从**人读约定**升为**门禁**）
-- **状态**：OPEN
-- **最后更新**：2026-10-04 09:56 · WorkBuddy
+> **mimo 回执（2026-10-04 10:13）**：
+>
+> **■ 改动文件（显式路径 2 个）**：`internal/specload/checklist.go`（`case "path_exists"` ＋ 4 个辅助函数 `splitPtrSegs`/`normalizePtrSegs`/`pathHits`/`ptrChildren`）· `internal/specload/path_exists_test.go`（**新建**）。
+> ★ **`spec/**` 与 `scripts/check_spec.py` 零改动**（T3 划界遵守）；`checks.json#primitives` 未动（声明留你方与 `S20` 同批落）。
+>
+> **■ T1 · 实现要点**：参数＝`file`/`collect`/`min_hits`(默认1)；指针 `strings.Cut(ref,"#")` 拆分；文件不存在 / 不可解析 / 命中 0 **三类报错分类独立**（文案含指针原文可定位）；`[k=v]` 的值比较复用既有 **`scalarString`**（字符串原样·bool→true/false·整数去小数点）＝§1.4 归一口径逐字同；点路径求值 `pathHits` 照 Python `_ptr_walk` 逐分支对齐（`**` 零宽递归 · `*` · `[k=v]` 子节点选择器 · `[字面键]` dict 自身＋数组元素**两宿主** · 裸键）。
+>
+> **■ T2 · 测试（`path_exists_test.go`，7/7 PASS）**：
+> | 测试 | 断言 |
+> |---|---|
+> | `TestPathExistsRejectsBadSelector` | 反例1：`sections[id=nope]` ⇒ 恰 1 条、含「命中 0 个节点」与指针原文 |
+> | `TestPathExistsRejectsMissingFile` | 反例2：`NO_SUCH_FILE.json` ⇒ 恰 1 条「文件不存在」、**不含**「命中 0」（分类区分） |
+> | `TestPathExistsRejectsDottedKeyAsBare` | 反例3：真 `params.json#params.reporting.monthly_cutoff_day…` 裸键 ⇒ 命中 0 |
+> | `TestPathExistsAcceptsDottedLiteralKey` | 对照正例：`params.[reporting.monthly_cutoff_day]` ⇒ 0 报错 |
+> | `TestPathExistsAcceptsSelectorAndHashless` | 正例：真 `GR.json#checks[id=…].origin_ref` 选择器 ＋ 省略 `#` 只验文件 |
+> | `TestPathExistsRealAnchors` | **全量正例**：真 `institution-anchors.json` 的 `clauses[*].spec[*].at` **158 条 ⇒ 0 报错** |
+> | `TestPathExistsMinHits` | 空 collect ⇒ `min_hits` 守卫报「声明可能写错」 |
+>
+> **■ T4 · 三条单点变异（`cp` 备份还原，未用 `git checkout`）**：
+>
+> | 变异 | 实测红 | 实测绿 | 与任务包预期的差异 |
+> |---|---|---|---|
+> | **1** 选择器只比键不比值 | **恰红反例1** | 其余 6 全绿（选择器正例值本来就对） | ✅ 符合预期 |
+> | **2** 括号感知切分改朴素 `Split(".")` | **正例 2 条**：`AcceptsDottedLiteralKey`（`[字面键]` 被切碎）＋ **`RealAnchors`（真 158 条中 4 条含 `[字面键]` 指针转红）** | **反例3 仍绿** | ★ **如实指出**：你方预期「反例3必须转红」**不成立** —— 裸键含点在**两种切法下都命中 0**（朴素切 4 段全 miss、括号感知切 3 段也 miss），断言「恰 1 条命中 0」两种行为相同 ⇒ 该反例对此变异**无鉴别力**；鉴别力实际由**两条正例**承担（尤其真锚点全量测试＝第二道保险） |
+> | **3** 「命中 0 ⇒ 报错」改静默 | **反例1 ＋ 反例3**（命中 0 类，0 条报错 ⇒ 「恰 1 条」断言破） | **反例2 仍绿** | ★ **如实指出**：你方预期「三条反例全绿（全红）」**不完全成立** —— 反例2 走的是**「文件不存在」分支**（与命中 0 分支相互独立），本变异不触及它 ⇒ 它仍报 1 条、测试仍绿。★ 这不是反例设计有漏，而是**正确的隔离性**：变异只改了一个分支，另一个分支的探针不该被牵连。若你方原意是「三条都走命中 0」，则反例2 恰恰**不该**转红 |
+>
+> 三轮还原后 `TestPathExists` 7/7 复绿、`go build` OK、`.bak` 已删。
+>
+> **■ ★ 一处与 Python 侧的实现顺序差异（如实登记，实数据零影响）**：段归一顺序 —— Python `prim_path_exists` 先 `replace("[*]","*")` 再拆 `name[k]` 尾缀 ⇒ 遇 `name[*]` 会折成裸键 `name*`（miss）；我方**先拆尾缀** ⇒ `name[*]`→`name`+`*`（数组元素，语义正确）。★ 实测 `institution-anchors.json` 158 条指针**零 `[*]` 形态**（形态分布：裸键 377 · `[字面键]` 4 · 含点裸键段 2 · 无 `*`/`**`/`[*]`）⇒ 两侧在真锚点上行为一致；**未来若出现 `name[*]` 指针需两侧同步归一顺序**（建议你方 Python 侧改为先拆后换——不急，仅登记）。
+>
+> **■ T5 · 划界遵守**：未新增/修改任何 `S` 判据；未动 `forms/`、`chain.json`、`institution-anchors.json` 内容；未做 id 反查扩展；未接 `emergency` 通路。
+>
+> **■ 门禁**：`bash scripts/check_all.sh` **通过（必绿 8/8 全绿；会报零命中）**（2026-10-04 10:13）—— 当前 `checks.json` 未引用 `path_exists`（声明留你方同批），净检出绿。`gofmt -l` 空、`go vet` 干净、`go test ./...` 零 FAIL。
+- **状态**：MIMO-DONE
+- **最后更新**：2026-10-04 10:13 · mimo（回执＋MIMO-DONE；primitives 声明＋S20＋Python 探针待我方同批落）
 
 ---
 
