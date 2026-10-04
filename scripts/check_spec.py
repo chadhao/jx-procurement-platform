@@ -43,6 +43,16 @@ scripts/check_spec.py —— `spec/` 机读规格门禁（**清单执行器**）
    ⇒ `spec/acceptance.csv` **不在** Go 的 `files` 面内 ⇒ ★ 本原语一被清单引用，Go 侧
    **14 个测试当场全红**（`[S26] CSV 文件不在装载面`）⇒ ★★ **「先扩装载面、再引原语」的次序不可颠倒**
    —— 这是 `N-011`/`N-048` 同型的「两侧同批」约束在**装载层**的表现（该装载面修复已先由 mimo 落地）。
+ · ★★ **2026-10-05 第 8 例（台账的另一种漂移：**索引失真**）**：`spec/institution-anchors.json`
+   （`N-006` 第二重机制：制度条款 ↔ 机读规格双向索引）自 V1.0 起**只由仓库外的一次性原型脚本生成**
+   ⇒ 留下窗口：**改了 spec、索引未重生 ⇒ 索引失真**。★ 既有 `S20`（指针可解析）**抓不住「有新的
+   引用没被索引」** —— 两者是**不同的洞**。⇒ 新增 `_institution_anchors_counts()`：
+   `[META]` 自查类（**不新增原语、不改 `checks.json`、不触碰 Go 侧加载器** ⇒ 无「两侧同批」约束），
+   口径的唯一来源＝`scripts/gen_institution_anchors.py`（本文件**只比对**）。
+   ★★ **它当场就抓到了真漂移（非构造）**：索引 V1.1 相对当前 spec **失真 3 处**，全部源于批 7（`B6`）
+   **机械生成**的 `spec/openapi.json`（晚于索引生成时点）—— 新增条款「第二条」1 处 ＋ 「第五十二条」
+   1 处。★ 等价性亦已实测：**排除该生成物后，重算与索引 28/28 条款 · `citation_count` ·
+   `citation_by_file` 全等**（故重算口径可被信任）。
 
 用法：python scripts/check_spec.py [checks.json 路径]
 退出码：0 = 全部 must-green 通过；1 = 有违规；2 = 清单/目录不可用
@@ -852,6 +862,36 @@ def _self_audit_cid_literals():
 #   与迁移前兜底在同一夹具上的 **32 处逐项对应**；★ 并做缺口存在性反证（摘掉 `S26` ⇒ 静默放行）。
 
 
+def _institution_anchors_counts():
+    """[META] 制度锚点索引（`spec/institution-anchors.json`）的**计数面**自审 —— `N-049` ①。
+
+    ★ `citation_count` / `citation_by_file` 是**纯机械可重算**的量（与「指针优先级选择」无关）；
+      而该索引原本由**仓库外**的一次性原型脚本生成（原 `known_gaps.generator_outside_repo`）
+      ⇒ 留下「改了 spec、索引未重生 ⇒ 索引失真」的窗口。★ `S20`（指针可解析）抓不住**新引用**。
+    ★ 口径的**唯一来源**＝`scripts/gen_institution_anchors.py` —— 本函数只做比对，
+      **不重复实现口径**（否则又会出现「同一判定两条来源」，见本文件头注第 7 例）。
+    ★ 缺口反证（本项落盘时实测）：删掉本调用 ⇒ 同一处索引失真（`spec/openapi.json` 的 2 处引用）
+      **静默放行**；装回 ⇒ 报出 3 处。
+    """
+    here = os.path.dirname(os.path.abspath(__file__))
+    if here not in sys.path:
+        sys.path.insert(0, here)
+    try:
+        import gen_institution_anchors as gen
+    except Exception as e:                       # fail-closed：导入不了即视为该面**未受保护**
+        return ["[META] 无法导入 `scripts/gen_institution_anchors.py` ⇒ 索引失真的窗口**未受保护**：%s" % e]
+    try:
+        counts, by_file = gen.scan(ROOT)
+        idx = gen.load_index(ROOT)
+    except Exception as e:
+        return ["[META] 锚点索引计数重算失败（口径见 `scripts/gen_institution_anchors.py` 头注）：%s" % e]
+    return [
+        "[META] 制度锚点索引**计数失真** ⇒ %s"
+        "（复现：`python scripts/gen_institution_anchors.py --check`）" % p
+        for p in gen.diff(idx, counts, by_file)
+    ]
+
+
 def check(cl_path):
     if not os.path.isfile(cl_path):
         print("FAIL [%s] 找不到判据清单：%s" % (NAME, cl_path))
@@ -885,6 +925,9 @@ def check(cl_path):
 
     # ★ 源码自审：判据 ID 不得硬编码
     problems += _self_audit_cid_literals()
+
+    # ★ 台账类自审（`[META]`，非 `checks.json` 判据）：制度锚点索引的**计数面**不得失真
+    problems += _institution_anchors_counts()
 
 
     ran = 0

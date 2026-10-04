@@ -204,6 +204,14 @@ func TestTierExpandEmergencyMax(t *testing.T) {
 			nil, int64Ptr(500000), nil, true},
 		{"★ 变异B判别行：补录500元/PR 6000元 就高档3⇒pgm（只取单边会降档到 tier1⇒空）",
 			int64Ptr(50000), int64Ptr(600000), []string{"project_general_manager"}, false},
+		// ★ N-049 ③（我方补）：**补录侧更大且跨档**的「就高」正例 —— 上表第 3 行虽也是
+		// 补录侧更大，但两值分属采三/采二档、**两条链去重后同为 pgm** ⇒ 对「就高」无鉴别力
+		// （取 min / 只取 PR 侧都仍得 pgm）。本行的两个取值**分别落在采三档与采一档**：
+		// · 应然（就高）＝档3 ⇒ [supervisor, pgm] 去 supervisor ⇒ pgm；
+		// · 若误取关联 PR 单边（档1）⇒ [ops_supervisor] 被 exclude 剔空 ⇒ 空。
+		// ⇒ 与变异B判别行（PR 侧更大）**互为镜像**，两条一起把「就高」两侧都钉住。
+		{"★ 变异C判别行（N-049 ③）：补录6000元(档3)/PR 500元(档1) ⇒ pgm（只取 PR 单边会降到采一档⇒空）",
+			int64Ptr(600000), int64Ptr(50000), []string{"project_general_manager"}, false},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {

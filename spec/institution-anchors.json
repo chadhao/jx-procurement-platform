@@ -1,7 +1,7 @@
 {
-  "version": "1.1",
+  "version": "1.2",
   "generated_by": "WorkBuddy",
-  "date": "2026-10-04",
+  "date": "2026-10-05",
   "scope": "★ `N-006` 三重机制的**第 2 重**：制度条款 ↔ 机读规格的**双向索引**（接入门禁）。★ 双向含义：① **条款 → 落点**（`clauses[].spec[]`，稳定指针）② **落点 → 条款**（同一张表反查；另有 `citation_by_file` 给出**全量**引用计数，覆盖 `spec[]` 未逐条收录的其余引用）。",
   "institution_doc": {
     "title": "湖南江熙新材料科技 采购与费用审批管理办法（试行）",
@@ -24,9 +24,19 @@
     "why_no_array_index": "★★ 原始取证拿到的是**数组索引**指针（如 `checks[14]`）—— ★ 索引会随重排**静默指向别的对象**（存在性检查抓不住）⇒ 一律换算为 `[k=v]` 选择器形式，使指针**重排稳定**。",
     "why_no_regex_scan": "★★ 本索引由**生成器机械抽取**（字符串里出现「第X条」即计一处），**不是**按条款名 grep；★ 抽取结果含 `citation_count` 与 `citation_by_file`，可复核。",
     "semantics": "★ `clauses[].spec[]` 的语义＝「**本条款在 spec 中的落点（引用/承载位）**」，★ **不是**「谁来执行」—— 执行者由 `carried_by`/`carried_by_kind` 表达（见 `S15`/`S16`）。",
+    "count_gate": "★★★ **计数面门禁已启用（2026-10-05 · `N-049` ①）** —— ★ 与 `gate`（`S20`，管**指针可解析**）**互补**：`citation_count` / `citation_by_file` 是**全量计数**（与「指针优先级」无关、**纯机械可重算**）⇒ 二者合起来才覆盖「**索引 vs spec 是否同步**」这一整面。★ 口径（**唯一来源**）：`scripts/gen_institution_anchors.py` —— ① 扫描面 ＝ `spec/**/*.json`（**排除本文件自身**，见 `generator_excludes_self`）；② 计数 ＝ 「**每个字符串内、每条款计 1 处**」；③ 条款号识别 ＝ `第[零一二三四五六七八九十百]+条`。★ 接入方式 ＝ `scripts/check_spec.py` 的 `[META]` 自审 `_institution_anchors_counts()`（★ **只比对、不重复实现口径** ⇒ 不产生「同一判定两条来源」）。★ 三类报错各自独立：`E1` 计数不等 · `E2` 逐文件计数不等 · `E3` **spec 中有引用但不在索引**（＝**新引用未被索引**，`S20` 抓不到的那一类）。★★ **`S20` 与本节覆盖面的分工（勿混）**：`S20` ＝「**已声明为指针的落点是否存在**」；本节 ＝「**是否有引用漏了索引**」；★ 二者**都不**表达「指针级是否收全」（见 `known_gaps.not_full_pointer_index`）。",
     "gate": "★★★ **接入门禁已启用（`N-048` 收尾，2026-10-04）**：本文件已作为 `spec/checks.json#checks[id=S20]` 的**唯一数据源**接入门禁（第 11 原语 `path_exists`，Python ＋ Go 两侧同批实现）。★ 判据＝`clauses[*].spec[*].at` 的**每一条指针必须可解析**（文件存在 ∧ 可 JSON 解析 ∧ 点路径命中 ≥1 节点）；★ 报错分类独立（「文件不存在」≠「不可解析」≠「命中 0」）。★★ **本轮随之钉死一条两侧契约**：段归一必须**先拆 `name[k]` 尾缀、再换 `[*]`→`*`** —— 反序会把 `checks[*]` 折成裸键 `checks*`（命中 0）。★ 两侧各留一道回归钉（Go `TestPathExistsStarBracketSegment` · Python `scripts/_probe_n048.py`）。★ 语法以本文件 `conventions.segment_form` ＋ `conventions.split_rule` 为**唯一规格来源**。"
   },
   "clauses": [
+    {
+      "clause": "第二条",
+      "quoted_phrases": [],
+      "spec": [],
+      "citation_count": 1,
+      "citation_by_file": {
+        "spec/openapi.json": 1
+      }
+    },
     {
       "clause": "第十条",
       "quoted_phrases": [
@@ -798,12 +808,13 @@
           "kind": "rule"
         }
       ],
-      "citation_count": 33,
+      "citation_count": 34,
       "citation_by_file": {
         "spec/chain.json": 1,
         "spec/forms/PC.json": 29,
         "spec/forms/SS.json": 1,
-        "spec/ledger-mapping.json": 2
+        "spec/ledger-mapping.json": 2,
+        "spec/openapi.json": 1
       }
     },
     {
@@ -1027,11 +1038,11 @@
     {
       "id": "no_gate_yet",
       "status": "★ 已销项（2026-10-04 · `N-048` 收尾）",
-      "note": "★★ ~~**接入门禁尚未启用**（`S20` ＋ 原语 `path_exists` 须两侧同批，`N-048`）~~ ⇒ ★ **已闭环**：`spec/checks.json` **V1.13** 新增第 11 原语 `path_exists` 与判据 **`S20`**，两侧引擎同批实现 ⇒ ★ **常驻门禁已生效**（`python scripts/check_spec.py` 24/24 条判据执行）。★ 历史对照（V1.0 时期）：本文件全部指针**只经我方一次性原型脚本验证**（`clauses[].spec[]` 共 158 条指针**全部可解析**），★ 那时**无常驻门禁** ⇒ 存在「改了 spec、索引未重生 ⇒ 索引失真」的窗口。★ 该窗口现已关闭。"
+      "note": "★★ ~~**接入门禁尚未启用**（`S20` ＋ 原语 `path_exists` 须两侧同批，`N-048`）~~ ⇒ ★ **已闭环**：`spec/checks.json` **V1.13** 新增第 11 原语 `path_exists` 与判据 **`S20`**，两侧引擎同批实现 ⇒ ★ **常驻门禁已生效**（`python scripts/check_spec.py` 24/24 条判据执行）。★ 历史对照（V1.0 时期）：本文件全部指针**只经我方一次性原型脚本验证**（`clauses[].spec[]` 共 158 条指针**全部可解析**），★ 那时**无常驻门禁** ⇒ 存在「改了 spec、索引未重生 ⇒ 索引失真」的窗口。★★ **据实更正（2026-10-05 · `N-049` ①）—— 原文「该窗口现已关闭」只对了一半**：`S20` 关掉的是「**指针指向的落点不存在**」；★「**有新引用没被索引**」这个窗口**当时仍开着**（`S20` 的收集面是 `clauses[*].spec[*].at`，对**未被收录的引用**天然不可见）。★★ **实测坐实**：批 7（`B6`）**机械生成** `spec/openapi.json` **之后**，本索引相对 spec **静默失真 3 处**，而**全部 8 道必绿门禁依然全绿**（含 `S20`）。⇒ ★ 该另一半窗口已于 `N-049` ① 由**计数面门禁**关闭（`scripts/gen_institution_anchors.py` ＋ `check_spec.py` 的 `[META]` 自审；见 `generator_outside_repo`）。"
     },
     {
       "id": "not_full_pointer_index",
-      "note": "★ **指针级「全量」索引未做**：全量引用 324 处，`spec[]` 逐条款只收优先级最高的 ≤8 处（共 158 条）；★ 另有 22 处**无法稳定化**（落在 `known_gaps`/`open_items`/`payments_rule.decisions` 等**元素无稳定键**的数组里）⇒ 已保留 `citation_count`/`citation_by_file` 提供**全量计数**，指针级全量索引留待 `path_exists` 落地后由生成器补出。"
+      "note": "★ **指针级「全量」索引仍未做**（★★ 但**计数面已受门禁保护** —— 见 `generator_outside_repo`，两者是**不同的洞**）：★ 2026-10-05（`N-049` ①）机械重算后 **全量引用 ＝ 326 处 / 29 条款**（V1.0 时为 324 处 / 28 条款 —— ★ 增量 2 处全部来自批 7 `B6` **机械生成**的 `spec/openapi.json`：「第二条」1 处 ＋ 「第五十二条」1 处）。★ `spec[]` 逐条款只收**优先级最高**的 ≤8 处（**共 158 条，本版未新增**）。★★ **空指针条款（有计数、无指针）＝ 1 条**：`第二条`（唯一落点 ＝ `spec/openapi.json#paths.[/api/admin/approval/defs/sync].post.summary`；★ 该指针**形态上可解析**，但**指针级收录须按原型的优先级选择规则**，而该规则**未被复现** ⇒ **只计数、不建指针，不臆造**）。★ **另有 22 处**无法稳定化（落在 `known_gaps`/`open_items`/`payment_route_rule.decisions` 等**元素无稳定键**的数组里）⇒ 同样只计数。★★ **实测反例（说明「≤8 上限内亦非全收」）**：`第十一条`（5→4）· `第十六条`（4→3）· `第三十九条`（6→4）· `第五十条`（8→6）的 `spec[]` 条数**均少于 `citation_count`** ⇒ 既有「优先级」筛选，不是「不足 8 条即全收」。"
     },
     {
       "id": "topic_not_invented",
@@ -1039,7 +1050,8 @@
     },
     {
       "id": "generator_outside_repo",
-      "note": "★ 生成器**暂在仓库外**（一次性脚本，随本轮取证交付）；★ 若要「改 spec 即重生索引」，须把生成器入库并纳入门禁，已并入 `N-048` 一同评估。"
+      "status": "★ **计数面已销项（2026-10-05 · `N-049` ①）**；★ **指针面仍未闭环**",
+      "note": "★ ~~生成器**暂在仓库外**（一次性脚本，随本轮取证交付）~~ ⇒ ★★ **计数面已销项**：① **重算器已入库** `scripts/gen_institution_anchors.py` —— ★ 口径 ＝「**每个字符串内、每条款计 1 处**」，`spec/**/*.json` 逐文件（**排除本文件自身**）；★ 该口径由 V1.0 产物**反推**并**逐条款验证**（★ 实测依据：`spec/forms/CT.json#known_gaps[3].note` 同一字符串含两处「第三十七条」而索引只计 1 ⇒ 排除「按出现次数计」；★★ **等价性**：排除批 7 生成的 `spec/openapi.json` 后，重算与索引 **28/28 条款 · `citation_count` · `citation_by_file` 全等**）。② **已接入门禁**：`scripts/check_spec.py` 新增 `[META]` 自审 `_institution_anchors_counts()`（★ `[META]` 类**不新增原语、不改 `checks.json`、不触碰 Go 侧加载器** ⇒ **无「两侧同批」约束**，同 `N-053` 「先以 Python-only 最小形态落地」的先例；★ 若日后要升级为 `checks.json` 正式判据，须与 Go 侧同批）。③ ★★ **它当场抓到真漂移（非构造）**：本索引 V1.1 相对当前 spec **失真 3 处**（`第五十二条` 计数 ＋1 ／ 逐文件 ＋`spec/openapi.json` ／ **新条款「第二条」未被索引**），**全部**源于批 7 `B6` **机械生成**的 `spec/openapi.json`（晚于索引生成时点）⇒ 已在本版 **V1.2** 回填。★★ **仍未闭环的一半（不声称已覆盖）**：`clauses[].spec[]` 的**指针级**收录依赖原型的**优先级选择规则** —— ★ **实测反例**：`第十一条`/`第十六条`/`第三十九条`/`第五十条` 的 `spec[]` 条数**均 < `citation_count`** ⇒ 8 条上限内**亦非「全收」** ⇒ 该规则**未复现、不臆造**，记入 `not_full_pointer_index`（★ 故 `第二条` **有计数、无指针**）。"
     },
     {
       "id": "dotted_key_ambiguity",
@@ -1060,6 +1072,11 @@
       "version": "1.1",
       "date": "2026-10-04",
       "change": "★★★ **接入门禁启用（`N-048` 收尾）** —— ★ 数据面**零改动**（28 条款 / 158 指针 / 324 处引用**全部不变**），本版**只改状态与规格文本**：① `conventions.gate` 由「**待启用**」→「**已启用**」（本文件现为 `spec/checks.json#checks[id=S20]` 的唯一数据源，`path_exists` 两侧同批）；② `known_gaps.no_gate_yet` **销项**（保留历史对照）；③ ★★ **新增一条两侧契约（本轮实测逼出的分歧）**：段归一必须**先拆 `name[k]` 尾缀、再换 `[*]`→`*`** —— 反序（Python 旧实现）会把 `checks[*]` 折成**裸键 `checks*`**（命中 0），而 Go 命中 ⇒ **同一份索引、两侧一绿一红**；★ 真锚点**零 `[*]` 形态** ⇒ 该分歧**只潜伏在未出现的形态上**，「两侧各跑一遍都对」**抓不住** ⇒ 两侧各留**回归钉**（Go `TestPathExistsStarBracketSegment` · Python `scripts/_probe_n048.py`「正向·`[*]` 段」），且 Go 侧钉经**单点变异实测转红**。★ 另如实登记：`known_gaps.not_full_pointer_index`（22 处无稳定键 ⇒ 只计数不建指针）与 `generator_outside_repo` **仍未闭环** —— ★ 本版**不声称**已覆盖。"
+    },
+    {
+      "version": "1.2",
+      "date": "2026-10-05",
+      "change": "★★★ **计数面入库并接入门禁（`N-049` ① 落地）—— ★ 并当场抓到「索引失真」的真漂移**：① ★ **重算器入库** `scripts/gen_institution_anchors.py`（口径 ＝「每个字符串内、每条款计 1 处」，扫描 `spec/**/*.json` 排除本文件自身）；★★ **等价性由实测证明**：排除批 7（`B6`）**机械生成**的 `spec/openapi.json` 后，重算与索引 **28/28 条款 · `citation_count` · `citation_by_file` 全等**。② ★ **接入门禁**（`scripts/check_spec.py` 的 `[META]` 自审 `_institution_anchors_counts()`；★ `[META]` 类**不新增原语、不改 `checks.json`、不触碰 Go 侧加载器** ⇒ 无「两侧同批」约束，同 `N-053` 先例）＋ `conventions.count_gate` 记口径与分工。③ ★★★ **当场抓到的真漂移（非构造）**：索引 V1.1 相对当前 spec **失真 3 处**（`E1` `第五十二条` 33→34 · `E2` 逐文件 ＋`spec/openapi.json` · `E3` **新条款「第二条」未被索引**），**全部**源于批 7 `B6` **机械生成**的 `spec/openapi.json`（晚于索引生成时点）—— ★★ **而当时全部 8 道必绿门禁（含 `S20`）依然全绿** ⇒ ★ **坐实**「`S20` 只抓『指针指向的落点不存在』，**抓不住『有新引用没被索引』**」这两者是**不同的洞**。⇒ 本版**回填计数** ＋ **新增 `第二条` 条款条目**（★ **`spec: []` ＝ 有计数、无指针**：其唯一落点在生成物 `spec/openapi.json`，指针级收录须按原型**优先级规则**，而该规则**未复现** ⇒ ★ **只计数、不建指针，不臆造**；与 22 处无稳定键引用同族）。④ ★ 数据面其余**零改动**（`spec[]` 仍 **158 条**、既有 28 条款的指针与计数**一字未动**，只补 `第五十二条` 的计数与逐文件计数）⇒ ★ **门禁判定值零变化**（判据仍 30 条 / 原语仍 12 个 / 必绿基线仍 8 条；`S20` 新增 0 条指针可查）。⑤ ★ 据实更正 V1.1 的 `known_gaps.no_gate_yet`「该窗口现已关闭」**只对了一半**（只关了指针解析那一半）。"
     }
   ]
 }
