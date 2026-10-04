@@ -12,6 +12,8 @@ import (
 	"github.com/chadhao/jx-procurement-platform/internal/specload"
 )
 
+func int64Ptr(v int64) *int64 { return &v }
+
 func mustBundle(t *testing.T) *specload.Bundle {
 	t.Helper()
 	b, err := specload.Load(specfs.FS)
@@ -164,5 +166,99 @@ func TestTierExpandSingleSideFallback(t *testing.T) {
 	// ③ 全缺 ⇒ 可见错误（不静默假定）
 	if _, err := BuildNodes(b, "change", Facts{DocType: "PC"}); err == nil {
 		t.Fatal("三金额全缺应可见失败（不静默假定档位）")
+	}
+}
+
+// backfillApprovals 取 backfill_approval 节点产出的审批角色（SourceNodeID 前缀）。
+func backfillApprovals(nodes []RoleNode) []string {
+	out := []string{}
+	for _, n := range nodes {
+		if n.IsApproval && strings.HasPrefix(n.SourceNodeID, "backfill_approval_") {
+			out = append(out, strings.TrimPrefix(n.SourceNodeID, "backfill_approval_"))
+		}
+	}
+	return out
+}
+
+// TestTierExpandEmergencyMax N-045 · T2 展开对照表（emergency.backfill_approval）。
+// tier_source=emergency_max（R-31 跨单就高，两值必须齐全）；
+// exclude_roles=[supervisor, ops_supervisor]（去重：seq2 紧急认定 / seq6 核销闭合已签）。
+func TestTierExpandEmergencyMax(t *testing.T) {
+	b := mustBundle(t)
+	cases := []struct {
+		name      string
+		amount    *int64 // 补录金额
+		related   *int64 // 关联 PR 金额
+		wantRoles []string
+		wantErr   bool
+	}{
+		{"采一档就高800元⇒展开为空（ops 已在 seq6 签，去重只签一次）",
+			int64Ptr(80000), int64Ptr(60000), []string{}, false},
+		{"采二档就高5000元（PR 侧）⇒仅 pgm（sup 已在 seq2 剔除）",
+			int64Ptr(300000), int64Ptr(500000), []string{"project_general_manager"}, false},
+		{"采三档就高30000元（补录侧）⇒仅 pgm",
+			int64Ptr(3000000), int64Ptr(300000), []string{"project_general_manager"}, false},
+		{"★ 缺关联 PR 金额 ⇒ 可见失败（不单边退化、不静默降档）",
+			int64Ptr(300000), nil, nil, true},
+		{"★ 缺补录金额 ⇒ 可见失败（对称双向）",
+			nil, int64Ptr(500000), nil, true},
+		{"★ 变异B判别行：补录500元/PR 6000元 就高档3⇒pgm（只取单边会降档到 tier1⇒空）",
+			int64Ptr(50000), int64Ptr(600000), []string{"project_general_manager"}, false},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			nodes, err := BuildNodes(b, "emergency", Facts{
+				DocType:              "BA",
+				AmountCents:          c.amount,
+				RelatedPRAmountCents: c.related,
+			})
+			if c.wantErr {
+				if err == nil {
+					t.Fatalf("缺值应可见失败，实为成功（展开=%v）", backfillApprovals(nodes))
+				}
+				if !strings.Contains(err.Error(), "emergency_max") {
+					t.Errorf("错误文案应点名 tier_source=emergency_max：%v", err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("BuildNodes: %v", err)
+			}
+			got := backfillApprovals(nodes)
+			if len(got) != len(c.wantRoles) {
+				t.Fatalf("backfill_approval 展开 = %v, 期望 %v（全链审批=%v）", got, c.wantRoles, approvalRolesOf(nodes))
+			}
+			for i := range got {
+				if got[i] != c.wantRoles[i] {
+					t.Errorf("展开第 %d 项 = %s, 期望 %s", i, got[i], c.wantRoles[i])
+				}
+			}
+		})
+	}
+}
+
+// TestTierExpandEmergencyEmptyIsExpected N-045 · T2「采一档⇒空」显式用例：
+// 展开为空是**预期结果**（零产出＝去重口径，非又惰性了）—— 断言：不报错、
+// backfill_approval 无审批任务、但链上其余审批任务照常生成（证明确实跑过展开路径）。
+func TestTierExpandEmergencyEmptyIsExpected(t *testing.T) {
+	b := mustBundle(t)
+	amt, rel := int64(80000), int64(60000)
+	nodes, err := BuildNodes(b, "emergency", Facts{DocType: "BA", AmountCents: &amt, RelatedPRAmountCents: &rel})
+	if err != nil {
+		t.Fatalf("采一档展开不应报错（空是预期）: %v", err)
+	}
+	if got := backfillApprovals(nodes); len(got) != 0 {
+		t.Fatalf("采一档（链=[ops] 且 ops 被 exclude）应展开为空, 实得 %v", got)
+	}
+	// 链上其余审批任务仍在 ⇒ 证明不是「整链没跑」：
+	// emergency_confirm(supervisor) 与 close_loop(ops_supervisor) 各生成一个。
+	others := []string{}
+	for _, n := range nodes {
+		if n.IsApproval && !strings.HasPrefix(n.SourceNodeID, "backfill_approval_") {
+			others = append(others, n.SourceNodeID)
+		}
+	}
+	if len(others) < 2 {
+		t.Errorf("链上其余审批任务应照常生成（证明确实跑过展开路径），实得 %v", others)
 	}
 }

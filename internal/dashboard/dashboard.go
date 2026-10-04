@@ -456,7 +456,8 @@ func (b *Builder) buildAnomaly(ctx context.Context, res Result, period string, q
 	r01, r03, r06, r09, r12 := byType["L01"], byType["L03"], byType["L06"], byType["L09"], byType["L12"]
 
 	// ★ 12 个指标**每个各自**带可用性守卫（connected_requires 16① / global_rules.r6）——
-	//   看板级只有一个 source_status，而 12 个指标分布在 7 个台账上。
+	//   看板级只有一个 source_status，而 12 个指标分布在 6 个台账上
+	//   （source_ledgers＝L01,L02,L03,L06,L09,L12 —— N-046 遗留⑦，实测订正）。
 	srcInst, err := b.countInstanceRows(ctx, q)
 	if err != nil {
 		return res, err

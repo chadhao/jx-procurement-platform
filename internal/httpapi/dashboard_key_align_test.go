@@ -222,7 +222,7 @@ func TestDashboardUndefinedCriteriaAggregated(t *testing.T) {
 //
 //	空库 ⇒ 12 个指标**全部** not_connected（每个都自证没数据，而非报 0）；
 //	只播 L09 ⇒ L09 系 3 个指标出数字，其余仍 not_connected —— 守卫是**指标级**的，
-//	不是看板级一刀切（r6：12 个指标分布在 7 个台账上）。
+//	不是看板级一刀切（r6：12 个指标分布在 6 个台账上 —— source_ledgers＝L01,L02,L03,L06,L09,L12）。
 func TestDashboardGuardPerIndicator(t *testing.T) {
 	e, db, auth := newDashboardApp(t)
 	ctx := context.Background()

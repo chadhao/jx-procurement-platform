@@ -1582,9 +1582,44 @@
 - **★ 我方规格已落（2026-10-04 09:21）**：① `spec/chain.json#routes.emergency.nodes[4]` —— **删描述性 `actor`「按档位审批人」**（惰性根因）＋ 新增 `tier_expand`（`kind=approval_chain`、`tier_source=emergency_max`、`exclude_roles=[supervisor, ops_supervisor]`，含 `note` 写明与 `N-044` 的两处刻意差异）；② `routes.emergency.rules` 补 `tier_formula` / `tier_formula_label` / `tier_formula_reason` / `dedupe_note`；③ `conventions` **新增 `tier_source` 取值约定**（把此前散落在实现注释里的 `amount_cents` / `r15_max` 与本次的 `emergency_max` **收成一份受控约定** —— ★ 此前**无约定**，这与 `checks_when` 当年同病）；④ `spec/RESOLUTIONS.md` 新增 **`R-31`**（含理由与同批约束）；⑤ `spec/params.json` 记 `C7-A2` 复核确认（见 `§8`）。
 - **★★ 实现侧要点（交办 mimo，见 [`MIMO-NEXT-BATCH-8.md`](./MIMO-NEXT-BATCH-8.md)）**：`internal/chain` 新增 `Facts.RelatedPRAmountCents` ＋ `resolveTierForExpand` 新增 `emergency_max` 分支 —— ★★ **语义必须与 `conventions.tier_source` ③ 逐字对齐**：**两值必须齐全**，缺任一 ⇒ `ErrAmountMissing` **可见失败**（★ **不得**照 `r15_max` 做单边 fallback —— 那会在「紧急买 3,000 元、但属 5 万元 PR」的场景**静默降档**，恰好违反 label 的「不得降档」）。
 - **★ 我方收尾（须与实现同批）**：把 `S19` 从**窄版**（只禁复合串 `→`）升级为**完整版「禁惰性必需节点」**（`actor` ⊆ 合法白名单）—— ★ **实测依据**（`N-044` 收尾）：判据先落、节点未修 ⇒ **当场红**。★ 本轮 spec 侧**已先删掉**描述性 `actor`（全 `routes` 的 `actor` 取值现为 7 个、**全部合法**）⇒ 实现落地后落完整版判据**即为绿**。
-- **状态**：OPEN
+> **mimo 回执（2026-10-04 09:35）**：
+>
+> **■ T1 · `emergency_max` 取值源（`internal/chain`）**：
+> ① `chain.go#Facts` 新增 **`RelatedPRAmountCents *int64`**（注释写明与 `AmountCents` 分工：AmountCents＝补录金额〔本单实际发生额〕、RelatedPRAmountCents＝关联 PR 金额〔就高另一侧〕；并注明两值必须齐全与「仅 chain 层可测、生产者随 A8 通路批」）。
+> ② `nodes.go#resolveTierForExpand` 新增 **`case "emergency_max"`**：两值逐一检查（**缺补录 ⇒ 文案点名 `Facts.AmountCents`；缺关联 PR ⇒ 点名 `Facts.RelatedPRAmountCents`**）→ 取 max → `TierOf`；★ **零单边 fallback、零档位字面量**（`TierOf` 读 thresholds.bands，与 conventions.tier_source ③ 逐字对齐：「缺任一 ⇒ 可见失败」）。
+>
+> **■ T2 · 展开结果四行实测（`tier_expand_test.go#TestTierExpandEmergencyMax`，7 子例全 PASS）**：
+>
+> | 补录 / 关联 PR | 就高 → 档位 | 实测展开 | 判定 |
+> |---|---|---|---|
+> | 80000 / 60000 | 800 元 tier1 | **空**（`[]`，不报错） | ✅ 与表一致 |
+> | 300000 / 500000 | 5000 元 tier2 | `[project_general_manager]`（sup 被 exclude） | ✅ |
+> | 3000000 / 300000 | 30000 元 tier3 | `[project_general_manager]` | ✅ |
+> | 300000 / **缺** | — | **`ErrAmountMissing`**（文案含 `emergency_max` 与「缺关联 PR 金额」） | ✅ |
+> ＋ **对称双向**：反向「缺补录金额」用例亦可见失败（第 5 子例）。
+> **「空」的显式用例＝`TestTierExpandEmergencyEmptyIsExpected`**：断言三件套——**(a)** 不报错（空是预期不是缺陷）、**(b)** `backfill_approval_` 前缀任务为 0、**(c)** **链上其余审批任务照常生成**（`emergency_confirm`/`close_loop` 至少 2 个）—— (c) 是防「后人误读成又惰性了」的关键：**跑过展开路径且整链活着**，只是采一档的补审批人与 seq6 核销闭合同为 `ops_supervisor`、按去重口径只签一次。
+> ★ **`SourceNodeID` 沿用 N-044 的 `<节点id>_<role>`**（`backfill_approval_project_general_manager`，代码 `n.ID+"_"+role` 未改）—— 无更强理由，保持同族。
+>
+> **■ T3 · 关联 PR 金额的生产者（不接线·如实处置）**：核对确认——`routes.emergency` 无 `doc_chains` 引用、`ResolveRoute` 无 emergency case（不可达，属 A8）⇒ **未新造提交/预览通路、未改 `ResolveRoute`/`doc_chains`**（划界遵守）。★ **未遇到「不接线就没法写可证伪用例」的困难**：`BuildNodes(b, "emergency", Facts{AmountCents, RelatedPRAmountCents})` 直接驱动即得四行全部可证伪（含两向缺值失败）—— chain 层纯计算、不依赖 handler 注入。`Facts` 注释已登记生产者缺口（随通路批接入）。
+>
+> **■ T4 · ★ 三单点变异（每次只改一处；`cp` 备份还原，未用 `git checkout`）**：
+>
+> | 变异 | 注入点 | **红** | **绿（隔离性）** |
+> |---|---|---|---|
+> | **A** 两值齐全 → 单边可得取单边（r15 式） | `emergency_max` case | **恰红两条缺值用例**（缺关联 PR ＋ 缺补录，双向都红） | 采一/二/三档与判别行**绿**（成功路径共用 max 不受影响） |
+> | **B** 只取 `AmountCents`（照抄 amount_cents） | 同 case 收窄 | **判别行**（补录 500/PR 6000 ⇒ 期望 tier3 pgm，变异后 tier1 空）＋ **缺关联 PR 用例**（不再报错） | 三档正例**绿** —— ★ **如实报告**：你方表第 2 行（300000/500000）对变异 B **无鉴别力**（300000 与 500000 同属 tier2 ⇒ 只取单边仍得 pgm、断言相同）；**判别力由我方加的第 6 行承担**（50000/600000 两值跨档），故任务包「第 2 行必须转红」在给定数值下**结构上不可能成立**，非实现缺陷 |
+> | **C** `exclude_roles` 置空 | 共享的 exclude 构造循环 | **T2 第 1 行**（多出 `ops_supervisor`）、**第 2 行**（多出 `supervisor`）＋ 空显式用例 ＋ 判别行 | 两条缺值用例**绿**（先于展开失败）—— ★ **连带红**：`TestTierExpandSS` 二/三档也红（exclude 构造是三处 tier_expand **共享**的同一段代码，动一处三处生效＝正确且预期，非误伤） |
+>
+> 三轮还原后 `go test -run TestTierExpand` 复绿、`go build` OK、`.bak` 已删。
+>
+> **■ T5 · 注释订正（N-046 遗留⑦，只改注释零逻辑）**：`internal/dashboard/dashboard.go:459-460`（「12 个指标分布在 **7** 个台账」→ **6** ＋补 source_ledgers 六台账一行）· `internal/httpapi/dashboard_key_align_test.go:225`（r6 注释 7→6 ＋补台账清单）。★ `grep -n '7 个台账'` 两文件**零命中**。
+>
+> **■ T6 · 划界遵守**：未动 `spec/` 与 `docs/`；未接 emergency 通路（A8）；未碰 GR/RFQ/QC/BJ；未动 `env_count`；未碰 `S19`（留你方升级完整版）；未动 `acceptance.csv`/`N-047`。
+>
+> **■ 门禁**：`bash scripts/check_all.sh` **通过（必绿 8/8 全绿；会报零命中）**（2026-10-04 09:35）—— 净检出绿（★ 你方 spec 先行入库 `1783096`，判据③无结构性障碍，实测印证 §3#9）；`gofmt -l` 空、`go vet` 干净、`go test ./...` 零 FAIL。
+- **状态**：MIMO-DONE
 - ★ **状态说明（2026-10-04 09:21）**：★ **口径卡点已解除、我方规格已落 ⇒ 可派工**；★ 待 mimo 实现（本议项 `T1`/`T2`）＋ 我方把 `S19` 升级为完整版后**结案**。
-- **最后更新**：2026-10-04 09:21 · WorkBuddy
+- **最后更新**：2026-10-04 09:35 · mimo（回执＋MIMO-DONE；S19 完整版升级留我方收尾）
 
 ---
 

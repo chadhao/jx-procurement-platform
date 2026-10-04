@@ -236,6 +236,21 @@ func resolveTierForExpand(b *specload.Bundle, f Facts, source string) (string, e
 			}
 		}
 		return TierOf(b, maxV)
+	case "emergency_max":
+		// R-31 跨单就高 tier_of(max(补录金额, 关联 PR 金额))。
+		// ★ 两值必须齐全（conventions.tier_source ③——与 r15_max 的单边退化刻意不同）：
+		// 「不得降档」是单调上界，单边取值可能低于应属档位 ⇒ 缺任一即可见失败。
+		if f.AmountCents == nil {
+			return "", fmt.Errorf("%w: tier_source=emergency_max 缺补录金额（Facts.AmountCents）", ErrAmountMissing)
+		}
+		if f.RelatedPRAmountCents == nil {
+			return "", fmt.Errorf("%w: tier_source=emergency_max 缺关联 PR 金额（Facts.RelatedPRAmountCents）", ErrAmountMissing)
+		}
+		maxV := *f.AmountCents
+		if *f.RelatedPRAmountCents > maxV {
+			maxV = *f.RelatedPRAmountCents
+		}
+		return TierOf(b, maxV)
 	default:
 		return "", fmt.Errorf("%w: 未知 tier_source %q", ErrRouteMissing, source)
 	}

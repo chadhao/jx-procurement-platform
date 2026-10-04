@@ -76,6 +76,15 @@ type Facts struct {
 	//（fallback 见 resolveTierForExpand —— 如实单值回退，不静默假定）。
 	ChangeAmountCents           *int64
 	OriginalContractAmountCents *int64
+	// ★ N-045（tier_source=emergency_max，裁定 R-31）：跨单就高的另一个输入 ——
+	// 关联 PR 金额（其所属采购申请的金额，分）。与 AmountCents 的分工：
+	// AmountCents ＝ 补录金额（紧急采购本单实际发生金额，提交时给出）；
+	// RelatedPRAmountCents ＝ 该紧急单所属 PR 的金额（就高公式的另一侧）。
+	// ★ 两值必须齐全（conventions.tier_source ③）：缺任一 ⇒ 可见失败，不单边退化
+	//（「不得降档」是单调上界 —— 单边取值可能低于应属档位）。
+	// ★ 本字段仅 chain 层可测：emergency 链未接线（ResolveRoute/doc_chains 无
+	// emergency case，属 A8），生产者随通路批接入。
+	RelatedPRAmountCents *int64
 }
 
 // RoleNode 链计算的中间产物：角色级节点（含非审批环节，供 preview 展示全流程）。
