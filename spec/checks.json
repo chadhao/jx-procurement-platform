@@ -1,5 +1,5 @@
 {
-  "version": "1.11",
+  "version": "1.12",
   "generated_by": "WorkBuddy",
   "date": "2026-10-04",
   "scope": "spec/",
@@ -510,13 +510,15 @@
     {
       "id": "S19",
       "severity": "must-green",
-      "desc": "★★ **节点 `actor` 不得是复合串**（`N-044` 收尾；★ 与 `N-045` 配套）—— ★ 治「复合 `actor` 落入『未知 actor 不生成任务』⇒ `required:true` 的**惰性必需节点**」：`N-044` 实测 `routes.sole_source.nodes[2]`（`tier_chain`）与 `routes.change.nodes[2]`（`tier_approval`）的 `actor` 写作 `\"supervisor → project_general_manager\"` ⇒ `internal/chain/nodes.go` 既非 `approverRoles`、也非 `isActionActor` ⇒ 落 `appendAction` ⇒ **只记 NodeName、不生成 flow 任务**（`required:true` 却无人审）。★ 本判据是该**机制**的机检守卫：任何节点（**无论由 `ref` 还是 `tier_expand` 驱动**）一律不得用复合串充当 `actor`。★★ **局限（如实登记，不可当作完整版）**：本判据只认「复合串」这一**已知形态**，**不是**完整的「禁惰性必需节点」——★ 完整版（`actor` 取值须 ⊆ 合法 actor 白名单：`applicant`/`system`/`purchaser` ＋ 5 个审批角色）**阻塞于 `N-045`**：`routes.emergency.nodes[4]`（`backfill_approval`）的 `actor=\"按档位审批人\"` 同属惰性必需节点，但**不含 `→` ⇒ 本判据不报**；且其档位取值源（label：『按对应档位补审批（不得降档）』）尚需口径 ⇒ `N-045` 先行。★ 判据不是越严越好，而是越准越好：与其写一条会误伤合法用法的白名单判据，不如**如实登记为两段**。",
-      "primitive": "pattern_absent",
+      "desc": "★★★ **节点 `actor` 必须落在合法白名单内 —— 「禁惰性必需节点」的**完整版**（`N-044` 收尾立项 ⇒ `N-045` 落地后升级；★ **取代本判据的窄版**）。\n★ **它治什么**：`routes.*.nodes[*].actor` 的取值若**既不是** `chain.json#roles` 的角色 key、**也不是** `system`，则 `internal/chain/nodes.go#BuildNodes` 里既**非** `approverRoles`、也**非** `isActionActor` ⇒ 落 `appendAction` ⇒ **只记 `NodeName`、不生成 flow 任务** ⇒ ★★ **`required: true` 却无人审**（＝「惰性必需节点」）。\n★ **两个真实实例（本判据的立据）**：① `N-044` —— `routes.sole_source.nodes[2]`（`tier_chain`）与 `routes.change.nodes[2]`（`tier_approval`）的 `actor` 写作**复合串** `\"supervisor → project_general_manager\"`；② `N-045` —— `routes.emergency.nodes[4]`（`backfill_approval`）的 `actor` 写作**描述性串** `\"按档位审批人\"`。★ 两处均已改为 `tier_expand`（节点 id ＋ spec 档位链派生，**不再有 `actor`**）。\n★★ **为什么当初只落窄版**：窄版（`pattern_absent`，只禁复合串 `→`）**对描述性串静默**；★ 而完整版**一旦先落地、未修节点 ⇒ 当场红** ⇒ ★ **判据与修复必须同批**（与 `N-044` 的实测同型）。故次序＝① 我方落规格（删描述性 `actor` ＋ 落 `tier_expand`）→ ② mimo 实现 → ③ **本判据升级（此时已绿）**。\n★★ **为什么用 `ref_exists → chain.json#roles` 而不是在判据里写死 8 个字面量**：★ 本项目立场＝「**判据＝数据，不得在代码里写字面量**」（`conventions.agent_allowed` 同款）；`chain.json#roles` 是**权威角色表**（角色 key 的唯一真源）⇒ 用引用式白名单，**不会出现「spec 一份、判据一份」的漂移**。★ `extra_allowed: [\"system\"]` ＝ `system` 是**动作 actor**（`isActionActor`），**不在** `roles` 表内。\n★ **如实登记的残余盲区（不可当作已覆盖）**：`roles` 表里还有 `group_finance` / `group_approval` / `sys_admin` 三个 key，它们**不是审批 actor**（Go 侧 `approverRoles` 只有 5 个）⇒ ★ 若将来把这三个之一当作节点 `actor`，**本判据不报**、而节点**仍惰性**。★ 收口方案（已登记为下一批小项）：把 `approverRoles` 改为**由 `spec` 派生**（`roles` 表加 `is_approver_actor` 标记，或把非审批角色移出 `roles`）—— ★ 与 `N-031`（「禁代理节点名单按 id 字面量 ⇒ 改数据驱动」）**同族**。\n★ **边界（宁准勿宽）**：本判据保证「**凡写了 `actor` 的节点，其 `actor` 都可执行**」；★ 它**不**表达「`required` 节点必须**有**承载者（`actor` ∨ `ref` ∨ `tier_expand`）」—— ★ 那需要「**至少其一**」语义的原语，现有 10 个原语**都表达不了**。★ 该半边由 `N-044`/`N-045` 的 `tier_expand` 范式（`tier_expand` 驱动的节点**不得再有 `actor`**）＋ 本判据的收集面共同覆盖。\n★ 判据不是越严越好，而是**越准越好**：误伤合法用法 ⇒ 对方会绕过它 ⇒ 等于判据不存在（`N-038` 实测教训）。",
+      "primitive": "ref_exists",
       "args": {
         "file": "spec/chain.json",
         "collect": "routes.*.nodes[*].actor",
-        "forbidden_regex": [
-          "→"
+        "target_file": "spec/chain.json",
+        "target_dict": "roles",
+        "extra_allowed": [
+          "system"
         ],
         "min_hits": 1
       }
@@ -583,6 +585,11 @@
       "version": "1.11",
       "date": "2026-10-04",
       "change": "★ **`N-044` 收尾**：新增 **`S19`**（`pattern_absent`：节点 `actor` 不得为复合串 `A → B`）—— ★ 这是 `N-044` 的**机制机检守卫**（原缺陷＝复合 `actor` 落『未知 actor』⇒ `required:true` 却无人审）。★ 同批删除 `sole_source.nodes[2]`/`change.nodes[2]` 的复合 `actor` 与伪 `ref`，并删 `purchase_tier2/3` 两处 `contract_two_level` 的复合 `actor`（由 `ref` 驱动、`actor` 惰性）。★★ **局限已如实登记**：完整版「禁惰性必需节点」（actor 白名单）**阻塞于 `N-045`** —— `routes.emergency.nodes[4].actor=\"按档位审批人\"` 同属惰性必需节点但不含 `→`，本判据不报。★ 判据 **22 → 23**、原语仍 **10**（零引擎新增）。"
+    },
+    {
+      "version": "1.12",
+      "date": "2026-10-04",
+      "change": "★★★ **`S19` 由窄版升级为完整版「禁惰性必需节点」**（`N-044` 收尾立项 ⇒ `N-045` 实现落地后升级）：`pattern_absent`（只禁复合串 `→`）⇒ **`ref_exists`**（`routes.*.nodes[*].actor` ⊆ `chain.json#roles` 的键 ∪ `extra_allowed:[\"system\"]`）—— ★ **数据驱动的白名单**（`roles` 是角色 key 的唯一真源，避免「spec 一份、判据一份」漂移）。★ 窄版对**描述性串**（`N-045` 的 `\"按档位审批人\"`）静默，完整版可捕获；★ 之所以当初只落窄版＝完整版**先落地而未修节点即当场红** ⇒ **判据与修复必须同批**（本次次序：我方落规格 → mimo 实现 → 判据升级）。★ 如实登记**残余盲区**：`roles` 表内 `group_finance`/`group_approval`/`sys_admin` **不是审批 actor** ⇒ 被用作 `actor` 时不报且仍惰性；收口＝让 `approverRoles` 由 spec 派生（下一批小项，同 `N-031` 族）。"
     }
   ]
 }
