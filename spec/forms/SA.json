@@ -3,7 +3,7 @@
   "label": "费用事前申请单",
   "prefix": "SA",
   "number_format": "SA-YYMM-####",
-  "version": "1.2",
+  "version": "1.3",
   "date": "2026-10-04",
   "generated_by": "WorkBuddy",
   "sources": {
@@ -143,7 +143,7 @@
           "origin": "tool_table",
           "origin_ref": "表单字段清单 R27",
           "conditional_carrier": "★ **本字段刻意不带 `required_conditional`** —— 「跨月」是**日期区间比较**，而 `evalSimpleEqual` 只支持 `字段 == 值`、**表达不了** ⇒ ★ 不写不可解析的条件（写了会被判不可解析后**静默跳过** —— 正是 `N-052` 要消灭的形态）。★ 条件由判据 `SA#cross_month_allocation`（`when: submit && occurrence_period 跨月`）**唯一承载**",
-          "rule": "跨月费用必填：说明按月份 / 部门 / 项目分摊的方式与依据。★ 该判据的**触发依赖 `occurrence_period` 的机读形态**（当前未定 ⇒ 判据暂不翻 `hard`，见 `known_gaps`）"
+          "rule": "跨月费用必填：说明按月份 / 部门 / 项目分摊的方式与依据。★ 该判据的**触发依赖 `occurrence_period` 的机读形态** —— ★ **契约已定**（`payload_form: iso_interval`）且**触发条件已可判**（判据 `cross_month_allocation` 已于 `N-054` ① 收尾翻 **`hard` ＋ `code`**；求值器 ＋ 前端 `date_range` 分支已落地并过验收）"
         },
         {
           "name": "counterparty",
@@ -284,9 +284,9 @@
     },
     {
       "id": "cross_month_allocation",
-      "severity": "soft",
-      "carried_by_kind": "pending_implementation",
-      "carried_by": "★★ **触发条件已可判**（`N-054` ① 我方先行 · 2026-10-04）：承载字段 `allocation_note` **已于 `N-052` 批 13 补入**；★ 本批再把**唯一剩下的缺口**（「跨月」不可判）补上 —— 字段 `occurrence_period` 新增 **`payload_form: \"iso_interval\"`**（载荷＝`YYYY-MM-DD/YYYY-MM-DD`，闭区间）＋ **门禁锚定**（`checks.json#S24/S25`）⇒ **条件面已完整**。★ **仍为 `soft` ＋ `pending_implementation` 的唯一原因＝求值器与前端分支尚未落地**（★ 次序不可颠倒：`severity=hard` 而求值器未注册 ⇒ 提交期当场 fail-closed）；★ 落地经我方独立验收后**同批**重判为 `hard` ＋ `code`（见 `MIMO-NEXT-BATCH-13.md`）。★ 此前 → ★ **半解锁**（`N-052` 批 13）：缺口由「无字段」收窄为「**触发条件不可判**」—— ★ 「跨月」取决于 `occurrence_period`（工具表控件类型＝**日期区间**）的**机读载荷形态**，而全仓 `date_range` **零消费端**、自建表单页将其渲染为**纯文本框** ⇒ ★ 不臆造载荷形态 ⇒ 登记 `known_gaps`、待定",
+      "severity": "hard",
+      "carried_by_kind": "code",
+      "carried_by": "★★ **已落地 ＝ `hard` ＋ `code`**（`N-054` ① 收尾 · 2026-10-04）：求值器 **`checkSACrossMonthAllocation`**（`internal/httpapi/handlers_approval_hardchecks.go`，★ 已注册进 `submitHardChecks`）＋ 前端 **`date_range` 分支**（`web/src/views/Submit.vue` ＋ 纯函数 `web/src/dateRange.js`）**经我方独立验收通过** ⇒ ★ **同批把 `severity` 翻 `hard`、`carried_by_kind` 翻 `code`**（★ 次序不可颠倒：`hard` 而求值器未注册 ⇒ 提交期当场 fail-closed）。★ **我方独立验收（不采信自报）**：门禁独立复跑 **8/8**；★★ **三条单点变异我方自做**〔**M1** 去掉「跨月」判定 ⇒ 恰红 **X1 ＋ 直调「不跨月放/同日起止放」**、其余全绿；**M2** 恒放行 ⇒ 恰红 **X2 ＋ X4（连带）**、X1/X3 与 `N-052` 全绿；**M3** 不可解析改静默放行 ⇒ 恰红 **X4**、X1/X2/X3 与「未填」例外全绿〕⇒ **隔离性成立**；`cp` ＋ `sha256sum -c` **还原 1/1 OK**（★ 未用 `git checkout --`）。★ 测试落点：`internal/httpapi/cross_month_n054_test.go`（X1–X4 handler 级 ＋ 直调四例）。★ 此前 → ★★ **触发条件已可判**（`N-054` ① 我方先行 · 2026-10-04）：承载字段 `allocation_note` **已于 `N-052` 批 13 补入**；★ 再把**唯一剩下的缺口**（「跨月」不可判）补上 —— 字段 `occurrence_period` 新增 **`payload_form: \"iso_interval\"`**（载荷＝`YYYY-MM-DD/YYYY-MM-DD`，闭区间）＋ **门禁锚定**（`checks.json#S24/S25`）⇒ **条件面已完整**。★ 此前 → ★ **半解锁**（`N-052` 批 13）：缺口由「无字段」收窄为「**触发条件不可判**」—— ★ 「跨月」取决于 `occurrence_period`（工具表控件类型＝**日期区间**）的**机读载荷形态**，而全仓 `date_range` **零消费端**、自建表单页将其渲染为**纯文本框** ⇒ ★ 不臆造载荷形态 ⇒ 登记 `known_gaps`、待定",
       "when": "submit && occurrence_period 跨月",
       "assert": "须说明分摊方式",
       "else": "拒绝提交",
@@ -341,8 +341,8 @@
     },
     {
       "gap": "`occurrence_period`（发生期间）的 **机读载荷形态未定** ⇒ 判据 `cross_month_allocation` 的**触发条件不可判**",
-      "status": "★★ **契约已定（`N-054` ① 我方先行 · 2026-10-04）＋ 门禁已锚定 ⇒ 判据可判；落地待 mimo**",
-      "note": "★ 工具表把本字段的控件类型定为 **日期区间**（`docs/06-Implementation-Notes.md` 控件清单原文），而 ★ **全仓 `date_range` 零消费端**（`internal/**` 无该字符串）、自建表单页 `web/src/views/Submit.vue` 的类型分支**没有 `date_range`** ⇒ 落 `v-else` **纯文本框**。⇒「是否跨月」在当时载荷上**无从判定**。★★ **本轮处置（不再「待定」）**：① **契约已落** —— 字段新增 `payload_form: \"iso_interval\"`（提交载荷＝`YYYY-MM-DD/YYYY-MM-DD`，闭区间、`start ≤ end`）；② **门禁已锚定** —— `spec/checks.json` 新增 **`S24`**（凡 `type == date_range` 的字段必须声明 `payload_form`）＋ **`S25`**（取值必须 ∈ 受控词表）；③ **唯一规格来源** ＝ `spec/chain.json#conventions.field_payload_forms`。★ 判据 `SA#cross_month_allocation` 的**触发条件因而已可判**（两值跨自然月）⇒ **不翻 `hard` 的原因只剩「求值器 ＋ 前端 `date_range` 分支尚未落地」**（`MIMO-NEXT-BATCH-13.md`）；★ 落地并验收后由我方**同批**重判 `severity`（★ 次序不可颠倒：`hard` 而求值器未注册 ⇒ 当场 fail-closed）。★★ **不臆造已被取代**：本契约是**我方自建表单页**的载荷约定（不是飞书控件载荷的复刻）—— 工具表只定了控件类型，未定序列化形态，故此处**不构成对飞书侧载荷的臆测**。"
+      "status": "✅ **已闭环（`N-054` ① 收尾 · 2026-10-04）** —— 契约已定 ＋ 门禁已锚定 ＋ **求值器与前端分支已落地并过独立验收** ⇒ 判据已翻 **`hard` ＋ `code`**（★ 本项不再是缺口，保留作历史对照）",
+      "note": "★ 工具表把本字段的控件类型定为 **日期区间**（`docs/06-Implementation-Notes.md` 控件清单原文），而 ★ 当时**全仓 `date_range` 零消费端**（`internal/**` 无该字符串）、自建表单页 `web/src/views/Submit.vue` 的类型分支**没有 `date_range`** ⇒ 落 `v-else` **纯文本框**。⇒「是否跨月」在当时载荷上**无从判定**。★★ **处置（三步走完）**：① **契约已落** —— 字段新增 `payload_form: \"iso_interval\"`（提交载荷＝`YYYY-MM-DD/YYYY-MM-DD`，闭区间、`start ≤ end`）；② **门禁已锚定** —— `spec/checks.json` 新增 **`S24`**（凡 `type == date_range` 的字段必须声明 `payload_form`）＋ **`S25`**（取值必须 ∈ 受控词表）；③ **唯一规格来源** ＝ `spec/chain.json#conventions.field_payload_forms`。④ **落地已过验收** —— 求值器 `checkSACrossMonthAllocation` ＋ 前端 `Submit.vue#date_range` 分支 ＋ 端到端 `X1`–`X4`（`internal/httpapi/cross_month_n054_test.go`）⇒ 判据翻 `hard` ＋ `code`。★★ **不臆造**：本契约是**我方自建表单页**的载荷约定（不是飞书控件载荷的复刻）—— 工具表只定了控件类型，未定序列化形态，故此处**不构成对飞书侧载荷的臆测**。"
     },
     {
       "gap": "P08 / M07 是否允许个人垫付",

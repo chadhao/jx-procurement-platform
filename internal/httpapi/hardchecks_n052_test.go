@@ -147,7 +147,11 @@ func newSASubmitAppWith(t *testing.T, mutate func(*specload.Bundle)) (*echo.Echo
 	return e, db, auth
 }
 
-// saBody 合法 SA 提交载荷（L1=S01 ⇒ expense_sales 最简归线；date_range 期段按非空串）。
+// saBody 合法 SA 提交载荷（L1=S01 ⇒ expense_sales 最简归线）。
+// ★ occurrence_period 须合 `conventions.field_payload_forms` 的 `iso_interval` 契约
+// （`YYYY-MM-DD/YYYY-MM-DD`，闭区间）—— 原夹具写 `"2026-10-01 ~ 2026-10-31"`（`~` 分隔），
+// 是**契约之前**的自由文本形态；`cross_month_allocation` 翻 `hard`（`N-054` ① 收尾）后
+// 该形态被判「不可解析」⇒ 本夹具同批改为契约形态（★ 同月 ⇒ 不跨月 ⇒ S1 仍 200）。
 func saBody(mut func(m map[string]any)) string {
 	fields := map[string]any{
 		"expense_subject":      "季度市场推广",
@@ -155,7 +159,7 @@ func saBody(mut func(m map[string]any)) string {
 		"usage_category_l2":    "市场推广",
 		"amount_cents":         50000,
 		"purpose":              "秋季推广活动费用",
-		"occurrence_period":    "2026-10-01 ~ 2026-10-31",
+		"occurrence_period":    "2026-10-01/2026-10-31",
 		"payment_method_input": "对公直付",
 	}
 	if mut != nil {
