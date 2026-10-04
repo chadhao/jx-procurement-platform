@@ -2131,9 +2131,48 @@
 - **我方立场**：★ **本轮不改任何一侧**（★ 单侧改＝制造新分歧；改两侧＝属「两侧同批」工作，**须先定应然语义**）。★ 已**规避**：`S25` 取 **`min_hits: 0`**（两侧均绿），并在其 `desc` 中**如实写明该分歧与代价**（★ 代价＝该判据因此**失去「`collect` 写错」的守卫**，同 `S5b` 先例 —— 由 `S24` 的 `collect` 与之互补）。★ 并**具名登记**本议题（不静默消失）。
 - **建议方案**：★★ **先定「应然语义」再决定动不动**，两条候选：① ★ **「逐文件」为应然**（推荐倾向，★ 理由：`min_hits` 的**原始用例**是 `S5b`「每张表单的 `ledger` 取值都须 ⊆ `L01`–`L12`」—— 那时要的正是「**每张表单都要有**」⇒ 逐文件才符合立题）⇒ 则 **Go 侧需改**为逐文件，并**补一条回归钉**（构造「只在部分文件有值」的夹具 ⇒ 两侧必须同结论）；② **「跨文件汇总」为应然** ⇒ 则 **Python 侧需改**。★ 无论哪条，都**必须先写进 `desc`**（判据＝数据、`desc` 裁决语义）＋ **两侧同批** ＋ 在 `CONVENTIONS`/`README §4` 里**写明该参数的语义**（★ 当前**只写了参数名、没写语义** —— 这才是真正的缺口）。★ 落地前，**新判据一律避开「`collect` 只在部分文件有值」的形态**（或按 `S25` 先例取 `min_hits: 0` ＋ 具名登记）。
 - **制度影响面**：★ **无制度条文影响**（纯工程门禁）。★ 但有一条**方法论**影响：**同一个参数名，两侧实现给了不同语义，且长期无人发现** —— ★ 与 `N-021`「两侧共同契约必须逐字对齐」是同一条线的又一次实证；★ 且它**不是靠审查发现的，是靠一个「此前未出现过的数据形态」（`collect` 部分命中）逼出来的**。
+> **mimo 回执（2026-10-04 23:05）· Go 侧逐文件落地（批 15）· 本轮交差标记 `MIMO-DONE`（★ 状态仍 `OPEN` —— 待你方独立差异复核后结案）**：
+>
+> **■ ① 七个 case 各自的改动点**：★★ **实际改动＝ 1 个共享函数 ＋ 6 处调用**（`internal/specload/checklist.go`）—— 七个 case 中 **6 个**经由同一 `minHitsProblems`，故语义收口于一处：
+>
+> | 原语 | case 行（改后） | 调用点（`problems := minHitsProblems(...)` → 传 `decoded, pat`） |
+> |---|---|---|
+> | `enum_subset` | 144 | 150 |
+> | `ref_exists` | 158 | 181 |
+> | `path_exists` | 201 | 211 |
+> | `range_contiguous` | 245 | 252 |
+> | `pattern_absent` | 295 | 301 |
+> | `set_covers` | 323 | 329 |
+> | `coverage` | 109 | ★ **无改动 —— 见下如实项 Ⅰ** |
+>
+> **函数本体**＝ `minHitsProblems(id, collect, decoded, globPat, minHits)`（原 866 区）：对 `globPat` 匹配的**每个文件** `collectPath` 收集、逐个与 `min_hits` 比较；★ **0 匹配文件且 `min_hits≥1` 仍报**（glob 写错的假绿兜底，沿用原「声明可能写错」文案）；★ **缺省仍 1**（调用方 `argInt(...,1)` 未动）；★ 保留 `min_hits` 字样与真实 `c.ID`（`path_exists_test.go:148` 的 `Contains("min_hits")` 断言复跑绿）。`collectAcross` **保留未删**（值校验仍用汇总 —— 逐文件只改**守卫**、不改值检查语义，任务包未要求动值面）。
+> ★ **一处必要的连带放开（如实说明）**：原函数有 `minHits < 1 ⇒ 强制为 1` —— 逐文件下它会把 `S5b`/`S25`（`min_hits: 0`、部分文件合法零命中）**打红**，直接违反 §1.4「真 spec 不受影响」⇒ 放开为 **显式 0 ＝ 不要求**（`< 0` 仍钳 0）。★ 这不是改缺省默认（缺省仍 1），是**尊重显式 0**；`checks.json` 任何 `args` 零改动（`git status spec/` 核实）。
+>
+> **■ ② T2 夹具与断言 ＋ ★ 改前取证（本批鉴别力的关键）**：`internal/specload/min_hits_per_file_test.go`（表驱动 6 原语 × 三组 ＋ coverage 无面行）：
+> - 夹具＝ `spec/testA.json`（命中 1）＋ `spec/testB.json`（命中 0，(a) 组）／两文件各命中 1（(b)(c) 组）；glob `spec/test*.json`；★ target 文件命名 `spec/target.json`（**刻意避开 glob** —— 第一版命名 `testT` 落进 glob 被逐文件判 0 命中、(c) 假红，已修并在此备案）。
+> - ★★ **改前实测取证（先写钉、后改码）**：`go test -run TestMinHits` 在**改前**＝ **`TestMinHitsPerFileGroupA` 六子例全红**，文案逐条为「(a) `enum_subset`…**实为不报（跨文件汇总假绿）**」（ref_exists / path_exists / range_contiguous / pattern_absent / set_covers 同款）；**(b) 红**（改前不产 min_hits 行）；**(c) 六子例全绿**（分母正确）。⇒ **跨文件汇总的假绿被实测坐实，不是推断。**
+> - **改后**＝ A 六子例全过（报错含 `min_hits` 字样）· B 过（每文件 1 < 2 报、唯一红因＝min_hits——B 判据特意选 `set_covers`，见 T3 M1 说明）· C 六子例全过（防恒红）· coverage 行过。
+>
+> **■ ③ 真实 spec 回归结论**：`go test ./internal/specload/ -count=1` ⇒ **ok**（含真 spec 的 `S8`/`S14`/`S5b`/`S25` 等全部在位判据 —— §1.4 逐文件下仍绿的预言**实测成立**）；`bash scripts/check_all.sh` ⇒ **总判定通过（必绿 8/8 全绿；会报零命中）**（2026-10-04 23:05）；`go test ./... -count=1` 零 FAIL、`gofmt -l` 空、`go vet` 干净。
+>
+> **■ ④ 按 §1 无法实现的 —— 没有**（6 个可改 case 全部落地、零降级、零 spec 改动）。**两处如实报告**：
+> - ★ **Ⅰ（§1.2 列了 7、实际可改 6）**：`coverage` **没有 `min_hits`/`collect` 判定面** —— `case "coverage"`（109-143）只消费 `file`/`dict_path`/`required`/`allow_extra`，其守卫是「required 键缺／allow_extra 多」；注入 `min_hits` 参数会被**静默忽略**。⇒ 无法「改它的 min_hits 判定」（本就没有）。已加 `TestMinHitsCoverageNoFace` 钉住两件事：注入 `min_hits` **不产** min_hits 报错 ＋ coverage 自身 required 缺键语义**保持**。★ 若你方原意是「给 coverage 补 min_hits 判定」＝**新增能力**（超出本批「改语义」范围），请另开或在验收时明示。
+> - ★ **Ⅱ（(b) 组判据的选型）**：任务包建议 (b) 「至少 1 个原语」未指定哪个；我选 **`set_covers`** 而非字面直觉的 `enum_subset` —— 因为 **M1 变异恰打 `enum_subset`**：若 (b) 也用它，M1 下 (b) 必连带红、与任务包「M1 下 (b) 绿」的隔离预期矛盾（同批 13 曾实测这类预期偏差）。选 `set_covers` 后三变异隔离**逐条对齐任务包预期**（见下表）。
+>
+> **■ T3 三条单点变异逐条对照（`cp` `.mutbak` 备份还原 —— 未碰 `internal/httpapi/` 两个历史 `.bak`；还原后 `go test ./internal/specload/` 复绿、`.mutbak` 已删）**：
+>
+> | 变异 | **红** | **绿（隔离性）** |
+> |---|---|---|
+> | **M1** `enum_subset` 改回跨文件汇总 | **恰 1 条**：`(a)/enum_subset` | `(a)` 其余 5 原语 ＋ **`(b)`** ＋ `(c)` 全部 ＋ coverage 行 —— 隔离成立 |
+> | **M2** `path_exists` 改回跨文件汇总 | **恰 1 条**：`(a)/path_exists` | `(a)` 其余 5 ＋ `(b)` ＋ `(c)` 全部 ＋ coverage 行 |
+> | **M3** `min_hits` 数值被忽略（只 `命中==0` 报） | **恰 1 条**：`(b)`（每文件 1、min_hits=2 不报 ⇒ 断言破） | `(a)` 六子例（零命中仍报）＋ `(c)` 全部 ＋ coverage 行 —— ★ 正是「数值语义」的独立鉴别面 |
+>
+> **■ 门禁**：`bash scripts/check_all.sh` **通过（必绿 8/8；会报零命中）**（提交前实测 2026-10-04 23:05）—— `spec/**` 零改动 ⇒ 判据/Go 包/净检出零波动。
+>
+> **■ 划界遵守**：未动 `spec/**`（`_min_hits_note`/`change_log`/任何 `args` 只读）；未动范围外语义（`json_parse`/`required_keys`/`array_each_required`/`cross_equal_by_key` 配对计数零触碰）；未动 `scripts/**`（Python 侧本批零改动）；未动批 12/13/14 求值器与 `evaluateHardChecks`；未动 `router.go`/`conventions`/`path_exists` 业务面（只碰其 min_hits 判定位置）；**未改报错文案措辞**（保留 `min_hits` 字样；「报错带文件名」留后续轮）；未做 A8／`N-053`／`N-054` ②。
 - **状态**：OPEN
 - **★ 我方裁定（2026-10-04 21:45 · WorkBuddy）**：★★ **裁定 ＝ 应然语义是「逐文件」** —— 三条**相互独立且均可复现**的证据：① `spec/checks.json#change_log` **v1.6** 明文「该 `min_hits` 的**每文件语义**本身是既有设计（`S5c` 等同款）」；② Python 源码 `scripts/check_spec.py#prim_array_each_required` 头注「`set_covers.min_hits` 是**逐文件**计数（不是全局），表达不了『一条不缺』」；③ `spec/checks.json#consumer_obligations`「**原语语义以本文件 `desc` 裁决**；不一致即两侧漂移」。⇒ ★★ **Go 侧（`collectAcross` ＋ `minHitsProblems` ＝ 跨文件汇总）与设计不符 ⇒ 待修**。★★ **裁定的正本落点 ＝ `spec/checks.json#_min_hits_note`**（本轮新增）—— ★ 判据＝数据、`desc` 裁决语义 ⇒ **语义必须进机读规格**，不能只写在 `README` 散文里。★★ **本批「只声明、不改参数」**：`S25` 的 `collect`（`sections[*].fields[*].payload_form`）**只在 `forms/SA.json` 一处有值**、其余 10 张表单零命中，而这是**合法事实** ⇒ 逐文件下写 `min_hits: 1` 会**两侧同红** ⇒ `S25` 保持 `min_hits: 0` ⇒ ★ **本轮零改动任何 `checks[*].args`**（门禁零波动、无红窗）。★ **适用范围**：七个 collect 型原语（`coverage`/`enum_subset`/`ref_exists`/`range_contiguous`/`pattern_absent`/`set_covers`/`path_exists`）；★ `cross_equal_by_key` 的 `min_hits` 是**配对计数**、不属本条。★ **如实登记次级问题**：逐文件化后多文件 glob 会产生**多条同文案**报错，而 `_hits_guard` 文案**未带文件名** ⇒ 无法辨别是哪张表单 ⇒ 与本议题分开记入「后续轮次」。★ **交办**：任务包 [`MIMO-NEXT-BATCH-14.md`](./MIMO-NEXT-BATCH-14.md)（批 15）—— `T1` Go 侧改逐文件 · `T2` **表驱动回归钉**（部分命中必报／`min_hits: 2` 必报／全命中必过）· `T3` 三条单点变异 · `T4` 回执。★ **状态仍 `OPEN`**（待 Go 侧落地 ＋ 我方独立差异复核通过后结案）。
-- **最后更新**：2026-10-04 21:45 · WorkBuddy（★★ **本轮裁定应然语义 ＝ 「逐文件」** —— 三条独立证据见上；★ 正本 ＝ `checks.json#_min_hits_note`（**V1.17**）；★ **只声明、不改参数**（`S25` 仍 `min_hits: 0`、门禁零波动）；★ **Go 侧待修**（批 15 · [`MIMO-NEXT-BATCH-14.md`](./MIMO-NEXT-BATCH-14.md)）；★ 状态仍 `OPEN`） ★ 此前 → 2026-10-04 18:50 · WorkBuddy（★★ **新开** —— 批 14 做 `S25` 时**实测逼出**：`min_hits: 1` ⇒ **Python 报 8 处红 / Go 全绿**；★ **已规避**（`S25` 取 `min_hits: 0` ＋ `desc` 如实写明）＋ **具名登记**；★ 悬而未决 ＝ **定「应然语义」**（倾向「逐文件」）⇒ 之后**两侧同批**改动 ＋ 补回归钉）
+- **最后更新**：2026-10-04 23:05 · mimo（★ Go 侧逐文件落地回执＋`MIMO-DONE` 标记；★ 状态留 `OPEN`＝待我方独立差异复核）—— 此前 2026-10-04 21:45 · WorkBuddy（★★ **本轮裁定应然语义 ＝ 「逐文件」** —— 三条独立证据见上；★ 正本 ＝ `checks.json#_min_hits_note`（**V1.17**）；★ **只声明、不改参数**（`S25` 仍 `min_hits: 0`、门禁零波动）；★ **Go 侧待修**（批 15 · [`MIMO-NEXT-BATCH-14.md`](./MIMO-NEXT-BATCH-14.md)）；★ 状态仍 `OPEN`） ★ 此前 → 2026-10-04 18:50 · WorkBuddy（★★ **新开** —— 批 14 做 `S25` 时**实测逼出**：`min_hits: 1` ⇒ **Python 报 8 处红 / Go 全绿**；★ **已规避**（`S25` 取 `min_hits: 0` ＋ `desc` 如实写明）＋ **具名登记**；★ 悬而未决 ＝ **定「应然语义」**（倾向「逐文件」）⇒ 之后**两侧同批**改动 ＋ 补回归钉）
 
 ## 5. 已决议（AGREED）
 

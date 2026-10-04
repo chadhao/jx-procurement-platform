@@ -147,7 +147,7 @@ func runOne(c checkDef, files map[string][]byte, decoded map[string]any) []strin
 		allowed := argStrings(c.Args, "allowed")
 		minHits := argInt(c.Args, "min_hits", 1)
 		hits := collectAcross(decoded, pat, collect)
-		problems := minHitsProblems(c.ID, collect, hits, minHits)
+		problems := minHitsProblems(c.ID, collect, decoded, pat, minHits)
 		for _, s := range stringHits(hits) {
 			if !containsStr(allowed, s) {
 				problems = append(problems, fmt.Sprintf("[%s] 取值 %q 不在允许集合内", c.ID, s))
@@ -178,7 +178,7 @@ func runOne(c checkDef, files map[string][]byte, decoded map[string]any) []strin
 			targetKeys[e] = true
 		}
 		hits := collectAcross(decoded, pat, collect)
-		problems := minHitsProblems(c.ID, collect, hits, minHits)
+		problems := minHitsProblems(c.ID, collect, decoded, pat, minHits)
 		for _, s := range stringHits(hits) {
 			refs := []string{s}
 			if hasSplit {
@@ -208,7 +208,7 @@ func runOne(c checkDef, files map[string][]byte, decoded map[string]any) []strin
 		collect, _ := argString(c.Args, "collect")
 		minHits := argInt(c.Args, "min_hits", 1)
 		hits := collectAcross(decoded, pat, collect)
-		problems := minHitsProblems(c.ID, collect, hits, minHits)
+		problems := minHitsProblems(c.ID, collect, decoded, pat, minHits)
 		for _, h := range hits {
 			ref, ok := h.(string)
 			if !ok {
@@ -249,7 +249,7 @@ func runOne(c checkDef, files map[string][]byte, decoded map[string]any) []strin
 		upperKey, _ := argString(c.Args, "upper_key")
 		minHits := argInt(c.Args, "min_hits", 1)
 		hits := collectAcross(decoded, pat, collect)
-		problems := minHitsProblems(c.ID, collect, hits, minHits)
+		problems := minHitsProblems(c.ID, collect, decoded, pat, minHits)
 		if len(problems) > 0 {
 			return problems
 		}
@@ -298,7 +298,7 @@ func runOne(c checkDef, files map[string][]byte, decoded map[string]any) []strin
 		patterns := argStrings(c.Args, "forbidden_regex")
 		minHits := argInt(c.Args, "min_hits", 1)
 		hits := collectAcross(decoded, pat, collect)
-		problems := minHitsProblems(c.ID, collect, hits, minHits)
+		problems := minHitsProblems(c.ID, collect, decoded, pat, minHits)
 		regs := make([]*regexp.Regexp, 0, len(patterns))
 		for _, p := range patterns {
 			re, err := regexp.Compile(p)
@@ -326,7 +326,7 @@ func runOne(c checkDef, files map[string][]byte, decoded map[string]any) []strin
 		required := argScalarStrings(c.Args, "required")
 		minHits := argInt(c.Args, "min_hits", 1)
 		hits := collectAcross(decoded, pat, collect)
-		problems := minHitsProblems(c.ID, collect, hits, minHits)
+		problems := minHitsProblems(c.ID, collect, decoded, pat, minHits)
 		got := map[string]bool{}
 		for _, h := range hits {
 			if s, ok := scalarString(h); ok {
@@ -861,18 +861,40 @@ func argInt(args map[string]json.RawMessage, key string, def int) int {
 	return n
 }
 
-// minHitsProblems ★ min_hits 语义（V1.2）：collect 命中数不足即报错 ——
-// 杜绝「声明写错 ⇒ 判据没跑 ⇒ 静默通过」。
-func minHitsProblems(id, collect string, hits []any, minHits int) []string {
-	if minHits < 1 {
-		minHits = 1
+// minHitsProblems ★ N-055：min_hits 语义＝**逐文件**（2026-10-04 裁定，对齐 Python
+// scripts/check_spec.py#_hits_guard —— 它在 expand(file) 循环体内判定；依据见
+// checks.json#_min_hits_note 与 change_log v1.17）：对 file glob 匹配的**每个文件**
+// 分别 collect、分别与 min_hits 比较 —— 不再对命中之和判（跨文件汇总曾在
+// 「collect 只在部分文件有值」形态上产生与 Python 相反的结论：Go 全绿 / Python 报红）。
+//   - min_hits 缺省仍为 1（调用方 argInt 默认，未改）；★ 显式 0 ＝ 不要求
+//     （S5b/S25 等多文件 glob 下部分文件合法零命中 —— 原「<1 强制为 1」与逐文件
+//     组合会把真 spec 现有绿打红，与 §1.4「真 spec 不受影响」冲突 ⇒ 放开）；
+//   - ★ 0 匹配文件且 min_hits≥1 ⇒ 仍报（glob 写错的假绿兜底）；
+//   - 文案保留 min_hits 字样（既有测试断言）与真实判据 id（不得硬编码）；
+//     多文件可产多条同文案、暂不带文件名 —— 两侧同病，已如实登记待后续轮。
+func minHitsProblems(id, collect string, decoded map[string]any, globPat string, minHits int) []string {
+	if minHits < 0 {
+		minHits = 0
 	}
-	if len(hits) < minHits {
-		return []string{fmt.Sprintf(
-			"[%s] collect %q 命中 %d < min_hits %d（声明可能写错 —— 判据未生效不许静默通过）",
-			id, collect, len(hits), minHits)}
+	problems := []string{}
+	files := 0
+	for _, name := range sortedStrKeys(decoded) {
+		if !globMatch(globPat, name) {
+			continue
+		}
+		files++
+		if n := len(collectPath(decoded[name], collect)); n < minHits {
+			problems = append(problems, fmt.Sprintf(
+				"[%s] collect %q 命中 %d < min_hits %d（逐文件 —— 判据未生效不许静默通过）",
+				id, collect, n, minHits))
+		}
 	}
-	return nil
+	if files == 0 && minHits >= 1 {
+		problems = append(problems, fmt.Sprintf(
+			"[%s] collect %q 命中 0 < min_hits %d（声明可能写错 —— 判据未生效不许静默通过）",
+			id, collect, minHits))
+	}
+	return problems
 }
 
 // scopeNode 点路径取节点（空串/空 ⇒ 根）。
