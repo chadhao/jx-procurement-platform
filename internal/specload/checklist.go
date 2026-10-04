@@ -11,6 +11,8 @@ package specload
 // 点路径语法（与 Python 侧一致）：`a.b` 取键 · `a.*`/`a[*]` 取子节点 · `**` 递归任意深度。
 
 import (
+	"bytes"
+	"encoding/csv"
 	"encoding/json"
 	"fmt"
 	"path"
@@ -464,6 +466,198 @@ func runOne(c checkDef, files map[string][]byte, decoded map[string]any) []strin
 			if !equalStrings(leftVals, rightVals) {
 				problems = append(problems, fmt.Sprintf(
 					"[%s] %s 的 %s=%v 与 %s.%s[%s]=%v 不一致", c.ID, ln, leftValue, leftVals, rightDict, rightValue, key, rightVals))
+			}
+		}
+		return problems
+
+	case "csv_col_eq_json_by_key":
+		// N-053 · 第 12 原语：CSV 台账某行某列 == 以 json_key 拼键的 JSON 真源字段。
+		// ★ 规格正本＝ spec/checks.json#_pending_primitive_note（args 键名逐字、
+		//   语义五条＋fail-closed 三条）；归一**复用 scalarString**（两侧同口径，
+		//   不得自造 —— 否则同一清单两侧相反结论）。
+		// ★ CSV 从 files map 取（测试可注入；不走 os.ReadFile —— 与 parseJSON 同范式）。
+		csvPath, _ := argString(c.Args, "file")
+		keyCols := argScalarStrings(c.Args, "key_cols")
+		jsonGlob, _ := argString(c.Args, "json_glob")
+		jsonCollect, _ := argString(c.Args, "json_collect")
+		jsonKey := argScalarStrings(c.Args, "json_key")
+		sameRowSet := argBool(c.Args, "require_same_row_set", true)
+		colsExpected := argInt(c.Args, "csv_cols_expected", -1)
+		type csvPair struct {
+			CSVCol    string            `json:"csv_col"`
+			JSONField string            `json:"json_field"`
+			Map       map[string]string `json:"map"`
+		}
+		var pairs []csvPair
+		if rawPairs, ok := c.Args["pairs"]; ok {
+			if err := json.Unmarshal(rawPairs, &pairs); err != nil {
+				return []string{fmt.Sprintf("[%s] args.pairs 解析失败：%v", c.ID, err)}
+			}
+		}
+		// ① 参数完整性（缺一即报，不静默返回空）
+		if strings.TrimSpace(csvPath) == "" || len(keyCols) == 0 || strings.TrimSpace(jsonGlob) == "" ||
+			strings.TrimSpace(jsonCollect) == "" || len(jsonKey) == 0 || len(pairs) == 0 {
+			return []string{fmt.Sprintf("[%s] 参数不完整（必填：file/key_cols/json_glob/json_collect/json_key/pairs）", c.ID)}
+		}
+		problems := []string{}
+		// ② CSV 读取（files map；第 1 行表头）
+		csvBytes, ok := files[csvPath]
+		if !ok {
+			return []string{fmt.Sprintf("[%s] CSV 文件不在装载面：%s", c.ID, csvPath)}
+		}
+		csvRecs, err := func() ([][]string, error) {
+			r := csv.NewReader(bytes.NewReader(csvBytes))
+			r.FieldsPerRecord = -1 // 允许变列 —— 列数由 csv_cols_expected 逐行自检（C9 语义）
+			return r.ReadAll()
+		}()
+		if err != nil {
+			return []string{fmt.Sprintf("[%s] %s CSV 解析失败：%v", c.ID, csvPath, err)}
+		}
+		if len(csvRecs) == 0 {
+			return []string{fmt.Sprintf("[%s] %s CSV 为空（无表头）", c.ID, csvPath)}
+		}
+		header := csvRecs[0]
+		colIdx := map[string]int{}
+		for i, h := range header {
+			colIdx[h] = i
+		}
+		for _, kc := range keyCols {
+			if _, ok := colIdx[kc]; !ok {
+				return []string{fmt.Sprintf("[%s] %s 表头缺键列 %q", c.ID, csvPath, kc)}
+			}
+		}
+		pairIdx := make([]int, len(pairs))
+		for i, pr := range pairs {
+			idx, ok := colIdx[pr.CSVCol]
+			if !ok {
+				return []string{fmt.Sprintf("[%s] %s 表头缺比对列 %q", c.ID, csvPath, pr.CSVCol)}
+			}
+			pairIdx[i] = idx
+		}
+		// ③ 真源索引
+		matched := globKeys(files, jsonGlob)
+		if len(matched) == 0 {
+			return []string{fmt.Sprintf("[%s] json_glob %q 命中 0 个文件（声明写错不许静默通过）", c.ID, jsonGlob)}
+		}
+		type srcEntry struct {
+			obj  map[string]any
+			from string
+		}
+		index := map[string]srcEntry{}
+		keySep := "\x1f"
+		srcTotal := 0
+		for _, name := range matched {
+			stem := strings.TrimSuffix(path.Base(name), path.Ext(name))
+			root, ok := decoded[name]
+			if !ok {
+				problems = append(problems, fmt.Sprintf("[%s] %s 不可解析", c.ID, name))
+				continue
+			}
+			hits := collectPath(root, jsonCollect)
+			if len(hits) == 0 {
+				problems = append(problems, fmt.Sprintf(
+					"[%s] %s 内 json_collect %q 命中 0 项（收集面写错不许静默通过）", c.ID, name, jsonCollect))
+				continue
+			}
+			for _, h := range hits {
+				obj, isObj := h.(map[string]any)
+				if !isObj {
+					problems = append(problems, fmt.Sprintf(
+						"[%s] %s 的 %s 命中非对象项（%T）—— 键只能建在对象上", c.ID, name, jsonCollect, h))
+					continue
+				}
+				parts := make([]string, len(jsonKey))
+				for i, ek := range jsonKey {
+					if ek == "$file_stem" {
+						parts[i] = stem
+					} else {
+						parts[i] = scalarStr(dig(obj, ek))
+					}
+				}
+				key := strings.Join(parts, keySep)
+				if _, dup := index[key]; dup {
+					problems = append(problems, fmt.Sprintf(
+						"[%s] 真源键重复（不静默取后者）：%q（%s）", c.ID, key, name))
+					continue
+				}
+				index[key] = srcEntry{obj: obj, from: name}
+				srcTotal++
+			}
+		}
+		if srcTotal == 0 && len(problems) == 0 {
+			problems = append(problems, fmt.Sprintf("[%s] json_collect 合计命中 0 项", c.ID))
+		}
+		// ④ 逐 CSV 数据行
+		csvKeys := map[string]bool{}
+		for ri, rec := range csvRecs[1:] {
+			rowNo := ri + 2 // 1-based 行号（表头=1）
+			if len(rec) == 1 && rec[0] == "" {
+				continue // 全空行跳过（不当数据行）
+			}
+			if colsExpected >= 0 && len(rec) != colsExpected {
+				problems = append(problems, fmt.Sprintf(
+					"[%s] %s 第 %d 行列数 = %d，期望 %d", c.ID, csvPath, rowNo, len(rec), colsExpected))
+				// ★ 不 continue：列数错不阻断该行的键登记/比对（否则 require_same_row_set
+				//   会连带「未登记」第 2 条、掩盖根因 —— C9 期望恰 1 条列数报错）。
+			}
+			keyParts := make([]string, len(keyCols))
+			for i, kc := range keyCols {
+				idx := colIdx[kc]
+				if idx < len(rec) {
+					keyParts[i] = rec[idx]
+				}
+			}
+			key := strings.Join(keyParts, keySep)
+			if csvKeys[key] {
+				problems = append(problems, fmt.Sprintf("[%s] CSV 键重复（第 %d 行）：%q", c.ID, rowNo, key))
+				continue
+			}
+			csvKeys[key] = true
+			entry, inSrc := index[key]
+			if !inSrc {
+				problems = append(problems, fmt.Sprintf(
+					"[%s] 键不在真源（%s 第 %d 行）：doc_type=%q check_id=%q（按 key_cols 联接）",
+					c.ID, csvPath, rowNo, keyParts[0], strings.Join(keyParts[1:], keySep)))
+				continue
+			}
+			// ⑤ pairs 逐比。
+			// ★ map 归一方向（实测裁定，回执登记）：键＝**JSON 侧字面量**、值＝CSV 侧
+			//   （S26 拟用 args 与任务包 C3 夹具均为 {\"submit\":\"code\"}：真源
+			//   carried_by_kind=submit、CSV carrier_kind=code ⇒ jsonVal 过 map 后与 CSV 比）。
+			//   ★ checks.json 语义表的「{CSV 侧: JSON 侧}」方向词与此两处可执行示例
+			//   矛盾 —— 以可执行示例（正本 args 形态）为准，方向笔误已回执指出。
+			for i, pr := range pairs {
+				idx := pairIdx[i]
+				csvVal := ""
+				if idx < len(rec) {
+					csvVal = rec[idx]
+				}
+				jsonVal, ok2 := scalarString(dig(entry.obj, pr.JSONField))
+				if !ok2 {
+					problems = append(problems, fmt.Sprintf(
+						"[%s] %s 第 %d 行 键 %q 列 %q：真源字段 %q 非标量/缺失（不可比）—— CSV=%q",
+						c.ID, csvPath, rowNo, key, pr.CSVCol, pr.JSONField, csvVal))
+					continue
+				}
+				if len(pr.Map) > 0 {
+					if mv, mok := pr.Map[jsonVal]; mok {
+						jsonVal = mv // JSON 侧字面量 → CSV 侧字面量
+					}
+				}
+				if csvVal != jsonVal {
+					problems = append(problems, fmt.Sprintf(
+						"[%s] %s 第 %d 行 键 %q 列 %q 不一致：CSV=%q vs 真源 %s.%s=%q",
+						c.ID, csvPath, rowNo, key, pr.CSVCol, csvVal, entry.from, pr.JSONField, jsonVal))
+				}
+			}
+		}
+		// ⑥ require_same_row_set：真源键未登记 ⇒ 逐条报
+		if sameRowSet {
+			for key, entry := range index {
+				if !csvKeys[key] {
+					problems = append(problems, fmt.Sprintf(
+						"[%s] 真源判据未登记（require_same_row_set）：%q（来源 %s）", c.ID, key, entry.from))
+				}
 			}
 		}
 		return problems
