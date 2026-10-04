@@ -6,12 +6,14 @@
 // ★ D5：分档/审批链预览走 POST /api/approval/preview —— 与提交**共算同一入口**，
 //   前端不本地算分档；unresolved_roles 非空 ⇒ 提交将被阻断，预览先行暴露（R-g 缓解）。
 // ★ 提交携带 Idempotency-Key（d9）：本页会话内固定一把，重复点击/网络重试不重复建单。
-import { computed, onMounted, reactive, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import {
   fetchApprovalMeta, previewApproval, submitApproval, uploadApprovalAttachment,
   fetchInstancePrefill,
 } from '../api'
+// N-050：重复段纯函数（不依赖 Vue/DOM —— Node 直跑验收）
+import { rowEditableFieldsOf, parseBulkRows, locateFormErrors } from '../repeatRows'
 
 const props = defineProps({ docType: { type: String, default: '' } })
 const route = useRoute()
@@ -77,7 +79,124 @@ function initRepeatingData() {
 }
 
 function rowEditableFields(sec) {
-  return (sec.fields || []).filter((f) => f.source === 'user')
+  // N-050：唯一实现移到纯模块 repeatRows.js（Node 可直跑验收）；此处仅委托。
+  return rowEditableFieldsOf(sec)
+}
+
+// ---- N-050 · 行级错误定位（契约 docs/05-API §4.6 form_errors）----
+// keys ＝ `${section_id}|${row_index}|${field_name}`（row_index 1 起算；0＝段级/顶层）。
+const formErrorKeys = ref([])
+const formErrorFirst = ref(null)
+
+function clearFormErrors() {
+  formErrorKeys.value = []
+  formErrorFirst.value = null
+}
+function hasSectionError(secId) {
+  return formErrorKeys.value.includes(`${secId}|0|`)
+}
+function hasRowError(secId, ri) {
+  const p = `${secId}|${ri + 1}|`
+  // 行内字段级（fn 非空）与行本身（fn 空，如「第 N 行不是对象」）都算该行错误。
+  return formErrorKeys.value.some((k) => k.startsWith(p))
+}
+function hasFieldError(secId, ri, fname) {
+  return formErrorKeys.value.includes(`${secId}|${ri + 1}|${fname}`)
+}
+function hasTopFieldError(fname) {
+  return formErrorKeys.value.some((k) => k.endsWith(`|0|${fname}`))
+}
+function clearRowErrors(secId, ri) {
+  // 用户编辑该行 ⇒ 清该行高亮（避免陈旧红框）；顶层字段编辑清其字段键。
+  const p = `${secId}|${ri + 1}|`
+  formErrorKeys.value = formErrorKeys.value.filter((k) => !k.startsWith(p))
+}
+function scrollToFirstError() {
+  const f = formErrorFirst.value
+  if (!f) return
+  let el = null
+  if (f.row_index > 0) {
+    el = document.querySelector(`[data-fe-row="${f.section_id}|${f.row_index}"]`)
+    if (!el && f.field_name) {
+      el = document.querySelector(`[data-fe-field="${f.section_id}|${f.row_index}|${f.field_name}"]`)
+    }
+  } else if (f.field_name) {
+    el = document.querySelector(`[data-fe-topfield="${f.field_name}"]`)
+  } else if (f.section_id) {
+    el = document.querySelector(`[data-fe-section="${f.section_id}"]`)
+  }
+  if (el && el.scrollIntoView) el.scrollIntoView({ block: 'center' })
+}
+
+// ---- N-050 T3① 复制行：复制该行全部可编辑字段值，插到其后；新行不继承错误高亮 ----
+function copyRepeatingRow(secId, idx) {
+  const rows = repeatingData[secId]
+  if (!rows || !rows[idx]) return
+  const sec = repeatingSections.value.find((s) => s.id === secId)
+  if (!sec) return
+  const copy = {}
+  for (const f of rowEditableFieldsOf(sec)) {
+    const v = rows[idx][f.name]
+    if (v !== undefined) copy[f.name] = v
+  }
+  rows.splice(idx + 1, 0, copy)
+  clearFormErrors() // 行号位移 ⇒ 既有定位键全部失效（陈旧红框比没有更糟）
+}
+
+// ---- N-050 T3② 批量粘贴（页内 textarea；解析在纯模块 parseBulkRows）----
+const bulkOpen = reactive({})
+const bulkTexts = reactive({})
+const bulkErrors = reactive({})
+
+function toggleBulk(secId) {
+  bulkOpen[secId] = !bulkOpen[secId]
+  bulkErrors[secId] = ''
+}
+function applyBulk(sec) {
+  const { rows, error } = parseBulkRows(rowEditableFields(sec), bulkTexts[sec.id] || '')
+  if (error) {
+    bulkErrors[sec.id] = error
+    return // 可见报错，不静默丢弃
+  }
+  if (!rows.length) {
+    bulkErrors[sec.id] = '没有可解析的行（非空行 0 条）'
+    return
+  }
+  if (!repeatingData[sec.id]) repeatingData[sec.id] = []
+  for (const r of rows) repeatingData[sec.id].push(r) // 追加，不覆盖
+  bulkTexts[sec.id] = ''
+  bulkErrors[sec.id] = ''
+  bulkOpen[sec.id] = false
+  clearFormErrors() // 行号位移 ⇒ 旧定位键失效
+}
+
+// ---- N-050 T4 拖拽排序（原生 HTML5；仅影响展示与提交数组顺序，无新语义）----
+const dragState = reactive({ secId: '', idx: -1, overIdx: -1 })
+
+function onRowDragStart(secId, idx) {
+  dragState.secId = secId
+  dragState.idx = idx
+  dragState.overIdx = -1
+}
+function onRowDragOver(secId, idx) {
+  if (dragState.idx < 0 || dragState.secId !== secId) return
+  dragState.overIdx = idx
+}
+function onRowDrop(secId, idx) {
+  const rows = repeatingData[secId]
+  const from = dragState.idx
+  dragState.secId = ''
+  dragState.idx = -1
+  dragState.overIdx = -1
+  if (!rows || from < 0 || from === idx || from >= rows.length) return
+  const [moved] = rows.splice(from, 1)
+  rows.splice(idx, 0, moved)
+  clearFormErrors() // 行号位移 ⇒ 旧定位键失效
+}
+function onRowDragEnd() {
+  dragState.secId = ''
+  dragState.idx = -1
+  dragState.overIdx = -1
 }
 
 function addRepeatingRow(secId) {
@@ -88,6 +207,7 @@ function addRepeatingRow(secId) {
 function removeRepeatingRow(secId, idx) {
   const rows = repeatingData[secId]
   if (rows) rows.splice(idx, 1)
+  clearFormErrors() // 行号位移 ⇒ 既有定位键失效（陈旧红框）
 }
 
 // 组装行数组：跳过完全空的行（用户点了「加行」没填不提交）；money 行内字段 元→分。
@@ -231,6 +351,7 @@ function missingRequired() {
 async function doSubmit() {
   err.value = ''
   msg.value = ''
+  clearFormErrors() // 下一次提交 ⇒ 清除陈旧高亮
   if (!curForm.value) { err.value = '请先选择单据类型'; return }
   if (!approvalCode.value) {
     err.value = `单据类型 ${curDocType.value} 未配置 approval_code（请联系系统管理员执行配置映射导入）`
@@ -266,7 +387,20 @@ async function doSubmit() {
       : `提交成功：${data.biz_no}`
     setTimeout(() => router.push(`/approval/${data.biz_no}`), 600)
   } catch (e) {
+    // N-050：40000 + data.form_errors ⇒ 行级定位高亮（docs/05-API §4.6）。
+    // ★ 取不到 form_errors（40010 / 网络失败 / 老响应）⇒ 回落照旧显示 message
+    //   —— 不得因取不到定位就不显示错误。
     err.value = e.message || String(e)
+    const fe = e.code === 40000 && e.data && Array.isArray(e.data.form_errors)
+      ? e.data.form_errors : null
+    if (fe && fe.length) {
+      const loc = locateFormErrors(fe)
+      formErrorKeys.value = loc.keys
+      formErrorFirst.value = loc.first
+      nextTick(() => scrollToFirstError())
+    } else {
+      clearFormErrors()
+    }
   } finally {
     loading.value = false
   }
@@ -401,7 +535,7 @@ watch(() => [curDocType.value, fields.amount_cents, fields.usage_category_l1, fi
       <!-- 表单（meta 驱动） -->
       <form class="form" @submit.prevent="doSubmit">
         <template v-for="f in visibleFields" :key="f.name">
-          <label class="row">
+          <label class="row" :data-fe-topfield="f.name">
             <span class="lbl">
               {{ f.label }}<em v-if="f.required" class="req">*</em>
             </span>
@@ -501,6 +635,8 @@ watch(() => [curDocType.value, fields.amount_cents, fields.usage_category_l1, fi
           v-for="sec in repeatingSections"
           :key="sec.id"
           class="repeating-block"
+          :class="{ 'section-error': hasSectionError(sec.id) }"
+          :data-fe-section="sec.id"
         >
           <div class="row">
             <span class="lbl">
@@ -513,13 +649,31 @@ watch(() => [curDocType.value, fields.amount_cents, fields.usage_category_l1, fi
             v-for="(row, ri) in repeatingData[sec.id] || []"
             :key="ri"
             class="detail-row"
+            :class="{
+              'row-error': hasRowError(sec.id, ri),
+              'drag-over': dragState.secId === sec.id && dragState.overIdx === ri && dragState.idx !== ri,
+            }"
+            :data-fe-row="`${sec.id}|${ri + 1}`"
+            @input="clearRowErrors(sec.id, ri)"
+            @change="clearRowErrors(sec.id, ri)"
+            @dragover.prevent="onRowDragOver(sec.id, ri)"
+            @drop.prevent="onRowDrop(sec.id, ri)"
           >
+            <!-- 拖拽把手（仅把手可拖，避免与 input 内文本选择冲突） -->
+            <span
+              class="drag-handle"
+              draggable="true"
+              title="拖拽排序"
+              @dragstart="onRowDragStart(sec.id, ri)"
+              @dragend="onRowDragEnd"
+            >⠿</span>
             <template v-for="f in rowEditableFields(sec)" :key="f.name">
               <!-- 金额（元输入 → 分提交；行内与顶层同口径） -->
               <input
                 v-if="isMoney(f)"
                 v-model="row[f.name]"
-                class="inp"
+                :class="['inp', { 'field-error': hasFieldError(sec.id, ri, f.name) }]"
+                :data-fe-field="`${sec.id}|${ri + 1}|${f.name}`"
                 type="number"
                 min="0"
                 step="0.01"
@@ -528,7 +682,8 @@ watch(() => [curDocType.value, fields.amount_cents, fields.usage_category_l1, fi
               <select
                 v-else-if="f.type === 'constant_ref' && constants[f.name]"
                 v-model="row[f.name]"
-                class="inp"
+                :class="['inp', { 'field-error': hasFieldError(sec.id, ri, f.name) }]"
+                :data-fe-field="`${sec.id}|${ri + 1}|${f.name}`"
               >
                 <option value="">请选择</option>
                 <option v-for="v in constants[f.name]" :key="v" :value="v">{{ v }}</option>
@@ -536,7 +691,8 @@ watch(() => [curDocType.value, fields.amount_cents, fields.usage_category_l1, fi
               <select
                 v-else-if="f.type === 'enum' && f.values && f.values.length"
                 v-model="row[f.name]"
-                class="inp"
+                :class="['inp', { 'field-error': hasFieldError(sec.id, ri, f.name) }]"
+                :data-fe-field="`${sec.id}|${ri + 1}|${f.name}`"
               >
                 <option value="">请选择</option>
                 <option v-for="v in f.values" :key="v" :value="v">{{ v }}</option>
@@ -544,31 +700,56 @@ watch(() => [curDocType.value, fields.amount_cents, fields.usage_category_l1, fi
               <input
                 v-else-if="f.type === 'number'"
                 v-model.number="row[f.name]"
-                class="inp"
+                :class="['inp', { 'field-error': hasFieldError(sec.id, ri, f.name) }]"
+                :data-fe-field="`${sec.id}|${ri + 1}|${f.name}`"
                 type="number"
                 :placeholder="f.label"
               >
               <input
                 v-else-if="f.type === 'date'"
                 v-model="row[f.name]"
-                class="inp"
+                :class="['inp', { 'field-error': hasFieldError(sec.id, ri, f.name) }]"
+                :data-fe-field="`${sec.id}|${ri + 1}|${f.name}`"
                 type="date"
               >
               <input
                 v-else
                 v-model="row[f.name]"
-                class="inp"
+                :class="['inp', { 'field-error': hasFieldError(sec.id, ri, f.name) }]"
+                :data-fe-field="`${sec.id}|${ri + 1}|${f.name}`"
                 type="text"
                 :placeholder="f.label"
               >
             </template>
+            <button type="button" class="ghost" @click="copyRepeatingRow(sec.id, ri)">
+              复制行
+            </button>
             <button type="button" class="ghost" @click="removeRepeatingRow(sec.id, ri)">
               删行
             </button>
           </div>
-          <button type="button" class="ghost" @click="addRepeatingRow(sec.id)">
-            ＋ 添加一行
-          </button>
+          <div class="row">
+            <button type="button" class="ghost" @click="addRepeatingRow(sec.id)">
+              ＋ 添加一行
+            </button>
+            <button type="button" class="ghost" @click="toggleBulk(sec.id)">
+              批量粘贴
+            </button>
+          </div>
+          <!-- 批量粘贴（页内 textarea；解析见 repeatRows.parseBulkRows：Tab 分列、无 Tab 退化逗号） -->
+          <div v-if="bulkOpen[sec.id]" class="bulk-paste">
+            <textarea
+              v-model="bulkTexts[sec.id]"
+              class="bulk-textarea"
+              rows="4"
+              placeholder="每行一条记录：列顺序＝字段顺序；列间用 Tab（无 Tab 时按英文逗号）分隔；不识别表头"
+            ></textarea>
+            <div v-if="bulkErrors[sec.id]" class="bulk-error">{{ bulkErrors[sec.id] }}</div>
+            <div class="row">
+              <button type="button" class="ghost" @click="applyBulk(sec)">追加到明细</button>
+              <button type="button" class="ghost" @click="toggleBulk(sec.id)">收起</button>
+            </div>
+          </div>
         </div>
 
         <!-- 附件（提交时点有附件字段时展示上传位；服务端按 schema 校验条件必填） -->
@@ -630,4 +811,15 @@ watch(() => [curDocType.value, fields.amount_cents, fields.usage_category_l1, fi
 .hint { color: #888; font-size: 12px; }
 .hint.warn { color: #cf222e; }
 .loading { color: #888; padding: 20px 0; }
+
+/* ---- N-050 · 行级错误定位 / 拖拽 / 批量粘贴（复用既有样式体系，不引 UI 库）---- */
+.row-error { outline: 2px solid #cf222e; outline-offset: 1px; background: #fff1f0; border-radius: 6px; }
+.field-error { border-color: #cf222e !important; background: #fff1f0; }
+.section-error { border-left: 3px solid #cf222e; padding-left: 8px; }
+.drag-handle { cursor: grab; color: #888; user-select: none; padding: 0 4px; align-self: center; }
+.drag-handle:active { cursor: grabbing; }
+.detail-row.drag-over { outline: 2px dashed #0969da; outline-offset: 1px; }
+.bulk-paste { margin: 6px 0 10px; }
+.bulk-textarea { width: 100%; box-sizing: border-box; font-family: ui-monospace, monospace; font-size: 13px; padding: 6px 8px; border: 1px solid #d0d7de; border-radius: 6px; }
+.bulk-error { color: #cf222e; font-size: 13px; margin-top: 4px; }
 </style>

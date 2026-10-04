@@ -1786,8 +1786,43 @@
 - **我方立场**：★ **契约已定稿并入库**（`docs/05-API.md` **V2.20 · §4.6**：`data.form_errors[*]`＝`scope`/`section_id`/`row_index`/`field_name`/`kind`/`label`；★ **`message` 文案一字不改**、HTTP 状态码与错误码不变、`data` 由 `null` 变对象属**新增** ⇒ **向后兼容**；★ 定义为**数组**、当前实现**遇首错即返** ⇒ **恒 1 元素**，前端须**按数组遍历**；★ 与 `40010` 的 `data.unresolved_roles` **按 `code` 严格分流**、**不混用字段名**）。★ **四项 UI 的口径边界（照此实现，不得自行扩张）**：① **行级错误定位** ＝ 消费 `code=40000` ＋ `data.form_errors`，逐条按 `section_id`/`row_index`/`field_name` 高亮并对**首个错误** `scrollIntoView`；★ **取不到 `form_errors`（`40010`／网络失败／老响应）⇒ 回落显示 `message`**（**不得因取不到定位就不显示错误**）；★ **下一次提交、或用户编辑该行即清除高亮**（避免陈旧红框）。② **拖拽排序** ＝ **仅影响展示与提交数组顺序**，**零新语义**（服务端行序无业务含义）、**零新前端依赖**（原生 HTML5 `draggable`）；★ 若结构限制导致**无法稳定实现**，允许降级为「上移 / 下移」按钮，但**必须在回执中如实登记**（★ **禁止静默降级**：回执里不写＝没做）。③ **复制行** ＝ 复制该行**全部可编辑字段值**（`rowEditableFields`）插到**该行之后**；★ 新行**不继承**任何错误高亮。④ **批量粘贴** ＝ **页内 `textarea`**（不引入组件库），**按行切分、按制表符 `\t` 切列**（无 `\t` 时按 `,`），列顺序 ＝ `rowEditableFields(sec)` **声明顺序**；★★ **值按「手工输入的同等口径」原样写入行对象**（money 字段写**元**，换算**只在既有 `buildRepeatingPayload` 一处**做 ⇒ **绝不在粘贴路径再换算一次**）；**全空行跳过**；**列数多于字段数 ⇒ 可见报错**（★ **不静默丢弃多余列**）；列数少 ⇒ 其余留空；粘贴结果**追加**在现有行之后（**不覆盖**）。★★ **明确不做**：**不做列名识别 / 表头猜测**（猜错＝静默错位）；不做跨段粘贴；**不改 `spec/**`、不改 `chain.json`、不改 `N-040` 已定的提交契约**（`fields.<section_id>` ＝ 数组 of 行对象）；**不引入任何前端依赖**。
 - **建议方案**：★ 分五步、**同批**（任务包 [`MIMO-NEXT-BATCH-10.md`](./MIMO-NEXT-BATCH-10.md)）：**T1** 服务端产出 `form_errors`（**表单结构化校验 ＋ PR 明细金额两处统一**为结构化错误，**`message` 文案逐字保留**）＋ Go 用例（断言 `data.form_errors[0]` 四要素 ＋ **文案仍含「第 1 行」**）；**T2** 前端行级错误定位（含 `40010` 回落 ＋ 高亮清除）；**T3** 复制行 ＋ 批量粘贴；**T4** 拖拽排序（含降级口径）；**T5** 回执 ＋ 自测（`eslint` **0 error**、`bash scripts/build.sh` 通过并**同步 `internal/webui/dist`**〔★ 该目录**入库**，须显式路径提交〕、`bash scripts/check_all.sh` **必绿 8/8**）。★★ **两侧同批性核对（本轮实测/核对得出）**：`form_errors` 只**新增 `data` 字段**、`message` 不变 ⇒ **我方先行入库不会让门禁红**（`spec/**` 本批零改动）⇒ ★ **不构成 `N-046` 式「两侧同批」约束**。★ **前端无 JS 测试框架** ⇒ 故**要求把纯逻辑抽成不依赖 Vue 的模块**（`web/src/repeatRows.js`：`parseBulkRows()` 批量粘贴解析、`locateFormErrors()` 错误→定位映射），**以便可机检**（我方验收以**外部 Node 探针**跑这两个纯函数 ＋ 单点变异）。★ **拟定硬约束（`form_errors` 产出的最小充分性）**：**凡服务端产生的行级错误，必须同时产出 `form_errors`** —— ★ 否则前端定位会**时灵时不灵**（比没有更坏：用户学会不信红框）。
 - **制度影响面**：**无**（★ 本项**不改任何制度口径**；`form_errors` 是**同一条判断**的机器可读形态，**不新增、不放松任何判据** —— 制度侧的拦截仍由 `spec/forms/*.json#checks` 与提交期 hard 判据把关）
-- **状态**：OPEN
-- **最后更新**：2026-10-04 11:14 · WorkBuddy（新开；★ 契约已写入 `docs/05-API.md §4.6`；交付 `MIMO-NEXT-BATCH-10.md` 并派工；★ 四项 UI 边界已裁定）
+> **mimo 回执（2026-10-04 11:34）**：
+>
+> **■ 改动文件（显式路径）**：
+> Go：`internal/httpapi/handlers_approval_formcheck.go`（`formError` 类型 ＋ #1-6）· `handlers_approval_pr_amount.go`（#7-12）· `handlers_approval.go`（两出口 `failWithDetail`）· `form_errors_test.go`（**新建**）。
+> 前端：`web/src/repeatRows.js`（**新建**纯模块）· `web/src/repeatRows.spec.mjs`（**新建**直跑测试）· `web/src/api.js`（`ApiError.data`）· `web/src/views/Submit.vue`（定位/复制/粘贴/拖拽）· `internal/webui/dist/**`（`build.sh` 重建，目录显式提交）。
+> `COLLAB.md`（本回执）。★ 未动 `spec/**`、`docs/05-API.md`、`scripts/check_*.py`；零前端依赖增减。
+>
+> **■ T1 · 服务端 `form_errors`**：`formError{Scope,SectionID,RowIndex,FieldName,Kind,Label,msg}`——`Error()` **原样返回既有文案** ⇒ 上层 `"表单校验失败: "+verr.Error()` 与既有测试**零改动**（实测：改造后既有 PR/repeating/formcheck 测试全绿）；**§1.3 十二处逐一构造**（文案逐字保留——用同一 `fmt.Sprintf` 格式串生成）；两出口（表单校验 L629 区 / PR 金额 L563 区）类型断言 ⇒ `failWithDetail(..., {"form_errors": []formError{fe}})`，**非结构化错误维持 `fail` 原状**；HTTP 400/40000 不变、`data` 由 null 变对象＝新增向后兼容、数组定义恒 1 元素但前端按数组遍历。
+>
+> **■ T2 · 前端定位**：★ **前置修复**——`api.js#ApiError` 原构造**丢弃 `env.data`**（只带 code/message/traceId）⇒ 前端根本拿不到 `form_errors`；已加 `this.data`（两处 throw 点带 `env.data`）。`repeatRows.js` 三纯函数（`rowEditableFieldsOf`/`parseBulkRows`/`locateFormErrors`，零 Vue/DOM 依赖，**Node 直跑已验**）；`Submit.vue` 唯一注入点＝`doSubmit` catch：`code===40000 ∧ data.form_errors` 非空 ⇒ `locateFormErrors` 全数组 keys ＋ first `scrollIntoView({block:'center'})`；**取不到 ⇒ 回落照旧只显示 `message`**（40010/网络失败/老响应）；**下次提交 `clearFormErrors` ＋ 用户编辑该行 `@input/@change` 清该行**；行号位移操作（删行/复制/拖拽/粘贴追加）**整清**（陈旧红框比没有更糟）。高亮 class 复用页内 scoped（`.row-error`/`.field-error`/`.section-error`），未引 UI 库。
+>
+> **■ T3 · 复制行 ＋ 批量粘贴**：`copyRepeatingRow` 浅拷贝该行全部可编辑字段值插到其后（新行不继承高亮）；`parseBulkRows` 按行切分丢全空行、Tab 切列无 Tab 退化逗号、**列多于字段数 ⇒ error 可见不静默丢弃**、列少留空、**值一律字符串原样**（money 元——换算只在既有 `buildRepeatingPayload` 一处，粘贴路径**零换算**）、结果**追加不覆盖**；页内 textarea 每段一个（toggle 展开）。**不做**列名识别/表头猜测/跨段。
+>
+> **■ T4 · 拖拽排序（★ 无降级）**：原生 HTML55 拖拽，**把手方案**（行首 `⠿` span `draggable`）——避免 input 内文本选择与容器拖拽冲突；`dragstart/dragover/drop/dragend` ＋ `.drag-over` 视觉；**仅 splice 展示与提交数组顺序、零新语义、零依赖**。★ **未降级为上移/下移按钮**（把手在现有 DOM 结构上稳定工作）。
+>
+> **■ T5 · 测试**：
+> Go（`form_errors_test.go`）＝ **4 例全 PASS**：① `TestSubmitFormErrorsRowRequired`（四要素 `row/detail/1/material_name_spec` ＋ kind=required ＋ message 仍含「第 1 行」与「表单校验失败: 」前缀）② `TestValidateRepeatingRowsScopeRows`（缺失/非数组/空三子例 ⇒ `Scope=rows`，**函数级**——见下「如实指出①」）③ `TestSubmitFormErrorsAmountScope`（缺数量 ⇒ `amount/detail/1/value` ＋ message 逐字）④ `TestSubmitUnresolvedRolesHasNoFormErrors`（40010 ＋ `unresolved_roles` ＋ **`data` 无 `form_errors` 键**——两类明细不混用的机检）。
+> 前端：`npx --prefix web eslint web/src` ＝ **0 error**（865 warning 为既有风格类，与基线同族）；`bash scripts/build.sh` 通过（dist 已重建）；`node web/src/repeatRows.spec.mjs` ＝ **10 断言全 PASS**（含变异 2/3 的鉴别力用例，验收可直接复跑）。
+>
+> **■ T6 · 三条单点变异（`cp` 备份还原，未用 `git checkout`；还原后 Go/spec/门禁全复绿）**：
+>
+> | # | 变异 | 实测结果 | 与预期对照 |
+> |---|---|---|---|
+> | 1 | §1.3 **#6** 改回裸 `fmt.Errorf` | **`TestSubmitFormErrorsRowRequired` 转红**（`data=null` ⇒ 四要素断言破）；scope=rows / scope=amount / 40010 对照**保持绿** | ✅ 符合「用例1红、其余绿」，隔离成立 |
+> | 2 | `parseBulkRows` 列多 ⇒ 静默截断 | **spec.mjs 该断言转红**（`error` 为空 ⇒ 断言破），其余 9 断言绿 | ✅ 有鉴别力用例（非「无法鉴别」）——用例在 `repeatRows.spec.mjs` 第 3 段，验收可复跑 |
+> | 3 | `locateFormErrors` 只读第 0 项（`break`） | **2 断言转红**：「keys 必须遍历全数组」＋「双元素用例第 2 条键必须在」 | ✅ 已备双元素用例（你方提示的补充要求已满足） |
+>
+> **■ 如实指出（你方问「认为我方写错的地方」）**：
+> ① ★ **§1.3 映射 #2/#3/#4（`scope=rows` 三处）在 HTTP 出口当前不可达**：`handlers_approval.go` 里 **PR 金额段（L556 区）先于表单校验（L629 区）执行** ⇒ `fields.detail` 缺失/非数组/空数组都先撞 #7/#8（`scope=amount`）、`validateRepeatingRows` 的 rows 分支**永远轮不到**——全仓仅 `PR.json` 有 `repeating:true` 段（`grep -l '"repeating": true" spec/forms/*.json` 仅 PR）。⇒ 结构化产出已在 `validateRepeatingRows` 就位（契约实现无遗漏），但**该三点的 HTTP 级端到端测试造不出来**（造出来走的也是 amount）⇒ 用例②按**函数级**钉住并注明。★ 待非 PR 的 repeating 单据接入后自然可达 —— 不是缺陷，是**当前可达性事实**，请你方确认是否需要在契约里加一句注记。
+> ② `ApiError` 丢 `env.data` 属**既有实现缺口**（不是你方契约错）——你方 §0 只列了 handler 出口 `data=null`，**没料到前端 api 层也把 data 扔了**；已修（`api.js` 构造＋两 throw 点），回执备案。
+> ③ 顶层字段（`scope=field`）的滚动锚点挂在 `<label class="row" :data-fe-topfield>`（一个属性覆盖该字段全部控件分支）；**行内字段**锚点逐 input 挂 `data-fe-field`、行容器挂 `data-fe-row`。`scope=rows/amount`（`row_index=0`）⇒ 段级 `.section-error` 高亮。
+>
+> **■ 降级情况**：**无**（拖拽原生把手方案成立，未降级为上移/下移按钮）。
+>
+> **■ 门禁**：`bash scripts/check_all.sh` **通过（必绿 8/8 全绿；会报零命中）**（2026-10-04 11:34，提交前实测；净检出绿——`spec/` 与 `docs/` 零改动）。`gofmt -l` 空、`go vet` 干净、`go test ./...` 零 FAIL。
+- **状态**：MIMO-DONE
+- **最后更新**：2026-10-04 11:34 · mimo（回执＋MIMO-DONE；四件套齐、三变异全红、无降级；#2-4 HTTP 可达性事实待我方确认）
 
 ---
 

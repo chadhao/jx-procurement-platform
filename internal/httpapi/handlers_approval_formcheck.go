@@ -24,6 +24,21 @@ var cnLabelToField = map[string]string{
 
 // validateSubmitForm 对一份表单做提交期结构化校验；通过返回 nil。
 // provided ＝ 提交载荷的合并视图（body.Fields + 顶层别名字段）。
+// formError 结构化表单错误（N-050 契约 · docs/05-API.md §4.6）。
+// Error() 原样返回既有文案 ⇒ 上层 "表单校验失败: "+verr.Error() 与既有测试零改动；
+// handler 出口按类型断言产出 data.form_errors（老客户端忽略 data ⇒ 向后兼容）。
+type formError struct {
+	Scope     string `json:"scope"`      // field|row|rows|amount（受控词）
+	SectionID string `json:"section_id"` // 段 id；PR 明细金额＝detail
+	RowIndex  int    `json:"row_index"`  // 1 起算；非行级＝0
+	FieldName string `json:"field_name"` // 非字段级＝""
+	Kind      string `json:"kind"`       // required|struct|value
+	Label     string `json:"label"`      // 人读定位串（可直接展示）
+	msg       string // 既有文案（逐字保留）
+}
+
+func (e formError) Error() string { return e.msg }
+
 func validateSubmitForm(form specload.FormDoc, provided map[string]any) error {
 	for _, sec := range form.Sections {
 		if strings.TrimSpace(sec.FilledAt) != "" {
@@ -52,7 +67,9 @@ func validateSubmitForm(form specload.FormDoc, provided map[string]any) error {
 				continue
 			}
 			if !providedNonEmpty(provided, f.Name) {
-				return fmt.Errorf("字段「%s」（%s）必填", f.Label, f.Name)
+				return formError{Scope: "field", SectionID: sec.ID, RowIndex: 0, FieldName: f.Name,
+					Kind: "required", Label: f.Label,
+					msg: fmt.Sprintf("字段「%s」（%s）必填", f.Label, f.Name)}
 			}
 		}
 	}
@@ -96,23 +113,31 @@ func validateRepeatingRows(sec specload.SectionDoc, provided map[string]any) err
 	raw, exists := provided[sec.ID]
 	if !exists || raw == nil {
 		if hasRequired {
-			return fmt.Errorf("明细「%s」（%s）缺失 —— 行内必填字段无处承载（契约：fields.%s ＝ 行对象数组）",
-				sec.Label, sec.ID, sec.ID)
+			return formError{Scope: "rows", SectionID: sec.ID, RowIndex: 0, FieldName: "",
+				Kind: "struct", Label: sec.Label,
+				msg: fmt.Sprintf("明细「%s」（%s）缺失 —— 行内必填字段无处承载（契约：fields.%s ＝ 行对象数组）",
+					sec.Label, sec.ID, sec.ID)}
 		}
 		return nil
 	}
 	rows, ok := raw.([]any)
 	if !ok {
-		return fmt.Errorf("明细「%s」（%s）必须是行对象数组，实际是 %T（N-040 契约）",
-			sec.Label, sec.ID, raw)
+		return formError{Scope: "rows", SectionID: sec.ID, RowIndex: 0, FieldName: "",
+			Kind: "struct", Label: sec.Label,
+			msg: fmt.Sprintf("明细「%s」（%s）必须是行对象数组，实际是 %T（N-040 契约）",
+				sec.Label, sec.ID, raw)}
 	}
 	if len(rows) == 0 && hasRequired {
-		return fmt.Errorf("明细「%s」至少需要 1 行 —— 行内必填字段不能为空数组", sec.Label)
+		return formError{Scope: "rows", SectionID: sec.ID, RowIndex: 0, FieldName: "",
+			Kind: "struct", Label: sec.Label,
+			msg: fmt.Sprintf("明细「%s」至少需要 1 行 —— 行内必填字段不能为空数组", sec.Label)}
 	}
 	for i, r := range rows {
 		row, ok := r.(map[string]any)
 		if !ok {
-			return fmt.Errorf("明细「%s」第 %d 行不是对象", sec.Label, i+1)
+			return formError{Scope: "row", SectionID: sec.ID, RowIndex: i + 1, FieldName: "",
+				Kind: "struct", Label: fmt.Sprintf("%s 第 %d 行", sec.Label, i+1),
+				msg: fmt.Sprintf("明细「%s」第 %d 行不是对象", sec.Label, i+1)}
 		}
 		for _, f := range sec.Fields {
 			if f.Source != "user" {
@@ -128,7 +153,9 @@ func validateRepeatingRows(sec specload.SectionDoc, provided map[string]any) err
 				continue
 			}
 			if !providedNonEmpty(row, f.Name) {
-				return fmt.Errorf("明细「%s」第 %d 行字段「%s」（%s）必填", sec.Label, i+1, f.Label, f.Name)
+				return formError{Scope: "row", SectionID: sec.ID, RowIndex: i + 1, FieldName: f.Name,
+					Kind: "required", Label: fmt.Sprintf("%s 第 %d 行 %s", sec.Label, i+1, f.Label),
+					msg: fmt.Sprintf("明细「%s」第 %d 行字段「%s」（%s）必填", sec.Label, i+1, f.Label, f.Name)}
 			}
 		}
 	}

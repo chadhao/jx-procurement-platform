@@ -47,30 +47,42 @@ func resolvePRAmountForTier(body *approvalSubmitBody) (estimated *int64, mismatc
 func computePREstimatedTotal(fields map[string]any) (int64, error) {
 	raw, ok := fields["detail"]
 	if !ok {
-		return 0, fmt.Errorf("PR 明细（fields.detail）缺失 —— 定档依据必须来自服务端按明细汇总（rule：公式汇总明细小计）")
+		return 0, formError{Scope: "amount", SectionID: "detail", RowIndex: 0, FieldName: "",
+			Kind: "struct", Label: "PR 明细",
+			msg: "PR 明细（fields.detail）缺失 —— 定档依据必须来自服务端按明细汇总（rule：公式汇总明细小计）"}
 	}
 	rows, ok := raw.([]any)
 	if !ok || len(rows) == 0 {
-		return 0, fmt.Errorf("PR 明细（fields.detail）必须是非空数组 —— 无明细即无定档依据")
+		return 0, formError{Scope: "amount", SectionID: "detail", RowIndex: 0, FieldName: "",
+			Kind: "struct", Label: "PR 明细",
+			msg: "PR 明细（fields.detail）必须是非空数组 —— 无明细即无定档依据"}
 	}
 	var sum int64
 	for i, r := range rows {
 		m, ok := r.(map[string]any)
 		if !ok {
-			return 0, fmt.Errorf("PR 明细第 %d 行不是对象", i+1)
+			return 0, formError{Scope: "amount", SectionID: "detail", RowIndex: i + 1, FieldName: "",
+				Kind: "struct", Label: fmt.Sprintf("PR 明细 第 %d 行", i+1),
+				msg: fmt.Sprintf("PR 明细第 %d 行不是对象", i+1)}
 		}
 		price, pok := toFloat64(m["estimated_unit_price_cents"])
 		qty, qok := toFloat64(m["quantity"])
 		if !pok || !qok {
-			return 0, fmt.Errorf("PR 明细第 %d 行缺单价（estimated_unit_price_cents）或数量（quantity）—— 行小计无法服务端计算", i+1)
+			return 0, formError{Scope: "amount", SectionID: "detail", RowIndex: i + 1, FieldName: "",
+				Kind: "value", Label: fmt.Sprintf("PR 明细 第 %d 行", i+1),
+				msg: fmt.Sprintf("PR 明细第 %d 行缺单价（estimated_unit_price_cents）或数量（quantity）—— 行小计无法服务端计算", i+1)}
 		}
 		if price <= 0 || qty <= 0 {
-			return 0, fmt.Errorf("PR 明细第 %d 行单价/数量必须为正（单价=%v 数量=%v）", i+1, price, qty)
+			return 0, formError{Scope: "amount", SectionID: "detail", RowIndex: i + 1, FieldName: "",
+				Kind: "value", Label: fmt.Sprintf("PR 明细 第 %d 行", i+1),
+				msg: fmt.Sprintf("PR 明细第 %d 行单价/数量必须为正（单价=%v 数量=%v）", i+1, price, qty)}
 		}
 		sum += int64(math.Round(price * qty))
 	}
 	if sum <= 0 {
-		return 0, fmt.Errorf("PR 明细汇总为 %d —— 定档依据必须为正", sum)
+		return 0, formError{Scope: "amount", SectionID: "detail", RowIndex: 0, FieldName: "",
+			Kind: "value", Label: "PR 明细",
+			msg: fmt.Sprintf("PR 明细汇总为 %d —— 定档依据必须为正", sum)}
 	}
 	return sum, nil
 }

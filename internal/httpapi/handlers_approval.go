@@ -562,6 +562,11 @@ func (d Deps) handleApprovalSubmit(c echo.Context) error {
 	if body.DocType == "PR" {
 		estimated, mismatch, perr := resolvePRAmountForTier(&body)
 		if perr != nil {
+			// N-050：PR 明细金额类错误同走 form_errors（scope=amount；message 逐字不变）。
+			if fe, ok := perr.(formError); ok {
+				return failWithDetail(c, http.StatusBadRequest, codeBadRequest, perr.Error(),
+					map[string]any{"form_errors": []formError{fe}})
+			}
 			return fail(c, http.StatusBadRequest, codeBadRequest, perr.Error())
 		}
 		amountForTier = estimated
@@ -627,6 +632,11 @@ func (d Deps) handleApprovalSubmit(c echo.Context) error {
 	form, hasForm := d.Spec.Forms[body.DocType]
 	if hasForm {
 		if verr := validateSubmitForm(form, mergeProvidedFields(&body, usageL1, usageL2)); verr != nil {
+			// N-050：结构化错误 ⇒ data.form_errors（docs/05-API §4.6；message 逐字不变）。
+			if fe, ok := verr.(formError); ok {
+				return failWithDetail(c, http.StatusBadRequest, codeBadRequest, "表单校验失败: "+verr.Error(),
+					map[string]any{"form_errors": []formError{fe}})
+			}
 			return fail(c, http.StatusBadRequest, codeBadRequest, "表单校验失败: "+verr.Error())
 		}
 		// ---- T2：constant_ref 字段 —— 值必须在常量表 active 集合内；通过则写**值快照** ----

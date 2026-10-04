@@ -7,11 +7,14 @@ const CODE_ROLE_MAPPED = 40101
 
 /** 业务错误对象。 */
 export class ApiError extends Error {
-  constructor(code, message, traceId) {
+  constructor(code, message, traceId, data) {
     super(message || '请求失败')
     this.name = 'ApiError'
     this.code = code
     this.traceId = traceId
+    // N-050：保留 Envelope.data（form_errors / unresolved_roles 等结构化明细，
+    // docs/05-API §4.6/§3.13）—— 丢了它前端就没法定位。
+    this.data = data
   }
 }
 
@@ -41,7 +44,7 @@ async function request(method, path, { query, body } = {}) {
     throw new ApiError(resp.status * 100, `响应解析失败（HTTP ${resp.status}）`)
   }
   if (!env || env.code !== 0) {
-    throw new ApiError(env ? env.code : -1, env ? env.message : '未知错误', env ? env.trace_id : '')
+    throw new ApiError(env ? env.code : -1, env ? env.message : '未知错误', env ? env.trace_id : '', env ? env.data : undefined)
   }
   return env.data
 }
@@ -247,7 +250,7 @@ async function unwrapEnvelope(resp) {
     throw new ApiError(resp.status * 100, `响应解析失败（HTTP ${resp.status}）`)
   }
   if (!env || env.code !== 0) {
-    throw new ApiError(env ? env.code : -1, env ? env.message : '未知错误', env ? env.trace_id : '')
+    throw new ApiError(env ? env.code : -1, env ? env.message : '未知错误', env ? env.trace_id : '', env ? env.data : undefined)
   }
   return env.data
 }
