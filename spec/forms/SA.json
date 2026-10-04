@@ -3,7 +3,7 @@
   "label": "费用事前申请单",
   "prefix": "SA",
   "number_format": "SA-YYMM-####",
-  "version": "1.1",
+  "version": "1.2",
   "date": "2026-10-04",
   "generated_by": "WorkBuddy",
   "sources": {
@@ -126,11 +126,13 @@
           "name": "occurrence_period",
           "label": "发生期间",
           "type": "date_range",
+          "payload_form": "iso_interval",
           "required": true,
           "source": "user",
           "origin": "tool_table",
           "origin_ref": "表单字段清单 R27",
-          "rule": "起止日期；★ **跨月费用须说明分摊方式**"
+          "rule": "起止日期；★ **跨月费用须说明分摊方式**",
+          "payload_contract": "★★ **机读载荷契约（`N-054` ① · 我方先行定，2026-10-04）**：`payload_form = iso_interval` ⇒ 提交载荷＝**ISO 8601 区间串** `YYYY-MM-DD/YYYY-MM-DD`（斜杠为约定分隔符；**首尾均为闭区间端点**，`start ≤ end`）。★ **「跨月」的可判定义**：`start` 与 `end` 落在**两个不同的自然月**（按 `YYYY-MM` 比较）⇒ 此时 `allocation_note` 必填（判据 `SA#cross_month_allocation`）。★★ **不可解析 ⇒ 可见失败**（不得静默通过）—— 与 GR 的 `no_approver_in_acceptance_group`「取不到记录时按可见失败处理」同口径。★★ **为什么把形态写死在字段上**：本字段是**唯一**启用该契约的字段，且该契约**此前根本不存在**（全仓 `date_range` 零消费端 ⇒ 自建表单页落 `v-else` 纯文本框）⇒ ★ **不写＝判据触发条件不可判**（`N-052` 批 13 实测登记）。★ 受控词表与门禁锚定：`spec/checks.json#checks[id=S24/S25]`（**S24**＝凡 `type == date_range` 的字段**必须**声明 `payload_form`；**S25**＝其取值必须 ∈ 受控词表）；★ 语法与取值以 `spec/chain.json#conventions.field_payload_forms` 为**唯一规格来源**。★ 前端消费：`web/src/views/Submit.vue` 须新增 `date_range` 分支（两个日期控件 → 组装上述区间串），**属 mimo 域**（`MIMO-NEXT-BATCH-13.md`）。"
         },
         {
           "name": "allocation_note",
@@ -284,7 +286,7 @@
       "id": "cross_month_allocation",
       "severity": "soft",
       "carried_by_kind": "pending_implementation",
-      "carried_by": "★ **半解锁**（`N-052` 批 13，如实登记）：承载字段 `allocation_note` **已于本批补入** ⇒ 缺口由「无字段」收窄为「**触发条件不可判**」—— ★★ 「跨月」取决于 `occurrence_period`（工具表控件类型＝**日期区间**）的**机读载荷形态**，而全仓 `date_range` **零消费端**、自建表单页将其渲染为**纯文本框**（`web/src/views/Submit.vue` 无 `date_range` 分支 ⇒ 落 `v-else` 文本框）⇒ ★ **不臆造载荷形态**（属新增契约）⇒ 登记 `known_gaps`、待定；★ 故本批判据**不翻转** `hard`",
+      "carried_by": "★★ **触发条件已可判**（`N-054` ① 我方先行 · 2026-10-04）：承载字段 `allocation_note` **已于 `N-052` 批 13 补入**；★ 本批再把**唯一剩下的缺口**（「跨月」不可判）补上 —— 字段 `occurrence_period` 新增 **`payload_form: \"iso_interval\"`**（载荷＝`YYYY-MM-DD/YYYY-MM-DD`，闭区间）＋ **门禁锚定**（`checks.json#S24/S25`）⇒ **条件面已完整**。★ **仍为 `soft` ＋ `pending_implementation` 的唯一原因＝求值器与前端分支尚未落地**（★ 次序不可颠倒：`severity=hard` 而求值器未注册 ⇒ 提交期当场 fail-closed）；★ 落地经我方独立验收后**同批**重判为 `hard` ＋ `code`（见 `MIMO-NEXT-BATCH-13.md`）。★ 此前 → ★ **半解锁**（`N-052` 批 13）：缺口由「无字段」收窄为「**触发条件不可判**」—— ★ 「跨月」取决于 `occurrence_period`（工具表控件类型＝**日期区间**）的**机读载荷形态**，而全仓 `date_range` **零消费端**、自建表单页将其渲染为**纯文本框** ⇒ ★ 不臆造载荷形态 ⇒ 登记 `known_gaps`、待定",
       "when": "submit && occurrence_period 跨月",
       "assert": "须说明分摊方式",
       "else": "拒绝提交",
@@ -339,8 +341,8 @@
     },
     {
       "gap": "`occurrence_period`（发生期间）的 **机读载荷形态未定** ⇒ 判据 `cross_month_allocation` 的**触发条件不可判**",
-      "status": "★ **待定（`N-052` 批 13 登记）**",
-      "note": "★ 工具表把本字段的控件类型定为 **日期区间**（`docs/06-Implementation-Notes.md` 控件清单原文），但 ★ **全仓 `date_range` 零消费端**（`internal/**` 无该字符串），自建表单页 `web/src/views/Submit.vue` 的类型分支**没有 `date_range`** ⇒ 落 `v-else` **纯文本框**。⇒「是否跨月」在当前载荷上**无从判定**。★ 处置：**不臆造载荷形态**（属新增契约，且飞书侧控件载荷未实采）⇒ 判据维持 `soft` ＋ `pending_implementation`、**不翻转** `hard`；★ 承载字段 `allocation_note` **已于本批补入** ⇒ 缺口只剩触发条件"
+      "status": "★★ **契约已定（`N-054` ① 我方先行 · 2026-10-04）＋ 门禁已锚定 ⇒ 判据可判；落地待 mimo**",
+      "note": "★ 工具表把本字段的控件类型定为 **日期区间**（`docs/06-Implementation-Notes.md` 控件清单原文），而 ★ **全仓 `date_range` 零消费端**（`internal/**` 无该字符串）、自建表单页 `web/src/views/Submit.vue` 的类型分支**没有 `date_range`** ⇒ 落 `v-else` **纯文本框**。⇒「是否跨月」在当时载荷上**无从判定**。★★ **本轮处置（不再「待定」）**：① **契约已落** —— 字段新增 `payload_form: \"iso_interval\"`（提交载荷＝`YYYY-MM-DD/YYYY-MM-DD`，闭区间、`start ≤ end`）；② **门禁已锚定** —— `spec/checks.json` 新增 **`S24`**（凡 `type == date_range` 的字段必须声明 `payload_form`）＋ **`S25`**（取值必须 ∈ 受控词表）；③ **唯一规格来源** ＝ `spec/chain.json#conventions.field_payload_forms`。★ 判据 `SA#cross_month_allocation` 的**触发条件因而已可判**（两值跨自然月）⇒ **不翻 `hard` 的原因只剩「求值器 ＋ 前端 `date_range` 分支尚未落地」**（`MIMO-NEXT-BATCH-13.md`）；★ 落地并验收后由我方**同批**重判 `severity`（★ 次序不可颠倒：`hard` 而求值器未注册 ⇒ 当场 fail-closed）。★★ **不臆造已被取代**：本契约是**我方自建表单页**的载荷约定（不是飞书控件载荷的复刻）—— 工具表只定了控件类型，未定序列化形态，故此处**不构成对飞书侧载荷的臆测**。"
     },
     {
       "gap": "P08 / M07 是否允许个人垫付",

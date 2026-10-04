@@ -1,5 +1,5 @@
 {
-  "version": "1.15",
+  "version": "1.16",
   "generated_by": "WorkBuddy",
   "date": "2026-10-04",
   "scope": "spec/",
@@ -586,6 +586,37 @@
           "default"
         ]
       }
+    },
+    {
+      "id": "S24",
+      "severity": "must-green",
+      "desc": "★★ **凡 `type == date_range` 的字段，必须声明 `payload_form`（机读载荷形态）**（`N-054` ①，2026-10-04）。\n★ **它治什么**：`type` 只声明**控件类型**（工具表原文），**不声明提交载荷的序列化形态** ⇒ ★ **形态未定，则依赖它的判据触发条件不可判**（实证：`SA#cross_month_allocation` 的「跨月」因 `occurrence_period` 载荷形态未定而长期 `soft` ＋ `pending_implementation`）。\n★ **受控取值**：`iso_interval` ＝ ISO 8601 区间串 `YYYY-MM-DD/YYYY-MM-DD`（**首尾均为闭区间端点**、`start ≤ end`）—— ★ **取值的唯一规格来源＝`spec/chain.json#conventions.field_payload_forms`**；★ 值域由 `S25` 把关，本判据只把关**存在性**。\n★ **本判据不检查运行时行为**（载荷是否真被组装成该形态 ⇒ 属实现侧测试）；★ 它保证的是「**每个日期区间字段都有一份具名契约**」。\n★ 依据：`spec/forms/SA.json` 的 `occurrence_period.payload_contract` · `spec/chain.json#conventions.field_payload_forms`；`N-052` 批 13 实测登记 · `N-054`。",
+      "primitive": "array_each_required",
+      "args": {
+        "file": "spec/forms/*.json",
+        "collect": "sections[*].fields[*]",
+        "required_keys": [
+          "payload_form"
+        ],
+        "when_key": "type",
+        "when_in": [
+          "date_range"
+        ]
+      }
+    },
+    {
+      "id": "S25",
+      "severity": "must-green",
+      "desc": "★★ **`payload_form` 的取值必须来自受控词表**（`N-054` ①，与 `S24` 互为兜底）：★ `S24` 只保证「声明了」，本判据保证「**不瞎写**」。\n★ 允许值当前**唯一**：`iso_interval`（接口契约见 `spec/chain.json#conventions.field_payload_forms`）。\n★★ **`min_hits: 0` 是必须的，且该参数暴露了一条两侧分歧** —— ★ 实测：Python `prim_enum_subset` 按**逐文件**判命中（`_hits_guard` 在 `for f in expand(file)` **内部**调用），而 Go `enum_subset` 走 `collectAcross` ＝**跨文件汇总** ⇒ ★ 本判据的 `collect` 只在**部分**表单里有值（当前仅 `forms/SA.json` 一处）⇒ 若写 `min_hits: 1`，**Python 侧会因另外 10 张表单各命中 0 而报红、Go 侧却全绿** ＝ 「同一份判据、两侧相反结论」。⇒ ★ 本判据取 `min_hits: 0`（两侧均绿），并把该分歧**具名登记**（`COLLAB.md#N-055`，含复现方式）；★ **代价如实**：本判据因而**失去「collect 写错」的守卫**（同 `S5b` 先例）—— 由 `S24` 的 `collect` 与之互补。\n★ 依据：`spec/chain.json#conventions.field_payload_forms`；`N-054`。",
+      "primitive": "enum_subset",
+      "args": {
+        "file": "spec/forms/*.json",
+        "collect": "sections[*].fields[*].payload_form",
+        "allowed": [
+          "iso_interval"
+        ],
+        "min_hits": 0
+      }
     }
   ],
   "consumer_obligations": {
@@ -669,6 +700,11 @@
       "version": "1.15",
       "date": "2026-10-04",
       "change": "★★★ **`N-047` 批 12：23 条判据补齐 `severity` ＋ `S15` 扩为「每条判据（不限 `hard`）都须声明 `carried_by_kind`」**（★ 与 mimo 的 8 条提交时点求值器 **同批** 落地 —— ★ 实测：`severity=hard` 而未注册求值器 ⇒ `internal/httpapi/handlers_approval_hardchecks.go#evaluateHardChecks` **当场 fail-closed** ⇒ 「补 `severity` 不依赖实现」**不成立**）。★ 本批把 `BA` 8 / `PR` 6 / `SA` 9 共 **23 条**逐条定档；`fields/*.json` 现 **97/97 条判据全部带 `severity` ＋ `carried_by_kind`**。★★ **`S15` 扩围（唯一一次改范围）**：旧形态只覆盖 `severity=hard`，而**缺 `severity` 的判据既不被它要求、也不被 `evaluateHardChecks` 执行** （该函数首行只对 `severity == hard` 放行）⇒ 落在两条机制之间的**缝**里；**更糟的是 `when_key=severity` 对没有该键的项直接 `continue` ⇒ 恰好保护了不该保护的那批**。⇒ `args` **删 `when_key`/`when_in`**（无条件面；两侧 `array_each_required` 均已支持缺省即无条件 ⇒ **零引擎改动**）。★ `S14` 的 `min_hits` **0 → 1**（其「本就没有这个字段」的依据已消失）。★★ **本批顺带订正 `acceptance.csv` V1.0 的一处误记**：5 条 `soft` 判据的承载原记为 `code`，**实测它们无任何执行通道**（`evaluateHardChecks` 跳过一切非 `hard`）⇒ 一律改判 `pending_implementation`。★★ **一处据实更正（我方先前裁定错了）**：`PR#amount_positive` 曾被改判「提交时点金额未就绪、不可执行」，**实测证伪** —— `handlers_approval_pr_amount.go#resolvePRAmountForTier` 在 `handlers_approval.go` 的判据求值**之前**把 `estimated_total_cents` 写入 `body.Fields`（`mergeProvidedFields` 全量复制）⇒ 该判据**可达**，本批落 `hard` ＋ `code`。★ 另：4 条**具名登记为「当前不可执行」**（`PR#safety_branch` · `SA#counterparty_conditional` · `SA#cross_month_allocation` 判 `pending_implementation`），★ 其中 `SA#counterparty_conditional` 的字段 `counterparty` **已存在**、缺口在**触发条件不可表达**（据实写明，不笼统说「无字段」）；★ 三条`pending_wiring`（`BA#receipt_per_purchase` · `SA#actual_not_exceed` · `SA#invoice_must_link`）与两条自由文本人工项（`SA#entertain_required` · `SA#inspection_basis`）一并定档。★ 依据：`spec/forms/*.json#checks` · `COLLAB.md#N-047` · `MIMO-NEXT-BATCH-11.md` · `spec/acceptance.csv` V1.1。"
+    },
+    {
+      "version": "1.16",
+      "date": "2026-10-04",
+      "change": "★★ **新增 `S24` ＋ `S25`（`N-054` ①：`date_range` 的机读载荷契约）** —— ★ `S24` ＝ `array_each_required`：凡 `type == date_range` 的字段**必须**声明 `payload_form`；★ `S25` ＝ `enum_subset`：取值必须 ∈ {`iso_interval`}。★★ **两条均只用既有原语与既有 args 形态**（`when_key`/`when_in` 同 `S16`；`min_hits: 0` 同 `S5b`）⇒ ★ **零引擎改动、两侧自动一致**。★ 配套：`spec/chain.json` **V1.2**（新增 `conventions.field_payload_forms`）＋ `spec/forms/SA.json` **V1.2**（`occurrence_period` 落 `payload_form` ＋ `payload_contract`）；★ 判据总数 **27 → 29**、原语仍 **11** 个、必绿基线仍 **8** 条。★★ **`S25` 的 `min_hits` 必须为 0（实测逼出，不是保守取值）**：Python 的 `min_hits` 是**逐文件**语义、Go 是**跨文件汇总** ⇒ 该判据的 `collect` 只在部分表单有值 ⇒ 写 1 会让**两侧给出相反结论**；★ 该分歧已具名登记 `COLLAB.md#N-055`。"
     }
   ]
 }
