@@ -3,7 +3,7 @@
   "label": "物资采购申请单",
   "prefix": "PR",
   "number_format": "PR-YYMM-####",
-  "version": "1.1",
+  "version": "1.2",
   "date": "2026-10-04",
   "generated_by": "WorkBuddy",
   "sources": {
@@ -194,6 +194,18 @@
           "origin": "tool_table",
           "origin_ref": "表单字段清单 R13",
           "rule": "选「是」**触发合规校验分支**，须附资质文件或说明"
+        },
+        {
+          "name": "qualification_doc",
+          "label": "资质文件 / 说明",
+          "type": "text_and_attachment",
+          "required": false,
+          "source": "user",
+          "required_conditional": "is_safety_or_special_equipment == true",
+          "origin": "resolution",
+          "origin_ref": "`N-052` 批 13 裁定（2026-10-04）：依工具表字段清单 R13 的规则「须附资质文件或说明」**新增独立字段**",
+          "why_new_field": "★ **不复用 `tech_attachment`** —— 后者已被 `PR#device_tech_attachment`（条件 `P04`、设备类必传技术附件）占用；同一字段被两条判据争用会让「资质（合规准入）」与「技术参数（性能依据）」两类材料语义纠缠 ⇒ 新增独立字段。★ 与 `BA#safety_certificate` 同范式：**字段级 `required_conditional` ＋ 判据求值器**双保险",
+          "rule": "「是否涉及安全环保 / 特种设备」选「是」时必填：上传资质文件，或以文字说明（二者至少其一）。★ 条件写法 `is_safety_or_special_equipment == true` 可被 `evalSimpleEqual` 解析（左值 snake_case、右值 `true`）；★ 与 `tech_attachment` 互不替代"
         },
         {
           "name": "is_fixed_asset",
@@ -417,7 +429,7 @@
       "id": "safety_branch",
       "severity": "soft",
       "carried_by_kind": "pending_implementation",
-      "carried_by": "★ **当前不可执行**（`N-047` 批 12 具名登记）：`assert` 要「资质文件**或说明**」，而本表单字段集中**无该字段**（`tech_attachment` 已被 `device_tech_attachment` 占用，能否复用属口径问题）⇒ 须先补字段（拟 `N-052`）；★★ **不得标 `hard`** —— `when` 以 `submit` 开头而无求值器 ⇒ `evaluateHardChecks` 当场 fail-closed（已实测）",
+      "carried_by": "★ **待接线**（`N-052` 批 13）：承载字段 `qualification_doc` **已于本批补入**（`required_conditional` 同批落地 ⇒ 提交期通用校验已能拦「选是却两空」）；★ 判据**求值器尚未注册** ⇒ 暂**不得**标 `hard`（`when` 以 `submit` 开头而无求值器 ⇒ `evaluateHardChecks` 当场 fail-closed，已实测）；★ 求值器落地后由我方重判 `hard` ＋ `code`（与 `BA#safety_certificate` 同范式）",
       "when": "submit",
       "assert": "is_safety_or_special_equipment == true ⇒ 须附资质文件或说明",
       "else": "拒绝提交",

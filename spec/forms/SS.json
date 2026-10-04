@@ -3,8 +3,8 @@
   "label": "单一来源理由书",
   "prefix": "SS",
   "number_format": "SS-YYMM-####",
-  "version": "1.1",
-  "date": "2026-09-30",
+  "version": "1.2",
+  "date": "2026-10-04",
   "generated_by": "WorkBuddy",
   "sources": {
     "tool_table": "采购与费用审批体系配置工具表_v3.0.xlsx → `单据清单` R9（SS 在 `表单字段清单` 中【未列出】逐条字段，本表 R9 的 C6「关键字段」为次级来源）：唯一性说明、价格佐证、技术部门意见",
@@ -435,7 +435,8 @@
     },
     {
       "id": "tech_opinion_required_at_node2",
-      "when": "node2_tech_opinion",
+      "when": "approval(tech_opinion)",
+      "when_note": "★ `N-052` 批 13 归一：原写 `node2_tech_opinion`（**非约定写法**）⇒ 改为 `approval(<node_id>)`；节点 id 取自 `chain.json#routes.sole_source.nodes[1].id`",
       "assert": "tech_opinion 非空",
       "else": "拒绝进入下一节点",
       "origin": "resolution",
@@ -447,7 +448,8 @@
     },
     {
       "id": "pgm_final_required",
-      "when": "node4_pgm_final",
+      "when": "approval(pgm_final)",
+      "when_note": "★ `N-052` 批 13 归一：原写 `node4_pgm_final`（**非约定写法**）⇒ 改为 `approval(<node_id>)`；节点 id 取自 `chain.json#routes.sole_source.nodes[3].id`",
       "assert": "pgm_final_opinion 非空",
       "else": "拒绝",
       "origin": "institution",

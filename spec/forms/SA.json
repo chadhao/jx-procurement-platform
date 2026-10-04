@@ -3,8 +3,8 @@
   "label": "费用事前申请单",
   "prefix": "SA",
   "number_format": "SA-YYMM-####",
-  "version": "1.0",
-  "date": "2026-09-29",
+  "version": "1.1",
+  "date": "2026-10-04",
   "generated_by": "WorkBuddy",
   "sources": {
     "tool_table": "采购与费用审批体系配置工具表_v3.0.xlsx → sheet「表单字段清单」R22–R29（表头 8 字段）＋ R48–R51（结算补录组 4 字段）",
@@ -133,6 +133,17 @@
           "rule": "起止日期；★ **跨月费用须说明分摊方式**"
         },
         {
+          "name": "allocation_note",
+          "label": "分摊说明",
+          "type": "textarea",
+          "required": false,
+          "source": "user",
+          "origin": "tool_table",
+          "origin_ref": "表单字段清单 R27",
+          "conditional_carrier": "★ **本字段刻意不带 `required_conditional`** —— 「跨月」是**日期区间比较**，而 `evalSimpleEqual` 只支持 `字段 == 值`、**表达不了** ⇒ ★ 不写不可解析的条件（写了会被判不可解析后**静默跳过** —— 正是 `N-052` 要消灭的形态）。★ 条件由判据 `SA#cross_month_allocation`（`when: submit && occurrence_period 跨月`）**唯一承载**",
+          "rule": "跨月费用必填：说明按月份 / 部门 / 项目分摊的方式与依据。★ 该判据的**触发依赖 `occurrence_period` 的机读形态**（当前未定 ⇒ 判据暂不翻 `hard`，见 `known_gaps`）"
+        },
+        {
           "name": "counterparty",
           "label": "对方单位",
           "type": "text",
@@ -180,8 +191,9 @@
           "name": "invoice_info",
           "label": "票据信息",
           "type": "text_and_attachment",
-          "required_conditional": "结算时必填",
+          "required": true,
           "source": "user",
+          "required_note": "★ `N-052` 批 13 修形：原 `required_conditional`＝「结算时必填」**不含 `==`** ⇒ `evalSimpleEqual` 判为**不可解析** ⇒ `validateSubmitForm` **静默跳过**（既没提示、也没拦，与 `N-017` 的「降级为提示文案」**不是一回事**）。★ 「结算时」是**段级时点**，已由 `sections[id=settlement_backfill].filled_at`「结算时（事后补录）」承载 ⇒ 字段级**不再重复声明条件**，改为 `required: true`（提交期该段**整体跳过** ⇒ 提交行为**零变化**；后置补录期即「必填」）",
           "origin": "tool_table",
           "origin_ref": "表单字段清单 R49",
           "rule": "发票号、金额、开票日期与票据扫描件。★ **无关联的票据一律不予受理**；建议接入发票验真（本期不做 —— PRD N8）"
@@ -261,7 +273,7 @@
       "id": "counterparty_conditional",
       "severity": "soft",
       "carried_by_kind": "pending_implementation",
-      "carried_by": "★ **当前不可执行**（`N-047` 批 12 具名登记）：承载字段 `counterparty` **已存在**（`user`、非必填）；★ 缺口在**触发条件** —— `when` 的「需要开票 || 对外支付」在本仓字段集中**不可表达**（无「需要开票」字段）⇒ 无从判定是否触发；须先补条件字段（拟 `N-052`）",
+      "carried_by": "★ **当前不可执行**（`N-047` 批 12 定性；`N-052` 批 13 **具名延后**）：承载字段 `counterparty` **已存在**（`user`、非必填）；★ 缺口在**触发条件**：① 「**对外支付**」**可表达**＝`payment_method_input == '对公直付'`（枚举 `spec/enums.json#payment_method_input`，`evalSimpleEqual` 可解析）；② 但「**需要开票**」**无任何字段承载**（工具表 R28 只给了条件、未给字段）⇒ ★ 本批**不臆造新字段**（凭空补字段＝把「条件缺失」变成「我方口径」）⇒ **延后**、待工具表/制度侧补口径；★ 故本批该判据**既不归一 `when`、也不翻转**",
       "when": "submit && (需要开票 || 对外支付)",
       "assert": "counterparty 非空",
       "else": "拒绝提交",
@@ -272,7 +284,7 @@
       "id": "cross_month_allocation",
       "severity": "soft",
       "carried_by_kind": "pending_implementation",
-      "carried_by": "★ **当前不可执行**（`N-047` 批 12 具名登记）：`assert` 要「分摊方式说明」，而 `SA` 的全部字段中**无该字段**（无 `allocation_note`）⇒ 须先补字段（拟 `N-052`）",
+      "carried_by": "★ **半解锁**（`N-052` 批 13，如实登记）：承载字段 `allocation_note` **已于本批补入** ⇒ 缺口由「无字段」收窄为「**触发条件不可判**」—— ★★ 「跨月」取决于 `occurrence_period`（工具表控件类型＝**日期区间**）的**机读载荷形态**，而全仓 `date_range` **零消费端**、自建表单页将其渲染为**纯文本框**（`web/src/views/Submit.vue` 无 `date_range` 分支 ⇒ 落 `v-else` 文本框）⇒ ★ **不臆造载荷形态**（属新增契约）⇒ 登记 `known_gaps`、待定；★ 故本批判据**不翻转** `hard`",
       "when": "submit && occurrence_period 跨月",
       "assert": "须说明分摊方式",
       "else": "拒绝提交",
@@ -283,8 +295,8 @@
       "id": "actual_not_exceed",
       "severity": "hard",
       "carried_by_kind": "pending_wiring",
-      "carried_by": "★ **通路未接**（`N-047` 批 12）：`when=结算补录` 当前**无生产时点** ⇒ 引擎跳过、暂不执行；★ `when` 非提交时点 ⇒ 引擎**不会** fail-closed",
-      "when": "结算补录",
+      "carried_by": "★ **通路未接**（`N-047` 批 12 定性；`when` 于 `N-052` 批 13 归一）：`when=backfill(settlement_backfill)` 指向 `sections[id=settlement_backfill]`（后置补录段）—— ★ 该段的**补录入口尚未接线** ⇒ 引擎跳过、暂不执行（如实保留 `pending_wiring`）；★ 非提交时点 ⇒ 引擎**不会** fail-closed",
+      "when": "backfill(settlement_backfill)",
       "assert": "actual_cents <= approved_cents",
       "else": "须走**超支确认**；未确认不得移交集团",
       "origin": "tool_table",
@@ -294,8 +306,8 @@
       "id": "invoice_must_link",
       "severity": "hard",
       "carried_by_kind": "pending_wiring",
-      "carried_by": "★ **通路未接**（`N-047` 批 12）：同上（`结算补录`）；★ 另：`SA#invoice_info.required_conditional`＝「结算时必填」**不含 `==`** ⇒ `evalSimpleEqual` 不可解析 ⇒ 通用校验**静默跳过**（登记 `N-052` 一并修）",
-      "when": "结算补录",
+      "carried_by": "★ **通路未接**（`N-047` 批 12 定性；`when` 于 `N-052` 批 13 归一）：同上（`backfill(settlement_backfill)`）；★ **`SA#invoice_info.required_conditional` 的不可解析形态已于本批修形**（改 `required: true`，时点由段 `filled_at` 承载）",
+      "when": "backfill(settlement_backfill)",
       "assert": "票据关联到已批准的事前申请单",
       "else": "**不予受理**",
       "origin": "tool_table",
@@ -324,6 +336,11 @@
       "status": "★★ **已定（`COLLAB §9.2`）**",
       "decision": "★ **不新增单据**：在 `SA` 单内以「超支说明 ＋ 主管领导确认」承载 —— 制度未要求单独单据。",
       "note": "R50 要求「超出须走超支确认」，但**超支确认走什么单据/节点未在任何文档中定义** ⇒ 建议开议题或纳入制度 V4.0 待确认"
+    },
+    {
+      "gap": "`occurrence_period`（发生期间）的 **机读载荷形态未定** ⇒ 判据 `cross_month_allocation` 的**触发条件不可判**",
+      "status": "★ **待定（`N-052` 批 13 登记）**",
+      "note": "★ 工具表把本字段的控件类型定为 **日期区间**（`docs/06-Implementation-Notes.md` 控件清单原文），但 ★ **全仓 `date_range` 零消费端**（`internal/**` 无该字符串），自建表单页 `web/src/views/Submit.vue` 的类型分支**没有 `date_range`** ⇒ 落 `v-else` **纯文本框**。⇒「是否跨月」在当前载荷上**无从判定**。★ 处置：**不臆造载荷形态**（属新增契约，且飞书侧控件载荷未实采）⇒ 判据维持 `soft` ＋ `pending_implementation`、**不翻转** `hard`；★ 承载字段 `allocation_note` **已于本批补入** ⇒ 缺口只剩触发条件"
     },
     {
       "gap": "P08 / M07 是否允许个人垫付",
