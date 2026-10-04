@@ -1,5 +1,5 @@
 {
-  "version": "1.4",
+  "version": "1.5",
   "generated_by": "WorkBuddy",
   "date": "2026-09-29",
   "sources": {
@@ -495,7 +495,8 @@
             {
               "id": "bid_opening_minutes",
               "label": "开标/谈判纪要 + 评分表",
-              "actor": "purchaser + 评审组",
+              "actor": "purchaser",
+              "note": "★ `N-057`（2026-10-05）归一：原 `actor` 为复合串 `purchaser + 评审组` —— Go 侧既不属 `approverRoles`、也不属 `isActionActor` ⇒ 落 `appendAction` ⇒ **实际行为等同于 `purchaser`（动作/留痕环节，不生成审批任务）** ⇒ 归一为 `purchaser`，「评审组参与」这一**事实**保留在本注记。★★ **本批不改流程语义**：该节点「应为审批还是动作」与「`评审组` 是否建模为角色」**均不在本批决定**（后者属 `R-09` 的「待用户确认」＋ 角色表变更＝制度级）。★ 依据：`COLLAB.md#N-057`。",
               "required": true
             }
           ],
