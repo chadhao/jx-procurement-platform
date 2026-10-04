@@ -1,0 +1,98 @@
+doc_type,check_id,when_raw,when_kind,severity,decision_kind,decidable_expr,machinable,carrier_kind,carrier_ref,note
+BA,amount_positive,submit,submit,(未声明),数值比较,amount_cents > 0,yes,code,internal/httpapi/handlers_approval_formcheck.go#validateSubmitForm,★ 部分承载：schema 层 required ＋ providedNonEmpty 对 0 判非空失败 ⇒ 0 被拦；★ 但**负数不被拦**（rule「必须 > 0」是散文，无专项求值器）
+BA,amount_tier1_only,submit,submit,(未声明),数值比较,amount_cents <= 99999,yes,pending_implementation,—,"★★ **无任何承载**：本判据无 severity ⇒ 提交引擎 `c.Severity != ""hard""` 直接 continue；亦无其他时点载体 ⇒ 采一档备案单超 1,000 元**不会被拦**"
+BA,completeness_l2,submit,submit,(未声明),存在性,usage_category_l1 非空 AND usage_category_l2 非空,yes,code,internal/httpapi/handlers_approval_formcheck.go#validateSubmitForm,承载成立（两字段 schema required=true，属提交时点 section）
+BA,safety_certificate,submit && usage_category_l1 == 'P03',submit,(未声明),存在性,usage_category_l1 == 'P03' => qualified_certificate 非空,yes,code,internal/httpapi/handlers_approval_formcheck.go#validateSubmitForm,承载成立（字段 required_conditional＝「用途分类 == P03（劳保与安环用品）」，evalSimpleEqual 可解析、值截断到全角括号）
+BA,receipt_per_purchase,回交凭据,其他,(未声明),存在性,payment_receipt_no 非空 AND payment_receipt_file 非空,yes,pending_wiring,—,★ 时点＝「回交凭据」，**不合 chain.json#conventions.checks_when 约定** ⇒ 无任何时点承载 ⇒ 当前实为人工检查项（回交凭据时点未接线）
+BA,anti_split_before_disburse,业务规则,其他,(未声明),顺序,ts(anti_split_check_result) < ts(disburse),yes,manual,spec/forms/BA.json#checks[id=anti_split_before_disburse].known_cost,★ 已声明人工承载（known_cost＝「平台无跨字段校验 ⇒ 只能公式列提示 + 人工核对」）；★ 其载体字段 anti_split_check_result 亦在 B2 的 10 个零生产者字段之列
+BA,no_purchaser_field,schema,schema,(未声明),结构性,"BA 字段集合 ∌ {purchaser, 采购经办人}",yes,structural,spec/forms/BA.json#sections,结构性事实成立（BA 27 字段无 purchaser）；★ 但**无门禁判据守卫**（改 spec 不会被拦）
+BA,idempotency_key,submit,submit,(未声明),结构性,请求头含 Idempotency-Key,yes,code,Idempotency-Key 机制（internal/httpapi，已有用例）,由幂等机制承载（非表单求值器）
+BJ,min_three_valid_quotes,submit,submit,hard,集合计数,quote_count >= 3,yes,code,internal/httpapi/handlers_approval_hardchecks.go#evaluateHardChecks → checkBJMinThreeQuotes,
+BJ,quotes_must_be_independent,submit,submit,hard,枚举,all_quotes_independent == true,yes,code,internal/httpapi/handlers_approval_hardchecks.go#evaluateHardChecks → checkBJQuotesIndependent,
+BJ,technical_compliance_filled,submit,submit,hard,集合计数,technical_compliance 非空 AND 条数 == 报价明细行数,yes,code,internal/httpapi/handlers_approval_hardchecks.go#evaluateHardChecks → checkBJTechnicalCompliance,★「逐家给出」＝条数对齐明示
+BJ,selected_must_be_valid_and_compliant,submit,submit,hard,引用比较,selected_supplier 在明细中 AND 该行 有效 AND 技术符合,yes,code,internal/httpapi/handlers_approval_hardchecks.go#evaluateHardChecks → checkBJSelectedValidCompliant,
+BJ,selection_reason_immutable,提交后,lifecycle:提交后,hard,结构性,提交后 selected_reason / procure_method / selected_supplier 不可改,yes,code,verifyBJPostSubmitImmutability,
+BJ,not_single_source,submit,submit,hard,枚举,procure_method != '单一来源',yes,code,internal/httpapi/handlers_approval_hardchecks.go#evaluateHardChecks → checkBJNotSingleSource,★ 与 RFQ 同名同款共用同一函数
+CT,mandatory_clauses_complete,submit / 进入合同审批前,submit,hard,存在性,8 组条款字段组逐组非空（⑥ 仅 usage_category_l1 == 'P04' 适用）,yes,code,internal/httpapi/handlers_approval_hardchecks.go#evaluateHardChecks → checkCTMandatoryClauses,★ 机判只保证「非空」；组内**实质内容是否充分**属人工判定
+CT,payee_name_matches_supplier,submit,submit,hard,引用比较,payee_name == supplier,yes,code,internal/httpapi/handlers_approval_hardchecks.go#evaluateHardChecks → checkCTPayeeMatchesSupplier,
+CT,prepay_pair,submit,submit,hard,引用比较,prepay_ratio > 0 => prepay_guarantee_kind 非空 AND prepay_guarantee_file 非空,yes,code,internal/httpapi/handlers_approval_hardchecks.go#evaluateHardChecks → checkCTPrepayPair,
+CT,sole_source_link,submit,submit,hard,存在性,procure_method == '单一来源' => linked_ss_biz_no 非空,yes,code,internal/httpapi/handlers_approval_hardchecks.go#evaluateHardChecks → checkCTSoleSourceLink,
+CT,tier3_quote_link,submit,submit,hard,存在性,contract_amount_cents > 500000 => linked_bj_biz_no 非空,yes,code,internal/httpapi/handlers_approval_hardchecks.go#evaluateHardChecks → checkCTTier3QuoteLink,
+CT,non_template_reason,submit,submit,hard,存在性,is_standard_template == false => non_template_reason 非空,yes,code,internal/httpapi/handlers_approval_hardchecks.go#evaluateHardChecks → checkCTNonTemplateReason,
+CT,equipment_after_sales,submit,submit,hard,存在性,usage_category_l1 == 'P04' => warranty_period_months / response_time_hours / spare_parts_commitment 三者非空,yes,code,internal/httpapi/handlers_approval_hardchecks.go#evaluateHardChecks → checkCTEquipmentAfterSales,
+CT,tech_opinion_needed,submit,submit,hard,存在性,usage_category_l1 == 'P04' AND contract_amount_cents >= 2000000 => tech_review_opinion 非空,yes,code,internal/httpapi/handlers_approval_hardchecks.go#evaluateHardChecks → checkCTTechOpinionNeeded,
+CT,contract_no_format,submit,submit,hard,正则,biz_no =~ ^CT-\d{4}-\d{4}$,yes,code,verifyPostSubmitHard（提交后自检，需生成后的 biz_no）,★ 因需生成后的 biz_no，走「提交后」而非提交时点
+CT,sign_after_approval,签署,lifecycle:签署,hard,人工,—,no,manual,—,★ **人工检查项**（已声明 carried_by_kind=manual）：签署/盖章时点无系统写入点，signed_at / sealed_at 由人工登记
+CT,no_amount_tiering,算链,lifecycle:算链,hard,结构性,合同审批节点数恒为 2（主管领导 == 项目总经理时恒为 1），与金额无关,yes,structural,spec/chain.json#contract_approval,★ 结构性保证，运行时无需检查
+CT,amount_vs_pr,submit,submit,hard,数值比较,contract_amount_cents <= PR.estimated_total_cents * (1 + params[contract.amount_over_pr_tolerance_percent]/100),yes,code,internal/httpapi/handlers_approval_hardchecks.go#evaluateHardChecks → checkCTAmountVsPR,
+CT,no_self_purchaser,submit,submit,hard,引用比较,NOT (purchaser == 需求提出人 AND designated_by == 需求提出人),yes,code,internal/httpapi/handlers_approval_hardchecks.go#evaluateHardChecks → checkNoSelfPurchaser,★ 与 PR/SS/PC 同款、**唯一实现**
+CT,idempotency_key,submit,submit,hard,结构性,请求头含 Idempotency-Key,yes,code,Idempotency-Key 机制（internal/httpapi，已有用例）,由幂等机制承载
+GR,related_order_or_record_must_exist,submit,submit,hard,引用比较,存在 CT 或 BA 使 biz_no == related_order_or_record_no（等值）,yes,code,internal/httpapi/handlers_approval_hardchecks.go#evaluateHardChecks → checkGRRelatedOrderOrRecord,
+GR,acceptance_group_members_complete,submit,submit,hard,集合计数,按 acceptance_group 逐组精确（P01 三员 / P02–P04 二员 / P05–P08 二员）；非本组成员字段须为空,yes,code,internal/httpapi/handlers_approval_hardchecks.go#evaluateHardChecks → checkGRAcceptanceGroupMembers,
+GR,no_ops_supervisor_as_member,submit,submit,hard,引用比较,所有成员 != chain.json#roles.ops_supervisor 在岗人,yes,code,internal/httpapi/handlers_approval_hardchecks.go#evaluateHardChecks → checkGRNoOpsSupervisorMember,
+GR,no_approver_in_acceptance_group,submit,submit,hard,引用比较,所有成员 不属于 本笔业务链审批人集合,yes,code,internal/httpapi/handlers_approval_hardchecks.go#evaluateHardChecks → checkGRNoApproverInGroup,
+GR,concession_dual_sign_when_concession,submit,submit,hard,双向条件,acceptance_conclusion == '让步接收' <=> (两签署人非空 AND 不同人),yes,code,internal/httpapi/handlers_approval_hardchecks.go#evaluateHardChecks → checkGRConcessionDualSign,★ 双向：非让步时两者须为空
+GR,received_quantity_positive,submit,submit,hard,数值比较,received_quantity 非空 AND > 0,yes,code,internal/httpapi/handlers_approval_hardchecks.go#evaluateHardChecks → checkGRReceivedQuantityPositive,
+GR,inspection_vs_conclusion_hint,submit,submit,soft,引用比较,QC.inspection_result == '不合格' AND 本单 == '合格入库' => 提示,yes,code,internal/httpapi/handlers_approval_hardchecks.go#evaluateHardChecks,★ soft：只提示不阻断；提示基础设施随 N-017（acceptance.csv）
+GR,ledger_l07_written,落账后（★ 顺序＝提交 → 落账 → 本自检；★ 对 GR／QC 这类**无审批链**的单据，「提交即终态」，故「落账后」与「提交后」是同一时刻、但**顺序不能颠倒**）,lifecycle:落账后,hard,存在性,本单提交后 L07 已写入 5 列（biz_no / related_order_or_record_no / received_quantity / acceptance_conclusion / acceptance_members）,yes,code,verifyGRPostSubmitL07,★ 对无审批链单据「提交即终态」，顺序＝提交 → 落账 → 自检
+PC,contract_no_required_and_exists,submit,submit,hard,引用比较,contract_no 非空 AND 在 L04 等值命中一行,yes,code,internal/httpapi/handlers_approval_hardchecks.go#evaluateHardChecks → checkPCContractExists,
+PC,tier_by_max_formula,算链,lifecycle:算链,hard,数值比较,"applicable_tier == tier_of(max(change_amount_cents, original_contract_amount_cents))",yes,code,internal/chain（ChangeTierOf）＋ N-027 属性测试,
+PC,tier_never_tier1,算链,lifecycle:算链,hard,枚举,applicable_tier != 'purchase_tier1',yes,structural,spec/chain.json#thresholds.purchase.bands,★ 结构性保证（采一档分支不可达）＋ 属性测试
+PC,change_amount_nonzero,submit,submit,hard,数值比较,change_amount_cents != 0,yes,code,internal/httpapi/handlers_approval_hardchecks.go#evaluateHardChecks → checkPCChangeNonzero,
+PC,reset_as_new_purchase_block,submit,submit,hard,数值比较,NOT (new_total_cents > original_contract_amount_cents * 1.5),yes,code,internal/httpapi/handlers_approval_hardchecks.go#evaluateHardChecks → checkPCResetBlock,
+PC,special_explanation_required,submit,submit,hard,数值比较,total_change_cents > original_contract_amount_cents * 0.3 => special_explanation 非空,yes,code,internal/httpapi/handlers_approval_hardchecks.go#evaluateHardChecks → checkPCSpecialExplanation,
+PC,anomaly_list_and_report,终态,lifecycle:终态,hard,集合计数,90 天内同一 contract_no 变更 >= 2 次 => is_anomaly_listed == true,yes,code,injectPCSSSystemFields（PC 提交期注入）,
+PC,anomaly_monthly_report,终态,lifecycle:终态,hard,人工,—,no,manual,spec/ledger-mapping.json#L09.fields[anomaly_note]（可写列）,★ **人工检查项**（B3 定稿）：由综合运营主管在**月度报送时**填写 L09「异常变更专项说明」
+PC,tech_opinion_for_engineering,submit,submit,hard,存在性,is_engineering_category == true => tech_opinion 非空 AND tech_opinion_by 非空,yes,code,internal/httpapi/handlers_approval_hardchecks.go#evaluateHardChecks → checkPCTechOpinionEngineering,
+PC,new_supplier_when_supplier_change,submit,submit,hard,引用比较,change_type == '供应商变更' => new_supplier 非空 AND new_supplier != original_supplier,yes,code,internal/httpapi/handlers_approval_hardchecks.go#evaluateHardChecks → checkPCNewSupplier,
+PC,resubmit_to_group,终态,lifecycle:终态,hard,存在性,resubmitted_to_group_at 非空,yes,code,internal/flow（PC×ledger_submit 节点必填）,
+PC,ledger_l09_written,终态,lifecycle:终态,hard,存在性,落 L09 一行且 exception_type == '采购变更' AND change_chain 有值,yes,code,internal/flow/finalize.go（L09 六列自检）,
+PC,no_self_purchaser,submit,submit,hard,引用比较,NOT (applicant == 需求提出人 AND designated_by == 需求提出人),yes,code,internal/httpapi/handlers_approval_hardchecks.go#evaluateHardChecks → checkNoSelfPurchaser,
+PC,idempotency_key,submit,submit,hard,结构性,请求头含 Idempotency-Key,yes,code,Idempotency-Key 机制（internal/httpapi，已有用例）,由幂等机制承载
+PR,amount_positive,submit,submit,(未声明),数值比较,estimated_total_cents > 0,yes,code,internal/httpapi/handlers_approval_formcheck.go#validateSubmitForm,★ 部分承载：required ＋ ≠0 ⇒ 0 被拦；负数不被拦
+PR,completeness_l2,submit,submit,(未声明),存在性,usage_category_l1 非空 AND usage_category_l2 非空,yes,code,internal/httpapi/handlers_approval_formcheck.go#validateSubmitForm,承载成立（schema required）
+PR,no_self_purchaser,submit,submit,hard,引用比较,NOT (designated_purchaser == applicant AND designated_by == applicant),yes,code,internal/httpapi/handlers_approval_hardchecks.go#evaluateHardChecks → checkNoSelfPurchaser,★ 提交那半＝**防伪造提交体**；★ 提交时 designated_* 尚未填写 ⇒ 本半恒真，真正拦「自批自派」的是下一条（N-035 拆分）
+PR,no_self_purchaser_at_designation,approval(supervisor_approval),approval,hard,引用比较,NOT (designated_purchaser == applicant AND designated_by == applicant),yes,code,internal/flow/designation.go（该节点 handler 承载）,审批那半；★ 已声明 carried_by_kind=code
+PR,cross_dept_designation,approval(supervisor_approval),approval,(未声明),引用比较,"dept(designated_purchaser) 不属于 {dept(applicant), 综合运营部} => 存在审批记录(角色=被指定部门主管领导, 结论=同意)",yes,manual,spec/forms/PR.json#checks[id=cross_dept_designation].carried_by,★ 已声明人工承载（「本单无自动执行体，MUST NOT 被误读为系统会拦」）；★ 无 severity ⇒ 亦不受 S15 约束
+PR,safety_branch,submit,submit,(未声明),存在性,is_safety_or_special_equipment == true => 资质文件或说明非空,no,pending_implementation,—,★★ **规格缺口**：PR 25 字段中**没有**「资质文件 / 说明」字段，亦无 required_conditional ⇒ 判据**无字段可承载** ⇒ 待补字段（或改判据）
+PR,device_tech_attachment,submit,submit,(未声明),存在性,usage_category_l1 == 'P04' => tech_attachment 非空,yes,pending_implementation,—,★★ **无承载**：tech_attachment 为 required=false 且**无 required_conditional** ⇒ 条件必填未落到 schema ⇒ 设备类可不上传图纸（★ 修法＝补 required_conditional，属行为变更，须评估）
+PR,idempotency_key,submit,submit,(未声明),结构性,请求头含 Idempotency-Key,yes,code,Idempotency-Key 机制（internal/httpapi，已有用例）,由幂等机制承载
+QC,related_gr_must_exist,submit,submit,hard,引用比较,存在 GR 使 biz_no == related_biz_no（等值，禁前缀匹配）,yes,code,internal/httpapi/handlers_approval_hardchecks.go#evaluateHardChecks → checkQCRelatedGRExists,
+QC,inspection_result_required,submit,submit,hard,枚举,"inspection_result 属于 {合格, 不合格, 让步使用}",yes,code,internal/httpapi/handlers_approval_hardchecks.go#evaluateHardChecks → checkQCInspectionResult,
+QC,sample_quantity_pair,submit,submit,hard,双向条件,inspection_method == '抽检' <=> (sample_quantity 非空 AND > 0),yes,code,internal/httpapi/handlers_approval_hardchecks.go#evaluateHardChecks → checkQCSampleQuantityPair,
+QC,defect_description_when_not_pass,submit,submit,hard,存在性,inspection_result != '合格' => defect_description 非空,yes,code,internal/httpapi/handlers_approval_hardchecks.go#evaluateHardChecks → checkQCDefectDescription,
+QC,l07_inspection_conclusion_written,落账后（★ 顺序＝提交 → 落账 → 本自检；★ 对 GR／QC 这类**无审批链**的单据，「提交即终态」，故「落账后」与「提交后」是同一时刻、但**顺序不能颠倒**）,lifecycle:落账后,hard,引用比较,本单提交后 L07.inspection_conclusion == 本单 inspection_result,yes,code,verifyQCPostSubmitL07,
+QC,no_duplicate_qc_for_same_batch,submit,submit,soft,集合计数,同 related_biz_no + batch_no 下已存在未作废 QC => 提示,yes,code,internal/httpapi/handlers_approval_hardchecks.go#evaluateHardChecks,★ soft：只提示不阻断
+RFQ,related_pr_must_exist,submit,submit,hard,引用比较,存在 PR 使 biz_no == related_biz_no（等值）,yes,code,internal/httpapi/handlers_approval_hardchecks.go#evaluateHardChecks → checkRelatedPRMustExist,★ 函数内按 DocType 分流（PR/SS/RFQ 共用）
+RFQ,invited_min_by_tier,submit,submit,hard,数值比较,procure_method == '询比价' => invited_count >= 3；采二档『报价比选』=> invited_count >= 1,yes,code,internal/httpapi/handlers_approval_hardchecks.go#evaluateHardChecks → checkRFQInvitedMinByTier,★ 门槛**随档位**：统一按 3 家会把采二档（主力档位）全部误拦
+RFQ,not_single_source,submit,submit,hard,枚举,procure_method != '单一来源',yes,code,internal/httpapi/handlers_approval_hardchecks.go#evaluateHardChecks → checkBJNotSingleSource,★ 与 BJ 同款共用
+RFQ,deadline_after_send,submit,submit,hard,数值比较,quote_deadline > send_date（折算到同一时点比较）,yes,code,internal/httpapi/handlers_approval_hardchecks.go#evaluateHardChecks → checkRFQDeadlineAfterSend,
+RFQ,send_evidence_required,submit,submit,hard,存在性,rfq_file 非空 AND send_evidence 非空,yes,code,internal/httpapi/handlers_approval_hardchecks.go#evaluateHardChecks → checkRFQSendEvidence,
+RFQ,response_shortfall_warning,submit,submit,soft,数值比较,procure_method == '询比价' AND responded_count < 3 => 提示填写 shortfall_note,yes,code,internal/httpapi/handlers_approval_hardchecks.go#evaluateHardChecks,★ soft：只提示不阻断
+SA,amount_positive,submit,submit,(未声明),数值比较,amount_cents > 0,yes,code,internal/httpapi/handlers_approval_formcheck.go#validateSubmitForm,★ 部分承载：required ＋ ≠0 ⇒ 0 被拦；负数不被拦
+SA,completeness_l2,submit,submit,(未声明),存在性,usage_category_l1 非空 AND usage_category_l2 非空,yes,code,internal/httpapi/handlers_approval_formcheck.go#validateSubmitForm,承载成立（schema required）
+SA,entertain_required,"submit && usage_category_l1 ∈ {S01,S02,S03}",submit,(未声明),人工,—,no,manual,—,★★ **人工检查项**：purpose 是否含「接待对象与人数」属自然语言，**无字段承载**（N-017 原例）；须在表单内以提示文案引导、人工核对
+SA,inspection_basis,submit && usage_category_l1 == 'P07',submit,(未声明),人工,—,no,manual,—,★★ **人工检查项**：purpose 是否含「依据标准」属自然语言（N-017 原例）
+SA,counterparty_conditional,submit && (需要开票 || 对外支付),submit,(未声明),枚举,payment_method_input == '对公直付' => counterparty 非空,yes,pending_implementation,—,★★ 两个触发源只落实一半：「对外支付」≈ payment_method_input=='对公直付'（可机判）；★「需要开票」在 SA 15 字段中**无承载字段** ⇒ 不可判；且 counterparty 无 required_conditional
+SA,cross_month_allocation,submit && occurrence_period 跨月,submit,(未声明),数值比较,跨月(occurrence_period) => 分摊说明非空,no,pending_implementation,—,★★ 半边可判（occurrence_period 起止月不同）；★ 但**承载字段未定义**（SA 无 allocation_note）⇒ 待补字段
+SA,actual_not_exceed,结算补录,其他,(未声明),引用比较,actual_cents <= approved_cents,yes,pending_wiring,—,★ 时点＝「结算补录」**不合约定**（lifecycle 类）且无承载 ⇒ 结算补录通道未接线
+SA,invoice_must_link,结算补录,其他,(未声明),引用比较,存在已批准的事前申请单且票据关联到它,yes,pending_wiring,—,★ 同上（结算补录）；★ 另：SA#invoice_info.required_conditional＝「结算时必填」→ 无 `==` ⇒ evalSimpleEqual 不可解析 ⇒ **通用校验静默跳过**
+SA,idempotency_key,submit,submit,(未声明),结构性,请求头含 Idempotency-Key,yes,code,Idempotency-Key 机制（internal/httpapi，已有用例）,由幂等机制承载
+SS,uniqueness_and_price_required,submit,submit,hard,存在性,uniqueness_statement 非空 AND price_evidence 非空,yes,code,internal/httpapi/handlers_approval_hardchecks.go#evaluateHardChecks → checkSSUniquenessPrice,
+SS,sole_source_attachment_when_authorized,submit,submit,hard,存在性,uniqueness_basis == '独家代理／授权' => sole_source_attachment 非空,yes,code,internal/httpapi/handlers_approval_hardchecks.go#evaluateHardChecks → checkSSAuthorizedAttachment,
+SS,related_pr_must_exist,submit,submit,hard,引用比较,存在 PR 使 biz_no == related_biz_no 且该 PR 实例为已批准状态,yes,code,internal/httpapi/handlers_approval_hardchecks.go#evaluateHardChecks → checkRelatedPRMustExist,★ 与 RFQ/PR 共用同一函数、按 DocType 分流
+SS,tech_opinion_required_at_node2,node2_tech_opinion,approval,hard,存在性,节点②通过时 tech_opinion 非空,yes,code,internal/flow/designation.go#nodeFieldSpecFor（SS×tech_opinion）,★ when 原文＝`node2_tech_opinion`，**未用约定写法** `approval(<node_id>)`（chain.json#conventions.checks_when）
+SS,pgm_final_required,node4_pgm_final,approval,hard,存在性,节点④通过时 pgm_final_opinion 非空,yes,code,internal/flow/designation.go#nodeFieldSpecFor（SS×pgm_final）,★ 同上（when 原文＝`node4_pgm_final`）
+SS,no_escalation_to_group,算链,lifecycle:算链,hard,结构性,本单链路不含任何集团节点；末节点恒为项目总经理,yes,structural,spec/chain.json#routes.sole_source,★ 结构性
+SS,tier_chain_from_amount,算链,lifecycle:算链,hard,数值比较,applicable_tier == tier_of(amount_cents)（闭区间）,yes,code,internal/chain（TierOf）,
+SS,fixed_asset_conflict,submit,submit,soft,数值比较,NOT (is_fixed_asset == true AND amount_cents > 20000000),yes,code,internal/httpapi/handlers_approval_hardchecks.go#evaluateHardChecks,★ soft：只提示不阻断
+SS,ledger_l09_written,终态,lifecycle:终态,hard,存在性,落 L09 一行且 exception_type == '独家采购',yes,code,internal/flow/finalize.go（L09 六列自检）,
+SS,no_self_purchaser,submit,submit,hard,引用比较,NOT (applicant == 需求提出人 AND designated_by == 需求提出人),yes,code,internal/httpapi/handlers_approval_hardchecks.go#evaluateHardChecks → checkNoSelfPurchaser,
+SS,idempotency_key,submit,submit,hard,结构性,请求头含 Idempotency-Key,yes,code,Idempotency-Key 机制（internal/httpapi，已有用例）,由幂等机制承载
+SUB,related_docs_complete,submit,submit,hard,引用比较,related_docs 非空 AND 其中引用的单据号逐个等值存在（缺项不得提交）,yes,code,internal/httpapi/handlers_approval_hardchecks.go#evaluateHardChecks → checkSUBRelatedDocsComplete,
+SUB,contract_approved_when_over_1000,submit,submit,hard,数值比较,amount_cents >= 100000（含边界）=> 关联合同的审批必须已完成,yes,code,internal/httpapi/handlers_approval_hardchecks.go#evaluateHardChecks → checkSUBContractApproved,
+SUB,payee_change_requires_callback,submit,submit,hard,双向条件,payee_account_verified == false => callback_confirmed == true AND callback_note 非空；== true => 两者均为空,yes,code,internal/httpapi/handlers_approval_hardchecks.go#evaluateHardChecks → checkSUBPayeeChangeCallback,★ 双向
+SUB,tolerance_note_when_over,submit,submit,hard,双向条件,three_way_match == '差异超容差' => tolerance_note 非空；其余 => 为空,yes,code,internal/httpapi/handlers_approval_hardchecks.go#evaluateHardChecks → checkSUBToleranceNote,★ 双向
+SUB,handover_receipt_required,submit,submit,hard,存在性,handover_receipt 非空,yes,code,internal/httpapi/handlers_approval_hardchecks.go#evaluateHardChecks → checkSUBHandoverReceipt,
+SUB,submit_deadline_warning,submit,submit,soft,数值比较,submit_group_at 距湖南侧流程完成日 > 3 个工作日 => 提示,yes,code,internal/httpapi/handlers_approval_hardchecks.go#evaluateHardChecks,★ soft：只预警不阻断（「计入异常预警」≠ 不予受理）
+SUB,ledger_l06_written,落账后（★ 顺序＝提交 → 落账 → 本自检；★ 本单**无审批链**，提交即终态）,lifecycle:落账后,hard,存在性,本单提交后 L06 两张表均已写入（① 同步存档表 6 列；② 运营表至少 submit_group_at 与 handover_receipt）,yes,code,verifySUBPostLedgerL06,

@@ -23,7 +23,7 @@ mimo code 的审计在其中抓出**多处文档内部矛盾**（例如 `docs/11
 |---|---|---|
 | **`chain.json`** | ★ **分档阈值 + 审批链**：9 条流程线（采一/采二/采三/销一/管一/管二/独家/紧急/变更）＋ 合同统一两级 ＋ 11 类单据链 ＋ 10 个角色 | ✅ V1.0 |
 | **`RESOLUTIONS.md`** | ★ **口径冲突的裁定记录**（工具表 ↔ 制度 ↔ 代码 → 唯一口径） | ✅ **V1.5（30 条裁定）** |
-| **`checks.json`** | ★★ **判据清单（唯一来源）** —— 由**两侧引擎共同执行**（`scripts/check_spec.py` 与 mimo 侧 Go 加载器）⇒ 消灭「第三份真相」（`N-011`） | ✅ **V1.6（9 原语 / 18 判据）** |
+| **`checks.json`** | ★★ **判据清单（唯一来源）** —— 由**两侧引擎共同执行**（`scripts/check_spec.py` 与 mimo 侧 Go 加载器）⇒ 消灭「第三份真相」（`N-011`） | ✅ **V1.11（10 原语 / 23 判据）** |
 | `forms/*.json` | 11 张单据的表单字段 schema（字段名/类型/必填/枚举/校验） | ✅ **11 张全齐**（`BA`/`PR`/`SA`/`CT`/`SS`/`PC`/`QC`/`GR`/`SUB`/`BJ` ＋ **`RFQ`**）—— ★ **表单规格已出齐** |
 | `ledger-mapping.json` | 单据 → 台账映射（含 **一对多**）＋ L01–L12 字段定义与写入者 | ✅ V1.0（★ `L11`/`L12` 的 `writable` 已修为 `false` ＋ 登记不变量） |
 | **`enums.json`** | ★ **制度性枚举**（★ 后台**不可改**；改动须走裁定） | ✅ V1.1 |
@@ -31,7 +31,7 @@ mimo code 的审计在其中抓出**多处文档内部矛盾**（例如 `docs/11
 | **`authority.json`** | ★★ **授权配置（第四类，新）**：**角色代理人**（`role_agent`）—— **后台可定义**、**点选通讯录镜像内已存在的用户**（禁手填 `open_id`）、每角色**至多 1 名**、★★ **不做替补**；含 5 条 `checks` ＋ 数据契约 ＋ 未启用守栏 | ✅ **V1.0（2026-09-30 新建）** |
 | **`params.json`** | ★ **可配置参数**（★ 每个参数**强制声明 `consumer`**，否则即「假配置」—— `README` 定案 #24） | ✅ **V1.1**（★ `open_items` 已清零） |
 | **`dashboard.json`** | ★ **4 张看板（13–16）指标定义与口径** ＋ ★★ **九条 `global_rules`**（未接通显示「数据未接入」· 数据源指向运营表 · **「应恒为 0」须带非空前置断言** · ★ **`pending→connected` 的推进判据** · ★ **第三种态「口径未定」** · ★ **每指标须声明 `render`（`r8`）** · ★★ **`source_ledgers` 须为派生量（`r9`）**）＋ 每张看板的 **`connected_requires`** / **`ops_table_required`** ＋ 每个指标的 **`render`**。★ 原名 `dashboard.yaml`，**改为 `.json` 以便纳入门禁** | ✅ **V1.3（2026-10-01）** |
-| `acceptance.csv` | 验收用例（对齐 mimo 审计的 6❌ / 21⚠️ 清零） | ⏳ 随第一批 |
+| **`acceptance.csv`** | ★★ **判据级验收台账（`N-017` 落地）** —— `spec/forms/*.json#checks` 的**全部 97 条判据**逐条给出**可判定表达式**与**承载者**（列约定见 §3.1）；★ **只引用 `(doc_type, check_id)`、不复制 `assert` 原文**（防第二份真相） | ✅ **V1.0（2026-10-04 · 97 条）** |
 | `openapi.yaml` | 自建侧接口的**业务契约**（路径/入参语义/错误码枚举） | ⏳ 随第一批（★ 接口契约的**人读正本**在 `docs/05-API`） |
 | `institution-anchors.json` | **制度 ↔ 系统 双向锚点**（`COLLAB.md` `N-006`） | ⏳ 随制度 V4.0 |
 
@@ -48,6 +48,38 @@ mimo code 的审计在其中抓出**多处文档内部矛盾**（例如 `docs/11
 | **落账目标** | 只有 **`L01`–`L07` + `L09`** 可作落账目标；`L08`/`L10`/`L11`/`L12` **禁止**（`README` 定案 #20） |
 | **裁定追溯** | 凡与工具表/制度原文不同的口径，必须带 `resolution: "R-xx"` 指向 `RESOLUTIONS.md` |
 
+### 3.1 `acceptance.csv` 的列约定（`N-017` 落地 · 2026-10-04）
+
+**用途**：把「一条判据**能不能被机器判定**、**由谁执行**」从散文变成**可数清单**。★ 本表**只引用** `(doc_type, check_id)`，**不复制** `assert` 原文 —— 判据原文、时点、`severity` 的**唯一来源仍是 `forms/*.json#checks`**。
+
+| 列 | 取值 | 说明 |
+|---|---|---|
+| `doc_type` / `check_id` | — | 指向 `spec/forms/<doc_type>.json#checks[id=check_id]` |
+| `when_raw` | 原文 | `forms` 里 `when` 的**原样**取值（追溯用） |
+| `when_kind` | 受控 | 按 `chain.json#conventions.checks_when` 归一：`submit` / `approval` / `lifecycle:签署` / `lifecycle:算链` / `lifecycle:终态` / `lifecycle:提交后` / `lifecycle:落账后` / `schema`（非时点）/ `其他`（★ **不合约定**） |
+| `severity` | `hard` / `soft` / `(未声明)` | 与 `forms` 一致 |
+| `decision_kind` | 受控 | 可判定条件的**形态**（词表见下） |
+| `decidable_expr` | — | 可机判表达式；`—` 表示**当前无法机判** |
+| `machinable` | `yes` / `no` | `no` ⇒ 该条＝**人工检查项**（须在表单内以提示文案引导） |
+| `carrier_kind` | 受控 | `code`（有运行时执行体）/ `structural`（结构性保证）/ `manual`（人工承载）/ `pending_wiring`（通路未接）/ `pending_implementation`（**无任何承载 ＝ 真缺口**）—— ★ 与 `forms` 的 `carried_by_kind` **同一受控词表** |
+| `carrier_ref` | 自由 | 落点（文件#函数 / 判据 id / 可写列），供人工核对 |
+| `note` | 自由 | 该条的**实测定性**（含「部分承载」「半边不可判」这类必须说清的边界） |
+
+★ **`decision_kind` 受控词（10 项）** —— ★★ **不是 `N-017` 原拟的 5 项**：原拟「字段存在性 / 正则 / 枚举 / 引用字段比较 / 人工」，逐条落表后**不够用**（占比最高的是**数值比较**与**跨字段引用比较**，两者都塞不进原 5 项）⇒ 如实扩为：
+`存在性` / `正则` / `枚举` / `数值比较` / `引用比较` / `集合计数` / `双向条件` / `顺序` / `结构性` / `人工`。
+★ **扩项本身是一条结论**：「验收条件的形式」此前**只有一份口头清单**，第一次逐条落表才发现它不完整。
+
+★ **本轮落表时实测发现（已登记 `COLLAB.md#N-047`，逐条可复现）**：
+1. ★★ **23 条判据落在两条判据的缝里** —— `BA` 8 条 / `PR` 6 条 / `SA` 9 条**缺 `severity`** ⇒ ① `internal/httpapi/handlers_approval_hardchecks.go#evaluateHardChecks` 首行 `if c.Severity != "hard" { continue }` ⇒ **提交引擎逐条跳过**；② `S15`（每条 `hard` 须声明 `carried_by_kind`）**只管 `severity=hard`** ⇒ **也不要求它们声明承载者**。⇒ 结果是**既不执行、也不报错**（「写了没人执行」同族，但连 `S15` 都看不见）。
+2. **5 条无任何承载**（`pending_implementation`）：`BA#amount_tier1_only` · `PR#safety_branch` · `PR#device_tech_attachment` · `SA#counterparty_conditional` · `SA#cross_month_allocation`。
+3. **3 条时点未接线**（`pending_wiring`）：`BA#receipt_per_purchase`（回交凭据）· `SA#actual_not_exceed` 与 `SA#invoice_must_link`（结算补录）。
+4. **6 条 `when` 不合 `checks_when` 约定** —— ① **4 条落在约定的任何一类之外**：`BA#receipt_per_purchase`（`回交凭据`）· `BA#anti_split_before_disburse`（`业务规则`）· `SA#actual_not_exceed` 与 `SA#invoice_must_link`（`结算补录`）；② **2 条未用规范写法** `approval(<node_id>)`：`SS#tech_opinion_required_at_node2`（`node2_tech_opinion`）· `SS#pgm_final_required`（`node4_pgm_final`）。
+5. **2 处判据无字段可承载** ＋ **1 处条件必填被静默跳过** —— `PR` 缺「资质文件 / 说明」字段（`safety_branch`）· `SA` 缺「分摊说明」字段（`cross_month_allocation`）· ★ `SA#invoice_info.required_conditional = 「结算时必填」`**不含 `==`** ⇒ `evalSimpleEqual` 判定为**不可解析** ⇒ 通用校验**静默跳过**（★ 与 `N-017` 的「降级为提示文案」**不是一回事**：这条**既没提示、也没拦**）。
+
+★★ **本表不翻转任何 `connected` / 判据状态** —— 它只**记录现状**。改 `severity`、补字段、补求值器都属**同批变更**（我方补声明 → 实现侧同批接线，否则 `evaluateHardChecks` 对未注册 id **fail-closed** 当场拒启）⇒ 故**登记不抢跑**。
+
+★ **未覆盖（如实登记）**：`README §2` 原描述里的「对齐 mimo 审计 **6❌ / 21⚠️**」＝ **FR 级**验收矩阵，与本表**不同层**；本表只覆盖**判据级**（97 条）。FR 级矩阵待产。
+
 ---
 
 ## 4. 门禁
@@ -57,7 +89,7 @@ python scripts/check_spec.py      # 只查 spec/
 bash   scripts/check_all.sh       # 全量（含本项）
 ```
 
-**校验项**：★★ **判据的唯一来源是 `spec/checks.json`** —— 本表**只是索引，不是正本**（★ 免得两处各列一份、必然漂移；本表此前就落后过，见 §6 `V1.1`）。当前 **18 条判据 / 9 个原语引擎**：
+**校验项**：★★ **判据的唯一来源是 `spec/checks.json`** —— 本表**只是索引，不是正本**（★ 免得两处各列一份、必然漂移；本表此前就落后过，见 §6 `V1.1`／`V1.3`）。当前 **23 条判据 / 10 个原语引擎**：
 
 | # | 判据（要点） |
 |---|---|
@@ -79,6 +111,13 @@ bash   scripts/check_all.sh       # 全量（含本项）
 | `S11` | `doc_to_ledger` **不得把** `L08`/`L10`/`L11`/`L12` 当落账目标（`README` 定案 #20） |
 | `S12` | ★★ `forms/*.json` 的 `ledger` 必须与 `ledger-mapping.doc_to_ledger` **完全一致** —— 这是 `R-02`（`L03` 恒空**静默缺陷**）的执行守卫 |
 | `S13` | ★★ **制度第三十五条「合同必备条款」8 组完整性** —— `forms/CT.json` 的 `clause_group` 必须覆盖 **1..8**；缺一组＝**少一道硬拦截**（与「`L03` 恒空」同族：**少了东西与没违规长得一样**） |
+| `S14` | ★★ **`checks[*].carried_by_kind` 的取值必须来自受控词表**（`N-036`）：`code` / `structural` / `manual` / `pending_wiring` / `pending_implementation` —— ★ **与 `acceptance.csv#carrier_kind` 是同一张表** |
+| `S15` | ★★ **每一条 `severity=hard` 的判据都必须声明 `carried_by_kind`**（`N-036` 核心）—— ★★ **注意其边界**：它**只管 `severity=hard`**；★ 目前 **23 条判据缺 `severity`**（`BA` 8 / `PR` 6 / `SA` 9）⇒ **落在 `S15` 与 `evaluateHardChecks` 的缝里**（见 §3.1 发现 ① 与 `COLLAB.md#N-047`） |
+| `S16` | ★★ **每个 `source ∈ {system, computed}` 的字段都必须声明「谁保证它不可篡改 / 谁生产它」**（`N-038` 立、`N-039` 扩围 —— ★ 原带 `immutable: true` 条件时只覆盖 **54/96** ⇒ **收掉该条件**） |
+| `S18` | ★★ **每条原语声明必须是扁平对象 `{desc, args}`**（`N-038`）—— ★ 治「**声明形状不一 ⇒ 引擎解析不到却零报错**」；★ 初版要求 `desc`＋`args` 两者（与 `s14_probe_test.go` 的刻意空 `collect` 冲突）⇒ **收窄为只要求 `desc`**（判据**宁准勿宽**） |
+| `S19` | ★★ **`routes.*.nodes[*].actor` 不得是复合串**（`N-044` 收尾）—— ★ **本判据刻意只落「窄版」**；完整版「禁惰性必需节点」（`actor` ⊆ 合法白名单）**阻塞于 `N-045`**，★ 二者**必须与修复同批** |
+
+★ **`S17` 已撤销**（`N-039`：条件面为空守卫改由 `array_each_required` 的 `matched` 参数表达），全 spec 不得再引用该编号。
 
 ★★ **两侧共同契约**：同一条判据由 `scripts/check_spec.py`（Python）**与** mimo 侧 Go 加载器**各实现一遍**，且必须**逐字对齐** —— 含**语言怪癖**（例：Python 里 `bool` 是 `int` 的**子类**，`_scalar_str` 的 `bool` 分支必须排在 `int` 之前，否则 `True` 会变 `"True"`）。★ 已由**两侧引擎一致性探针**验证：同一篡改，两侧**都拦下**（`N-021`）。
 
@@ -106,6 +145,7 @@ deliverables/…/采购及费用审批管理办法V4.0.docx   ← 公司级制�
 
 | 版本 | 日期 | 变更 |
 |---|---|---|
+| V1.3 | 2026-10-04 | ★★ **交付 `acceptance.csv`（`N-017` 闭环）＋ 修两处本表陈旧**：① 新增 **§3.1**（`acceptance.csv` 列约定与两张受控词表），§2 文件清单该行据实更新为 **V1.0 · 97 条**；② ★ **`decision_kind` 词表由原拟 5 项扩为 10 项**（原 5 项塞不下占比最高的**数值比较**与**引用比较**）；③ ★ **修本表自身的两处陈旧**（§2 的 `checks.json` 仍写 `V1.6 / 9 原语 / 18 判据`，实为 **V1.11 / 10 原语 / 23 判据**；§4 索引只列到 `S13`，**漏 `S14`/`S15`/`S16`/`S18`/`S19` 五条**，且未写明 `S17` 已撤销）—— ★ **这正是本 README 自己警告过的「索引漂移」**（§6 `V1.1`）；★ **`S15` 那行补写它的边界**（只管 `severity=hard`）；④ ★★ **本轮落表实测发现 5 组问题**（已登记 `COLLAB.md#N-047`）：**23 条判据缺 `severity` ⇒ 落在 `S15` 与 `evaluateHardChecks` 的缝里**（既不执行、也不被要求声明承载者）· **5 条无任何承载** · **3 条时点未接线** · **6 条 `when` 不合约定** · **2 处无字段可承载 ＋ 1 处条件必填被静默跳过**。★ **不改任何判据状态、不改 `forms`** —— 改 `severity` 与补字段属**同批变更**，登记不抢跑。 |
 | V1.2 | 2026-09-30 | ★ **随交付 `forms/QC.json` 修掉两条判据互相矛盾（零引擎改动）**：`checks.json` **V1.5 → V1.6**；① `S5b.min_hits` **1 → 0**（★ 显式写 0：两侧缺省都是 1）—— 因 `min_hits` 是**每文件**语义，而「有的单据确实不落账」（`QC`/`RFQ`/`BJ` 的 `ledger` 就是 `[]`，`S12` 又要求它与映射**逐字相同**）⇒ **原判据与 `S12` 互相矛盾**；② **新增 `S5d`** 承接原守栏并升级（每张表单必须显式声明 `ledger` 等关键键）；③ §2 状态更新（`checks.json` V1.6 / `forms` **7 张**）；④ 本表判据数 **17 → 18**。★ **零引擎改动**（`S5d` 只用已有原语 `required_keys`）⇒ 两侧自动一致；★ 已由**两侧引擎一致性探针** `scripts/_probe_s5d.py`（**6/6**）验证：篡改 spec 后 **Python 与 Go 都报 `S5d`**。 |
 | V1.1 | 2026-09-30 | ★ **消漂移 ＋ 登记新文件（纯文档）**：① **§2 文件清单**补登 **`checks.json` / `enums.json` / `constants.json` / `authority.json`（新）**，并据实更新状态（`forms/` 已交付 6 张 · `ledger-mapping` 已交付 · `RESOLUTIONS` V1.5 30 条 · `params` V1.1 `open_items` 清零）；② ★★ **§4 校验项改为「只是索引、不是正本」** —— 原表只列 `S1`–`S9`，而 `checks.json` 已达 **17 条**（`S5a/b/c`、`S6b/c`、`S10`–`S13` 从未登记）⇒ 逐条据实重列 ＋ 补「两侧共同契约」与**语言怪癖**（`bool` 是 `int` 子类）说明；③ **§5 修正制度文件名**（原写 `采购及费用审批制度V4.0.docx`，实为 **`采购及费用审批管理办法V4.0.docx`**）；④ `S1` 自证记录补「已当场抓出过两次中文引号误写」。★ **不改任何编号**。 |
 | V1.0 | 2026-09-29 | 首版：目录定位 / 文件清单 / 命名约定 / 门禁九项与自证记录 |
