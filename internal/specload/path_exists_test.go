@@ -149,3 +149,20 @@ func TestPathExistsMinHits(t *testing.T) {
 		t.Fatalf("0 命中应报 min_hits 守卫，实为 %v", probs)
 	}
 }
+
+// TestPathExistsStarBracketSegment ★★ 契约钉（WorkBuddy 验收期实测逼出，2026-10-04）：
+// 段 `name[*]` 必须等价于「`name` 的**数组元素**」—— 即段归一的顺序必须是
+// **先拆 `name[k]` 尾缀、再换 `[*]`→`*`**。若顺序反过来（先换再拆），
+// `checks[*]` 会被折成**裸键 `checks*`** ⇒ **命中 0** ⇒ 本用例转红。
+//
+// ★ 立据（真代码、非推断）：Python 侧旧实现正是"先换再拆" ⇒ `spec/checks.json#checks[*].id`
+// 实测被判「命中 0」，而 Go 侧命中 —— **两份实现、同一份索引、一绿一红**。
+// ★ 真锚点（`institution-anchors.json` 158 条）**零 `[*]` 形态** ⇒ 该分歧**只潜伏在未出现的形态上**，
+// 「跑一遍都对」抓不住 ⇒ 必须靠本钉。
+// ★ 对侧同契约：`scripts/check_spec.py#_norm_ptr_segs` ＋ 探针 `scripts/_probe_n048.py`「正向·[*] 段」。
+func TestPathExistsStarBracketSegment(t *testing.T) {
+	files := peFiles([]string{"spec/forms/FAKE.json#checks[*].id"})
+	if probs := runPathExists(t, files, "spec/test_ptrs.json", "p[*]"); len(probs) != 0 {
+		t.Fatalf("`checks[*].id` 必须命中数组元素（两侧段归一顺序须同序），实为 %v", probs)
+	}
+}

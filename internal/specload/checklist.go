@@ -3,7 +3,7 @@ package specload
 // checklist —— `spec/checks.json` 的 Go 消费端（N-011 定案：清单是判据**唯一来源**）。
 //
 // ★★★ 消费纪律（checks.json#consumer_obligations.go_side）：
-//   - 本文件实现 8 个原语的 Go 版；**原语语义以 checks.json#primitives[].desc 裁决**；
+//   - 本文件实现 `checks.json#primitives` **声明的全部原语**的 Go 版（★ **数量不写死**，以声明为准 —— 原写「8 个」已随 `set_covers`/`array_each_required`/`path_exists` 落地而陈旧）；**原语语义以 checks.json#primitives[].desc 裁决**；
 //   - 判据＝数据（哪个文件、哪个原语、什么参数），不得在 Go 侧硬编码 S1–S12；
 //   - ★ **min_hits（默认 1）必须实现**：collect 命中数不足即报错 ——
 //     杜绝「声明写错（如 [*] 误展开）＝判据没跑却静默通过」（V1.2 第 4 例假绿教训）。

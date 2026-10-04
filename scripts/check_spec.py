@@ -136,7 +136,7 @@ def _scalar_str(v):
     return None
 
 
-# ---------------------------------------------------------------- 8 个原语引擎
+# ------------------------------------------------- 原语引擎（★ 数量不写死，以声明为准）
 #
 # ★★ 2026-09-29 加固（**探针 C 逼出的第 4 例"门禁自身假绿"**）：
 #   原实现里 `range_contiguous` 遇到"选中值不是 list"就 `continue` 跳过 ——
@@ -517,6 +517,35 @@ def _ptr_walk(node, segs):
     return out
 
 
+def _norm_ptr_segs(raw):
+    """段归一（`path_exists` 专用）—— ★★ **须与 Go `normalizePtrSegs` 逐字同序**。
+
+      · 独立段 `[*]` → `*`（全部子节点）；
+      · 尾缀形 `name[k]`（如 `checks[id=x]`）**先按最后一个 `[` 拆开** ⇒ 裸键 `name` ＋ 段 `[k]`；
+        其中 `name[*]` → `name` ＋ `*`（**数组元素**，不是裸键）。
+
+    ★★ **顺序为什么必须钉死（`N-048` 验收期实测逼出的两侧分歧）**：
+      旧实现**先把 `[*]` 换成 `*`、再拆尾缀** ⇒ `checks[*]` 被折成**裸键 `checks*`** ⇒ **命中 0**；
+      Go 侧**先拆尾缀** ⇒ `checks` ＋ `*` ⇒ **命中**。
+      ★ 真锚点（`institution-anchors.json` 158 条）**零 `[*]` 形态** ⇒ 当时两侧在实测上"看似一致"，
+      **分歧只潜伏在未出现的形态上** —— 这正是"两侧共同契约"必须机检、不能靠"跑一遍都对"的原因。
+      ★ 回归钉：`scripts/_probe_n048.py` 的「正向·`[*]` 段」用例在修正前**必红**、修正后必绿。
+    ★ 与 `split_ptr_segs()` 分工：**切分**（方括号内不按 `.` 切）在那边，本函数只做**段归一**。
+    """
+    out = []
+    for s in raw:
+        if s == "[*]":
+            out.append("*")
+            continue
+        i = s.rfind("[")
+        if i > 0 and s.endswith("]"):
+            out.append(s[:i])
+            out.append("*" if s[i:] == "[*]" else s[i:])
+            continue
+        out.append(s)
+    return out
+
+
 def prim_path_exists(args):
     """★ 第 11 原语（`N-048`）：**锚点指针必须可解析** —— 收集到的每个字符串写成
     `<spec 相对路径>#<点路径>`（省略 `#` ＝ 只校验文件存在），断言：**文件存在** ∧ **点路径命中 ≥1 个节点**。
@@ -551,17 +580,7 @@ def prim_path_exists(args):
                 continue
             if not ptr.strip():
                 continue
-            segs = []
-            for s in split_ptr_segs(ptr):
-                s = s.replace("[*]", "*")
-                m = re.match(r"^(.*?)\[(.*)\]$", s)
-                if m:
-                    if m.group(1):
-                        segs.append(m.group(1))
-                    segs.append("[%s]" % m.group(2))
-                else:
-                    segs.append(s)
-            if not _ptr_walk(doc, segs):
+            if not _ptr_walk(doc, _norm_ptr_segs(split_ptr_segs(ptr))):
                 probs.append("[%s] 锚点 %r 的点路径在 %s 内**命中 0 个节点**（字段不存在 / 改名 / 语法写错）"
                              % (cid, ref, path))
     return probs
