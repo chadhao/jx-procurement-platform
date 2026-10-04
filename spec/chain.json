@@ -1,5 +1,5 @@
 {
-  "version": "1.2",
+  "version": "1.3",
   "generated_by": "WorkBuddy",
   "date": "2026-09-29",
   "sources": {
@@ -12,6 +12,7 @@
   "resolution_ref": "spec/RESOLUTIONS.md",
   "note": "★ 本文件是**分档规则与审批链的唯一权威源**（COLLAB.md §2：该内容归 WorkBuddy）。任何实现与本文件不一致，以本文件为准；如需变更走 COLLAB.md 议题流程。",
   "conventions": {
+    "no_approval_chain": "★★ **「无审批链单据（登记型）」的判定与提交口径 —— 本键是唯一机读来源**（2026-10-05 立；`COLLAB.md#N-056` · `REMAINING.md#A8`）。★ **它治什么**：`doc_chains` 里哪些单据无审批链、无链时「提交」到底做什么，此前**只有散文** —— `forms/*.json#routes` 写「无独立审批链」· `forms/GR.json#checks[id=ledger_l07_written].when` 括注「提交即终态」· `docs/07 §9`「『验收入库』一步合并，无独立审批链」· `docs/02` 用例主流程「验收登记类，通常无需推三方实例」 ⇒ ★ **不可机检、也无法据以接线**（实测：`ResolveRoute` 无 `DocGR`/`DocQC`/`DocRFQ`/`DocBJ` case ⇒ 提交直接 400）。★ **判定**：`doc_chains.<doc>.no_approval_chain == true` ⇒ 该单据为**登记型**。当前 **4 张**：`GR`／`QC`／`RFQ`／`BJ`。★★ **明示排除 `SUB`**：它同样**无 `route` 键**，但走**独立通道** `POST /api/submission`（`docs/05-API`）⇒ ★ 「无 `route` 键」**不等于**「登记型」，这正是本键必须显式存在的原因；`SUB` **不得**被本口径吸收。★ **提交行为（三条硬性 ＋ 一条边界）**：① **链为空** —— `ResolveRoute` 返回**空路线**（`RouteID == \"\"`）且**不报错**；`BuildNodes` 对该返回**零节点**（`t_flow_task` 零行）、**不得**报 `ErrRouteMissing`。② **提交即终态** —— `flow.Submit` 在「零审批任务」时**于同一事务内**直接进入终态（`APPROVED`），语义＝「本单无需审批，提交即生效」；★★ **不新增状态值**（与「审批通过」共用同一终态 —— 新增状态会牵动 `t_instance.status` 值域及其看板/台账/权限既有消费面，代价远大于收益）。★ 依据＝`forms/GR.json#checks[id=ledger_l07_written].when` 明文「对 GR／QC 这类**无审批链**的单据，**提交即终态**」。③ **落账按 `doc_chains.<doc>.ledger`** —— `GR` → `L07`（一行）；`QC`／`RFQ`／`BJ` → **不落账**（`ledger: []` 是**合法事实**，不是缺口；与 `ledger-mapping.json#doc_to_ledger` 同口径）。★★ **顺序不可颠倒**：**提交 →（同事务）终态 → 落账自检**（该 `when` 括注已写明）。④ **边界（不新造行为）**：三方实例推送**不在本口径内** —— `docs/02` 原文是「**通常**无需推三方实例」（**事实描述**，非硬约束）⇒ ★ 本批**不新增推送分支**；★ 若 mimo 实测发现零任务实例在推送／定义装载环节会**出错**，须**如实回执并按可见失败处置**，**不得静默吞掉**。★ **不适用本口径**：`BA`／`PR`／`SA`／`CT`／`SS`／`PC`（有链，走各自 `route`／`route_by_tier`／`route_by_condition`）· `SUB`（独立通道）。★ **新增登记型单据必须同时补本键**（否则等于没有约定）。★ **与 `env_count` 无关**：本口径**不读** `env_count`（`conventions.env_count` 已明文禁止消费）—— ★ 实测二者**并不一致**（`doc_chains.GR.env_count = 1` 而 `RFQ`／`BJ`／`QC` = `0`），**再次印证**不得依赖该键。★ **仍未闭合（具名，不静默）**：`routes.emergency`（`when: is_emergency == true`）亦**无可达通路**（`ResolveRoute` 无 case、无 `doc_chains` 引用）⇒ ★ 它**不属登记型**（链有 6 节点）；★ 其接线缺的是「紧急采购由**哪张单据**承载」的口径（`when` 只给布尔条件、未绑定 `doc_type`）⇒ 属**需求澄清**，已登记 `COLLAB.md#N-056` 的「本批不做」。",
     "env_count": "★★ **本键语义待定，当前不得依赖它做任何判定**（2026-10-01 立）—— 两种候选：① 该链**节点总数**；② 相对基准**新增的必经环节数**。★ 实测：`routes.purchase_tier1.env_count = 6` 与其 **6 个节点一致**，而 `routes.sole_source.env_count = 1` 却有 **5 个节点** ⇒ **两种候选都无法同时解释现有数据**。⇒ ★ 属**数据问题**（不是文档问题）：须在补链时统一口径**并同步修正**已有值；★ 在此之前消费端**不得**用本键做判定。",
     "agent_allowed": "★ **节点是否接受代理人操作**（`routes.*.nodes[*].agent_allowed`）：**缺省 true**；显式 `false` ＝ 制度禁止代理（第十二条「备付金审批不得代理」）。★★ **判据＝数据** —— 节点名单**必须写在 spec**，**不得在代码里写字面量**：否则改链（节点改名 / 增删备付金节点）会**静默漏拦**（代理人被放行、且没有任何东西报错）。★ **消费端**：`chain.NodeAllowsAgent`（`M9` 转交/回退入口）＋ 后台 `GET /api/admin/role-agents` 回传 `denied_node_ids`。★ **迁移状态（如实）**：本标记于 2026-09-30 加入，`chain.PettyCashAgentDeniedNodeIDs` **当前仍按 id 字面量判定**（行为正确但非数据驱动）⇒ 由 `COLLAB.md` 的 `N-031` 收口（**两侧同批**）。",
     "money_unit": "cents",
@@ -905,6 +906,7 @@
       "prefix": "RFQ",
       "ledger": [],
       "env_count": 0,
+      "no_approval_chain": true,
       "note": "★ **无独立审批链、不落账**；作为采三档「询比价」环节产生，随主单 PR 留痕",
       "parent": "PR@rfq"
     },
@@ -913,6 +915,7 @@
       "prefix": "BJ",
       "ledger": [],
       "env_count": 0,
+      "no_approval_chain": true,
       "note": "★ **无独立审批链、不落账**（嵌入采三档询比价环节）"
     },
     "SS": {
@@ -958,6 +961,7 @@
         "L07"
       ],
       "env_count": 1,
+      "no_approval_chain": true,
       "acceptance_groups": {
         "P01": {
           "label": "原辅料类",
@@ -997,6 +1001,7 @@
       "prefix": "QC",
       "ledger": [],
       "env_count": 0,
+      "no_approval_chain": true,
       "note": "★ **无独立审批链、不落账**；结论并入 L07",
       "required_config": [
         "★ 必须配 related_biz_no → GR 单号，否则 L07「检验结论」列永远为空",
