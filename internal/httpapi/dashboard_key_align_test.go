@@ -48,7 +48,7 @@ func assertAlertKeysAligned(t *testing.T, got []string, specKeys map[string]bool
 	}
 }
 
-// TestDashboardAlertKeysMatchSpec 正向：看板 16 聚合路径输出的 11 个 key 与 spec 完全一致。
+// TestDashboardAlertKeysMatchSpec 正向：看板 16 聚合路径输出的 12 个 key 与 spec 完全一致。
 // （newDashboardApp 不注入 Spec ⇒ 走聚合路径 —— 正是两份真相里「代码旧 key」那一路。）
 func TestDashboardAlertKeysMatchSpec(t *testing.T) {
 	e, db, auth := newDashboardApp(t)
@@ -220,9 +220,9 @@ func TestDashboardUndefinedCriteriaAggregated(t *testing.T) {
 
 // TestDashboardGuardPerIndicator 16 号板聚合路径（不注 Spec）：
 //
-//	空库 ⇒ 11 个指标**全部** not_connected（每个都自证没数据，而非报 0）；
+//	空库 ⇒ 12 个指标**全部** not_connected（每个都自证没数据，而非报 0）；
 //	只播 L09 ⇒ L09 系 3 个指标出数字，其余仍 not_connected —— 守卫是**指标级**的，
-//	不是看板级一刀切（r6：11 个指标分布在 7 个台账上）。
+//	不是看板级一刀切（r6：12 个指标分布在 7 个台账上）。
 func TestDashboardGuardPerIndicator(t *testing.T) {
 	e, db, auth := newDashboardApp(t)
 	ctx := context.Background()
@@ -244,13 +244,13 @@ func TestDashboardGuardPerIndicator(t *testing.T) {
 			m, _ := a.(map[string]any)
 			out[m["key"].(string)] = m
 		}
-		if len(out) != 11 {
-			t.Fatalf("alerts 数 = %d, want 11", len(out))
+		if len(out) != 12 {
+			t.Fatalf("alerts 数 = %d, want 12", len(out))
 		}
 		return out
 	}
 
-	// ① 空库：11 项全部自证未接入（**没有一项显示 0**）
+	// ① 空库：12 项全部自证未接入（**没有一项显示 0**）
 	empty := fetch()
 	for k, m := range empty {
 		st, _ := m["status"].(string)
@@ -277,6 +277,14 @@ func TestDashboardGuardPerIndicator(t *testing.T) {
 		if m["status"] == "not_connected" {
 			t.Errorf("%s 源已有行仍报 not_connected（守卫过严）", k)
 		}
+	}
+	// ★ N-046 段③（列级守卫）：L09 有行但 ext 无 is_anomaly_listed 键 ⇒ not_connected 且无 count
+	if m := got["change_anomaly_listed"]; m == nil {
+		t.Fatal("缺指标 change_anomaly_listed")
+	} else if m["status"] != "not_connected" {
+		t.Errorf("change_anomaly_listed 列未登记应 not_connected（不得报 0）: %v", m)
+	} else if _, has := m["count"]; has {
+		t.Errorf("change_anomaly_listed 列未登记不得带 count: %v", m)
 	}
 	for _, k := range []string{"split_suspicion", "purchaser_overdue", "over_budget"} {
 		m := got[k]
@@ -616,5 +624,66 @@ func TestAccountChangedBindsSpecFields(t *testing.T) {
 	m = fetch()
 	if v, has := m["count"]; !has || v != float64(1) {
 		t.Errorf("L06 造行后 count=%v（has=%v），期望 1（%v）", m["count"], has, m)
+	}
+}
+
+// TestDashboardChangeAnomalyListed N-046 段①②（handler 级，真 HTTP，不手搓 payload）：
+// ① 正例：ext = {exception_type:采购变更, is_anomaly_listed:true} ⇒ count=1 且出数；
+// ② 反例（验「且」双向）：变更但 listed=false ⇒ 不计；紧急但 listed=true ⇒ 也不计。
+func TestDashboardChangeAnomalyListed(t *testing.T) {
+	e, db, auth := newDashboardApp(t)
+	ctx := context.Background()
+	if _, err := seed.SeedQ3Defaults(ctx, db); err != nil {
+		t.Fatalf("播种失败: %v", err)
+	}
+	seedRole(t, db, "ou_pm", "项目总经理", "")
+
+	fetch := func() map[string]map[string]any {
+		t.Helper()
+		rec, env := doRequest(e, http.MethodGet, "/api/dashboard/16?period=2026-09", auth.Establish("ou_pm"), "")
+		if rec.Code != http.StatusOK {
+			t.Fatalf("http=%d body=%s", rec.Code, rec.Body.String())
+		}
+		data := mustData(t, env)
+		out := map[string]map[string]any{}
+		for _, a := range data["alerts"].([]any) {
+			m, _ := a.(map[string]any)
+			out[m["key"].(string)] = m
+		}
+		return out
+	}
+
+	// 段① 正例
+	seedArchiveExt(t, db, "L09", "EX-2609-C1", "ou_a", "生产部", 1000,
+		`{"exception_type":"采购变更","is_anomaly_listed":true}`)
+	m := fetch()["change_anomaly_listed"]
+	if m == nil {
+		t.Fatal("缺指标 change_anomaly_listed")
+	}
+	if c, _ := m["count"].(float64); c != 1 {
+		t.Errorf("段① 正例 count=%v, 期望 1（status=%v）", m["count"], m["status"])
+	}
+	if m["status"] == "not_connected" {
+		t.Errorf("段① 已有登记值却报 not_connected（守卫误伤）: %v", m)
+	}
+
+	// 段② 反例（「且」两向都验）
+	seedArchiveExt(t, db, "L09", "EX-2609-C2", "ou_b", "生产部", 1000,
+		`{"exception_type":"采购变更","is_anomaly_listed":false}`)
+	seedArchiveExt(t, db, "L09", "EX-2609-C3", "ou_c", "生产部", 1000,
+		`{"exception_type":"紧急采购","is_anomaly_listed":true}`)
+	m2 := fetch()["change_anomaly_listed"]
+	if c, _ := m2["count"].(float64); c != 1 {
+		t.Errorf("段② 反例后 count=%v, 期望仍 1（false 不计、紧急不计；m=%v）", m2["count"], m2)
+	}
+
+	// 段②′ 值形态兼容：字符串「是」应计（ext 往返形态），「否」不计
+	seedArchiveExt(t, db, "L09", "EX-2609-C4", "ou_d", "生产部", 1000,
+		`{"exception_type":"采购变更","is_anomaly_listed":"是"}`)
+	seedArchiveExt(t, db, "L09", "EX-2609-C5", "ou_e", "生产部", 1000,
+		`{"exception_type":"采购变更","is_anomaly_listed":"否"}`)
+	m3 := fetch()["change_anomaly_listed"]
+	if c, _ := m3["count"].(float64); c != 2 {
+		t.Errorf("字符串形态后 count=%v, 期望 2（「是」计、「否」不计；m=%v）", m3["count"], m3)
 	}
 }

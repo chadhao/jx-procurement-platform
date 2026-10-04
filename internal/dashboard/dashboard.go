@@ -455,8 +455,8 @@ func (b *Builder) buildAnomaly(ctx context.Context, res Result, period string, q
 	byType := splitByType(rows, types...)
 	r01, r03, r06, r09, r12 := byType["L01"], byType["L03"], byType["L06"], byType["L09"], byType["L12"]
 
-	// ★ 11 个指标**每个各自**带可用性守卫（connected_requires 16① / global_rules.r6）——
-	//   看板级只有一个 source_status，而 11 个指标分布在 7 个台账上。
+	// ★ 12 个指标**每个各自**带可用性守卫（connected_requires 16① / global_rules.r6）——
+	//   看板级只有一个 source_status，而 12 个指标分布在 7 个台账上。
 	srcInst, err := b.countInstanceRows(ctx, q)
 	if err != nil {
 		return res, err
@@ -483,6 +483,15 @@ func (b *Builder) buildAnomaly(ctx context.Context, res Result, period string, q
 
 		// ④ 单一来源：例外事项台账（L09）采购方式含「单一来源」或「独家」。
 		guardedAlert("sole_source", "单一来源", countOpsContainsAny(r09, keyMethod, "单一来源", "独家"), len(r09), true),
+
+		// ④′ 采购变更异常（N-046）：L09.exception_type = 采购变更 ∧ is_anomaly_listed = true。
+		//   ★ 两列的唯一生产者＝httpapi#injectPCSSSystemFields（PC 提交期注入），
+		//   落点＝t_ledger_archive.ext_json（finalize 的 L09 六列自检同源）⇒ 读 ArchiveExt
+		//   （与 account_changed 的 countL06Unverified 同范式；★ 不读 ops——
+		//   is_anomaly_listed 在 ops 无生产者）。列级守卫＝countExtRegistered（该键
+		//   无人登记 ⇒ not_connected 不报 0，r3：0 会被读成「没有变更异常」）。
+		guardedAlert("change_anomaly_listed", "采购变更异常（90 天内 ≥2 次）", countChangeAnomalyListed(r09),
+			countExtRegistered(r09, "is_anomaly_listed"), true),
 
 		// ⑤ 账户变更：★ N-034 改判 —— `L06.收款账户已核验` 为「否/false」（＝变更过）的笔数；
 		//   该列由 SUB 落账带入（writable:false ⇒ 存 archive ext）⇒ 列级守卫＝ext 中
@@ -901,6 +910,32 @@ func countOpsContainsAny(rows []Row, key string, subs ...string) int {
 				n++
 				break
 			}
+		}
+	}
+	return n
+}
+
+// countChangeAnomalyListed 统计 `L09.exception_type = 采购变更` 且
+// `is_anomaly_listed = true` 的行数（N-046）。
+// ★ 两列生产者＝httpapi#injectPCSSSystemFields（PC 提交期）落 archive ext_json；
+// 值形态兼容：is_anomaly_listed 的 bool true 与 ext 往返后的字符串「是」/「true」；
+// 「否」/「false」不得计入（isTruthy 的 false 词表天然排除）。
+func countChangeAnomalyListed(rows []Row) int {
+	n := 0
+	for _, r := range rows {
+		ev, ok := r.ArchiveExt["exception_type"]
+		if !ok || ev == nil {
+			continue
+		}
+		if strings.TrimSpace(fmt.Sprint(ev)) != "采购变更" {
+			continue
+		}
+		lv, ok := r.ArchiveExt["is_anomaly_listed"]
+		if !ok || lv == nil {
+			continue
+		}
+		if isTruthy(lv) {
+			n++
 		}
 	}
 	return n

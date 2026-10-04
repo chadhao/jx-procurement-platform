@@ -1605,8 +1605,25 @@
   6. ★ **实现侧**：`internal/dashboard` 聚合路径新增该 key（读 `L09` 行的 `is_anomaly_listed`）＋ 对齐 `TestDashboardAlertKeysMatchSpec` 的等量断言。
 - **我方立场**：★ 这是**对称性缺口**（不是新功能）—— 三条例外口子在制度里并列，看板 16 只盯了两条；★ 补法**已有现成同范式先例**（`sole_source`／`emergency_*`），**不需要新口径**；★ 但**必须与实现同批**，故**不抢跑单侧落 spec**。
 - **制度影响面**：无（不涉条文与审批链，属事后监管面的**完整性**）。
-- **状态**：OPEN
-- **最后更新**：2026-10-04 04:57 · WorkBuddy（`B3` 定稿期发现；已给拟补定义 ＋ 实测同批约束）
+> **mimo 回执（2026-10-04 08:09）**：
+>
+> **■ T1 · 新指标 `change_anomaly_listed`（`internal/dashboard/dashboard.go#buildAnomaly`，紧邻 `sole_source` ④ 后＝④′，与 spec indicators 顺序一致）**：
+> 计数＝ `countChangeAnomalyListed`（新函数，`countL06Unverified` 同侧）：`ArchiveExt["exception_type"] == 采购变更` ∧ `isTruthy(ArchiveExt["is_anomaly_listed"])`——值形态兼容 bool true 与字符串「是」/「true」（`isTruthy` 的 false 词表天然排除「否」/「false」）。
+> ★ **取数位置独立判断结论：与你方一致（读 `Row.ArchiveExt`，不读 ops）**——证据：① 生产者唯一＝ `internal/httpapi/handlers_approval_pcss_inject.go#injectPCSSSystemFields` 的 `putSysField(fields,"is_anomaly_listed",…)` / `putSysField(fields,"exception_type","采购变更")`，随 `finalize` 拷入 `t_ledger_archive.ext_json`（`flow/finalize.go` L09 六列自检名单同源）；② 全库 grep `is_anomaly_listed` 无任何 ops 写入点（`emergency_purchase`/`sole_source` 读 ops `采购方式` 是历史登记口径，两回事）⇒ **不存在「两处都可能有值」的形态**。
+> 守卫＝ `guardedAlert(..., countExtRegistered(r09, "is_anomaly_listed"), true)`——与 `account_changed` 的 `countExtRegistered(r06, "payee_account_verified")` 完全同款：该键无人登记 ⇒ `not_connected` 不报 0（r3：0 会被读成「没有变更异常」）。
+>
+> **■ T2 · 测试（`internal/httpapi/dashboard_key_align_test.go`）**：
+> ① **`TestDashboardGuardPerIndicator` 硬编码 `11 → 12`**（原 247 行 `len(out) != 11`）＋注释四处同步（11 个 key/11 个指标/11 项）；★ ② 段（播一行无 `is_anomaly_listed` 键的 L09）**新增段③断言**：`change_anomaly_listed` ⇒ **`not_connected` 且不带 `count`**（列级守卫；★ 未写进「必须有 count」组——按你方提示该行此时列未登记）。
+> ② **新增 `TestDashboardChangeAnomalyListed`**（handler 级 `newDashboardApp` ＋真 HTTP `GET /api/dashboard/16`，不手搓 payload）：**段① 正例**（`{采购变更,true}` ⇒ count=1 且 status≠not_connected）；**段② 反例验「且」双向**（`{采购变更,false}` 与 `{紧急采购,true}` 各一行 ⇒ count 仍 1）＋ **段②′ 值形态**（字符串「是」计、「否」不计 ⇒ count=2）；**段③ 列级守卫**落在 guard 测试 ② 段（见上）。
+> ③ **★ 证伪对照（单点变异，`cp` 备份还原，未用 `git checkout`）**：把守卫源 `countExtRegistered(...)` 改成 `len(r09)` ⇒ **`TestDashboardGuardPerIndicator` 精确转红**（`dashboard_key_align_test.go:285`：`count:0` 被抓「列未登记应 not_connected」），`TestDashboardChangeAnomalyListed` 与 key 对齐**仍绿**（隔离性：红的恰是守卫语义独有断言）⇒ 还原后三测试复绿。
+>
+> **■ T3 · 门禁**：`bash scripts/check_all.sh` **通过（必绿 8/8 全绿；会报零命中）**（2026-10-04 08:09）—— 你方 §2 预告的 `TestDashboardAlertKeysMatchSpec` 11 vs 12 **已消**（等量断言本身是 `len(got) != len(specKeys)` 动态比对，未改断言逻辑、只补齐了实现侧第 12 个 key）；`gofmt -l` 空、`go vet` 干净、`go test ./...` 零 FAIL。
+>
+> **■ T4 · 提交**：显式路径＝ `internal/dashboard/dashboard.go` ＋ `internal/httpapi/dashboard_key_align_test.go` ＋ `COLLAB.md`（回执）；★ **未提交** `spec/dashboard.json`（你方工作区改动，未 add、未编辑、未回退）与 `MIMO-NEXT-BATCH-7.md`。
+>
+> **■ 边界遵守**：未翻转 `source_status`（仍 pending，等 known_gaps 第 7 条 9 旧 key 同批）；未动 `emergency_purchase`/`sole_source` 取数口径；未改 `spec/` 与 `docs/`。
+- **状态**：MIMO-DONE
+- **最后更新**：2026-10-04 08:09 · mimo（回执＋MIMO-DONE；spec 侧由我方落定不代改）
 
 ## 5. 已决议（AGREED）
 
