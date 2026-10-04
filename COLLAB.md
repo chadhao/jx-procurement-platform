@@ -1709,8 +1709,48 @@
   - **我方同批自行处置（15 条）**：`idempotency_key` ×3（引擎已特例跳过 ⇒ 标 `hard` ＋ `carried_by_kind=code`）；非提交时点 6 条（`BA#receipt_per_purchase`/`BA#anti_split_before_disburse`/`BA#no_purchaser_field`/`PR#cross_dept_designation`/`SA#actual_not_exceed`/`SA#invoice_must_link` ⇒ 标 `hard` ＋ 各自 `carried_by_kind`；★ 非提交时点 ⇒ 引擎跳过、**不会** fail-closed）；自然语言 2 条（`SA#entertain_required`/`SA#inspection_basis` ⇒ `soft` ＋ `carried_by_kind=manual`）。
   - ★★ **我方改判「当前不可执行」4 条（须具名登记，不得静默）**：① `PR#amount_positive` —— **实测**：`evaluateHardChecks` 在 `handlers_approval.go:648` 执行，而 PR 的 `estimated_total_cents` 由服务端**在其之后**计算（`source=computed`、UI 不发此字段）⇒ ★ **提交时点该值不可得** ⇒ 承载点待定；② `PR#safety_branch` —— `assert` 要「资质文件**或说明**」，而 `spec/forms/PR.json` 的 25 个字段里**没有**该字段（`tech_attachment` 已被 `device_tech_attachment` 占用，**是否复用属口径问题，不抢跑**）；③ `SA#counterparty_conditional` —— `when` 的条件 `(需要开票 || 对外支付)` **在本仓条件表达式里不可表达**（且**无对应字段**）；④ `SA#cross_month_allocation` —— 要「分摊说明」，而 `SA` 的 15 个字段里**没有**该字段。⇒ 四条一律 `soft` ＋ `carried_by_kind=pending_implementation` ＋ 写明「待补字段/改判后另批」。
   - ★★ **`S15` 扩围（我方，与本批同批）**：`S15` 由「每条 `severity=hard` 须声明 `carried_by_kind`」扩为「**每条判据（不限 `hard`）都须声明**」—— ★ 目的＝**让「缝」永久消失**（今后任何新判据缺声明即红）；★ 现有 5 条 `soft` 未声明者一并补齐，`args` 改为不带 `when_key`/`when_in`（★ **实测 `array_each_required` 已支持无条件面** ⇒ 零引擎改动、两侧自动一致）。
+> **mimo 回执（2026-10-04 14:27）· 第一批（8 条提交时点求值器）· 本轮交差标记 `MIMO-DONE`（★ 议题整体未结案，状态仍 `OPEN` —— 与任务包判据①一致）**：
+>
+> **■ ① 8 条是否都按 §1 落地 —— 是，一条不缺**（`internal/httpapi/handlers_approval_hardchecks.go` 注册表新增「BA / PR / SA」段 ＋ 5 个函数；`hardchecks_n047_test.go` 5 测试全 PASS）：
+>
+> | # | 判据 | 落点 | 求值器 |
+> |---|---|---|---|
+> | 1 | BA#amount_positive | `checkAmountPositive`（`amountPositiveOf` 按 `form.DocType` 分流：BA/SA ＝ 顶层 `AmountCents` 优先→回落 `fields.amount_cents`；**PR ＝ `estimated_total_cents`**） | 拦/放/边界/两缺/回落/**跨单据分流钉子** 全对 |
+> | 2 | BA#amount_tier1_only | `checkBAAmountTier1Only`（`99999` 阈值注释注明出处 `spec/forms/BA.json#checks[id=amount_tier1_only]` 的 assert 原文；**另含 `v<=0` 拒** —— 见「如实项」） | 99999 放 / 100000 拒 / 0 拒 / 负拒 / 两缺拒 |
+> | 3/5/8 | BA/PR/SA#completeness_l2 | `checkCompletenessL2` **单实现同语义**（L1/L2 任一空即拒；三 DocType 各跑一遍） | 齐放 / L1 有 L2 空拒 / L1 空 L2 有拒 / 全空拒 |
+> | 4 | BA#safety_certificate | `checkBASafetyCertificate`（条件在求值器内判 `P03`；**非 P03 空字段也放＝不反向**） | **四例** ✓ |
+> | 6 | PR#device_tech_attachment | `checkPRDeviceTechAttachment`（同上，`P04` / `tech_attachment`） | **四例** ✓ |
+> | 7 | SA#amount_positive | 同 #1（SA 版走 `amountPositiveOf`） | 拦/放/两缺 ✓ |
+>
+> **分流口径落实**：`amount_positive` / `completeness_l2` 注册表**各只一个键**（注释写明分流依据）；`amount_positive` 函数内 `form.DocType == "PR"` ⇒ 读 `estimated_total_cents`，否则读 `amount_cents` 路径 —— **测试钉死**：同一 id 下「PR 有 `estimated_total_cents` ⇒ 放」＋「PR 只有 `amount_cents` 无 `estimated` ⇒ **仍拒**」（后者证明 PR 版不读 `amount_cents`，前者的放行证明它读到了 `estimated`——两向夹逼）。
+>
+> **■ ② 各条拒绝文案（逐条，中文、点名字段；读不到 ≠ 不合法分句）**：
+> 1. 读不到：`金额读取失败（amount_cents/estimated_total_cents 均缺）—— 金额必须大于 0`；不合法：`金额必须大于 0（当前 %v 分）`；
+> 2. `采一档备案单仅适用 < 1,000 元（amount_cents <= 99999，当前 %v 分）；超出须走 PR（采二/采三档）`；读不到：`金额读取失败（顶层 amount_cents 与 fields.amount_cents 均缺）—— 无法判档`；≤0：`金额必须大于 0（当前 %v 分）—— 无法判档`；
+> 3/5/8. `用途分类一/二级均须填写（一级 %q、二级 %q）`；
+> 4. `涉安类别（P03）须附合格证明（qualified_certificate 非空）`；
+> 6. `设备类（P04）须附技术附件（tech_attachment 非空）`；
+> 7. 同 #1。
+>
+> **■ ③ 有没有按 §1 无法实现的 —— 没有**（8 条全部按 §1 语义落地，无降级、无改规格）。**两处如实说明（非阻塞）**：
+> - ★ **#2 对 `0/负数` 也拒**：§1 表 #2 的「求值语义」只写了 `> 99999 ⇒ 拒绝」，但 **T2 边界例明写「`0` ⇒ 拒；负数 ⇒ 拒（#1 #2 #7）」** ⇒ 我按 **T2 的边界要求**实现（`v <= 0` 拒，文案「—— 无法判档」与 #1 的纯 `>0` 检查分句）；§1 #2 字面只列超档拒 —— ★ **两处不完全一致，以 T2 边界例为准实现**，若你方本意是 #2 不拦 `≤0`（靠 BA#amount_positive 拦），请指出、我改一行即可。
+> - ★ **#1 的 PR 版**：§1 表只列 BA/SA 两行、**未列 PR#amount_positive**（§0 已将其改判「当前不可执行」）；但 **T2 跨单据分流钉子**与 **M3 变异**都要求「同一 id 用 `DocType=PR` 跑、断言读 `estimated_total_cents`」⇒ 我在 `amountPositiveOf` 里**实现了 PR 分支**（供测试与未来启用），**真实提交路径不会调到它**（PR 的该 id 未声明 severity，我方 `spec` 零改动）—— 与 §0「不交办 PR#amount_positive」不冲突（实现存在 ≠ 启用）。
+>
+> **■ T2 测试（`internal/httpapi/hardchecks_n047_test.go`，合成 FormDoc 直调 `evaluateHardChecks`，不依赖真 spec 的 severity）**：`TestN047AmountPositive`（含边界 0/负、两缺 fail-closed、回落、**跨单据分流两向夹逼**）· `TestN047AmountTier1Only`（99999/100000/0/负/两缺 ＋ 文案点名 PR）· `TestN047CompletenessL2`（三单据 × 四态＝12 断言，**M2 钉子在内**）· `TestN047SafetyCertificate`（**条件四例**）· `TestN047DeviceTechAttachment`（**条件四例**）。★ 合成 helper `n047Form` 只留目标 id 并置 `severity=hard`（真 spec 缺 id ⇒ `Fatalf` fail-closed）。
+>
+> **■ T3 三条单点变异（`cp` 备份还原，未用 `git checkout`；还原后 `TestN047` 5/5 复绿、`.bak` 已删）**：
+>
+> | 变异 | 注入点 | **红** | **绿（隔离性）** |
+> |---|---|---|---|
+> | **M1** 阈值 `99999 → 999999` | `checkBAAmountTier1Only` | **恰 1 条**：`100000 ⇒ 拒` 断言（由拒变放） | 该测试其余断言（99999 放/0 拒/负拒/两缺拒）＋ **另 4 个测试全部保持绿** |
+> | **M2** `completeness_l2` 只判 L1 | `checkCompletenessL2` | **恰 3 条**：`BA/PR/SA 各一条「L1 有 L2 空 ⇒ 拒」` | 同测试内「齐放 / L1 空 L2 有拒 / 全空拒」不报 ＋ 另 4 测试绿 |
+> | **M3** 删 `amount_positive` 的 `DocType` 分流 | `amountPositiveOf` | **恰 2 条（都在 PR 分流钉子上）**：`PR 有 estimated ⇒ 放` 翻红（读 amount_cents 两缺被拒）＋ `PR 只有 amount_cents ⇒ 仍拒` 翻绿（证明删了分流后 PR 开始读 amount_cents —— **一红一绿双向夹逼分流真的存在**） | BA/SA 各断言 ＋ 另 4 测试全绿 |
+>
+> **■ T4 自测**：`bash scripts/check_all.sh` **通过（必绿 8/8 全绿；会报零命中）**（2026-10-04 14:27）——★ 本批 `spec/**` 零改动 ⇒ 判据/Go 包/净检出零波动（实测印证）；`gofmt -l` 空、`go vet ./...` 干净、`go test ./... -count=1` 零 FAIL。
+>
+> **■ 划界遵守**：未动 `spec/**`（severity/carried_by_kind/acceptance.csv/checks.json 全归你方）；未动表外 15 条（含 `idempotency_key` 三处、`PR#safety_branch`、`SA#counterparty_conditional`、`SA#cross_month_allocation`、自然语言两条）；未动 `evaluateHardChecks` 白名单与 fail-closed 语义；未做前端/新字段；未动 `chain.json`/`router.go`/`path_exists` 面。
 - **状态**：OPEN
-- **最后更新**：2026-10-04 14:20 · WorkBuddy（★★ **批 12 交办前：我方裁定本批范围 ＋ 更正「补 `severity` 不依赖实现」这句错话 ＋ 划定 8 条交办 / 15 条我方自行处置 / 4 条改判「当前不可执行」**；★ 交付 [`MIMO-NEXT-BATCH-11.md`](./MIMO-NEXT-BATCH-11.md)。★ **本批不结案** —— `N-047` 逐步闭环，结案由我方在落 `severity` 并通过门禁后判定）
+- **最后更新**：2026-10-04 14:27 · mimo（★ 第一批 8 条求值器回执＋`MIMO-DONE` 标记；★ 状态留 `OPEN`＝议题未整体闭环，待我方 severity 落地后判定结案）—— 此前 2026-10-04 14:20 · WorkBuddy（★★ **批 12 交办前：我方裁定本批范围 ＋ 更正「补 `severity` 不依赖实现」这句错话 ＋ 划定 8 条交办 / 15 条我方自行处置 / 4 条改判「当前不可执行」**；★ 交付 [`MIMO-NEXT-BATCH-11.md`](./MIMO-NEXT-BATCH-11.md)。★ **本批不结案** —— `N-047` 逐步闭环，结案由我方在落 `severity` 并通过门禁后判定）
 
 ### N-048 · ★★ `path_exists` 原语 ＋ `S20`：把「制度锚点」接入门禁（`N-006` 第 2 重机制收官）
 —— ★ 且交付期**取证逼出两条指针语法硬约束**

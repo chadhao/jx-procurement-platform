@@ -28,6 +28,15 @@ type hardCheckFn func(ctx context.Context, d Deps, form specload.FormDoc, body *
 
 // submitHardChecks 提交时点 hard 判据注册表（id → 求值函数）。
 var submitHardChecks = map[string]hardCheckFn{
+	// ---- BA / PR / SA（N-047 批 12 · 提交时点求值器第一批）----
+	// ★ 同名 id 只占一个键：amount_positive / completeness_l2 在 BA/PR/SA 三处同名
+	//（specload.FormDoc.DocType 已有 ⇒ 单函数内分流，防同键互相覆盖）。
+	"amount_positive":        checkAmountPositive,         // BA/SA=amount_cents；PR=estimated_total_cents
+	"completeness_l2":        checkCompletenessL2,         // BA/PR/SA 同语义（L1/L2 均填）
+	"amount_tier1_only":      checkBAAmountTier1Only,      // BA 专有
+	"safety_certificate":     checkBASafetyCertificate,    // BA 专有（条件 P03）
+	"device_tech_attachment": checkPRDeviceTechAttachment, // PR 专有（条件 P04）
+
 	// ---- CT ----
 	"mandatory_clauses_complete":  checkCTMandatoryClauses,
 	"payee_name_matches_supplier": checkCTPayeeMatchesSupplier,
@@ -93,6 +102,104 @@ var submitHardChecks = map[string]hardCheckFn{
 
 	// ---- 跨单据同款（★ 唯一实现，四处共用）----
 	"no_self_purchaser": checkNoSelfPurchaser,
+}
+
+// ---------------------------------------------------------------------------
+// N-047 批 12 · BA/PR/SA 提交时点求值器（8 条）
+// ★ 本批 severity 未声明 ⇒ 真实提交路径暂不调用（由我方随后 severity 提交启用）；
+//   测试用合成 FormDoc（置 severity=hard）直调 evaluateHardChecks。
+// ---------------------------------------------------------------------------
+
+// amountPositiveOf 取单据金额（分）。★ 按 form.DocType 分流（N-047 §1.1：
+// 同名 id 单键注册，防 map 后注册覆盖前注册）：
+//   - PR  ＝ fields.estimated_total_cents（N-039/N-040：服务端汇总回写值，
+//     resolvePRAmountForTier 在 evaluateHardChecks 之前已写入 body.Fields）；
+//   - BA/SA ＝ 顶层 body.AmountCents 优先（BA 权威来源），nil ⇒ 回落 fields.amount_cents。
+//
+// 返回 (值, 是否读到)；两者皆缺 ⇒ (0,false) 由调用方**可见失败**（fail-closed）。
+func amountPositiveOf(form specload.FormDoc, body *approvalSubmitBody, provided map[string]any) (float64, bool) {
+	if form.DocType == "PR" {
+		return hNum(provided, "estimated_total_cents")
+	}
+	if body.AmountCents != nil {
+		return float64(*body.AmountCents), true
+	}
+	return hNum(provided, "amount_cents")
+}
+
+// checkAmountPositive（#1 BA / #7 SA；PR 版供跨单据分流钉子使用）：金额必须大于 0。
+func checkAmountPositive(_ context.Context, _ Deps, form specload.FormDoc, body *approvalSubmitBody, _ string) error {
+	provided := hbProvided(body)
+	v, ok := amountPositiveOf(form, body, provided)
+	if !ok {
+		// 读不到（值缺失）与值不合法是两句不同文案（N-047 §1.2#3）。
+		return fmt.Errorf("金额读取失败（amount_cents/estimated_total_cents 均缺）—— 金额必须大于 0")
+	}
+	if v <= 0 {
+		return fmt.Errorf("金额必须大于 0（当前 %v 分）", v)
+	}
+	return nil
+}
+
+// checkBAAmountTier1Only（#2）：采一档备案单仅适用 < 1,000 元。
+// ★ 阈值 99999 出处＝ spec/forms/BA.json#checks[id=amount_tier1_only] 的 assert 原文
+// （amount_cents <= 99999）——「判据＝数据」的字面量例外，见该 assert。
+func checkBAAmountTier1Only(_ context.Context, _ Deps, _ specload.FormDoc, body *approvalSubmitBody, _ string) error {
+	provided := hbProvided(body)
+	if body.AmountCents == nil {
+		if _, ok := hNum(provided, "amount_cents"); !ok {
+			return fmt.Errorf("金额读取失败（顶层 amount_cents 与 fields.amount_cents 均缺）—— 无法判档")
+		}
+	}
+	v, ok := amountPositiveOf(specload.FormDoc{DocType: "BA"}, body, provided)
+	if !ok {
+		return fmt.Errorf("金额读取失败（顶层 amount_cents 与 fields.amount_cents 均缺）—— 无法判档")
+	}
+	if v <= 0 {
+		// 0/负无档可判（与 amount_positive 同口径的基础合法性；N-047 T2 边界例）。
+		return fmt.Errorf("金额必须大于 0（当前 %v 分）—— 无法判档", v)
+	}
+	if v > 99999 {
+		return fmt.Errorf("采一档备案单仅适用 < 1,000 元（amount_cents <= 99999，当前 %v 分）；超出须走 PR（采二/采三档）", v)
+	}
+	return nil
+}
+
+// checkCompletenessL2（#3/#5/#8：BA/PR/SA 同语义）：用途分类一/二级均须填写。
+func checkCompletenessL2(_ context.Context, _ Deps, _ specload.FormDoc, body *approvalSubmitBody, _ string) error {
+	provided := hbProvided(body)
+	l1 := hStr(provided, "usage_category_l1")
+	l2 := hStr(provided, "usage_category_l2")
+	if l1 == "" || l2 == "" {
+		return fmt.Errorf("用途分类一/二级均须填写（一级 %q、二级 %q）", l1, l2)
+	}
+	return nil
+}
+
+// checkBASafetyCertificate（#4 · 条件型四例）：usage_category_l1 == "P03" ⇒
+// qualified_certificate 非空。★ 非 P03 ⇒ 放行（assert 未声明双向，不得反向要求）。
+func checkBASafetyCertificate(_ context.Context, _ Deps, _ specload.FormDoc, body *approvalSubmitBody, _ string) error {
+	provided := hbProvided(body)
+	if hStr(provided, "usage_category_l1") != "P03" {
+		return nil // 条件未命中 ⇒ 放行（不反向）
+	}
+	if hStr(provided, "qualified_certificate") == "" {
+		return fmt.Errorf("涉安类别（P03）须附合格证明（qualified_certificate 非空）")
+	}
+	return nil
+}
+
+// checkPRDeviceTechAttachment（#6 · 条件型四例）：usage_category_l1 == "P04" ⇒
+// tech_attachment 非空。★ 非 P04 ⇒ 放行（同上，不反向）。
+func checkPRDeviceTechAttachment(_ context.Context, _ Deps, _ specload.FormDoc, body *approvalSubmitBody, _ string) error {
+	provided := hbProvided(body)
+	if hStr(provided, "usage_category_l1") != "P04" {
+		return nil
+	}
+	if hStr(provided, "tech_attachment") == "" {
+		return fmt.Errorf("设备类（P04）须附技术附件（tech_attachment 非空）")
+	}
+	return nil
 }
 
 // evaluateHardChecks 遍历 form.checks 执行提交时点 hard 判据（N-025 的 amount_vs_pr /
