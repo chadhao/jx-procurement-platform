@@ -215,6 +215,9 @@
   "checks": [
     {
       "id": "amount_positive",
+      "severity": "hard",
+      "carried_by_kind": "code",
+      "carried_by": "`internal/httpapi/handlers_approval_hardchecks.go#checkAmountPositive`（`amountPositiveOf` 按 `form.DocType` 分流；★ **SA 走「顶层 `AmountCents` 优先 → 回落 `fields.amount_cents`」**）",
       "when": "submit",
       "assert": "amount_cents > 0",
       "else": "拒绝提交",
@@ -223,6 +226,9 @@
     },
     {
       "id": "completeness_l2",
+      "severity": "hard",
+      "carried_by_kind": "code",
+      "carried_by": "`internal/httpapi/handlers_approval_hardchecks.go#checkCompletenessL2`（`N-047` 批 12；BA/PR/SA **单实现同语义**：`usage_category_l1` / `usage_category_l2` 任一为空即拒）",
       "when": "submit",
       "assert": "usage_category_l1 与 usage_category_l2 均已填",
       "else": "拒绝提交",
@@ -231,6 +237,9 @@
     },
     {
       "id": "entertain_required",
+      "severity": "soft",
+      "carried_by_kind": "manual",
+      "carried_by": "★ **人工承载**（`N-047` 批 12 定档 `manual`）：`assert`（`purpose` 含接待对象与人数）是**自由文本内容判据** ⇒ 无法机检（与 `N-017` 的「降级为提示文案 ＋ 人工核对」同向）；★★ **不得标 `hard`** —— `when` 以 `submit ` 开头而无求值器 ⇒ 当场 fail-closed",
       "when": "submit && usage_category_l1 ∈ {S01,S02,S03}",
       "assert": "purpose 含接待对象与人数",
       "else": "拒绝提交",
@@ -239,6 +248,9 @@
     },
     {
       "id": "inspection_basis",
+      "severity": "soft",
+      "carried_by_kind": "manual",
+      "carried_by": "★ **人工承载**（`N-047` 批 12 定档 `manual`）：`assert`（`purpose` 含依据标准）属**自由文本内容判据** ⇒ 无法机检；★★ 不得标 `hard`（`when` 以 `submit ` 开头而无求值器 ⇒ 当场 fail-closed）",
       "when": "submit && usage_category_l1 == 'P07'",
       "assert": "purpose 含依据标准",
       "else": "拒绝提交",
@@ -247,6 +259,9 @@
     },
     {
       "id": "counterparty_conditional",
+      "severity": "soft",
+      "carried_by_kind": "pending_implementation",
+      "carried_by": "★ **当前不可执行**（`N-047` 批 12 具名登记）：承载字段 `counterparty` **已存在**（`user`、非必填）；★ 缺口在**触发条件** —— `when` 的「需要开票 || 对外支付」在本仓字段集中**不可表达**（无「需要开票」字段）⇒ 无从判定是否触发；须先补条件字段（拟 `N-052`）",
       "when": "submit && (需要开票 || 对外支付)",
       "assert": "counterparty 非空",
       "else": "拒绝提交",
@@ -255,6 +270,9 @@
     },
     {
       "id": "cross_month_allocation",
+      "severity": "soft",
+      "carried_by_kind": "pending_implementation",
+      "carried_by": "★ **当前不可执行**（`N-047` 批 12 具名登记）：`assert` 要「分摊方式说明」，而 `SA` 的全部字段中**无该字段**（无 `allocation_note`）⇒ 须先补字段（拟 `N-052`）",
       "when": "submit && occurrence_period 跨月",
       "assert": "须说明分摊方式",
       "else": "拒绝提交",
@@ -263,6 +281,9 @@
     },
     {
       "id": "actual_not_exceed",
+      "severity": "hard",
+      "carried_by_kind": "pending_wiring",
+      "carried_by": "★ **通路未接**（`N-047` 批 12）：`when=结算补录` 当前**无生产时点** ⇒ 引擎跳过、暂不执行；★ `when` 非提交时点 ⇒ 引擎**不会** fail-closed",
       "when": "结算补录",
       "assert": "actual_cents <= approved_cents",
       "else": "须走**超支确认**；未确认不得移交集团",
@@ -271,6 +292,9 @@
     },
     {
       "id": "invoice_must_link",
+      "severity": "hard",
+      "carried_by_kind": "pending_wiring",
+      "carried_by": "★ **通路未接**（`N-047` 批 12）：同上（`结算补录`）；★ 另：`SA#invoice_info.required_conditional`＝「结算时必填」**不含 `==`** ⇒ `evalSimpleEqual` 不可解析 ⇒ 通用校验**静默跳过**（登记 `N-052` 一并修）",
       "when": "结算补录",
       "assert": "票据关联到已批准的事前申请单",
       "else": "**不予受理**",
@@ -279,6 +303,9 @@
     },
     {
       "id": "idempotency_key",
+      "severity": "hard",
+      "carried_by_kind": "code",
+      "carried_by": "`internal/httpapi/handlers_approval_hardchecks.go#evaluateHardChecks` 内 `case idempotency_key` ⇒ `continue`（**特例跳过**，由 Idempotency-Key 机制承载，M4 已有用例）；★ 在此显式登记，使「引擎已跳过」与「漏注册」不再混淆",
       "when": "submit",
       "assert": "读取 Idempotency-Key",
       "else": "无幂等保护",

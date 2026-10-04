@@ -482,6 +482,8 @@
     },
     {
       "id": "fixed_asset_conflict",
+      "carried_by_kind": "pending_implementation",
+      "carried_by": "★ **尚无承载者**（`N-047` 批 12 订正）：全部非测试代码**零命中**；★★ 实测 `evaluateHardChecks` 只对 `severity == hard` 放行、其余 `continue` ⇒ 提示通道未建（`acceptance.csv` V1.0 曾记为 `code`，属误记）",
       "when": "submit",
       "assert": "NOT (is_fixed_asset == true AND amount_cents > 20000000)",
       "else": "★ **不静默通过**：提示「超 20 万元或固定资产类应走招标／竞谈，不应使用单一来源」",

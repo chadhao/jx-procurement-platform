@@ -342,6 +342,8 @@
     },
     {
       "id": "inspection_vs_conclusion_hint",
+      "carried_by_kind": "pending_implementation",
+      "carried_by": "★ **尚无承载者**（`N-047` 批 12 订正）：`handlers_approval_hardchecks.go:94` 原注「soft：只提示不阻断（提示基础设施随 `N-017`）」；★★ **实测**：`evaluateHardChecks` 只对 `severity == hard` 放行、其余一律 `continue` ⇒ **提示通道从未执行**（`acceptance.csv` V1.0 曾记为 `code`，属误记）",
       "when": "submit",
       "assert": "`QC` 判定为**不合格**（`inspection_result = 不合格`）而本单判「**合格入库**」时 —— **提示**",
       "else": "★ 提示「关联检验（{no}）判定为不合格，本单判合格入库，请在差异说明中说明理由」—— **不阻断**",

@@ -27,6 +27,11 @@ scripts/check_spec.py —— `spec/` 机读规格门禁（**清单执行器**）
  · ★ **引擎能力是两侧共同契约**：本次一度给 `ref_exists` 加了 `split` 参数（为校验
    `route_by_condition` 管道串），**Go 侧加载 spec 时直接 panic** —— 单侧扩展引擎会立刻
    把"清单唯一真相"变成"清单说的与 Go 做的不是一回事"。⇒ 已撤，改由 **N-021** 双方同时引入。
+ · ★ **2026-10-04 第 6 例（台账静默漂移）**：`spec/acceptance.csv` 随批 12 更新时**漏落 `BA` 8 行**
+   （`severity` 列仍 `(未声明)`），★ **却通过了全部 8 道必绿门禁** —— 根因：**全仓没有任何脚本读这张表**
+   （只有 3 处注释提及）⇒ 台账与真源之间**没有机械校验、全靠人眼**。⇒ 新增 `_ledger_vs_forms()`：
+   `[META]` 自查类、**不引入新原语**、不触碰 Go 侧加载器（无「两侧同批」问题）。
+   ★ 探针自证：拿**修复前**的台账跑 ⇒ **8 处逐条报出**；复位后 ⇒ 0 处（见议题 `N-053`）。
 
 用法：python scripts/check_spec.py [checks.json 路径]
 退出码：0 = 全部 must-green 通过；1 = 有违规；2 = 清单/目录不可用
@@ -647,6 +652,77 @@ def _self_audit_cid_literals():
     return []
 
 
+LEDGER = "spec/acceptance.csv"
+LEDGER_COLS = 11
+
+
+def _ledger_vs_forms():
+    """
+    ★ 台账 ↔ 真源 交叉校验（议题 `N-053`）：`spec/acceptance.csv` 的 `severity` / `carrier_kind`
+      必须与 `spec/forms/*.json#checks` 的 `severity` / `carried_by_kind` **逐条一致**（行集也须相等）。
+
+    为什么必须有这道校验（★ 本项目的实测教训，不是假想）：
+      · 该表自称「判据级验收台账」（`N-017`），它的**全部价值在于可被机械核对**；
+      · ★ **2026-10-04 批 12 实测**：首批只落了 15 行，`BA` 8 行漏落 —— `severity` 列仍写
+        `(未声明)`、`BA#amount_tier1_only` 的 `carrier_kind` 仍写 `pending_implementation`，
+        而 `spec/forms/BA.json` 同期**已落** `hard` / `code`；
+      · ★★ **而它通过了全部 8 道必绿门禁** —— 因为**全仓没有任何脚本读这张表**（只有 3 处注释提及）
+        ⇒ 台账与真源之间**没有机械校验，全靠人眼** ⇒ 必然静默漂移。
+
+    映射口径（`spec/README.md §3.1` 明文）：`forms` 侧 `carried_by_kind == "submit"`
+      （＝引擎自动执行）⇒ 本表记 `code`（它有真正的运行时执行体）。
+
+    形态说明：这是 `[META]` **自查类**校验（与 `_self_audit_cid_literals()` 同类），
+      **不是** `checks.json` 判据、**不引入新原语** ⇒ 不触碰 Go 侧加载器（无「两侧同批」问题）。
+      ★ 若日后要把它升级为 `checks.json` 里的正式判据，**需新原语** ⇒ 届时须两侧同批（见 `N-053`）。
+    """
+    import csv as _csv
+
+    path = abs_path(LEDGER)
+    if not os.path.isfile(path):
+        return ["[META] 找不到判据级验收台账 %s（★ 它是 `spec/` 的必交付项）" % LEDGER]
+
+    truth = {}
+    for p in expand("spec/forms/*.json"):
+        doc = load_json(p)
+        dt = os.path.basename(p)[:-5]
+        for c in doc.get("checks") or []:
+            truth[(dt, c.get("id"))] = (c.get("severity"), c.get("carried_by_kind"))
+
+    bad = []
+    seen = set()
+    with open(path, "r", encoding="utf-8", newline="") as fh:
+        for ln, row in enumerate(_csv.reader(fh), start=1):
+            if ln == 1 or not row:
+                continue                       # 表头 / 空行
+            if len(row) != LEDGER_COLS:
+                bad.append("第 %d 行列数为 %d（应 %d）" % (ln, len(row), LEDGER_COLS))
+                continue
+            key = (row[0], row[1])
+            if key in seen:
+                bad.append("第 %d 行 %s#%s **重复登记**" % (ln, key[0], key[1]))
+            seen.add(key)
+            if key not in truth:
+                bad.append("第 %d 行 %s#%s 在 `spec/forms/*.json` 中**不存在**" % (ln, key[0], key[1]))
+                continue
+            sev, kind = truth[key]
+            exp_kind = "code" if kind == "submit" else kind
+            if row[4] != sev:
+                bad.append("第 %d 行 %s#%s 的 `severity`＝%r ≠ 真源 %r"
+                           % (ln, key[0], key[1], row[4], sev))
+            if row[8] != exp_kind:
+                bad.append("第 %d 行 %s#%s 的 `carrier_kind`＝%r ≠ 真源 %r（`carried_by_kind`＝%r）"
+                           % (ln, key[0], key[1], row[8], exp_kind, kind))
+
+    for key in sorted(set(truth) - seen):
+        bad.append("真源判据 %s#%s **未登记**在 %s" % (key[0], key[1], LEDGER))
+
+    if bad:
+        return ["[META] 台账 %s 与真源 `spec/forms/*.json#checks` 不一致（%d 处）：\n    " % (LEDGER, len(bad))
+                + "\n    ".join(bad)]
+    return []
+
+
 def check(cl_path):
     if not os.path.isfile(cl_path):
         print("FAIL [%s] 找不到判据清单：%s" % (NAME, cl_path))
@@ -680,6 +756,9 @@ def check(cl_path):
 
     # ★ 源码自审：判据 ID 不得硬编码
     problems += _self_audit_cid_literals()
+
+    # ★ 台账自审：spec/acceptance.csv 必须与 spec/forms/*.json#checks 逐条一致（N-053）
+    problems += _ledger_vs_forms()
 
     ran = 0
     for c in checks:

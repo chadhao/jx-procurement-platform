@@ -357,6 +357,9 @@
   "checks": [
     {
       "id": "amount_positive",
+      "severity": "hard",
+      "carried_by_kind": "code",
+      "carried_by": "`internal/httpapi/handlers_approval_hardchecks.go#checkAmountPositive`（`amountPositiveOf` 按 `form.DocType` 分流 —— **PR 读 `estimated_total_cents`**）；★ 该值由 `handlers_approval_pr_amount.go#resolvePRAmountForTier` 在 `handlers_approval.go` 判据求值**之前**写入 `body.Fields` ⇒ **提交时点可达**（2026-10-04 批 12 实测**更正**本议题早前「提交时点不可得」的改判）",
       "when": "submit",
       "assert": "estimated_total_cents > 0",
       "else": "拒绝提交",
@@ -365,6 +368,9 @@
     },
     {
       "id": "completeness_l2",
+      "severity": "hard",
+      "carried_by_kind": "code",
+      "carried_by": "`internal/httpapi/handlers_approval_hardchecks.go#checkCompletenessL2`（`N-047` 批 12；BA/PR/SA **单实现同语义**：`usage_category_l1` / `usage_category_l2` 任一为空即拒）",
       "when": "submit",
       "assert": "usage_category_l1 与 usage_category_l2 均已填",
       "else": "拒绝提交",
@@ -398,15 +404,20 @@
     },
     {
       "id": "cross_dept_designation",
+      "severity": "hard",
+      "carried_by_kind": "manual",
       "when": "approval(supervisor_approval)",
       "assert": "跨部门指定须有被指定部门主管领导同意记录",
-      "carried_by": "★ **人工承载**（`else` ＝ 人工核对）—— 本单**无自动执行体**，MUST NOT 被误读为「系统会拦」",
+      "carried_by": "★ **人工承载**（`N-047` 批 12 定档 `manual`）—— `when=approval(supervisor_approval)` 属**审批动作时点**，`evaluateHardChecks` 只跑提交时点 ⇒ 引擎不执行、**不会** fail-closed；★ `else` 原文＝人工核对 ⇒ 本单**无自动执行体**，MUST NOT 被误读为「系统会拦」",
       "else": "人工核对",
       "origin": "tool_table",
       "origin_ref": "D2 批复"
     },
     {
       "id": "safety_branch",
+      "severity": "soft",
+      "carried_by_kind": "pending_implementation",
+      "carried_by": "★ **当前不可执行**（`N-047` 批 12 具名登记）：`assert` 要「资质文件**或说明**」，而本表单字段集中**无该字段**（`tech_attachment` 已被 `device_tech_attachment` 占用，能否复用属口径问题）⇒ 须先补字段（拟 `N-052`）；★★ **不得标 `hard`** —— `when` 以 `submit` 开头而无求值器 ⇒ `evaluateHardChecks` 当场 fail-closed（已实测）",
       "when": "submit",
       "assert": "is_safety_or_special_equipment == true ⇒ 须附资质文件或说明",
       "else": "拒绝提交",
@@ -415,6 +426,9 @@
     },
     {
       "id": "device_tech_attachment",
+      "severity": "hard",
+      "carried_by_kind": "code",
+      "carried_by": "`internal/httpapi/handlers_approval_hardchecks.go#checkPRDeviceTechAttachment`（`N-047` 批 12；`P04` 条件在求值器内判；★ 非 `P04` ⇒ 放行、**不反向**要求该字段为空）",
       "when": "submit",
       "assert": "usage_category_l1 == 'P04' ⇒ tech_attachment 非空",
       "else": "拒绝提交",
@@ -423,6 +437,9 @@
     },
     {
       "id": "idempotency_key",
+      "severity": "hard",
+      "carried_by_kind": "code",
+      "carried_by": "`internal/httpapi/handlers_approval_hardchecks.go#evaluateHardChecks` 内 `case idempotency_key` ⇒ `continue`（**特例跳过**，由 Idempotency-Key 机制承载，M4 已有用例）；★ 在此显式登记，使「引擎已跳过」与「漏注册」不再混淆",
       "when": "submit",
       "assert": "读取 Idempotency-Key",
       "else": "无幂等保护",

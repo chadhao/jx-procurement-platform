@@ -391,6 +391,9 @@
   "checks": [
     {
       "id": "amount_positive",
+      "severity": "hard",
+      "carried_by_kind": "code",
+      "carried_by": "`handlers_approval_hardchecks.go#checkAmountPositive`（N-047 批 12；顶层 `AmountCents` 优先、回落 `fields.amount_cents`、两缺 fail-closed）",
       "when": "submit",
       "assert": "amount_cents > 0",
       "else": "拒绝提交",
@@ -399,6 +402,9 @@
     },
     {
       "id": "amount_tier1_only",
+      "severity": "hard",
+      "carried_by_kind": "code",
+      "carried_by": "`handlers_approval_hardchecks.go#checkBAAmountTier1Only`（N-047 批 12；阈值 `99999` 出处＝本判据 `assert` 原文）",
       "when": "submit",
       "assert": "amount_cents <= 99999",
       "else": "★ **本档仅适用 < 1,000 元**；超出须走 PR（采二/采三档）",
@@ -407,6 +413,9 @@
     },
     {
       "id": "completeness_l2",
+      "severity": "hard",
+      "carried_by_kind": "code",
+      "carried_by": "`handlers_approval_hardchecks.go#checkCompletenessL2`（N-047 批 12；L1/L2 任一空即拒）",
       "when": "submit",
       "assert": "usage_category_l1 与 usage_category_l2 均已填",
       "else": "拒绝提交",
@@ -415,6 +424,9 @@
     },
     {
       "id": "safety_certificate",
+      "severity": "hard",
+      "carried_by_kind": "code",
+      "carried_by": "`handlers_approval_hardchecks.go#checkBASafetyCertificate`（N-047 批 12；条件在求值器内判、非 P03 放行不反向）",
       "when": "submit && usage_category_l1 == 'P03'",
       "assert": "qualified_certificate 非空",
       "else": "拒绝提交",
@@ -423,6 +435,9 @@
     },
     {
       "id": "receipt_per_purchase",
+      "severity": "hard",
+      "carried_by_kind": "pending_wiring",
+      "carried_by": "★ **通路未接**：`when=回交凭据`（BA 逐笔回交登记时点）当前**无生产时点** ⇒ 引擎跳过、暂不执行",
       "when": "回交凭据",
       "assert": "payment_receipt_no 与 payment_receipt_file 均非空",
       "else": "不得闭合",
@@ -431,6 +446,9 @@
     },
     {
       "id": "anti_split_before_disburse",
+      "severity": "hard",
+      "carried_by_kind": "manual",
+      "carried_by": "★ **人工承载**（判据自带 `known_cost`：「平台无跨字段校验 ⇒ 只能公式列提示 ＋ 人工核对」）",
       "when": "业务规则",
       "assert": "anti_split_check_result 必须先于 disburse 完成",
       "else": "★ 违反制度「须在拨付款项之前完成」",
@@ -440,6 +458,9 @@
     },
     {
       "id": "no_purchaser_field",
+      "severity": "hard",
+      "carried_by_kind": "structural",
+      "carried_by": "★ **结构性**：`when=schema` —— BA 表单**结构上不含**「采购经办人」字段，运行期无需检查",
       "when": "schema",
       "assert": "★ **BA 不得有「采购经办人」字段**",
       "else": "—",
@@ -448,6 +469,9 @@
     },
     {
       "id": "idempotency_key",
+      "severity": "hard",
+      "carried_by_kind": "code",
+      "carried_by": "`internal/httpapi/handlers_approval_hardchecks.go#evaluateHardChecks` 内 `case idempotency_key` ⇒ `continue`（**特例跳过**，由 Idempotency-Key 机制承载，M4 已有用例）；★ 在此显式登记，使「引擎已跳过」与「漏注册」不再混淆",
       "when": "submit",
       "assert": "读取 Idempotency-Key",
       "else": "无幂等保护",

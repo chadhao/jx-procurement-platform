@@ -1,5 +1,5 @@
 {
-  "version": "1.14",
+  "version": "1.15",
   "generated_by": "WorkBuddy",
   "date": "2026-10-04",
   "scope": "spec/",
@@ -451,7 +451,7 @@
     {
       "id": "S14",
       "severity": "must-green",
-      "desc": "★ **`checks[*].carried_by_kind` 取值必须来自受控词表**（议题 `N-036`）：★ 一条 `hard` 判据的 `else` 若承诺「拒绝（硬拦截）」，就必须说清**谁来执行它**；`carried_by_kind` 就是那个声明的**受控词**（`code`＝有运行时执行体／`structural`＝结构性保证、运行时无需检查／`manual`＝人工承载、有制度依据／`pending_wiring`＝**通路未接、当前生产不可达**／`pending_implementation`＝**尚无任何承载者★真缺口**）。★★ **为什么只做值域、不做必填**：现有 9 个原语**都作用于 dict 的键或全局集合**，**表达不了「数组每一项都必填」** —— ★ `set_covers.min_hits` 是**逐文件**语义（不是全局计数），`required_keys` 只作用于 scope 的键、`coverage` 只作用于 dict ⇒ ★ **「每条必有」需新原语**，见 `COLLAB.md#N-036`。★ 本判据保证「**凡声明了的，不瞎写**」；★ 缺失的可见性由**新原语**补。★★ `min_hits: 0` —— ★ 因为**只有 8 张表单**有非提交时点的 `hard` 判据（`BA`/`RFQ`/`SA` 等**本就没有**这个字段），而 `min_hits` 是**逐文件**语义 ⇒ ★ 保留默认 1 会让「本来就没有」被当成「清单写错」。★ 同 `S5b` 的先例（`min_hits` 1→0）；★ **代价如实**：该护栏在本判据上失效（collect 写错将不被发现）—— ★ 由 `S14` 的 desc 与本注承担这个风险。",
+      "desc": "★ **`checks[*].carried_by_kind` 取值必须来自受控词表**（议题 `N-036`）：★ 一条 `hard` 判据的 `else` 若承诺「拒绝（硬拦截）」，就必须说清**谁来执行它**；`carried_by_kind` 就是那个声明的**受控词**（`code`＝有运行时执行体／`structural`＝结构性保证、运行时无需检查／`manual`＝人工承载、有制度依据／`pending_wiring`＝**通路未接、当前生产不可达**／`pending_implementation`＝**尚无任何承载者★真缺口**）。★★ **为什么只做值域、不做必填**：现有 9 个原语**都作用于 dict 的键或全局集合**，**表达不了「数组每一项都必填」** —— ★ `set_covers.min_hits` 是**逐文件**语义（不是全局计数），`required_keys` 只作用于 scope 的键、`coverage` 只作用于 dict ⇒ ★ **「每条必有」需新原语**，见 `COLLAB.md#N-036`。★ 本判据保证「**凡声明了的，不瞎写**」；★ 缺失的可见性由**新原语**补。★★ `min_hits: 0` —— ★ 因为**只有 8 张表单**有非提交时点的 `hard` 判据（`BA`/`RFQ`/`SA` 等**本就没有**这个字段），而 `min_hits` 是**逐文件**语义 ⇒ ★ 保留默认 1 会让「本来就没有」被当成「清单写错」。★ 同 `S5b` 的先例（`min_hits` 1→0）；★ **代价如实**：该护栏在本判据上失效（collect 写错将不被发现）—— ★ 由 `S14` 的 desc 与本注承担这个风险。\n★ **2026-10-04 批 12 起 `min_hits` 回到 `1`**（`N-047`）：扩围后**每一张 `forms/*.json` 的每一条判据都带 `carried_by_kind`** ⇒ 原先「有 8 张表单本就没有这个字段」的依据**已消失**，`min_hits: 0` 的代价（collect 写错不被发现）不再需要承担；★ 实测 11 张表单各有 6–16 条判据 ⇒ 逐文件命中 ≥1 恒成立（★ 与 `S15` 的扩围**同批**落地，二者互为兜底）。",
       "primitive": "enum_subset",
       "args": {
         "file": "spec/forms/*.json",
@@ -464,23 +464,19 @@
           "pending_implementation",
           "submit"
         ],
-        "min_hits": 0
+        "min_hits": 1
       }
     },
     {
       "id": "S15",
       "severity": "must-green",
-      "desc": "★★ **每一条 `severity=hard` 的判据都必须声明 `carried_by_kind`**（议题 `N-036` 的**核心判据**）：★ 一条 `hard` 判据的 `else` 若承诺「拒绝（硬拦截）」，就**必须说清谁来执行它** —— ★ 缺声明即报错。\n★★ 它治的是「**声明了却没人执行**」：★ 这比「没声明」危险 —— **后者你知道要做，前者你以为已经做了**。\n★★ **为什么条件写 `severity=hard` 而不是「非提交时点」**：`when_in` 是**白名单枚举**，而「非提交时点」是**否定式**、且提交白名单是**模式匹配**（`== submit` / `submit ` 前缀 / 含「提交前」）⇒ **无法枚举**；★ 故改为**无条件要求每一条 `hard`** —— ★ 语义更简单、**消除特例**，且**顺带把「提交期判据由谁执行」也显式化**（此前是隐含的：引擎自动执行）。\n★ 现值分布：`submit`（引擎自动执行）／`code`（运行时执行体）／`structural`（结构性保证）／`manual`（人工承载，须有制度依据）／`pending_wiring`（通路未接、当前不可达）／★★ `pending_implementation`（**尚无任何承载者 ＝ 真缺口**：判据承诺的「拒绝」不会发生）。",
+      "desc": "★★ **每一条判据（★ 不限 `severity`）都必须声明 `carried_by_kind`**（议题 `N-036` 立、`N-047` 批 12 **扩围**）：★ 一条判据的 `else` 若承诺「拒绝（硬拦截）／提示／预警」，就**必须说清谁来执行它** —— ★ 缺声明即报错。\n★★ 它治的是「**声明了却没人执行**」：★ 这比「没声明」危险 —— **后者你知道要做，前者你以为已经做了**。\n★★ **为什么 2026-10-04 把条件面整体取消（本判据唯一一次改范围）**：\n★ 旧形态只覆盖 `severity=hard`，而**缺 `severity` 的判据既不被本判据要求、也不被 `evaluateHardChecks` 执行**（该函数首行只对 `severity == hard` 放行、其余一律 `continue`）⇒ 落在两条机制之间的**缝**里（`N-047` 立据：`BA` 8 / `PR` 6 / `SA` 9 共 **23 条**）。\n★★ 旧形态的「条件面」**恰好保护了不该保护的那批**：`when_key=severity` 对**没有这个键**的项直接 `continue` ⇒ **正是最该被看见的判据看不见**。\n★★ 故 `args` **删除 `when_key` / `when_in`**（无条件面）—— ★ 两侧 `array_each_required` 均已支持「`when_key` 缺省 ＝ 无条件」（Go `internal/specload/checklist.go` / Python `scripts/check_spec.py#prim_array_each_required`）⇒ ★★ **零引擎改动、两侧自动一致**。\n★ 同批落地：**97/97 条判据全部声明 `carried_by_kind`**；★ 其中 5 条 `soft` 判定为 `pending_implementation` —— ★ **实测**这些「只提示不阻断」的 soft 判据**无任何执行通道**，原 `acceptance.csv` V1.0 把它们的承载记为 `code` **属误记**，本批一并订正。\n★ 现值分布：`submit`（引擎自动执行）／`code`（运行时执行体）／`structural`（结构性保证、运行时无需检查）／`manual`（人工承载，须有制度依据）／`pending_wiring`（通路未接、当前生产不可达）／★★ `pending_implementation`（**尚无任何承载者 ＝ 真缺口**）。",
       "primitive": "array_each_required",
       "args": {
         "file": "spec/forms/*.json",
         "collect": "checks[*]",
         "required_keys": [
           "carried_by_kind"
-        ],
-        "when_key": "severity",
-        "when_in": [
-          "hard"
         ]
       }
     },
@@ -668,6 +664,11 @@
       "version": "1.14",
       "date": "2026-10-04",
       "change": "★★★ **接口契约的机读形态入库 ⇒ 新增 `S21`/`S22`/`S23`（`REMAINING.md#B6` / `N-051`）**：★ 交付 `spec/openapi.json` **V1.0**（OpenAPI 3.0.3，**69 条路由**），由 **`scripts/gen_openapi.py`** 从 `docs/05-API.md`（**人读正本 V2.20**）**机械生成** —— ★ **禁止手工编辑**（避免第二份真相）。★★ **为什么是 `openapi.json` 而不是 `openapi.yaml`**：★ 本仓库 `_format_note` 早已定案 —— spec **一律 JSON**（YAML 需 PyYAML / `gopkg.in/yaml.v3`，★ 会把这件最该被机检的契约**落在门禁之外**）；★ 且 `S1`（`spec/**/*.json`）**自动覆盖**新文件 ⇒ 零额外接入成本（★ 对照：`.yaml` 对门禁**完全不可见**）。★★ **新增三条判据的边界（**宁准勿宽**）**：`S21` 根骨架（防契约被掏空）；`S22` 每 operation 自描述（`operationId`/`summary`/`tags`/`security`/`responses`）；`S23` 每 operation 必须具备兜底分支 `default`（对应正本 §2「错误包裹」总则 —— ★ 它**不按端点枚举**，只有 `default` 能承接「未列举的失败」）。★★ **诚实划界（不可当作已覆盖）**：① **路由集与正本的一致性** **不在**本清单内 —— 由门禁「会报」项 `C9`（`scripts/audit_silent.py`：**双向**差集）＋ 常驻探针 `scripts/_probe_n051.py` 把关；★ **升级为 must-green 需要「读 Markdown」的新原语 ⇒ 属两侧同批工作**（登记 `N-051`）；② 逐端点 `requestBody`/`schema` **本版不做**（正本 §3 的字段说明是**散文**，无机器可读类型 ⇒ **不臆造**，登记 `x-known-gaps`）；③ `summary` 取自正本「用途」行**首句切片**，★ 正本仍是唯一权威。★ 依据文件：`spec/openapi.json`（`x-source`/`x-generation`/`x-known-gaps`）· `scripts/gen_openapi.py`。"
+    },
+    {
+      "version": "1.15",
+      "date": "2026-10-04",
+      "change": "★★★ **`N-047` 批 12：23 条判据补齐 `severity` ＋ `S15` 扩为「每条判据（不限 `hard`）都须声明 `carried_by_kind`」**（★ 与 mimo 的 8 条提交时点求值器 **同批** 落地 —— ★ 实测：`severity=hard` 而未注册求值器 ⇒ `internal/httpapi/handlers_approval_hardchecks.go#evaluateHardChecks` **当场 fail-closed** ⇒ 「补 `severity` 不依赖实现」**不成立**）。★ 本批把 `BA` 8 / `PR` 6 / `SA` 9 共 **23 条**逐条定档；`fields/*.json` 现 **97/97 条判据全部带 `severity` ＋ `carried_by_kind`**。★★ **`S15` 扩围（唯一一次改范围）**：旧形态只覆盖 `severity=hard`，而**缺 `severity` 的判据既不被它要求、也不被 `evaluateHardChecks` 执行** （该函数首行只对 `severity == hard` 放行）⇒ 落在两条机制之间的**缝**里；**更糟的是 `when_key=severity` 对没有该键的项直接 `continue` ⇒ 恰好保护了不该保护的那批**。⇒ `args` **删 `when_key`/`when_in`**（无条件面；两侧 `array_each_required` 均已支持缺省即无条件 ⇒ **零引擎改动**）。★ `S14` 的 `min_hits` **0 → 1**（其「本就没有这个字段」的依据已消失）。★★ **本批顺带订正 `acceptance.csv` V1.0 的一处误记**：5 条 `soft` 判据的承载原记为 `code`，**实测它们无任何执行通道**（`evaluateHardChecks` 跳过一切非 `hard`）⇒ 一律改判 `pending_implementation`。★★ **一处据实更正（我方先前裁定错了）**：`PR#amount_positive` 曾被改判「提交时点金额未就绪、不可执行」，**实测证伪** —— `handlers_approval_pr_amount.go#resolvePRAmountForTier` 在 `handlers_approval.go` 的判据求值**之前**把 `estimated_total_cents` 写入 `body.Fields`（`mergeProvidedFields` 全量复制）⇒ 该判据**可达**，本批落 `hard` ＋ `code`。★ 另：4 条**具名登记为「当前不可执行」**（`PR#safety_branch` · `SA#counterparty_conditional` · `SA#cross_month_allocation` 判 `pending_implementation`），★ 其中 `SA#counterparty_conditional` 的字段 `counterparty` **已存在**、缺口在**触发条件不可表达**（据实写明，不笼统说「无字段」）；★ 三条`pending_wiring`（`BA#receipt_per_purchase` · `SA#actual_not_exceed` · `SA#invoice_must_link`）与两条自由文本人工项（`SA#entertain_required` · `SA#inspection_basis`）一并定档。★ 依据：`spec/forms/*.json#checks` · `COLLAB.md#N-047` · `MIMO-NEXT-BATCH-11.md` · `spec/acceptance.csv` V1.1。"
     }
   ]
 }

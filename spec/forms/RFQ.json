@@ -308,6 +308,8 @@
     },
     {
       "id": "response_shortfall_warning",
+      "carried_by_kind": "pending_implementation",
+      "carried_by": "★ **尚无承载者**（`N-047` 批 12 订正）：全部非测试代码**零命中**；★★ 实测 `evaluateHardChecks` 只对 `severity == hard` 放行、其余 `continue` ⇒ 提示通道未建（`acceptance.csv` V1.0 曾记为 `code`，属误记）",
       "when": "submit",
       "assert": "`responded_count < 3`（**采三档「询比价」时**）⇒ **提示**填写 `shortfall_note`",
       "else": "★ 提示「实际报价不足 3 家，请说明原因（若确属市场独家，应考虑改走单一来源或竞争性谈判）」—— **不阻断**",
