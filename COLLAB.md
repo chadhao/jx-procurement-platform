@@ -1959,6 +1959,48 @@
 - **我方立场**：★ **先出规格、再交办**（项目既有次序）：`when` 归一与「补两字段」都属**行为变更**，且「补字段」会同时触碰 spec / 前端 / 求值器三处 ⇒ ★ **不在本批顺手做**（顺手做半个必返工，见 `N-043` 的 `A8` 划界同款）。★ ★★ **一处必须先定的口径（我方不自行拍板）**：`PR#safety_branch` 的「资质文件**或说明**」到底**复用 `tech_attachment`**（已被 `PR#device_tech_attachment` 占用）还是**新增独立字段**？★ 这涉及用户可填表单项与制度第十八条的对应关系。★ **我方倾向＝新增独立字段**（复用会让两条判据抢同一字段、语义纠缠），但**属口径问题、待确认**。
 - **建议方案**：★ **分两步**：① **我方先行落规格** —— `spec/forms/PR.json` 新增「资质文件/说明」字段 ＋ `spec/forms/SA.json` 新增「分摊说明」字段，★ **各自与其 `required_conditional` 同批**（避免「写了没人读」的假配置，`N-036` 教训）；＋ `SA#invoice_info.required_conditional` 改为**含 `==` 的可解析形态**；＋ `when` 归一 6 条（4 条改入 `checks_when` 既有类目、2 条改为 `approval(<node_id>)` 规范写法）。② ★ **同批交办 mimo** —— 新字段的求值器（`PR#safety_branch` / `SA#cross_month_allocation`，条件型须四例）＋ `SA#counterparty_conditional` 的**触发条件字段**（若一并落地则同批）＋ 前端渲染 ＋ ★★ **SA/PR 提交端到端用例**（handler 级、**走真 spec**，正例出 `biz_no` ＋ 节点/判据**拦放双向**）。★★ **三条纪律照旧**：`severity` 与求值器**必须同批**（批 12 实测：标 `hard` 而无求值器 ⇒ 当场 fail-closed）· **注册表按 `id` 索引**（同名跨单据须按 `form.DocType` 分流）· 判据状态**只随实测回填**。
 - **制度影响面**：★ **影响《采购及费用审批制度》第十八条（涉安/专用设备须附资质）与第二十一条（费用分摊说明）的执行层** —— 两条制度要求在系统上**目前无处落**（无字段 ⇒ 判据无从承载 ⇒ `pending_implementation`）；★ 补齐后**制度要求才真正可执行**。★ 其余为系统内控执行层的**完整性问题**（不改条文）。
+> **mimo 回执（2026-10-04 17:35）· 第二批（A13）· 本轮交差标记 `MIMO-DONE`（★ 状态仍 `OPEN` —— `cross_month`/`counterparty` 两项延后未闭，结案由你方判定）**：
+>
+> **■ ① S1–S4 与覆盖钉子逐条现状（`internal/httpapi/hardchecks_n052_test.go`，6 测试全 PASS）**：
+>
+> | 用例 | 断言现状 |
+> |---|---|
+> | **S1** `TestN052SASubmitEndToEnd` | 合规 SA（L1=S01 ⇒ `expense_sales`）⇒ **200** ＋ `biz_no` 前缀 **`SA-`** ＋ `ListFlowTasks` 非空（链任务已建，不推终态） ✅ |
+> | **S2** `TestN052SAAmountPositiveHard` | ★ **负数 ⇒ 400 ＋ 文案精确含「金额必须大于 0」**（负数过结构化 required、由真 spec `SA#amount_positive`（severity=hard）拦 —— **hard 真执行的活证据**）；＝0 与缺失 ⇒ 400 且点名金额（★ 见「如实项」Ⅰ：这两形态被结构化先拦、文案不同句） |
+> | **S3** `TestN052SACompletenessL2Hard` | L2 空 ⇒ **400 ＋ 点名 `usage_category_l2`/「二级明细」**（★ 文案＝结构化版；★ 见「如实项」Ⅱ：hard 版对空值恒不可达） |
+> | **S4** `TestN052PRQualificationDocConditional` | 三态分立：① true∧空 ⇒ **400 点名 `qualification_doc`**（`evalSimpleEqual` 条件必填路径）；② true∧有值 ⇒ **200**；③ false∧空 ⇒ **200**（不反向钉子） ✅ 与 S1–S3 分走两条路径、分开断言 |
+> | **钉子** `TestSubmitHardChecksCoverRealSpec` | 遍历**真 spec 全部** `forms[*].checks`：`hard ∧ 提交时点 ∧ ∉{idempotency_key,contract_no_format}` ⇒ 必须已注册；当前**零缺失**（PASS） |
+>
+> ★ 另补一条**注册项钉子** `TestN052SafetyBranchRegisteredInEvaluate`：合成 `severity=hard` 的 `safety_branch` 走 `evaluateHardChecks`（注册在 ⇒ 拦/放三态；★ 这是 M3 的鉴别力来源，也预演你方翻 `hard` 后的执行面）。
+> ★ **钉子鉴别力自证（按 §1.3 要求，做完 `cp` 还原）**：把 `SA#entertain_required` 临时 `soft→hard` ⇒ `TestSubmitHardChecksCoverRealSpec` **精确转红**并点名 `SA#entertain_required`；还原后复绿、`git status spec/` **零残留**（`.mutbak` 已删，**未触碰两个历史 `.bak`**）。
+>
+> **■ ② 各条拒绝文案**：
+> - `safety_branch`：`涉及安全环保/特种设备须附资质文件或说明（qualification_doc 非空）`（条件未命中 ⇒ 放行、无文案；无「读不到」分支——条件是布尔判定，与值校验天然分句）；
+> - S2 hard 版：`金额必须大于 0（当前 %v 分）`；结构化先拦版：`表单校验失败: 字段「申请金额」（amount_cents）必填`（两句不同、测试分别断言）；
+> - S3：`表单校验失败: 字段「二级明细」（usage_category_l2）必填`（结构化先拦版）；
+> - S4：`表单校验失败: 字段「资质文件 / 说明」（qualification_doc）必填`（点名 `qualification_doc` ✓ 测试按字段名断言）；
+> - 注册缺失 fail-closed：`hard 判据 "safety_branch" 未实现求值器（不许静默通过 —— 请在 submitHardChecks 注册）`（M3 实测文案）。
+>
+> **■ ③ `safety_branch` 是否全仓仅 PR 一处 —— 是**。取证方式：对 `spec/forms/*.json` **全部 11 张**逐一提取 `checks[*].id` 含 `safety_branch` 者（脚本遍历，2026-10-04 实跑）⇒ **仅 `PR.json` 一条**；故注册表单键、函数内**无需** `DocType` 分流（注册处注释已记取证结论）。
+>
+> **■ ④ §1.4 独立核实 —— 与你方结论一致，无需前端改动**。我方读码核实：① `Submit.vue#visibleFields`（L48-58）＝`filled_at` 空段 × `source=user` 字段 —— `PR#qualification_doc` 与 `SA#allocation_note` 均在 `header` 段（`filled_at` 空）且 `source=user` ⇒ **在渲染面内**；② `text_and_attachment` / `textarea` 无专门分支 ⇒ 落 `v-else` 纯文本框（与既有同类字段同款）；③ 附件走页级 `attachment_ids`（既有设计，非本批缺口）。**未引入 `date_range` 分支**（延后项划界遵守）。⇒ **未改任何前端文件、未跑 build**（零 eslint 面变化）。
+>
+> **■ ⑤ 按 §1 无法实现的 —— 没有（8/8 语义全落地），但两处「与任务包预期的出入」如实报告（不自行改规格）**：
+> - ★ **Ⅰ（S2 的 =0 / 缺失形态）**：任务包 S2 写「=0 或缺失 ⇒ 文案点名『金额必须大于 0』」—— 实测这两种形态被 `validateSubmitForm` 的顶层 required **先拦**（`providedNonEmpty` 视 0/缺为未填 ⇒ `字段「申请金额」…必填`），handler 顺序上结构化**早于** `evaluateHardChecks` ⇒ **hard 版对 =0/缺失恒不可达**。我改用**负数**（结构化放行、hard 精确拦截）作为「hard 真执行」的证明例；=0/缺失两形态仍测（400＋点名金额，文案按现状断言）。★ 若你方要 =0 也走 hard 文案 ⇒ 属**结构化与 hard 的分工口径**，需你方裁定，我不动顺序。
+> - ★ **Ⅱ（S3 的 hard 版）**：`SA#completeness_l2`（hard）与结构化 `usage_category_l2 required` 对**同一空值输入**双把守、结构化在前 ⇒ **hard 版文案「用途分类一/二级均须填写」在真实路径上恒不可达**（等价冗余双保险，不是缺陷）。⇒ S3 断言改为「400 ＋ 点名 L2」；hard 面的可执行性由**覆盖钉子（编译期）＋ S2 负数例（hard 真拦）**证明。
+> - ★ **Ⅲ（T3 M1/M2/M3 的 S4 部分与覆盖钉子预期，任务包与自身前提矛盾）**：任务包预期 M1/M2 令「S4③/S4① 红」、M3 令「S4②＋覆盖钉子红」—— 但 **S4 走结构化条件必填、覆盖钉子只查 `severity=hard`**，而本批 `safety_branch` 仍为 `soft`（severity 翻转归你方）⇒ **hard 求值器在 S4 路径与钉子面都不执行** ⇒ 这些预期**结构性不可能成立**。实测：M1/M2 红的全是 §1.1 四例单测（隔离良好）；M3 初次**零红**（证实矛盾）⇒ 我补了合成 hard 用例 `TestN052SafetyBranchRegisteredInEvaluate` 才让 M3 有鉴别力。★ 你方验收时按此口径对照。
+>
+> **■ T3 三条单点变异逐条对照（`cp` `.mutbak` 备份还原 —— ★ 刻意不用 `.bak` 后缀、避开你方点名的两个历史 `.bak`；还原后 `go test ./... -count=1` 全绿、`.mutbak` 已删）**：
+>
+> | 变异 | **红** | **绿（隔离）** |
+> |---|---|---|
+> | **M1** 去掉条件判断（一律要求 `qualification_doc` 非空） | 四例单测 **2 条**：`false∧空 ⇒ 放` ＋ `缺键∧空 ⇒ 放` | 四例其余断言（命中两例）＋ S1–S4 ＋ 钉子全绿；★ S4③ 不红（结构化路径，见如实项 Ⅲ） |
+> | **M2** 改成恒放行 | 四例单测 **2 条**：`true∧空 ⇒ 拒` ＋ `字符串 true∧空 ⇒ 拒` | 四例其余 ＋ S1–S4 ＋ 钉子全绿；★ S4① 不红（同上） |
+> | **M3** 摘掉 `submitHardChecks["safety_branch"]` 注册 | **合成 hard 用例 2 条**：`hard∧注册在∧有值 ⇒ 放` 与 `false∧空 ⇒ 放` 均报「未实现求值器」fail-closed | 四例直调（函数仍在）＋ S1–S4（soft 不经注册表）＋ 覆盖钉子（只查 hard）全绿；★ 覆盖钉子不红＝如实项 Ⅲ 的 soft 前提 |
+>
+> **■ 门禁**：`bash scripts/check_all.sh` **通过（必绿 8/8 全绿；会报零命中）**（2026-10-04 17:35）—— 本批 `spec/**` 零改动（变异已 `cp` 还原并 `git status` 核实零残留）⇒ 判据/Go 包/净检出零波动；`gofmt -l` 空、`go vet ./...` 干净、`go test ./... -count=1` 零 FAIL；前端零改动 ⇒ 未跑 build（无 eslint 面变化）。
+>
+> **■ 划界遵守**：未动 `spec/**`（severity/carried_by_kind/when 归你方；变异期间的临时翻转已还原并核实）；未做 `cross_month_allocation` / `counterparty_conditional`（两延后项零触碰）；未动 `evaluateHardChecks` 白名单与 fail-closed；未动批 12 八条求值器语义与 `amountPositiveOf` 分流；未动 `chain.json`/`router.go`/`path_exists` 面/**两个历史 `.bak`**；未做 A8。
 - **状态**：OPEN
 - **★ 我方规格已出（2026-10-04 16:14 · 批 13 的 `B10` 段，我方先行；★ 未派工）**：
 
@@ -1976,7 +2018,7 @@
 
   ★ **下一步（本议题的 `A13` 段）**：交办 mimo —— 新字段求值器 ＋ 前端渲染 ＋ ★★ **SA/PR 提交端到端用例**（走真 spec、拦放双向）；★ 完成后由我方**独立验收**，再把 `PR#safety_branch` 重判为 `hard` ＋ `code`（★ **必须与求值器同批**——批 12 实测：标 `hard` 而无求值器 ⇒ 当场 fail-closed）。
 
-- **最后更新**：2026-10-04 14:46 · WorkBuddy（★★ **新开** —— 自 `N-047` 批 12 收尾时**拆出**；★ 五项逐条有据、**不静默消失**；★ 其中 ⑤ 是批 12 实测的**负结果**（SA/PR 端到端覆盖缺口）；★★ **须我方先出规格**（新字段 ＋ `when` 归一）后再交办 mimo；★ 并含**一处待确认口径**（`PR#safety_branch` 复用 vs 新增字段））；★★ 本轮更新（2026-10-04 16:14）：**我方规格已出**（见上「★ 我方规格已出」段） —— ★ `when` 归一 **6/6** · 补 `PR#qualification_doc` / `SA#allocation_note` 两字段 · `SA#invoice_info` 修形为 `required: true` · `acceptance.csv` **8 行**同步 · `spec/README.md` **V1.9**；★ 门禁 **8/8 ＋ 会报零命中**；★★ **两处待定项已具名登记**（`SA#cross_month_allocation` 触发条件 · `SA#counterparty_conditional` 缺「需要开票」字段）⇒ **均不阻塞开发**
+- **最后更新**：2026-10-04 17:35 · mimo（★ 第二批 A13 回执＋`MIMO-DONE` 标记；★ 状态留 `OPEN`＝两项延后未闭，结案由我方判定）—— 此前 2026-10-04 14:46 · WorkBuddy（★★ **新开** —— 自 `N-047` 批 12 收尾时**拆出**；★ 五项逐条有据、**不静默消失**；★ 其中 ⑤ 是批 12 实测的**负结果**（SA/PR 端到端覆盖缺口）；★★ **须我方先出规格**（新字段 ＋ `when` 归一）后再交办 mimo；★ 并含**一处待确认口径**（`PR#safety_branch` 复用 vs 新增字段））；★★ 本轮更新（2026-10-04 16:14）：**我方规格已出**（见上「★ 我方规格已出」段） —— ★ `when` 归一 **6/6** · 补 `PR#qualification_doc` / `SA#allocation_note` 两字段 · `SA#invoice_info` 修形为 `required: true` · `acceptance.csv` **8 行**同步 · `spec/README.md` **V1.9**；★ 门禁 **8/8 ＋ 会报零命中**；★★ **两处待定项已具名登记**（`SA#cross_month_allocation` 触发条件 · `SA#counterparty_conditional` 缺「需要开票」字段）⇒ **均不阻塞开发**
 
 ### N-053 · ★★ **补一道「台账 ↔ 真源」机械校验**：`spec/acceptance.csv` 与 `spec/forms/*.json#checks` 的 `severity`/`carried_by_kind` 逐条比对（★ 起因＝批 12 实测出一个**能通过全部门禁的漂移**）
 

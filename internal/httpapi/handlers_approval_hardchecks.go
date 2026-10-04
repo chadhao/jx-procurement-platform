@@ -36,6 +36,9 @@ var submitHardChecks = map[string]hardCheckFn{
 	"amount_tier1_only":      checkBAAmountTier1Only,      // BA 专有
 	"safety_certificate":     checkBASafetyCertificate,    // BA 专有（条件 P03）
 	"device_tech_attachment": checkPRDeviceTechAttachment, // PR 专有（条件 P04）
+	// ---- PR 新字段（N-052 批 13 · A13）----
+	// ★ 全仓仅 PR 一处 safety_branch（spec/forms/*.json#checks 逐一核实，2026-10-04）。
+	"safety_branch": checkPRSafetyBranch,
 
 	// ---- CT ----
 	"mandatory_clauses_complete":  checkCTMandatoryClauses,
@@ -200,6 +203,40 @@ func checkPRDeviceTechAttachment(_ context.Context, _ Deps, _ specload.FormDoc, 
 		return fmt.Errorf("设备类（P04）须附技术附件（tech_attachment 非空）")
 	}
 	return nil
+}
+
+// checkPRSafetyBranch（N-052 批 13 · §1.1）：is_safety_or_special_equipment 为布尔
+// true ⇒ qualification_doc 非空。条件在求值器内判（when 只是 submit）。
+// ★ 出处＝spec/forms/PR.json#checks[id=safety_branch] 的 assert：
+//
+//	is_safety_or_special_equipment == true ⇒ 须附资质文件或说明；else 拒绝提交。
+//
+// ★ 未命中 ⇒ 放行（assert 未声明双向，不得反向 —— 与 checkBASafetyCertificate /
+// checkPRDeviceTechAttachment 同款纪律）；★ qualification_doc 与 tech_attachment
+// 互不替代（后者被 PR#device_tech_attachment 的 P04 条件占用）。
+func checkPRSafetyBranch(_ context.Context, _ Deps, _ specload.FormDoc, body *approvalSubmitBody, _ string) error {
+	provided := hbProvided(body)
+	// 布尔 true 才命中（"true"/"是" 为字段填 true 后的字符串形态；缺省/false ⇒ 未命中）。
+	if !isSafetyTrue(provided["is_safety_or_special_equipment"]) {
+		return nil
+	}
+	if !hHas(provided, "qualification_doc") || hStr(provided, "qualification_doc") == "" {
+		return fmt.Errorf("涉及安全环保/特种设备须附资质文件或说明（qualification_doc 非空）")
+	}
+	return nil
+}
+
+// isSafetyTrue 布尔 true 判定：JSON bool true、或 "true"/"是"（表单往返字符串形态）。
+func isSafetyTrue(v any) bool {
+	switch t := v.(type) {
+	case bool:
+		return t
+	case string:
+		s := strings.TrimSpace(t)
+		return strings.EqualFold(s, "true") || s == "是"
+	default:
+		return false
+	}
 }
 
 // evaluateHardChecks 遍历 form.checks 执行提交时点 hard 判据（N-025 的 amount_vs_pr /
