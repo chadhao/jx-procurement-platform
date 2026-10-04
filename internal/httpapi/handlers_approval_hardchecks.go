@@ -39,6 +39,9 @@ var submitHardChecks = map[string]hardCheckFn{
 	// ---- PR 新字段（N-052 批 13 · A13）----
 	// ★ 全仓仅 PR 一处 safety_branch（spec/forms/*.json#checks 逐一核实，2026-10-04）。
 	"safety_branch": checkPRSafetyBranch,
+	// ---- SA 跨月分摊（N-054 ① · 批 14）----
+	// ★ 全仓仅 SA 一处 cross_month_allocation（spec/forms/*.json#checks 逐一核实，2026-10-04）。
+	"cross_month_allocation": checkSACrossMonthAllocation,
 
 	// ---- CT ----
 	"mandatory_clauses_complete":  checkCTMandatoryClauses,
@@ -237,6 +240,54 @@ func isSafetyTrue(v any) bool {
 	default:
 		return false
 	}
+}
+
+// checkSACrossMonthAllocation（N-054 ① · 批 14 · §1.2）：occurrence_period 跨月 ⇒
+// allocation_note 非空。
+// ★ 出处＝spec/forms/SA.json#checks[id=cross_month_allocation]（assert「跨月 ⇒
+// 须说明分摊方式」）＋ spec/chain.json#conventions.field_payload_forms（iso_interval 契约：
+// `YYYY-MM-DD/YYYY-MM-DD` 闭区间 start≤end；跨月＝ start/end 的 YYYY-MM 不同；
+// ★★ 不可解析 ⇒ 可见失败 —— 静默放行＝用畸形载荷绕过分摊要求（内控绕过））。
+// ★ 未跨月 ⇒ 放行（assert 未声明双向，不反向 —— 同 checkBASafetyCertificate 纪律）。
+func checkSACrossMonthAllocation(_ context.Context, _ Deps, _ specload.FormDoc, body *approvalSubmitBody, _ string) error {
+	provided := hbProvided(body)
+	raw := hStr(provided, "occurrence_period")
+	if raw == "" {
+		// 结构化 required 会先拦空值；此处保底 fail-closed（与「格式非法」分句）。
+		return fmt.Errorf("发生期间（occurrence_period）未填写 —— 须为 YYYY-MM-DD/YYYY-MM-DD 区间")
+	}
+	start, end, ok := parseIsoInterval(raw)
+	if !ok {
+		return fmt.Errorf("发生期间（occurrence_period）格式非法：%q —— 须为 YYYY-MM-DD/YYYY-MM-DD（恰好一个斜杠、合法 ISO 日期、start ≤ end）", raw)
+	}
+	if start[:7] == end[:7] {
+		return nil // 可解析且不跨月 ⇒ 放行
+	}
+	if hStr(provided, "allocation_note") == "" {
+		return fmt.Errorf("跨月发生须说明分摊方式（allocation_note 非空；发生期间 %s 已跨月）", raw)
+	}
+	return nil
+}
+
+// parseIsoInterval 解析 iso_interval 载荷（conventions.field_payload_forms）：
+// 恰好一个 "/" 分隔、两段均为合法 ISO 日期（YYYY-MM-DD）、start ≤ end。
+// 返回 (start, end, 是否可解析)。
+func parseIsoInterval(v string) (string, string, bool) {
+	parts := strings.Split(v, "/")
+	if len(parts) != 2 {
+		return "", "", false
+	}
+	start, end := strings.TrimSpace(parts[0]), strings.TrimSpace(parts[1])
+	if _, err := time.Parse("2006-01-02", start); err != nil {
+		return "", "", false
+	}
+	if _, err := time.Parse("2006-01-02", end); err != nil {
+		return "", "", false
+	}
+	if start > end {
+		return "", "", false // 契约：start ≤ end；倒置视为不可解析
+	}
+	return start, end, true
 }
 
 // evaluateHardChecks 遍历 form.checks 执行提交时点 hard 判据（N-025 的 amount_vs_pr /

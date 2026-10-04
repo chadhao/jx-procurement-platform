@@ -2068,8 +2068,49 @@
 - **建议方案**：★ **两条各自动作**：① `cross_month_allocation` —— **我方先行**给出 `occurrence_period` 的载荷契约（候选：ISO 区间串 `YYYY-MM-DD/YYYY-MM-DD`，或 `{start,end}` 结构；★ **须先在 `spec` 里落地并被门禁锚定**），随后交办 mimo（前端 `date_range` 分支 ＋ 跨月判定求值器 ＋ 端到端用例）；② `counterparty_conditional` —— **等工具表/制度侧补口径**（★ **待外部输入 · 不阻塞开发**），到位后按 `N-052` 同款流程落字段 ＋ 求值器。★ 两条**落地前均不翻 `hard`**。
 - **制度影响面**：★ **影响《采购及费用审批制度》第二十一条（费用分摊说明）与第二十八条（对外支付/开票）的执行层** —— ★ 两条制度要求在系统上**仍无处完整落**（无触发条件/无字段 ⇒ 判据无从执行）；★ 补齐后制度要求才真正可执行。★ 不涉及条文改写。
 - **★ 我方规格已出（2026-10-04 · 批 14 ⇒ ① 闭环，未派工）**：★★ **① 契约已定** —— 新增 **`spec/chain.json#conventions.field_payload_forms`**（`chain.json` **V1.1 → V1.2**）＝ ★ **`payload_form` 取值的唯一规格来源**：唯一受控取值 **`iso_interval`** ＝ ISO 8601 区间串 `YYYY-MM-DD/YYYY-MM-DD`（**首尾均为闭区间端点**、`start ≤ end`）；★★ **「跨月」＝ `start`/`end` 落在两个不同自然月**（按 `YYYY-MM` 比较）；★★ **不可解析 ⇒ 可见失败**（★ 不得静默通过、不得静默当作「不跨月」—— ★ 静默放行＝**用畸形载荷绕过分摊要求**（内控绕过），与 `GR` 的 `no_approver_in_acceptance_group`「取不到记录按可见失败处理」同口径）。★★ **门禁已锚定（★ 零引擎改动、两侧自动一致）**：`spec/checks.json` **V1.15 → V1.16**（判据 **27 → 29**）新增 **`S24`**（`array_each_required`：凡 `type == date_range` 的字段**必须**声明 `payload_form`）＋ **`S25`**（`enum_subset`：取值须 ∈ 受控词表）—— ★ 二者**全用既有原语与既有 args 形态** ⇒ ★ **不需要新引擎、不需要两侧同批**。★ 数据：`spec/forms/SA.json` **V1.1 → V1.2**（`occurrence_period` 落 `payload_form: iso_interval` ＋ `payload_contract`；`known_gaps[2]` 状态由「待定」改为「**契约已定 ＋ 门禁已锚定 ⇒ 判据可判；落地待 mimo**」）；`spec/acceptance.csv` 同批回填该行（`machinable` `no → yes`、`decidable_expr` → `跨月(occurrence_period) => allocation_note 非空`）。★★ **三处证伪对照（一次只变异一处，`cp` ＋ `sha256sum -c` 逐一还原）**：① `S25.min_hits` 写 `1` ⇒ **Python 报 8 处红 / Go 全绿** ⇒ ★★ **实测逼出一条两侧语义分歧 ＝ 「逐文件（Python）vs 跨文件汇总（Go）」**（具名登记 **`N-055`**，含复现方式）；② 摘掉 `SA.occurrence_period.payload_form` ⇒ **两侧各精确报 1 处、其余保持绿**；③ 值改 `iso_range` ⇒ **两侧各精确报 1 处值域错** ⇒ **隔离性与值域鉴别力均成立**。★★ **刻意保留 `soft` ＋ `pending_implementation`**（★ 求值器与前端 `date_range` 分支**尚未落地** ⇒ 翻 `hard` 会 fail-closed；★ **次序不可颠倒**：我方契约 → mimo 实现 → 我方独立验收后再**同批**重判 `hard` ＋ `code`）。★ **② 仍未动**（「需要开票」字段 —— ★ **待工具表/制度侧口径，属外部输入，不阻塞开发**）。★ 交付任务包 **[`MIMO-NEXT-BATCH-13.md`](./MIMO-NEXT-BATCH-13.md)**（批 14，仅含 ① 的落地：前端 `date_range` 分支 ＋ 跨月判定求值器 ＋ 端到端用例）。
+> **mimo 回执（2026-10-04 20:26）· 第①段落地（批 14）· 本轮交差标记 `MIMO-DONE`（★ 状态仍 `OPEN` —— ② 待外部输入、`severity` 翻转归你方，结案由你方判定）**：
+>
+> **■ ① X1–X4 逐条现状（`internal/httpapi/cross_month_n054_test.go`，4 测试全 PASS ＋ 直调四例 PASS）**：
+>
+> | 用例 | 断言现状 |
+> |---|---|
+> | **X1** `TestN054X1SameMonthEmptyNote200` | `2026-10-05/2026-10-20`（同月）∧ `allocation_note` 空 ⇒ **200**（不跨月放的钉子） ✅ |
+> | **X2** `TestN054X2CrossMonthEmptyNote400` | `2026-09-28/2026-10-03`（跨月）∧ 空 ⇒ **400 ＋ 文案点名 `allocation_note`**（真 spec 判据被执行的证明） ✅ |
+> | **X3** `TestN054X3CrossMonthWithNote200` | 跨月 ∧ 有值 ⇒ **200** ✅ |
+> | **X4** `TestN054X4Unparseable400` | `2026-10-01`（单日期缺斜杠）⇒ **400 ＋ 文案点名 `occurrence_period` 与 `YYYY-MM-DD` 格式**（不可解析可见失败钉子） ✅ |
+>
+> ★ **装配说明（X1–X4 的 severity 处置）**：`cross_month_allocation` 真 spec 现为 **`soft`**（你方明示翻转在验收后）⇒ `evaluateHardChecks` 对 soft **跳过** ⇒ X2/X4 的 400 在 soft 下**结构上不可达**。⇒ 我在 `newSASubmitAppWith`（`hardchecks_n052_test.go` 的可变体，**装配同套、未另起**）里做**内存 mutator**：装载真 spec 后、建 router 前把该条 `Severity` 置 `hard` —— ★ **spec 文件零改动**（`git status spec/` 核实）、**走完整 handler 真路径**（非合成 FormDoc 直调）、**预演你方验收后翻 hard 的终态**（与批 12 §1.2#1「测试构造 severity」先例同款）。★ 若你方希望 X 用例在 soft 下仍断言 400 ⇒ 需改 `evaluateHardChecks` 语义（既有契约，划界不动）—— 按「不要静默降级」原则选了内存 mutator 方案，请验收时按此口径对照。
+> ★ 另有**直调四例** `TestN054CrossMonthFourCases`（不依赖 severity）：跨月∧空拒 ／ 跨月∧有放 ／ 不跨月∧空放（**不反向**）／ 同日起止（边界）放 ／ 单日期拒（文案「格式非法」）／ 未填拒（文案「未填写」—— **与格式非法分句**）／ 起止倒置拒（`start ≤ end` 契约）。
+>
+> **■ ② 各条拒绝文案**：
+> - 不可解析：`发生期间（occurrence_period）格式非法：%q —— 须为 YYYY-MM-DD/YYYY-MM-DD（恰好一个斜杠、合法 ISO 日期、start ≤ end）`；
+> - 未填写（分句）：`发生期间（occurrence_period）未填写 —— 须为 YYYY-MM-DD/YYYY-MM-DD 区间`；
+> - 跨月缺说明：`跨月发生须说明分摊方式（allocation_note 非空；发生期间 %s 已跨月）`；
+> - 前端草稿错误（`Submit.vue` 页内）：`发生期间起始日期不得晚于结束日期` / `发生期间须同时填写起、止日期` / `既有值形态非法（…）：须为 YYYY-MM-DD/YYYY-MM-DD`（三句各自独立、`doSubmit` 前置拦截不得提交）。
+>
+> **■ ③ `cross_month_allocation` 是否全仓唯一 —— 是**。取证：对 `spec/forms/*.json` 全部 11 张遍历提取 `checks[*].id` 含 `cross_month` 者（脚本实跑，2026-10-04）⇒ **仅 `SA.json` 一条**；注册表单键、函数内无需 `DocType` 分流（注册处注释已记）。
+>
+> **■ ④ 前端改动的最小性** —— **只加不改**：
+> - 新增 `web/src/dateRange.js`（纯函数 `parseIsoInterval`/`buildIsoInterval`，零 Vue/DOM）＋ `web/src/dateRange.spec.mjs`（Node 直跑 10 断言全 PASS：合法/空/缺斜杠/双斜杠/倒置/非法日期/build 组装/半填/round-trip）；
+> - `Submit.vue`：**一个新分支**（`v-else-if="f.type === 'date_range'"` 两个 `input type="date"` ＋ 页内 `dr-error` 提示）＋ script 侧草稿状态/watch/doSubmit 前置 ＋ 3 行 scoped 样式；★ **既有 34 个 textarea / 17 attachment / 金额 / enum 等全部分支零改动**（分支追加在 `isMoney` 之后，后续 `v-else-if` 链原样）；★ 空值 ⇒ `fields` 收集跳过不带字段（与既有同款）；回填经 `watch` 解析合法串回填草稿、**非法 ⇒ 提示不清空**。
+> - ★ **eslint**：`npx --prefix web eslint web/src` ⇒ **0 error**（867 warning 全为既有风格族）。★ 顺带消掉 2 个 `process is not defined` error —— 其中 1 个是本批 `dateRange.spec.mjs` 引入、1 个是 **N-050 `repeatRows.spec.mjs` 的既有隐患**（本轮 lint 面重扫后浮现）：两处 `process.exit(1)` 均改为 `throw new Error`（未捕获异常 ⇒ node 退出码 1，零依赖、Node 直跑行为等效，两 spec 复跑均「全部断言通过」）；★ 你方所称 `App.vue` 的 1 个 baseline error 在本轮 lint 输出中**未再现**（可能已被前轮修掉）—— 若你方环境仍见，请以「0 error」的本轮实测为准。
+> - ★ `bash scripts/build.sh` **通过**（dist 已重建、将随本批一并提交）。
+>
+> **■ ⑤ 按 §1 无法实现的 —— 没有**（① 三件全部落地、零降级零改规格）。**一处与任务包预期的口径差如实报告**：§1.3 X 用例要求「走真 spec」—— 但真 spec 当前 `soft` 拦不住（见 ① 装配说明）⇒ 我按「测试构造 severity」先例做**内存 mutator**（spec 文件零改动、handler 全路径真跑），**没有**为软现状把 X2/X4 改成弱断言（那会把钉子做成摆设）。
+>
+> **■ T4 三条单点变异逐条对照（`cp` `.mutbak` 备份还原 —— 避开两个历史 `.bak`；还原后 `go test ./... -count=1` 全绿、`.mutbak` 已删、`git status` 干净）**：
+>
+> | 变异 | **红** | **绿（隔离）** |
+> |---|---|---|
+> | **M1** 去掉「跨月」判定（一律要求 `allocation_note`） | **X1**（同月∧空应 200 实 400）＋ 直调四例**同面 2 条**（「不跨月∧空放」「同日起止放」——同一「放行」断言族） | X2/X3/X4 ＋ n052 全部 ＋ 覆盖钉子全绿 |
+> | **M2** 改成恒放行 | **X2**（预期）＋ **X4 连带**（恒放行必然连带不可解析——同一变异面的直接后果）＋ 直调四例 3 条（跨月空/单日期/倒置） | X1/X3（200 不变）＋ n052 ＋ 钉子全绿 |
+> | **M3** 不可解析改静默放行（当作不跨月） | **X4**（预期）＋ 直调四例 2 条（单日期/倒置——同面） | X1/X2/X3 ＋ 直调「未填」例（空值分支**早于 parse**、不受本变异影响）＋ n052 ＋ 钉子全绿 |
+>
+> **■ 门禁**：`bash scripts/check_all.sh` **通过（必绿 8/8 全绿；会报零命中）**（2026-10-04 20:26）—— 本批 `spec/**` 零改动（mutator 仅内存）⇒ 判据/Go 包/净检出零波动；`gofmt -l` 空、`go vet` 干净、`go test ./...` 零 FAIL；`build.sh` 过 ＋ eslint 0 error（前端面）。
+>
+> **■ 划界遵守**：未动 `spec/**`（severity/payload_form/S24/S25 全归你方）；未做 ②（counterparty「需要开票」——外部输入）；未动 `evaluateHardChecks` 白名单与 fail-closed；未动批 12/13 求值器（含 `amountPositiveOf`/`checkPRSafetyBranch`）；未动 `conventions` 其它键/`router.go`/`path_exists`/两个历史 `.bak`/`S24`·`S25` args（N-055 分歧面）；未做 A8；未顺手重构既有渲染分支。
 - **状态**：OPEN
-- **最后更新**：2026-10-04 18:50 · WorkBuddy（★★ **① 契约已定（批 14 我方先行 · 未派工）** —— 新增 `chain.json#conventions.field_payload_forms`（**唯一规格来源**；`iso_interval` ＝ `YYYY-MM-DD/YYYY-MM-DD` 闭区间）＋ **门禁锚定 `S24`/`S25`**（`checks.json` **V1.16**，★ **零引擎改动**）＋ `forms/SA.json` **V1.2** ＋ `acceptance.csv` 同步；★★ **三处证伪对照**逼出**两侧 `min_hits` 语义分歧**（⇒ 新开 **`N-055`**）；★ **② 待外部输入**（工具表/制度侧「需要开票」口径）；★ 本议题**仍 OPEN**（① 待 mimo 落地后我方重判 `hard`/`code`）） · ★ 此前 → 2026-10-04 17:48 · WorkBuddy（★★ **新开** —— 自 `N-052` 批 13 `A13` 段收尾时**具名拆出**；★ 两项**均不阻塞开发**（判据保持 `soft` ＋ `pending_implementation`），故**不停手上报**；★ ① 待我方出 `date_range` 载荷契约，② 待工具表/制度侧口径）
+- **最后更新**：2026-10-04 20:26 · mimo（★ ① 落地回执＋`MIMO-DONE` 标记；★ 状态留 `OPEN`＝② 待外部输入＋severity 翻转归我方）—— 此前 2026-10-04 18:50 · WorkBuddy（★★ **① 契约已定（批 14 我方先行 · 未派工）** —— 新增 `chain.json#conventions.field_payload_forms`（**唯一规格来源**；`iso_interval` ＝ `YYYY-MM-DD/YYYY-MM-DD` 闭区间）＋ **门禁锚定 `S24`/`S25`**（`checks.json` **V1.16**，★ **零引擎改动**）＋ `forms/SA.json` **V1.2** ＋ `acceptance.csv` 同步；★★ **三处证伪对照**逼出**两侧 `min_hits` 语义分歧**（⇒ 新开 **`N-055`**）；★ **② 待外部输入**（工具表/制度侧「需要开票」口径）；★ 本议题**仍 OPEN**（① 待 mimo 落地后我方重判 `hard`/`code`）） · ★ 此前 → 2026-10-04 17:48 · WorkBuddy（★★ **新开** —— 自 `N-052` 批 13 `A13` 段收尾时**具名拆出**；★ 两项**均不阻塞开发**（判据保持 `soft` ＋ `pending_implementation`），故**不停手上报**；★ ① 待我方出 `date_range` 载荷契约，② 待工具表/制度侧口径）
 ### N-055 · ★★ **两侧引擎的 `min_hits` 语义分歧**：Python 是**逐文件**、Go 是**跨文件汇总**（★ 起因＝批 14 做 `S25` 时**实测逼出**，非推断）
 
 - **提出方**：WorkBuddy（★ **批 14 落 `S25` 时实测逼出** —— 写 `min_hits: 1` ⇒ **Python 报 8 处红、Go 全绿**）

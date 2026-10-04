@@ -53,6 +53,6 @@ ok(l3.first === null && l3.keys.length === 0, 'locateFormErrors 非数组 ⇒ {f
 
 if (failed > 0) {
   console.log(`\n${failed} 个断言失败`)
-  process.exit(1)
+  throw new Error(`${failed} 个断言失败`) // 未捕获异常 ⇒ node 退出码 1（零依赖、无 process 全局假设）
 }
 console.log('\n全部断言通过')

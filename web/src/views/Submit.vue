@@ -14,6 +14,8 @@ import {
 } from '../api'
 // N-050：重复段纯函数（不依赖 Vue/DOM —— Node 直跑验收）
 import { rowEditableFieldsOf, parseBulkRows, locateFormErrors } from '../repeatRows'
+// N-054 ①：date_range（iso_interval 载荷契约）纯函数
+import { parseIsoInterval, buildIsoInterval } from '../dateRange'
 
 const props = defineProps({ docType: { type: String, default: '' } })
 const route = useRoute()
@@ -294,6 +296,41 @@ function yuanToCents(v) {
   if (!Number.isFinite(n)) return null
   return Math.round(n * 100)
 }
+// ---- N-054 ① · date_range（iso_interval：YYYY-MM-DD/YYYY-MM-DD）----
+// 两个日期输入草稿 ⇒ 组装写回 fields（实时 ⇒ missingRequired/doSubmit 收集照旧）；
+// 空 ⇒ fields 不带（收集处跳过）；起 > 止 ⇒ 可见报错、不得提交；既有值非法 ⇒ 提示不清空。
+const dateRangeDrafts = reactive({}) // name → { start, end }
+const dateRangeErrors = reactive({}) // name → 人读错误（''＝无）
+
+function dateRangeFields() {
+  return visibleFields.value.filter((f) => f.type === 'date_range')
+}
+function syncDraftFromField(name) {
+  const r = parseIsoInterval(fields[name] || '')
+  dateRangeDrafts[name] = { start: r.start, end: r.end }
+  dateRangeErrors[name] = r.error // 非法 ⇒ 提示（不清空 fields —— 服务端结构化校验按原值判）
+}
+function onDateRangePick(name, side, ev) {
+  if (!dateRangeDrafts[name]) dateRangeDrafts[name] = { start: '', end: '' }
+  dateRangeDrafts[name][side] = ev && ev.target ? ev.target.value : ''
+  const d = dateRangeDrafts[name]
+  const r = buildIsoInterval(d.start, d.end)
+  if (r.error) {
+    dateRangeErrors[name] = r.error
+    return // 不得提交（doSubmit 前置检查同款）
+  }
+  dateRangeErrors[name] = ''
+  fields[name] = r.value // 空串 ⇒ 收集时不带该字段
+}
+// 外部改 fields（prefill/回填/换单据）⇒ 同步草稿；用户改草稿写回 ⇒ parse 幂等回同值。
+watch(
+  () => dateRangeFields().map((f) => `${f.name}=${fields[f.name] || ''}`),
+  () => {
+    for (const f of dateRangeFields()) syncDraftFromField(f.name)
+  },
+  { immediate: true },
+)
+
 function resetForm() {
   for (const k of Object.keys(fields)) delete fields[k]
   initRepeatingData() // ★ N-040：换单据重建明细行组（repeatingData 按当前表单 schema 初始化）
@@ -352,6 +389,13 @@ async function doSubmit() {
   err.value = ''
   msg.value = ''
   clearFormErrors() // 下一次提交 ⇒ 清除陈旧高亮
+  // N-054 ①：date_range 草稿错误（起>止 / 只填一半 / 既有值形态非法）⇒ 可见报错、不得提交
+  for (const n of Object.keys(dateRangeErrors)) {
+    if (dateRangeErrors[n]) {
+      err.value = dateRangeErrors[n]
+      return
+    }
+  }
   if (!curForm.value) { err.value = '请先选择单据类型'; return }
   if (!approvalCode.value) {
     err.value = `单据类型 ${curDocType.value} 未配置 approval_code（请联系系统管理员执行配置映射导入）`
@@ -550,6 +594,25 @@ watch(() => [curDocType.value, fields.amount_cents, fields.usage_category_l1, fi
               step="0.01"
               placeholder="元（提交按分换算）"
             >
+
+            <!-- date_range（N-054 ①：iso_interval —— 两个日期输入，提交组装
+                 YYYY-MM-DD/YYYY-MM-DD；不引入新依赖） -->
+            <span v-else-if="f.type === 'date_range'" class="date-range">
+              <input
+                class="inp"
+                type="date"
+                :value="(dateRangeDrafts[f.name] || {}).start || ''"
+                @change="onDateRangePick(f.name, 'start', $event)"
+              >
+              <span class="dr-sep">至</span>
+              <input
+                class="inp"
+                type="date"
+                :value="(dateRangeDrafts[f.name] || {}).end || ''"
+                @change="onDateRangePick(f.name, 'end', $event)"
+              >
+              <em v-if="dateRangeErrors[f.name]" class="dr-error">{{ dateRangeErrors[f.name] }}</em>
+            </span>
 
             <!-- 用途分类一级 -->
             <select
@@ -822,4 +885,9 @@ watch(() => [curDocType.value, fields.amount_cents, fields.usage_category_l1, fi
 .bulk-paste { margin: 6px 0 10px; }
 .bulk-textarea { width: 100%; box-sizing: border-box; font-family: ui-monospace, monospace; font-size: 13px; padding: 6px 8px; border: 1px solid #d0d7de; border-radius: 6px; }
 .bulk-error { color: #cf222e; font-size: 13px; margin-top: 4px; }
+
+/* ---- N-054 ① · date_range（iso_interval）---- */
+.date-range { display: flex; align-items: center; gap: 6px; flex: 1; flex-wrap: wrap; }
+.dr-sep { color: #57606a; font-size: 13px; }
+.dr-error { color: #cf222e; font-size: 12px; font-style: normal; flex-basis: 100%; }
 </style>

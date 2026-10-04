@@ -81,6 +81,13 @@ func TestN052SafetyBranchRegisteredInEvaluate(t *testing.T) {
 // ---- §1.2 SA 提交端到端（handler 级 · 真 spec）----
 
 func newSASubmitApp(t *testing.T) (*echo.Echo, *store.DB, *access.Authenticator) {
+	return newSASubmitAppWith(t, nil)
+}
+
+// newSASubmitAppWith 可变体：mutate 在装载后、建 router 前执行 —— N-054 ① 用它把
+// cross_month_allocation 的 severity 在**内存**里置 hard（spec 文件零改动），预演我方
+// 验收后翻 hard 的终态（soft 不经 evaluateHardChecks ⇒ 拦截例在 handler 级结构上不可达）。
+func newSASubmitAppWith(t *testing.T, mutate func(*specload.Bundle)) (*echo.Echo, *store.DB, *access.Authenticator) {
 	t.Helper()
 	db := storetest.NewDB(t)
 	ctx := context.Background()
@@ -120,6 +127,9 @@ func newSASubmitApp(t *testing.T) (*echo.Echo, *store.DB, *access.Authenticator)
 	bundle, err := specload.Load(specfs.FS)
 	if err != nil {
 		t.Fatal(err)
+	}
+	if mutate != nil {
+		mutate(bundle)
 	}
 	metrics := observ.NewMetrics()
 	env := &config.Env{DevMode: true, InternalToken: testInternalToken, RunEnv: "test"}
