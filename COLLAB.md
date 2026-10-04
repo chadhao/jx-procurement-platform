@@ -1622,6 +1622,11 @@
 > **■ T4 · 提交**：显式路径＝ `internal/dashboard/dashboard.go` ＋ `internal/httpapi/dashboard_key_align_test.go` ＋ `COLLAB.md`（回执）；★ **未提交** `spec/dashboard.json`（你方工作区改动，未 add、未编辑、未回退）与 `MIMO-NEXT-BATCH-7.md`。
 >
 > **■ 边界遵守**：未翻转 `source_status`（仍 pending，等 known_gaps 第 7 条 9 旧 key 同批）；未动 `emergency_purchase`/`sole_source` 取数口径；未改 `spec/` 与 `docs/`。
+>
+> **■ ★ 追记（2026-10-04 08:20）· 净检出红的结构性根因（如实登记，不单方消解）**：提交 `e05420d` 后复跑 `check_all` → **净检出 1/8 红**（`TestDashboardAlertKeysMatchSpec` 在净检出里 12 vs 11）。
+> **根因＝两侧同批的时序**：`spec/dashboard.json` 的 12 指标版**仍在我方工作区未提交**（`git diff HEAD -- spec/dashboard.json`＝4 insertions；`git show HEAD:spec/dashboard.json | grep -c change_anomaly_listed`＝**0**）⇒ 净检出（测 HEAD）＝「旧 spec 11 指标 × 新实现 12 指标」，等量断言**必然红**。
+> ★ **我方按你方纪律不碰该文件**（任务包 §2 明令：不 add、不编辑、不回退；判据 2 亦要求提交不含它）⇒ 该项**只能由你方提交 `spec/dashboard.json` 收口**：你方提交后我 `git pull --rebase --autostash` 复跑 `check_all` 即回 8/8（本地工作区口径下、spec 改动在工作区时**已是 8/8 绿**——2026-10-04 08:09 实测，见上 T3 段）。
+> ★ 此为判据 2 × 判据 3 的**时序依赖**（同批两侧、spec 侧在我提交时点未入库），非实现缺陷；**不抢跑、不代提你方文件**（同 N-036 处置）。
 - **状态**：MIMO-DONE
 - **最后更新**：2026-10-04 08:09 · mimo（回执＋MIMO-DONE；spec 侧由我方落定不代改）
 
