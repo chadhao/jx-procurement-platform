@@ -18,6 +18,7 @@
     "money_note": "金额一律用「分」（整数）。1000 元 = 100000；5000 元 = 500000。禁止用浮点元。",
     "amount_field": "单笔含税总额（对应 PR 的「预估总金额」计算列）",
     "tier_of": "tier = tier_of(amount_cents)：见 thresholds.purchase.bands",
+    "tier_source": "★★ **`routes.*.nodes[*].tier_expand.tier_source` 的取值约定**（2026-10-04 补登记；`N-044`/`N-045`）—— ★ 此前**无约定**（两个取值散落在节点里、靠实现注释解释）。三个受控取值：① `amount_cents` ＝ **本单金额直接定档**（`tier_of(Facts.AmountCents)`；缺金额 ⇒ **可见失败**）；② `r15_max` ＝ **本单内部就高**（`tier_of(max(change_amount_cents, original_contract_amount_cents))`，`R-15` 口径；★ **单边可得 ⇒ 取可得侧**，两值皆缺 ⇒ 退 `Facts.AmountCents`，仍缺 ⇒ 可见失败 —— 这是 `N-044` 任务包 T2 授权的「preview 展示退化」）；③ `emergency_max` ＝ **跨单就高**（`tier_of(max(补录金额, 关联 PR 金额))`，`R-31` 口径 —— 用户 2026-10-04 定「就高」；★★ 与 ② 的**关键差别＝两值必须齐全**：缺任一 ⇒ **可见失败**，★ 因为 label 是「**不得降档**」，单边取值可能低于应属档位 ⇒ 不得静默）。★ 三者的语义**只在 `spec` 定义**；实现侧不得出现档位 id / 阈值字面量（同 `N-044`「代码零角色字面量」范式）。★ 新增取值必须同时补进本键（否则等于没有约定）。",
     "boundary_semantics": {
       "operator": "[lower, upper]  闭区间；< 为严格小于，> 为严格大于",
       "verified": [
@@ -692,6 +693,12 @@
       "when": "is_emergency == true",
       "env_count": 6,
       "payment": "补录后按对应档位付款",
+      "rules": {
+        "tier_formula": "tier = tier_of(max(补录金额, 关联 PR 金额))",
+        "tier_formula_label": "★ 档位就高（不得降档）",
+        "tier_formula_reason": "★★ 用户 2026-10-04 口径（裁定 `R-31`，「就高」）：「不得降档」是**单调上界**约束 ⇒ 取两个来源的**就高** —— 补录金额（本单实际发生金额 ＝ `Facts.AmountCents`）与 关联 PR 金额（其所属采购申请的金额 ＝ `Facts.RelatedPRAmountCents`）。★ 单边取值**可能低于应属档位** ⇒ 本条的 `emergency_max` **两值必须齐全**（缺任一 ⇒ 可见失败），与 `R-15` 的 `r15_max` 单边退化**刻意不同**（后者是 PC preview 期的展示退化，本节无此授权）。",
+        "dedupe_note": "★ 节点去重（见 `nodes[id=backfill_approval].tier_expand.exclude_roles`）：`supervisor`（`seq2` 主管领导紧急认定）与 `ops_supervisor`（`seq6` 核销闭合）**已各有一个签字点** ⇒ 档位链展开时剔除，落地用户 2026-10-04 口径「重复的签批人只签一次」。★ 该口径属**次级细节**（不改变档位层级），已登记待用户复核。"
+      },
       "structure": "★ **先支出、后补办、核销闭合**（双层结构）",
       "nodes": [
         {
@@ -729,8 +736,16 @@
           "seq": 5,
           "id": "backfill_approval",
           "label": "按对应档位补审批（★ **不得降档**）",
-          "actor": "按档位审批人",
-          "required": true
+          "required": true,
+          "tier_expand": {
+            "kind": "approval_chain",
+            "tier_source": "emergency_max",
+            "exclude_roles": [
+              "supervisor",
+              "ops_supervisor"
+            ],
+            "note": "★★ N-045（2026-10-04）／裁定 R-31：本键**取代**同节点的描述性 `actor`「按档位审批人」（既非 `approverRoles`、也非 `isActionActor` ⇒ 落 `appendAction` ⇒ 该 `required: true` 节点**不生成审批任务**，即「惰性必需节点」；★ 因不含 `→`，`S19` 窄版对它静默）。★★ 档位取值源 ＝ **用户 2026-10-04 口径「就高」**：`tier_of(max(补录金额, 关联 PR 金额))`（`tier_source=emergency_max`，两值**必须齐全**：见 `conventions.tier_source` ③）。★ 与 `N-044` 的两处**刻意不同**：① 取值源**不是**本单金额（label 是「不得降档」⇒ 单边取值可能低于应属档位 ⇒ 缺任一值即**可见失败**，不退化）；② `exclude_roles` **非空** —— 按用户 2026-10-04 口径「重复的签批人只签一次」：`supervisor` 已在 `seq2`（主管领导紧急认定）签、`ops_supervisor` 已在 `seq6`（核销闭合）签 ⇒ 本节点只补**新增层级**（采一档 ⇒ 展开为空；采二/三档 ⇒ 补 `project_general_manager`）。★ 该去重口径属**次级细节**、已登记待用户复核（不影响「不得降档」的档位语义）。"
+          }
         },
         {
           "seq": 6,
