@@ -863,15 +863,15 @@ def _self_audit_cid_literals():
 
 
 def _institution_anchors_counts():
-    """[META] 制度锚点索引（`spec/institution-anchors.json`）的**计数面**自审 —— `N-049` ①。
+    """[META] 制度锚点索引（`spec/institution-anchors.json`）的**计数面 ＋ 指针面**自审 —— `N-049` ①。
 
-    ★ `citation_count` / `citation_by_file` 是**纯机械可重算**的量（与「指针优先级选择」无关）；
-      而该索引原本由**仓库外**的一次性原型脚本生成（原 `known_gaps.generator_outside_repo`）
-      ⇒ 留下「改了 spec、索引未重生 ⇒ 索引失真」的窗口。★ `S20`（指针可解析）抓不住**新引用**。
-    ★ 口径的**唯一来源**＝`scripts/gen_institution_anchors.py` —— 本函数只做比对，
+    ★ 该索引原本由**仓库外**的一次性原型脚本生成（原 `known_gaps.generator_outside_repo`）
+      ⇒ 留下「改了 spec、索引未重生 ⇒ 索引失真」的窗口。★ `S20`（指针可解析）**抓不住**：
+      ① 「有新的引用没被索引」（计数面）；② 「已收录条款的**指针列表**被漏更」（指针面）。
+    ★ 口径的**唯一来源**＝`scripts/gen_institution_anchors.py` —— 本函数只调它的 `audit()`，
       **不重复实现口径**（否则又会出现「同一判定两条来源」，见本文件头注第 7 例）。
     ★ 缺口反证（本项落盘时实测）：删掉本调用 ⇒ 同一处索引失真（`spec/openapi.json` 的 2 处引用）
-      **静默放行**；装回 ⇒ 报出 3 处。
+      **静默放行**；装回 ⇒ 报出 3 处。★ 指针面同理（见 `scripts/_probe_n049.py` 的 `E4`）。
     """
     here = os.path.dirname(os.path.abspath(__file__))
     if here not in sys.path:
@@ -881,15 +881,9 @@ def _institution_anchors_counts():
     except Exception as e:                       # fail-closed：导入不了即视为该面**未受保护**
         return ["[META] 无法导入 `scripts/gen_institution_anchors.py` ⇒ 索引失真的窗口**未受保护**：%s" % e]
     try:
-        counts, by_file = gen.scan(ROOT)
-        idx = gen.load_index(ROOT)
+        return gen.audit(ROOT)
     except Exception as e:
-        return ["[META] 锚点索引计数重算失败（口径见 `scripts/gen_institution_anchors.py` 头注）：%s" % e]
-    return [
-        "[META] 制度锚点索引**计数失真** ⇒ %s"
-        "（复现：`python scripts/gen_institution_anchors.py --check`）" % p
-        for p in gen.diff(idx, counts, by_file)
-    ]
+        return ["[META] 制度锚点索引重算失败（口径见 `scripts/gen_institution_anchors.py` 头注）：%s" % e]
 
 
 def check(cl_path):
@@ -926,7 +920,7 @@ def check(cl_path):
     # ★ 源码自审：判据 ID 不得硬编码
     problems += _self_audit_cid_literals()
 
-    # ★ 台账类自审（`[META]`，非 `checks.json` 判据）：制度锚点索引的**计数面**不得失真
+    # ★ 台账类自审（`[META]`，非 `checks.json` 判据）：制度锚点索引的**计数面 ＋ 指针面**不得失真
     problems += _institution_anchors_counts()
 
 

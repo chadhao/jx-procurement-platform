@@ -7,8 +7,35 @@ import "testing"
 func TestDashboardProbes(t *testing.T) {
 	runProbes(t, []probe{
 		{
-			name:   "D1-缺看板16",
+			// ★★ 2026-10-05（`N-049` ① 指针面）：本探针原删除**看板 16**，而自该批起
+			//    `spec/institution-anchors.json` 收录了指向 `dashboards[id=16].indicators[...]`
+			//    的锚点 ⇒ `validate()`（`[S20]` 指针可解析）会**先行拦下**、`loadFiles` 在
+			//    dashboard 阶段之前即返回 ⇒ `[D1]` 不再被触达。
+			//    ⇒ 改删**未被任何锚点覆盖**的看板 13（`[D1]` 的「缺看板」分支对 13/14/15/16
+			//    同一段代码，鉴别力不变），使本探针**只钉 `[D1]`**、不被无关判据抢占；
+			//    「删看板 16」这一组合另立下一条探针，把该交互变成**受测事实**。
+			name:   "D1-缺看板13",
 			expect: "[D1]",
+			mutate: func(t *testing.T, files map[string][]byte) {
+				mutateJSON(t, files, "spec/dashboard.json", func(m map[string]any) {
+					boards, _ := m["dashboards"].([]any)
+					kept := make([]any, 0, len(boards))
+					for _, b := range boards {
+						bm, _ := b.(map[string]any)
+						if id, _ := bm["id"].(float64); int(id) == 13 {
+							continue
+						}
+						kept = append(kept, b)
+					}
+					m["dashboards"] = kept
+				})
+			},
+		},
+		{
+			// ★ 同上：删**看板 16** 如今先撞 `[S20]`（锚点索引覆盖其 2 个指标 note）——
+			//   本探针把该事实钉住：锚点索引对「看板 16 被删」这一篡改**同样在承重**。
+			name:   "D1-缺看板16（锚点索引 [S20] 先行拦下）",
+			expect: "[S20]",
 			mutate: func(t *testing.T, files map[string][]byte) {
 				mutateJSON(t, files, "spec/dashboard.json", func(m map[string]any) {
 					boards, _ := m["dashboards"].([]any)
