@@ -10,7 +10,16 @@ scripts/_probe_n062j3.py —— 常驻探针：`N-062` 族 `J3` 的**规格先�
    并附**缺口存在性反证**（把修复前的形态塞回内存副本 ⇒ 对应断言必须报红）。
 
 ★ 纪律：**只改内存副本**（`copy.deepcopy`），**绝不落盘** ——
-   收尾核对两个真源文件的 `sha256` 与探针启动时逐字节一致。
+   收尾核对**五个**真源文件的 `sha256` 与探针启动时逐字节一致。
+
+★ 本批所钉（**五条声明**）：
+   ① `conventions.node_task_generation`（含 **批 42 补登记的「同族具名待定」段**：
+      `anti_split_check` 同为动作型节点、**刻意不声明** `generates_task` ⇒ 其可达性
+      取决于「通用求值器」；★ **「有没有人的待办」≠「流程会不会经过该节点」**）
+   ② `routes.purchase_tier1.nodes[5].generates_task = true`
+   ③ `conventions.checks_when` 的两处承载口径
+   ④ `forms/SA.json` 的 `actual_cents` ＋差额字段计算口径
+   ⑤ `forms/BA.json#anti_split_before_disburse` 的 `hard ∧ approval(anti_split_check)`（**派生、不写死**）
 
 跑法：python scripts/_probe_n062j3.py   （退出码 0 = 全通过；1 = 有失败项）
 """
@@ -37,6 +46,7 @@ def load(rel):
 
 CHAIN = "spec/chain.json"
 SA = "spec/forms/SA.json"
+BA = "spec/forms/BA.json"
 CHECKS = "spec/checks.json"
 README = "spec/README.md"
 
@@ -55,10 +65,11 @@ def chk(cond, label, detail=""):
 
 
 def main():
-    before = {p: sha(os.path.join(ROOT, p)) for p in (CHAIN, SA, CHECKS, README)}
+    before = {p: sha(os.path.join(ROOT, p)) for p in (CHAIN, SA, BA, CHECKS, README)}
 
     chain = load(CHAIN)
     sa = load(SA)
+    ba = load(BA)
     checks = load(CHECKS)
 
     conv = chain.get("conventions") or {}
@@ -79,6 +90,25 @@ def main():
     sp = byfreed.get("self_purchase", {})
     chk("generates_task" not in sp, "2c self_purchase 具名保留（未声明 generates_task）")
 
+    # ---- 2d–2f. 同族具名待定（批 42 补登记）：anti_split_check ----
+    #   ★ 我方自查发现（非 mimo 上报）：`actor=system` 的节点同样落 `isActionActor`
+    #     ⇒ 同样不生成待办，而 `BA#anti_split_before_disburse`（hard）挂在它的时点上。
+    for token in ("同族具名待定", "anti_split_check", "两个不同的可达性", "通用求值器"):
+        chk(token in ntg, "2d 约定含同族待定关键口径「%s」" % token)
+    asc = byfreed.get("anti_split_check", {})
+    chk(asc.get("actor") == "system" and asc.get("required") is True,
+        "2e anti_split_check 是 actor=system ∧ required=true（同族的判定前提）")
+    chk("generates_task" not in asc,
+        "2f anti_split_check **刻意不声明** generates_task（★ 系统环节没有人的待办入口，"
+        "声明 true 是错的修法）")
+    # ★ 不写死判据名与 when：从 forms/BA.json 实测派生（规格一变本断言自动跟随）
+    ba_checks = {c.get("id"): c for c in (ba.get("checks") or [])}
+    asc_ch = ba_checks.get("anti_split_before_disburse")
+    chk(bool(asc_ch) and asc_ch.get("severity") == "hard"
+        and asc_ch.get("when") == "approval(anti_split_check)",
+        "2g BA#anti_split_before_disburse 实测＝hard ∧ when=approval(anti_split_check)"
+        "（★ 从 forms/BA.json 派生，非写死）")
+
     # ---- 3. 缺口存在性反证 A：摘掉 generates_task ⇒ 2a 必红 ----
     mut = copy.deepcopy(chain)
     for n in mut["routes"]["purchase_tier1"]["nodes"]:
@@ -87,6 +117,14 @@ def main():
     r2 = {n.get("id"): n for n in mut["routes"]["purchase_tier1"]["nodes"]}["return_receipt"]
     chk((r2.get("generates_task") is True) is False,
         "3 反证 A：摘掉 generates_task ⇒ 断言 2a 转红（内存副本，未落盘）")
+
+    # ---- 3b. 缺口存在性反证 B：摘掉「同族具名待定」段 ⇒ 2d 必红 ----
+    mut_ntg = copy.deepcopy(ntg)
+    idx = mut_ntg.find("同族具名待定")
+    mut_ntg = mut_ntg[:idx] if idx >= 0 else mut_ntg
+    chk("同族具名待定" not in mut_ntg,
+        "3b 反证 B：摘掉「同族具名待定」段 ⇒ 断言 2d 转红（★ 证明该段在承重，"
+        "不是可有可无的散文）")
 
     # ---- 4. checks_when 的两处承载口径 ----
     cw = conv.get("checks_when", "")
@@ -136,7 +174,7 @@ def main():
 
     # ---- 9. 收尾：本探针只改内存副本，真源逐字节未变 ----
     after = {p: sha(os.path.join(ROOT, p)) for p in before}
-    chk(before == after, "9 真源 4 文件 sha256 逐字节未变（探针未落盘）")
+    chk(before == after, "9 真源 5 文件 sha256 逐字节未变（探针未落盘）")
 
     print()
     print("合计：通过 %d / 失败 %d" % (oks, len(fails)))
