@@ -3,7 +3,7 @@
   "label": "费用事前申请单",
   "prefix": "SA",
   "number_format": "SA-YYMM-####",
-  "version": "1.4",
+  "version": "1.5",
   "date": "2026-10-06",
   "generated_by": "WorkBuddy",
   "sources": {
@@ -363,7 +363,7 @@
     {
       "gap": "`settlement_backfill`（结算补录段）的**入口未建** ⇒ `SA#actual_not_exceed` / `SA#invoice_must_link` 两条 `hard` 判据的时点永不到来",
       "status": "★★ **规格已齐（批 42）· 待实现**",
-      "note": "★ 原先的两个缺口：① **无「实际金额」输入字段** —— ✅ **已由批 42 补齐**（`actual_cents` 入库）；② **无补录入口** —— ⏳ 待实现。★ 入口最小契约已由批 42 写入 `spec/chain.json#conventions.checks_when`（第 ② 条）：`POST /api/approval/{biz_no}/backfill`，白名单 ＝ 该段 `source=user` 字段，落 `ext_json`，写后执行 `when=backfill(<section_id>)` 的判据。★★ **契约行（`docs/05-API.md`）必须与路由实现同批落** —— 否则当场造出「文档声明了、路由不存在」（`C9` / `S21`–`S23`）。★ 交办包：`MIMO-NEXT-BATCH-26.md`。"
+      "note": "★ 原先的两个缺口：① **无「实际金额」输入字段** —— ✅ **已由批 42 补齐**（`actual_cents` 入库）；② **无补录入口** —— ⏳ 待实现。★ 入口最小契约已由批 42 写入 `spec/chain.json#conventions.checks_when`（第 ② 条）：`POST /api/approval/{biz_no}/backfill`，白名单 ＝ 该段 `source=user` 字段，落 `ext_json`，写后执行 `when=backfill(<section_id>)` 的判据。★★ **契约行（`docs/05-API.md`）必须与路由实现同批落** —— 否则当场造出「文档声明了、路由不存在」（`C9` / `S21`–`S23`）。★ **交办包（批 44 据实订正）**：`MIMO-NEXT-BATCH-27.md` —— ★ **原写 `MIMO-NEXT-BATCH-26.md`，系批 43「拆两包」前的旧指向**（`BA` 侧两条已随包 26 落地并过验收；★ 本段属 `SA` 侧，须与新路由**同批**落）；★ 该旧指向属**账实不符**，本节据实修正。"
     }
   ]
 }

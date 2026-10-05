@@ -12,7 +12,7 @@ scripts/_probe_n062j3.py —— 常驻探针：`N-062` 族 `J3` 的**规格先�
 ★ 纪律：**只改内存副本**（`copy.deepcopy`），**绝不落盘** ——
    收尾核对**五个**真源文件的 `sha256` 与探针启动时逐字节一致。
 
-★ 本批所钉（**五条声明**）：
+★ 本批所钉（**五条声明**；★★ **批 44 更新**：`J3` 的 `BA` 侧**已落地并过验收** ⇒ ①⑤ 措辞由「只声明、未消费」改为「已落地」；★ `anti_split_check` 一行的取证结论 ＝ **「无处执行」**（另开 `N-067`））：
    ① `conventions.node_task_generation`（含 **批 42 补登记的「同族具名待定」段**：
       `anti_split_check` 同为动作型节点、**刻意不声明** `generates_task` ⇒ 其可达性
       取决于「通用求值器」；★ **「有没有人的待办」≠「流程会不会经过该节点」**）
@@ -77,7 +77,7 @@ def main():
     # ---- 1. 新约定：node_task_generation（只声明、未消费）----
     ntg = conv.get("node_task_generation", "")
     chk(bool(ntg), "1a 存在 conventions.node_task_generation")
-    for token in ("generates_task", "isActionActor", "节点是否生成待办", "零变化", "未消费"):
+    for token in ("generates_task", "isActionActor", "节点是否生成待办", "零变化", "GeneratesTask"):
         chk(token in ntg, "1b 约定含关键口径「%s」" % token)
 
     # ---- 2. 显式声明 1 处：purchase_tier1.return_receipt ----
@@ -93,7 +93,7 @@ def main():
     # ---- 2d–2f. 同族具名待定（批 42 补登记）：anti_split_check ----
     #   ★ 我方自查发现（非 mimo 上报）：`actor=system` 的节点同样落 `isActionActor`
     #     ⇒ 同样不生成待办，而 `BA#anti_split_before_disburse`（hard）挂在它的时点上。
-    for token in ("同族具名待定", "anti_split_check", "两个不同的可达性", "通用求值器"):
+    for token in ("同族具名待定", "anti_split_check", "两个不同的可达性", "通用求值器", "无处执行", "N-067"):
         chk(token in ntg, "2d 约定含同族待定关键口径「%s」" % token)
     asc = byfreed.get("anti_split_check", {})
     chk(asc.get("actor") == "system" and asc.get("required") is True,

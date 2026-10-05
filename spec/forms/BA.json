@@ -3,7 +3,7 @@
   "label": "采购报备单",
   "prefix": "BA",
   "number_format": "BA-YYMM-####",
-  "version": "1.1",
+  "version": "1.2",
   "date": "2026-10-04",
   "generated_by": "WorkBuddy",
   "sources": {
@@ -436,8 +436,8 @@
     {
       "id": "receipt_per_purchase",
       "severity": "hard",
-      "carried_by_kind": "pending_wiring",
-      "carried_by": "★ **通路未接**（`N-047` 批 12 定性；`when` 于 `N-052` 批 13 归一为约定写法）：`when=approval(return_receipt)` 指向 `chain.json#routes.purchase_tier1.nodes[5]`（`id=return_receipt`，actor=`applicant`，即「逐笔回交登记」节点）—— ★ 该节点的 handler **尚未接承载** ⇒ 引擎跳过、暂不执行（如实保留 `pending_wiring`）",
+      "carried_by_kind": "code",
+      "carried_by": "★★ **通路已接 ＝ `code`**（2026-10-06 批 44 · `N-062` 族 `J3` 落地段，经我方**独立验收**）：① **时点已可达** —— 节点 `return_receipt` 由 `chain.json#routes.purchase_tier1.nodes[5].generates_task = true` **显式生成待办**（`conventions.node_task_generation`），办理人＝**申请人本人**（`internal/chain/assign.go`）。② **执行体** ＝ `internal/httpapi/handlers_approval_approvalchecks.go#checkReceiptPerPurchase`（经注册表 `approvalCheckFns` 分派；★ **拦在 `Flow.Approve` 之前**，由 `handlers_approval.go#approveReject` 调用）；★ 断言＝`payment_receipt_no` 与 `payment_receipt_file` 均非空，否则 `400` 且**点名本判据**。★★ **我方独立验收（不采信自报）**：门禁 **9/9 ＋ 会报零命中** · 逐行走查 · ★★ **单点变异自做**（求值器改恒不匹配 ⇒ 恰红 `TestBAN065ReturnReceiptTaskAndJudgeE2E`「空凭据应拦：实为 200」＋ `TestApprovalChecksFailClosedUnregisteredN065`；SS/PC 三个既有用例**保持绿**）· `cp` ＋ `sha256sum -c` 还原 OK。★★★ **⚠ 具名缺口（不静默）**：本判据所需两字段**前端无录入入口**（`ApprovalConsole.vue` 全文无 `fields`）⇒ ★ **经 UI 无法提交 ⇒ BA 流程在 UI 上会停在本节点**（后端通路已验通）⇒ 见 `COLLAB.md#N-067`。",
       "when": "approval(return_receipt)",
       "assert": "payment_receipt_no 与 payment_receipt_file 均非空",
       "else": "不得闭合",
