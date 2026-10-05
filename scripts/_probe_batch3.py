@@ -152,7 +152,7 @@ try:
         save(f, o)
 
     # ★ N-026 修复前：真 spec 子测试「不设期望条数」⇒ 改了也不失败。
-    #   N-026 修复后：改为断言「应报 10 条 + 无 L10/L11/L12」⇒ 多一条必须失败。
+    #   N-026 修复后：改为断言「应报 7 条 + 无 L10/L11/L12」（N-060 H3.3③：样例补登 L06 三键 ⇒ 10→7，与 seed_t5_test 同批）⇒ 多一条必须失败。
     probe("P4 改 ledger-mapping 加可写未登记列（N-026 后应失败）", m4)
 
     # P5 · 反向控制：改一个**不该影响**这些测试的东西 ⇒ 必须仍全过
@@ -180,8 +180,8 @@ try:
         have = {(e["ledger_type"], e["field_key"]) for e in cm["ledger_field"]}
         miss = [(lt, lbl) for lt in sorted(want) for lbl in want[lt] if (lt, lbl) not in have]
         readonly_leak = [x for x in miss if x[0] in ("L10", "L11", "L12")]
-        ok = (len(miss) == 10) and not readonly_leak
-        results.append(("P6 真 spec 下 T5 期望＝10 条且无只读台账", ok,
+        ok = (len(miss) == 7) and not readonly_leak
+        results.append(("P6 真 spec 下 T5 期望＝7 条且无只读台账", ok,
                         "实报 %d 条 · 只读台账泄漏 %d 条 → %s" % (
                             len(miss), len(readonly_leak),
                             "；".join("%s/%s" % x for x in miss))))
@@ -209,4 +209,4 @@ if not allok:
     sys.exit(1)
 print("★ 结论：**改 params 文件 ⇒ 行为确实随之变化** ⇒ 参数消费端真的从 spec 读值。")
 print("★ N-026 已修复并**经本探针独立验证**：同一探针在修复前「仍通过」、修复后「如期失败」")
-print("  ⇒ 两处测试现已具备鉴别力（付款路径顺序敏感 + T5 真 spec 断言 10 条且无只读台账）。")
+print("  ⇒ 两处测试现已具备鉴别力（付款路径顺序敏感 + T5 真 spec 断言 7 条且无只读台账）。")
