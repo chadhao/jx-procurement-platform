@@ -202,8 +202,8 @@
         },
         {
           "name": "actual_vs_approved_diff_cents",
-          "carried_by_kind": "pending_implementation",
-          "carried_by": "★ Go 侧零命中：实际与批准差额无生产点（computed）",
+          "carried_by_kind": "accepted_gap",
+          "carried_by": "★★ 具名豁免（N-062 J1 ③ · 本期不做）：补录段（settlement_backfill）**无「实际金额」输入字段** —— `actual_cents` 仅出现在 SA#actual_not_exceed 的 assert 文本、表单无该字段 ⇒ 差额无输入可算（批准额侧＝header amount_cents 有）；★ 增设实际金额字段属**规格域**（本批不改 spec 字段、停手点名待裁）；字段补入后同批改 code 并销项",
           "label": "实际金额与申请额差异",
           "type": "money_cents",
           "required": false,
@@ -274,8 +274,8 @@
     {
       "id": "counterparty_conditional",
       "severity": "soft",
-      "carried_by_kind": "pending_implementation",
-      "carried_by": "★ **当前不可执行**（`N-047` 批 12 定性；`N-052` 批 13 **具名延后**）：承载字段 `counterparty` **已存在**（`user`、非必填）；★ 缺口在**触发条件**：① 「**对外支付**」**可表达**＝`payment_method_input == '对公直付'`（枚举 `spec/enums.json#payment_method_input`，`evalSimpleEqual` 可解析）；② 但「**需要开票**」**无任何字段承载**（工具表 R28 只给了条件、未给字段）⇒ ★ 本批**不臆造新字段**（凭空补字段＝把「条件缺失」变成「我方口径」）⇒ **延后**、待工具表/制度侧补口径；★ 故本批该判据**既不归一 `when`、也不翻转**",
+      "carried_by_kind": "submit",
+      "carried_by": "★ N-062 J2 提示通道已建：soft 统一执行体＝internal/httpapi/handlers_approval_softchecks.go#evaluateSoftChecks（不阻断、随 data.warnings 返回；★ spec else 原文「拒绝提交」按 soft 铁律落为**提示**）；本条求值器＝softSACounterpartyConditional——★ **只表达一半（如实）**：①「对外支付」＝`payment_method_input == '对公直付'` 可判（已实现）；②「需要开票」**无任何字段承载** ⇒ 不猜测、不实现该分支（N-054 ② 同源，待工具表/制度侧补口径后同批扩展）；判据＝TestSoftSACounterparty（正反三例）",
       "when": "submit && (需要开票 || 对外支付)",
       "assert": "counterparty 非空",
       "else": "拒绝提交",

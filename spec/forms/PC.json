@@ -482,8 +482,8 @@
       "fields": [
         {
           "name": "tier_approval_record",
-          "carried_by_kind": "pending_implementation",
-          "carried_by": "★ Go 侧零命中：档位审批记录无生产点（N-015 同族：L03 designated_* 已解，本条未做）",
+          "carried_by_kind": "code",
+          "carried_by": "★ 生产者＝internal/flow/tier_record.go#WriteTierApprovalRecord（Act 提交事务 post-commit 回写：实例 ext.tier_approval_record ＋ L09 行 ext.approval_record；内容＝本实例全部 APPROVE/REJECT 留痕〔节点·审批人·时间·决议·意见〕）；判据＝TestPCTierApprovalRecordWrittenAtTerminal",
           "label": "档位审批记录",
           "type": "string",
           "required": true,
@@ -584,7 +584,7 @@
       "severity": "hard",
       "carried_by_kind": "code",
       "carried_by": "httpapi/handlers_approval_pcss_inject.go#injectPCSSSystemFields L111-126（cutoff=now-90d，recent>=1 ⇒ 含本次 ≥2）；落 L09 后由 flow/finalize.go L154-191 列自检纳入 `is_anomaly_listed` 必存",
-      "verify_note": "★ 原判据含**两个子句**（「标记异常」＋「进月度报送专项说明」）。复核 mimo `9fd0227` 后**按子句拆为两条**：本条只承载「标记」，报送部分另立 `anomaly_monthly_report`（`carried_by_kind=pending_implementation`）。★ **不是 mimo 未做，而是原判据把两件事写在一行，`carried_by` 无法指向唯一落点** —— 混标 `code` 会让「标记已实现」掩盖「报送未实现」",
+      "verify_note": "★ 原判据含**两个子句**（「标记异常」＋「进月度报送专项说明」）。复核 mimo `9fd0227` 后**按子句拆为两条**：本条只承载「标记」，报送部分另立 `anomaly_monthly_report`（现值 `carried_by_kind=manual`，落点 L09.anomaly_note —— ★ 原注曾按真缺口值记载、与该判据现值不符，N-062 J1 顺手据实订正）。★ **不是 mimo 未做，而是原判据把两件事写在一行，`carried_by` 无法指向唯一落点** —— 混标 `code` 会让「标记已实现」掩盖「报送未实现」",
       "verified_at": "9fd0227"
     },
     {

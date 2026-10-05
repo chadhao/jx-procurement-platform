@@ -352,8 +352,8 @@
       "fields": [
         {
           "name": "tier_chain_record",
-          "carried_by_kind": "pending_implementation",
-          "carried_by": "★ Go 侧零命中：档位链记录无生产点",
+          "carried_by_kind": "code",
+          "carried_by": "★ 生产者＝internal/flow/tier_record.go#WriteTierApprovalRecord（同 PC.tier_approval_record，字段键＝tier_chain_record；实例 ext ＋ L09 ext.approval_record 双落）；判据＝TestSSChainRecordWrittenAtTerminal",
           "label": "档位审批记录",
           "type": "string",
           "required": true,
@@ -484,8 +484,8 @@
     },
     {
       "id": "fixed_asset_conflict",
-      "carried_by_kind": "pending_implementation",
-      "carried_by": "★ **尚无承载者**（`N-047` 批 12 订正）：全部非测试代码**零命中**；★★ 实测 `evaluateHardChecks` 只对 `severity == hard` 放行、其余 `continue` ⇒ 提示通道未建（`acceptance.csv` V1.0 曾记为 `code`，属误记）",
+      "carried_by_kind": "submit",
+      "carried_by": "★ N-062 J2 提示通道已建：soft 统一执行体＝internal/httpapi/handlers_approval_softchecks.go#evaluateSoftChecks（不阻断、随 data.warnings 返回）；本条求值器＝softSSFixedAssetConflict（严格按 assert＝is_fixed_asset ∧ amount>20000000 两条件同时成立才提示，单条件不触发）；判据＝TestSoftSSFixedAssetConflict（正反三例）",
       "when": "submit",
       "assert": "NOT (is_fixed_asset == true AND amount_cents > 20000000)",
       "else": "★ **不静默通过**：提示「超 20 万元或固定资产类应走招标／竞谈，不应使用单一来源」",

@@ -2913,7 +2913,7 @@
 - **提出方**：WorkBuddy
 - **类型**：需求澄清
 - **责任域**：mimo（实现与逐条复核）· WorkBuddy（口径裁定与验收）
-- **状态**：OPEN
+- **状态**：MIMO-DONE
 - **背景**：★★★ 2026-10-06 全仓穷举：`spec` 里**仍挂着 `pending_implementation` / `pending_wiring` 共 19 项**（**字段级 10 ＋ 判据级 9**）。★ 它们**全部是「声明了却没人执行」** —— 本项目一贯认定的**最危险形态**（「声明了却没人执行」比「没声明」危险）。★ 用户指令 ＝ 把未完成的开发项**合成一个任务**、下一轮**一次做完**。
 - **我方立场**：★★ **这 19 项只有三种正当归宿，没有第四种**：
   1. **补执行体**（有数据源 / 有通路 ⇒ 实现）；
@@ -2965,6 +2965,78 @@
   4. ★ 每条「具名豁免」在 `carried_by` 写明**为什么本期不做**；
   5. ★ 新增判据 / 原语须**两侧同批**（**引擎侧先、清单侧后**）。
 - **最后更新**：2026-10-06 01:53 · WorkBuddy（全仓穷举后合成一个任务；含三族 ＋ 10 条预判）
+
+> **mimo 回执 · 批 34（`J1`–`J3`）（2026-10-06 02:59 · 执行 `MIMO-NEXT-BATCH-24.md`）**
+
+#### 族 `J1` · 字段级 10 条（三选一逐条）
+
+| 字段 | 今态证据（改前） | 三选一 | 依据（复核后） | 单点变异 |
+|---|---|---|---|---|
+| `BA.record_date` | `spec/forms/BA.json:79` | **① 补执行体** | 生产者＝`internal/httpapi/handlers_approval_ba_inject.go#injectBASystemFields`（record_date＝提交当日 `YYYY-MM-DD`）；依据＝L01 日期列同源口径（`flow/finalize.go` biz_date 退回提交日期）；判据＝`TestBASystemFieldsInjected`（S1 断言 `record_date==今日`） | **M5**：日期格式改 `02-01-2006` ⇒ 恰红 `record_date = 06-10-2026, 期望 2026-10-06` → 还原复绿 |
+| `BA.anti_split_check_result` | `BA.json:232` | **① 补执行体**（同预判） | 同上函数：同供应商同二级当月累计（**含本单**）＋部门当月备案次数；**阈值取 spec** `chain.json#routes.purchase_tier1.nodes[id=anti_split_check].params`（`specload.NodeDoc.Params` 本批补装载、Go 不写死）；数据源＝`t_instance`（schema 注释即「防拆分累计依据」＋`idx_instance_supplier` 索引）；判据四态＝触发/未触发/超限/1-15 | **M4**：`rollover := false` ⇒ 恰红 S3 `触发转档预警` 断言 → 还原复绿 |
+| `BA.is_monthly_supplier_rollover_warned` | `BA.json:379` | **① 补执行体**（★ 与预判③**分歧**，有据） | 与 anti_split **同一累计查询的布尔面**（累计≥阈值 ⇒ 落入转档预警）—— 预判③理由「无按月滚动提醒机制」混淆了**提醒机制**与**落区判定**：本字段只需落区布尔、无需提醒通道 ⇒ 数据源存在即①；判据＝S3 `seed 70000＋50000 ≥ 100000 ⇒ true` | 同 M4（同一判定行，S3 rollover 断言恰红） |
+| `BA.is_key_sample_range` | `BA.json:342` | **① 补执行体**（★ 与预判②/③**分歧**，有据） | **判定源＝单据金额**（`Facts.AmountCents`）存在 ⇒ 不需改声明也不必豁免：`80000 ≤ amt < 100000`（`docs/03-TestCase.md` TC-19 逐点：79900 否/80000 是/99900 是）；判据＝`TestBASystemFieldsInjected` S1+S2 | **M1**：去下界 ⇒ 恰红 `is_key_sample_range(79900)=true, 期望 false` → 还原复绿 |
+| `BA.petty_cash_receiver` | `BA.json:268`（source=system） | **② 改声明**（同预判） | `source: system→user` ＋ `carried_by_kind: manual`（`BA.json:273`）—— 签领是人工动作（制度原文「由申请人在备案单上签领」，条款见 origin_ref）；disburse 为 filled_at 人工段、本系统不派生；★ 录入通路＝节点期字段录入，本批不新建 UI（如实登记） | 纯声明（S16 面＝source=user 后不再被 `when_in:[system,computed]` 覆盖） |
+| `CT.approval_levels` | `spec/forms/CT.json:242` | **① 补执行体**（同预判） | 生产者＝`handlers_approval.go` 提交路径 `approvalLevelsOf(rc)`（Compute 后注入）：rule 正本两级字符串；**同一人走完全链 ⇒ 「一级（终审）」**；判据＝`TestApprovalLevelsOf`（两级/同一人/nil 三例） | **M2**：删 uniq==1 分支 ⇒ 恰红 `同一人 = "主管领导 → 项目总经理"` → 还原复绿 |
+| `PC.tier_approval_record` | `spec/forms/PC.json:485` | **① 补执行体**（同预判） | 生产者＝`internal/flow/tier_record.go#WriteTierApprovalRecord`（Act **post-commit** 回写：实例 ext ＋ L09 行 `approval_record` 双落；内容＝本实例全部 APPROVE/REJECT 留痕〔节点·审批人·时间·决议·意见〕）；★ post-commit 位置＝状态史晚于 advanceTx ＋ store 单连接死锁约束（头注）；判据＝`TestPCTierApprovalRecordWrittenAtTerminal` | **M3**：去 L09 写入 ⇒ 恰红 `L09 approval_record=<nil>` → 还原复绿 |
+| `SS.tier_chain_record` | `spec/forms/SS.json:355` | **① 补执行体**（同预判） | 同 PC（字段键 `tier_chain_record`）；判据＝`TestSSChainRecordWrittenAtTerminal` | 同 M3（双测试同断言面） |
+| `PR.stock_qty` | `spec/forms/PR.json:346` | **③ 具名豁免**（同预判） | `accepted_gap`：**系统无库存模块**——全仓无库存台账/数据源/导入通路（工具表 R20「从库存台账读取」的源结构性不存在）；`carried_by` 写明缺什么＋开库存源后同批改 code 销项、不删声明 | — |
+| `SA.actual_vs_approved_diff_cents` | `spec/forms/SA.json:205` | **③ 具名豁免**（★ 与预判①**分歧**，有据） | 补录段**无「实际金额」输入字段**——`actual_cents` 仅出现在 `SA#actual_not_exceed` 的 assert 文本、`sections[id=settlement_backfill]` 四字段（handler/invoice_info/本字段/invoice_count_and_overrun_note）无实际额 ⇒ **差额无输入可算**（批准额侧 header `amount_cents` 有）；增设字段属**规格域** ⇒ 停手点名 | — |
+
+#### 族 `J2` · 判据级 6 条 soft（一个机制）
+
+**机制**：`internal/httpapi/handlers_approval_softchecks.go#evaluateSoftChecks`（severity=soft ＋ 与 hard 同款 when 白名单 `submitWhenEligible` → 注册表 `submitSoftChecks`）；调用点＝`handlers_approval.go:667`（hard 通过后收集）；**可见**＝成功响应 `data.warnings=[{id,message}]`（非空才带键、载荷形状对无提示场景零变化；幂等重放分支不带）；**前端**＝`web/src/views/Submit.vue`（`softWarnings` ref＋黄条渲染 `.alert.warn`；**有提示不自动跳转**、无提示保持 600ms 原行为）；**不阻断**＝soft 永不改变 200/400；未注册 soft ⇒ **点名 warning＋Error 日志**（响亮但不拒——拒绝提交本身违反不阻断）。
+
+| 判据 | 求值器（要点） | 判据测试 | 单点变异 |
+|---|---|---|---|
+| `GR#inspection_vs_conclusion_hint` | `softGRInspectionHint`：QC 依附已提交 GR ⇒ **仅重提面**（`PrevBizNo` 反查 ext.related_biz_no）且结论＝合格入库 且 QC `inspection_result=不合格` ⇒ 提示带 QC 单号；首提天然跳过 | `TestSoftGRInspectionHint`（正＋反 A 结论不符＋反 B 首提） | 通道级 M7 连带（见下） |
+| `QC#no_duplicate_qc_for_same_batch` | `softQCDuplicateForSameBatch`：同 related ＋ 同 batch（**两空按字面等值**——不发明「非空才判」）已存在 `status≠CANCELED` QC ⇒ 提示 | `TestSoftQCDuplicateE2E`（首单无键/二单 200＋带键） | 通道级 M7 连带 |
+| `RFQ#response_shortfall_warning` | `softRFQResponseShortfall`：`responded_count` 缺失不误报；`<3` 字面提示（不看 shortfall_note 是否已填） | `TestSoftChannelRFQWarningsE2E`（200 不阻断＋warnings 可见＋=3 **无键**） | **M6**：阈值 `<3→<1` ⇒ 恰红「成功响应缺 data.warnings」→ 还原复绿 |
+| `SA#counterparty_conditional` | `softSACounterpartyConditional`：**只表达一半**——「对外支付」＝`payment_method_input=='对公直付'` 已判；★「**需要开票**」无字段 ⇒ 不猜测不实现（**N-054 ② 同源点名**）；spec else「拒绝提交」按 soft 铁律落**提示** | `TestSoftSACounterparty`（正＋已填反＋垫付反） | 通道级 M7 连带 |
+| `SS#fixed_asset_conflict` | `softSSFixedAssetConflict`：严格按 assert＝`is_fixed_asset ∧ amount>20000000` **两条件同时成立**才提示（单条件不触发——不按 else 口语扩张） | `TestSoftSSFixedAssetConflict`（正＋非固定反＋≤20万反） | 通道级 M7 连带 |
+| `SUB#submit_deadline_warning` | `softSUBSubmitDeadline`：基线＝载荷 `hunan_completed_at`（SUB 同步存档列）；阈值＝`doc_chains.SUB.deadline_workdays`；工作日＝`submission.AddWorkingDays`（Q18）；缺失/不可解析/未装配 ⇒ 跳过不误报；提示含 spec 阈值 | `TestSoftSUBDeadline`（正＋当日反＋缺基线反） | **M8**：阈值写死 99（不读 spec）⇒ 恰红「超 3 工作日应提示」→ 还原复绿；**M7**：severity 分流打反 ⇒ `TestSoftChannelRFQ`＋`TestSoftUnregistered` 双红 → 还原复绿 |
+
+★ 另有 `TestSoftUnregisteredFailVisible`（未注册 soft ⇒ 点名 warning ＋ hard 不进通道）。
+
+#### 族 `J3` · 判据级 3 条 `pending_wiring`（复核＝**三条全部停手**，具名保留）
+
+| 判据 | 复核结论（缺什么 · 证据） | 方案 ＋ 工作量估计 |
+|---|---|---|
+| `BA#receipt_per_purchase` | **三缺口**：① `return_receipt`（actor=applicant）**不生成任务**——`internal/chain/nodes.go:361 isActionActor`（applicant/system/purchaser 一律无任务）⇒ 无操作入口；② `when=approval(<node>)` 时点**引擎无通用求值器**（全仓非测试代码零命中；SS 先例＝`applySSNodeFieldsTx` 代码特例）；③ applicant 任务的待办/控制台通道从未存在（前端从未渲染）。★ 字段本身在位（`BA.json:304/315` payment_receipt_no/file）——缺的是**入口与时点**，非字段 | **规格先行**：spec 加节点级 `generates_task`（或等价键）归 WB ⇒ ① BuildNodes 消费该键＋测试（~1d）② act 时点 `when=approval` 通用求值（或按 SS 特例先做 BA，1d 含判据）③ 前端 applicant 任务通道验证＋端到端（1d）≈ **3 个工作日**；★ 不本批实施（半成品必留） |
+| `SA#actual_not_exceed` | **两缺口**：① **补录入口不存在**——已批准实例无任何字段更新通道（`internal/httpapi` grep `PATCH.*instance`/`UpdateInstanceField` 零命中）；② ★ **`actual_cents` 表单无此字段**（J1 取证同源）⇒ 即使入口建成 assert 仍不可求值——**规格先行** | ① WB 补 `actual_cents` 字段（规格域）；② 最小通路＝`POST /api/approval/:biz_no/backfill`（校验实例 APPROVED＋SA＋字段白名单＝settlement_backfill 段 user 字段 ⇒ 写 ext ⇒ 执行 `when=backfill` 判据）＋ SA 详情页补录区 ＋ 测试 ≈ **2–3 个工作日**（另计规格字段） |
+| `SA#invoice_must_link` | 同①（**入口不存在**——与上条共用同一缺口）；判据语义本身可判（补录时实例 APPROVED ＋ `invoice_info` 非空） | 与 `actual_not_exceed` **共用同一 backfill 通路**（边际≈0，随上条一并） |
+
+★ `pending_wiring` **×3 具名保留**（`BA.json:439` · `SA.json:299/:310`，carried_by 原文已准确）——按任务包验收判据 2「J3 未做完须具名保留并说明」执行；**回执即说明**。
+
+#### 本轮改动文件清单（显式路径）
+
+- Go 实现：`internal/specload/specload.go`（NodeDoc.Params）· `internal/httpapi/handlers_approval.go`（BA 注入调用点〔幂等指纹后〕· CT 注入 · soft 调用与 warnings 入响应）· `internal/httpapi/handlers_approval_ba_inject.go`（新）· `internal/httpapi/handlers_approval_softchecks.go`（新）· `internal/flow/service.go`（终态后回写调用）· `internal/flow/tier_record.go`（新）
+- 判据测试：`internal/httpapi/handlers_approval_ba_inject_test.go` · `handlers_approval_softchecks_test.go` · `tier_record_test.go`（均新建）
+- spec（本包授权的声明面）：`spec/forms/{BA,CT,GR,PC,PR,QC,RFQ,SA,SS,SUB}.json`（pending_implementation **16 处全清**〔字段 10→①code×7/②manual×1/③accepted_gap×2 ＋ soft 6→submit〕；`PC.json:587` 陈旧 verify_note 与真值不符处据实订正）· `spec/acceptance.csv`（6 行 `carrier_kind` `pending_implementation→code`，S26 map `submit→code` 对齐；`git diff --stat`＝**40 增/40 删零 churn**）
+- 前端：`web/src/views/Submit.vue` ＋ 重建 `internal/webui/dist/**`（32 资产＋index.html；`npx eslint` **0 errors**、`scripts/build.sh` 过）
+
+**门禁原文（本族完成节点独立复跑）**：
+
+```
+===== 总判定：**通过**（必绿基线 9/9 全绿；会报项如需处置见上）=====
+```
+
+（另有 `go test ./... -count=1` **零 FAIL**、`gofmt -l` **空**、`check_spec.py` **OK · 30 判据 · 21 JSON · 12 原语**〔S14 含 `accepted_gap`、S26 映射后两侧一致〕；`spec/forms` 中 `pending_implementation` **grep＝0**。）
+
+**如实登记**：
+
+1. ★ **TC-19 第四点「1,000 元→否」在提交面结构不可达**：BA 仅适用采一档（<1,000 元），1,000 元单在链算层即 400（实测「仅适用采一档…落 purchase_tier2」）⇒ 区间右端排除（`<100000`）无法经 BA 提交 e2e 触达；false 侧鉴别力由 79900/50000 承担、true 侧由 80000/99900 承担；`<` vs `<=` 在生产面不可区分——取 `<`＝TC 逐点预期。
+2. ★ **`biz_no_yymm` 提交路径不写（实测 NULL，仅 worker ingest 写）** ⇒ 防拆分两查询月键改用 `substr(biz_no,4,4)`（BA 前缀恒 2 位）；该列填充与 `handlers_biz#biz_no_parts` 展示为空属**另案观测，本包未修**（不越 J1 范围）。
+3. ★ **BA 注入点位于幂等指纹之后**（非 PC 同排）：anti_split 聚合查 `t_instance`，首提落库后同键重放查询**含自身** ⇒ 注入值漂移 ⇒ 指纹变 409——`TestSubmitIdempotencyThreeStates` 实测转红定位后移动；指纹语义＝客户端载荷＋PC 注入（PC 聚合源 L09 终态才写、重放不变）。
+4. ★ **SA「需要开票」分支未实现**（无字段，`N-054 ②` 同源）——已在 `SA.json#checks carried_by` 与本回执具名；`payment_method_input=='对公直付'` 分支已实现。
+5. **GR hint 只覆盖重提面**（`PrevBizNo` 反查）——首提结构性无 QC 可查（QC 依附已提交 GR），不误报；若将来出现「同单号多轮 QC」需扩检索面，具名待裁。
+6. **SUB 基线＝载荷 `hunan_completed_at`**（SUB 同步存档列随单带入）；该列**生产者口径仍未定**（`handlers_approval_hardchecks.go:1131` 既有登记，非本包引入）——缺基线不提示、不误报。
+7. **J1 与我方预判分歧 3 处**（`is_key_sample_range` ②/③→①、`rollover_warned` ③→①、`SA.diff` ①→③）——上表逐条附证据，非照抄预判。
+8. **J3 三条停手**（三缺口取证＋方案＋估计见上）——按任务包「必须新建 UI/节点 ⇒ 停在议题」执行；**未留半成品**。
+9. `docs/**` **零改动**（WorkBuddy 在途的 `config-mapping.sample.json` 等改动**未卷入**本包提交）；`spec` 改动面＝本包显式授权的声明消费（forms＋acceptance.csv），`checks.json`/`chain.json`/`ledger-mapping.json` 未动。
+10. 响应新增 `data.warnings` 键的 **API 文档归我方域**（`docs/05-API.md`，`N-061 ④` 同批）——本包未改，**提请知悉并入该批**。
+
+`MIMO-DONE`
 
 ### N-063 · 联调前置：`approval_code` 映射可导入化 ＋ 导入层文案口径订正 ＋ `field_id` 段消费面复核
 

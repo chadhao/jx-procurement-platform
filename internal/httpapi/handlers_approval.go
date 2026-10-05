@@ -630,8 +630,16 @@ func (d Deps) handleApprovalSubmit(c echo.Context) error {
 			"unresolved_roles": rc.Unresolved,
 		})
 	}
+	// ---- CT 审批层级注入（N-062 J1：approval_levels ← 链算结果派生；须在 Compute 之后）----
+	if body.DocType == "CT" {
+		if body.Fields == nil {
+			body.Fields = map[string]any{}
+		}
+		putSysField(body.Fields, "approval_levels", approvalLevelsOf(rc))
+	}
 
 	// ---- 表单结构化校验（spec/forms schema；N-17 结构化子集）----
+	softWarnings := []SoftWarning{} // N-062 J2：soft 提示通道（成功响应 data.warnings）
 	form, hasForm := d.Spec.Forms[body.DocType]
 	if hasForm {
 		if verr := validateSubmitForm(form, mergeProvidedFields(&body, usageL1, usageL2)); verr != nil {
@@ -658,6 +666,8 @@ func (d Deps) handleApprovalSubmit(c echo.Context) error {
 		if verr := d.evaluateHardChecks(ctx, form, &body, idn.OpenID); verr != nil {
 			return fail(c, http.StatusBadRequest, codeBadRequest, verr.Error())
 		}
+		// ---- N-062 J2：severity=soft 判据提示通道（执行 + 收集，**不阻断**）----
+		softWarnings = d.evaluateSoftChecks(ctx, form, &body)
 	}
 
 	// ---- N-042 权限位点：GR acceptors（PARTICIPATED）—— member_* 非空值收集为数组，
@@ -701,6 +711,16 @@ func (d Deps) handleApprovalSubmit(c echo.Context) error {
 			sum := sha256.Sum256(raw)
 			idemHash = hex.EncodeToString(sum[:])
 		}
+	}
+
+	// ---- BA 提交期系统字段注入（N-062 J1：record_date / anti_split_check_result /
+	//      is_monthly_supplier_rollover_warned / is_key_sample_range）----
+	// ★ 位置必须在**幂等指纹之后**：anti_split 聚合查 t_instance —— 首次提交落库后，
+	//   同键重放的查询会**包含自身** ⇒ 注入值漂移 ⇒ 指纹变 409（实测 TestSubmitIdempotencyThreeStates
+	//   转红后定位）。指纹只覆盖客户端载荷 ＋ PC 注入（PC 聚合源 L09 终态才写、重放不变）。
+	if verr := d.injectBASystemFields(ctx, &body, amountForTier, usageL2,
+		firstNonEmptyStr(body.Department, idn.Department), time.Now()); verr != nil {
+		return fail(c, http.StatusInternalServerError, codeInternal, verr.Error())
 	}
 
 	// ---- 提交时实时回源（FR-M9-17 / M5）：同步 2s 超时、失败告警放行、标记落 ext_json ----
@@ -797,8 +817,14 @@ func (d Deps) handleApprovalSubmit(c echo.Context) error {
 	if err != nil {
 		return fail(c, http.StatusInternalServerError, codeInternal, err.Error())
 	}
-	return ok(c, map[string]any{"biz_no": bizNo, "instance_id": inst.InstanceCode, "status": inst.Status,
-		"payment_route": paymentRoute})
+	resp := map[string]any{"biz_no": bizNo, "instance_id": inst.InstanceCode, "status": inst.Status,
+		"payment_route": paymentRoute}
+	// N-062 J2：soft 提示随成功响应返回（仅非空时带键 —— 载荷形状对无提示场景零变化；
+	// 幂等重放分支不带 warnings：首提响应未存储提示，重放不重算，如实省略）。
+	if len(softWarnings) > 0 {
+		resp["warnings"] = softWarnings
+	}
+	return ok(c, resp)
 }
 
 // boolFromBodyField 从表单字段取布尔值（缺失/非布尔 ⇒ false）。

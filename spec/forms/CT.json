@@ -239,8 +239,8 @@
         },
         {
           "name": "approval_levels",
-          "carried_by_kind": "pending_implementation",
-          "carried_by": "★ Go 侧零命中：审批级数无生产点（computed）",
+          "carried_by_kind": "code",
+          "carried_by": "★ 生产者＝internal/httpapi/handlers_approval.go 提交路径（Compute 后注入）approvalLevelsOf（rule 正本：固定「主管领导 → 项目总经理」两级；同一人走完全链 ⇒「一级（终审）」）；判据＝TestApprovalLevelsOf",
           "label": "审批层级",
           "type": "string",
           "required": true,

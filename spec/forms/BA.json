@@ -76,8 +76,8 @@
         },
         {
           "name": "record_date",
-          "carried_by_kind": "pending_implementation",
-          "carried_by": "★ Go 侧零命中：spec 声明 source=system，但无任何生产点（口径见制度第五十九条 L01「日期」）",
+          "carried_by_kind": "code",
+          "carried_by": "★ 生产者＝internal/httpapi/handlers_approval_ba_inject.go#injectBASystemFields（提交期注入 record_date＝提交当日 YYYY-MM-DD；口径＝制度第五十九条 L01「日期」＝备案当日）；判据＝TestBASystemFieldsInjected",
           "label": "备案日期",
           "type": "date",
           "required": true,
@@ -229,8 +229,8 @@
         },
         {
           "name": "anti_split_check_result",
-          "carried_by_kind": "pending_implementation",
-          "carried_by": "★★ Go 侧零命中：拆单检查结果无生产点 —— 属内控红线项，须实现",
+          "carried_by_kind": "code",
+          "carried_by": "★ 生产者＝internal/httpapi/handlers_approval_ba_inject.go#injectBASystemFields（同供应商同二级当月累计〔含本单〕＋部门当月备案次数；阈值取 spec chain.json#routes.purchase_tier1.nodes[id=anti_split_check].params，Go 侧不写死）；判据＝TestBASystemFieldsInjected（触发／未触发／超限／1-15 四态）",
           "label": "防拆分／次数校验结果",
           "type": "computed",
           "required": true,
@@ -265,12 +265,12 @@
       "fields": [
         {
           "name": "petty_cash_receiver",
-          "carried_by_kind": "pending_implementation",
-          "carried_by": "★ Go 侧零命中：备付金领取人无生产点",
+          "carried_by_kind": "manual",
+          "carried_by": "★ 改声明（N-062 J1 ②：原 source=system 与事实不符）—— 签领是**人工动作**（制度原文「由申请人在备案单上签领」，条款见 origin_ref）⇒ source 改 user；填载时点＝disburse 人工段（filled_at），本系统不派生；★ 录入通路＝节点期字段录入（本批不新建 UI，如实登记）",
           "label": "签领人",
           "type": "person",
           "required": true,
-          "source": "system",
+          "source": "user",
           "origin": "institution",
           "origin_ref": "第十八条第 290 行",
           "naming": "R-20#4：统一名 `申请人（备付金签领人）` → 字段名 `petty_cash_receiver`；★ 制度原文即「由申请人在备案单上签领」⇒ **通常等于申请人**，但仍独立成字段（留痕需要）"
@@ -339,8 +339,8 @@
       "fields": [
         {
           "name": "is_key_sample_range",
-          "carried_by_kind": "pending_implementation",
-          "carried_by": "★ Go 侧零命中：无生产点",
+          "carried_by_kind": "code",
+          "carried_by": "★ 生产者＝internal/httpapi/handlers_approval_ba_inject.go#injectBASystemFields（金额 ∈ [800,1000) 元；docs/03-TestCase.md TC-19 逐点 79900 否／80000 是／99900 是）；判据＝TestBASystemFieldsInjected",
           "label": "是否落入 800–1,000 元重点抽查区间",
           "type": "boolean",
           "required": false,
@@ -376,8 +376,8 @@
         },
         {
           "name": "is_monthly_supplier_rollover_warned",
-          "carried_by_kind": "pending_implementation",
-          "carried_by": "★ Go 侧零命中：无生产点",
+          "carried_by_kind": "code",
+          "carried_by": "★ 生产者＝internal/httpapi/handlers_approval_ba_inject.go#injectBASystemFields（同 anti_split 累计判定的布尔面：累计 ≥ 阈值 ⇒ 落入转档预警）；判据＝TestBASystemFieldsInjected（seed 70000＋50000 ≥ 100000 ⇒ true）",
           "label": "是否落入当月同供应商累计转档预警",
           "type": "boolean",
           "required": false,

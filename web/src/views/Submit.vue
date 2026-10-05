@@ -23,6 +23,8 @@ const router = useRouter()
 
 const err = ref('')
 const msg = ref('')
+// N-062 J2：提交成功响应 data.warnings（soft 判据提示，不阻断）——黄条呈现。
+const softWarnings = ref([])
 const loading = ref(false)
 const meta = ref(null)
 
@@ -437,11 +439,16 @@ async function doSubmit() {
   loading.value = true
   try {
     const data = await submitApproval(payload, idemKey.value)
+    softWarnings.value = Array.isArray(data.warnings) ? data.warnings : []
     msg.value = data.idempotent_replay
       ? `幂等重放：复用首次单据 ${data.biz_no}`
       : `提交成功：${data.biz_no}`
-    setTimeout(() => router.push(`/approval/${data.biz_no}`), 600)
+    // 有 soft 提示 ⇒ 停留在本页展示（立刻跳走提示就看不见了）；无提示保持原 600ms 跳转。
+    if (!softWarnings.value.length) {
+      setTimeout(() => router.push(`/approval/${data.biz_no}`), 600)
+    }
   } catch (e) {
+    softWarnings.value = []
     // N-050：40000 + data.form_errors ⇒ 行级定位高亮（docs/05-API §4.6）。
     // ★ 取不到 form_errors（40010 / 网络失败 / 老响应）⇒ 回落照旧显示 message
     //   —— 不得因取不到定位就不显示错误。
@@ -534,6 +541,8 @@ watch(() => [curDocType.value, fields.amount_cents, fields.usage_category_l1, fi
 
     <div v-if="err" class="alert err">{{ err }}</div>
     <div v-if="msg" class="alert ok">{{ msg }}</div>
+    <!-- N-062 J2：soft 判据提示（服务端 data.warnings；黄条、不阻断） -->
+    <div v-for="(w, i) in softWarnings" :key="'sw' + i" class="alert warn">{{ w.message }}</div>
 
     <div v-if="!meta" class="loading">加载表单元数据…</div>
 

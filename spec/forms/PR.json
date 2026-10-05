@@ -343,8 +343,8 @@
         },
         {
           "name": "stock_qty",
-          "carried_by_kind": "pending_implementation",
-          "carried_by": "★ Go 侧零命中：spec 声明 system，疑需库存源 ⇒ 真缺口",
+          "carried_by_kind": "accepted_gap",
+          "carried_by": "★★ 具名豁免（N-062 J1 ③ · 本期不做）：系统**无库存模块** —— 全仓无库存台账／库存数据源、无导入通路（工具表 R20「从库存台账读取」的源结构性不存在）⇒ 生产者本期不可能有；★ 开库存源后须同批补 carried_by_kind=code 并销项（不删声明）",
           "label": "现有库存量（自动带出）",
           "type": "number",
           "required": false,

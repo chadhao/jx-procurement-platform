@@ -602,6 +602,16 @@ func (s *Service) act(ctx context.Context, bizNo, taskID, actor, opType, reason 
 		return err
 	}
 	s.emit(ctx, events...)
+	// ★ N-062 J1：PC/SS 终态后回写档位审批记录（post-commit —— 见 tier_record.go 头注；
+	//   审批本体已提交，记录失败只记日志不改变本次操作结果）。inst 在 WithTx 闭包内 ⇒ 此处 fresh 读。
+	if cur, gerr := s.db.GetInstanceByBizNo(ctx, bizNo); gerr != nil {
+		s.log.Error("终态审批记录回写：读实例失败", "biz_no", bizNo, "err", gerr)
+	} else if (cur.Status == InstanceApproved || cur.Status == InstanceRejected) &&
+		(cur.DocType == "PC" || cur.DocType == "SS") {
+		if werr := s.WriteTierApprovalRecord(ctx, cur); werr != nil {
+			s.log.Error("档位审批记录回写失败", "biz_no", bizNo, "err", werr)
+		}
+	}
 	return nil
 }
 

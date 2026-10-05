@@ -204,6 +204,10 @@ type NodeDoc struct {
 	// TierExpand 档位审批链展开（N-044 · 取代复合 actor 与伪 ref）：
 	// nil ＝ 本节点不做档位展开。键语义见 spec chain.json tier_expand.note。
 	TierExpand *TierExpand `json:"tier_expand"`
+	// Params 节点参数（chain.json#routes.*.nodes[*].params；N-062 J1：
+	// anti_split_check 的 same_supplier_same_category_monthly_cents /
+	// dept_monthly_max_count 阈值 —— spec 是唯一真相，Go 侧不写死）。
+	Params map[string]float64 `json:"params"`
 }
 
 // TierExpand 节点级档位审批链展开声明（N-044）。

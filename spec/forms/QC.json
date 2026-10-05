@@ -280,8 +280,8 @@
     },
     {
       "id": "no_duplicate_qc_for_same_batch",
-      "carried_by_kind": "pending_implementation",
-      "carried_by": "★ **尚无承载者**（`N-047` 批 12 订正）：全部非测试代码**零命中**；★★ 实测 `evaluateHardChecks` 只对 `severity == hard` 放行、其余 `continue` ⇒ 提示通道未建（`acceptance.csv` V1.0 曾记为 `code`，属误记）",
+      "carried_by_kind": "submit",
+      "carried_by": "★ N-062 J2 提示通道已建：soft 统一执行体＝internal/httpapi/handlers_approval_softchecks.go#evaluateSoftChecks（不阻断、随 data.warnings 返回）；本条求值器＝softQCDuplicateForSameBatch（同 related_biz_no ＋ 同 batch_no 已存在未作废〔status≠CANCELED〕QC ⇒ 提示；批号两空按字面等值、不发明「非空才判」限制）；判据＝TestSoftQCDuplicateE2E",
       "when": "submit",
       "assert": "同一 `related_biz_no` + 同一 `batch_no` 下，**已存在未作废的 QC 时** ⇒ 仅**提示**",
       "else": "★ 提示「该批已有检验记录（{no}），确认是否重复」—— **不阻断**",

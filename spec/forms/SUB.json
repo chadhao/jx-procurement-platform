@@ -383,8 +383,8 @@
     },
     {
       "id": "submit_deadline_warning",
-      "carried_by_kind": "pending_implementation",
-      "carried_by": "★ **尚无承载者**（`N-047` 批 12 订正）：`handlers_approval_hardchecks.go:84` 原注「超 3 工作日**只预警不阻断**」；★★ 实测 `evaluateHardChecks` 只对 `severity == hard` 放行、其余 `continue` ⇒ 预警通道未建（`acceptance.csv` V1.0 曾记为 `code`，属误记）",
+      "carried_by_kind": "submit",
+      "carried_by": "★ N-062 J2 提示通道已建：soft 统一执行体＝internal/httpapi/handlers_approval_softchecks.go#evaluateSoftChecks（**绝不阻断** —— 「超期不予受理」≠「超期计入预警」，critical_note 铁律）；本条求值器＝softSUBSubmitDeadline（基线＝载荷 hunan_completed_at〔SUB 同步存档列，本单提交时带入〕；阈值＝doc_chains.SUB.deadline_workdays 不写死；工作日＝submission.AddWorkingDays〔Q18〕；缺失/未装配 ⇒ 跳过不误报）；判据＝TestSoftSUBDeadline",
       "when": "submit",
       "assert": "`submit_group_at` 距「湖南侧流程完成日」**超过 3 个工作日** ⇒ **提示**",
       "else": "★ 提示「已超 3 个工作日未提交集团，将计入异常预警」—— **不阻断**",
