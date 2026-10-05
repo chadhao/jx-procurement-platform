@@ -79,7 +79,7 @@ jxapproval       监听 127.0.0.1:5001（★ 由 .env 的 JX_LISTEN_ADDR 决定�
 | **① 环境自检** | 任意 | `bash scripts/deploy-test-server.sh --check-only` | 全绿（含公网入口 200） |
 | **② 准备映射** | 我方 | 见 §1B.4 —— ★ **先裁定 `doc_type` 重复问题** | — |
 | **③ 导入配置** | 服务器 | `cd ~/services/jxapproval && set -a; . ./.env; set +a && ./jxapproval import-config <config.json>` | 打印 `校验通过：… 合计 N 条` |
-| **④ 装载定义** | 系统管理员会话 | `POST /api/admin/approval/defs/sync`（无请求体） | 返回 `synced/created/updated/skipped/failed` 计数；飞书侧出现对应三方定义 |
+| **④ 装载定义** | ★ **我方自办**（会话见 §1B.7，**无需人工点击**） | `POST /api/admin/approval/defs/sync`（无请求体） | 返回 `synced/created/updated/skipped/failed` 计数；飞书侧出现对应三方定义 |
 | **⑤ 开测** | 按 §2 逐项 | — | — |
 
 ### 1B.4 ★★ 开动前必须先裁定的口径（否则第 ④ 步会踩静默歧义）
@@ -113,6 +113,33 @@ bash scripts/deploy-test-server.sh --rollback   # 回滚二进制 + 数据库到
 ★ **为什么必须"取 HEAD 干净树"构建**：本仓库有**第二个 Agent 并行开发**，工作区随时可能是在途半成品。
 实测撞上过（`handlers_approval.go` / `specload.go` 正被改 ＋ 一个未跟踪新文件）——
 那种状态构建出的二进制**没有任何报错**，但内容是**没人验收过的中间态**（最危险的一类）。
+
+---
+
+### 1B.7 管理员会话（第 ④ 步前置）—— ★ **已实测打通，无需人工点击**
+
+`defs/sync` 挂在 `admin` 组，鉴权＝`requireSysAdmin`（`handlers_admin.go:46`，判据是 `t_user_role.role == 系统管理员`）。
+★ **DEV_MODE 下有直连登录路径**，⇒ **我方可在服务器上自行建会话来驱动第 ④ 步**，不必等人点后台：
+
+```bash
+# 在测试服务器上执行（cd ~/services/jxapproval）
+ADMIN=ou_7a886a454ab1e8d249dcbd01aec1c40a        # 郝端（t_user_role，role=系统管理员，active=1）
+curl -s -c /tmp/jxck -o /dev/null   "http://127.0.0.1:5001/auth/feishu/callback?open_id=$ADMIN&state=dev-check"   # ⇒ 302，种下 jx_session
+curl -s -b /tmp/jxck "http://127.0.0.1:5001/api/admin/users"                     # ⇒ 200（验证会话有效）
+```
+
+**实测记录（2026-10-06，测试实例 `0.3.5-s3-209-gf6ed88e`）**：
+
+| 情形 | 结果 |
+|---|---|
+| 无会话 `GET /api/admin/permission-rules` | **401**（对照：门是关着的） |
+| `GET /auth/feishu/callback?open_id=…&state=dev-check` | **302**，种下 `jx_session`（另见 `jx_oauth_redirect`） |
+| 带会话 `GET /api/admin/permission-rules` | **200** |
+| 带会话 `GET /api/admin/users` | **200**（返回 `郝端` / `department=江熙新材`） |
+| 带会话 `GET /api/admin/role-agents` | **200** |
+| 带会话 `GET /api/admin/constants` | **400**「table 不能为空」—— ★ **端点可达且已授权**，只是缺必填查询参数 |
+
+★ **注意**：`state` 即使在 DEV 直连下也**必填** —— `handlers_biz.go:51` 的校验位于 dev 分支**之前**（缺 state ⇒ 400「缺少 state（防 CSRF）」）。
 
 ---
 
