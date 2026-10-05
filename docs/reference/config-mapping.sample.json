@@ -255,6 +255,18 @@
       "is_sensitive": false
     },
     {
+      "ledger_type": "L06",
+      "field_key": "原件移交清单",
+      "is_sensitive": false,
+      "remark": "★ 2026-10-05 新增（R-35）：M6-05 合同/发票原件移交清单；★ 承载面＝L06 ops_json（键名用中文，与 t_permission_rule.WritableFields 精确匹配口径一致）"
+    },
+    {
+      "ledger_type": "L06",
+      "field_key": "原件签收记录",
+      "is_sensitive": false,
+      "remark": "★ 2026-10-05 新增（R-35）：M6-05 原件签收记录；★ 与 handover_receipt 同机制（ops_json 存引用/文本），不落 t_attachment（instance_code NOT NULL 而 SUB 无审批实例）"
+    },
+    {
       "ledger_type": "L07",
       "field_key": "检验结论",
       "is_sensitive": false

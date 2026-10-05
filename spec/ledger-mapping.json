@@ -1,5 +1,5 @@
 {
-  "version": "1.1",
+  "version": "1.2",
   "generated_by": "WorkBuddy",
   "date": "2026-10-04",
   "sources": {
@@ -661,6 +661,22 @@
           "writable": true,
           "writer": "综合运营主管",
           "note": "取消 / 驳回重走"
+        },
+        {
+          "name": "originals_handover_note",
+          "label": "原件移交清单",
+          "writable": true,
+          "writer": "综合运营主管",
+          "when": "移交原件时登记",
+          "note": "★★ R-35：承载面＝本表 ops_json（键名取 label 中文名，与 t_ledger_field_def 权威面一致）；★ 与 handover_receipt 的区别＝后者证明「向集团提交这个动作」，本条记录「合同 / 发票原件交了哪几份」"
+        },
+        {
+          "name": "originals_receipt",
+          "label": "原件签收记录",
+          "writable": true,
+          "writer": "综合运营主管",
+          "when": "原件签收时登记",
+          "note": "★★ R-35：与 handover_receipt 同机制（ops_json 存引用 / 文本）；★ 不落 t_attachment —— 其 instance_code 为 NOT NULL 而 SUB 无审批实例"
         },
         {
           "name": "payee_account_verified",
