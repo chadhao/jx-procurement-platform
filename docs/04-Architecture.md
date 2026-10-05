@@ -871,6 +871,7 @@ flowchart TB
 | `JX_ENV` | 运行环境（prod/test）；test 开启可控时间窗 | 否 |
 | `JX_CALLBACK_DOMAIN` | **回调对外域名**（反代对外地址；用于入站自检与生成 `action_callback_url`，§17.4） | 否 |
 | `JX_ACTION_CALLBACK_TOKEN` | 三方审批定义下发的**回调校验 token**（敏感，§17.4） | **是** |
+| `JX_APPROVAL_GROUP_CODE` | 三方审批定义所属**审批分组 code**（★ ★★ **飞书 `external_approvals` 的 `group_code` 是必填**——2026-10-06 实测：缺失 ⇒ 飞书 `1390001 Group code cannot be empty`；分组不存在时飞书**自动新建**，`group_name` 仅用于更新分组显示名，§17.4） | 否 |
 
 > 全部走 `internal/config/env.go` 读取；**仓库内不出现任何凭据明文字面量**（FR-M8-06 / TC-25）。
 

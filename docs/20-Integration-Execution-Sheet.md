@@ -66,6 +66,7 @@ jxapproval       监听 127.0.0.1:5001（★ 由 .env 的 JX_LISTEN_ADDR 决定�
 | 飞书凭据 | `JX_APP_ID=cli_aa33a8b22f78dcb4` **已配**，长连接**已建立** | 日志 `connected to wss://msg-frontier.feishu.cn` |
 | `JX_CALLBACK_DOMAIN` | `http://office.hunanyichu.com:5500` | 服务器 `.env` |
 | `JX_ACTION_CALLBACK_TOKEN` | **已设**（16 位测试 token） | 服务器 `.env` |
+| `JX_APPROVAL_GROUP_CODE` | ★ **2026-10-06 实测新增**：飞书 `external_approvals` 的 `group_code` **必填** ⇒ 测试环境用租户内既有分组 **`JXQA-GROUP-1`**（名「江熙新材审批」） | 实测：不给 ⇒ 飞书 `1390001`；给 ⇒ `code=0` |
 | 通讯录镜像 | dept 6 / user 5，最近一次全量成功 | 日志 `通讯录全量同步完成` |
 | 权限规则 | 70 条 | 表 `t_permission_rule` |
 | 系统管理员 | `郝端` / `ou_7a88…c40a`（`active=1`） | 表 `t_user_role` |
@@ -78,9 +79,10 @@ jxapproval       监听 127.0.0.1:5001（★ 由 .env 的 JX_LISTEN_ADDR 决定�
 |---|---|---|---|
 | **① 环境自检** | 任意 | `bash scripts/deploy-test-server.sh --check-only` | 全绿（含公网入口 200） |
 | **② 准备映射** | 我方 | 见 §1B.4 —— ★ **先裁定 `doc_type` 重复问题** | — |
-| **③ 导入配置** | 服务器 | `cd ~/services/jxapproval && set -a; . ./.env; set +a && ./jxapproval import-config <config.json>` | 打印 `校验通过：… 合计 N 条` |
-| **④ 装载定义** | ★ **我方自办**（会话见 §1B.7，**无需人工点击**） | `POST /api/admin/approval/defs/sync`（无请求体） | 返回 `synced/created/updated/skipped/failed` 计数；飞书侧出现对应三方定义 |
-| **⑤ 开测** | 按 §2 逐项 | — | — |
+| **③ 配置分组 code** | 服务器 `.env` | `JX_APPROVAL_GROUP_CODE=JXQA-GROUP-1` ＋ 重启 | ★ **飞书 `group_code` 必填**；缺 ⇒ 第 ⑤ 步 11 张全失败（见 §1B.8） |
+| **④ 导入配置** | 服务器 | `cd ~/services/jxapproval && set -a; . ./.env; set +a && ./jxapproval import-config <config.json>` | 打印 `校验通过：… 合计 N 条`（★ **本载荷涉及的映射类全量替换**） |
+| **⑤ 装载定义** | ★ **我方自办**（会话见 §1B.7，**无需人工点击**） | `POST /api/admin/approval/defs/sync`（无请求体） | 返回 `synced/created/updated/skipped/failed` 计数；飞书侧出现对应三方定义 |
+| **⑥ 开测** | 按 §2 逐项 | — | — |
 
 ### 1B.4 ★★ 开动前必须先裁定的口径（否则第 ④ 步会踩静默歧义）
 
@@ -140,6 +142,39 @@ curl -s -b /tmp/jxck "http://127.0.0.1:5001/api/admin/users"                    
 | 带会话 `GET /api/admin/constants` | **400**「table 不能为空」—— ★ **端点可达且已授权**，只是缺必填查询参数 |
 
 ★ **注意**：`state` 即使在 DEV 直连下也**必填** —— `handlers_biz.go:51` 的校验位于 dev 分支**之前**（缺 state ⇒ 400「缺少 state（防 CSRF）」）。
+
+---
+
+### 1B.8 ★★ 实测发现：飞书建定义**必须带 `group_code`**（本轮联调第一号阻塞，已定位）
+
+**现象**（2026-10-06，测试实例，导入映射后首次 `defs/sync`）：`HTTP 500`，11 张**全部**失败，每条形如
+
+```
+code=1390001 msg=Group code cannot be empty when create approval definition
+```
+
+**根因（逐层取证）**：
+
+1. ★ `internal/httpapi/handlers_approval.go:1140`（装配 `DefInput`）**从未赋值 `GroupName`/`GroupCode`**；
+2. ★ `internal/platform/feishu/external.go:97` 只在 `GroupName != ""` 时才送 `group_name`，且**从不送 `group_code`**；
+3. ★★ 而**飞书官方文档写明 `group_code` 是「必选」**（用户自定义；不存在则新建分组；`group_name` 仅用于更新分组显示名）；
+4. ★ 代码注释 `:1126`「分组留空（飞书 `group_name` **可选**）」—— ★ **该前提是错的**，是 1390001 的直接来源。
+
+**决定性取证**（不经应用、直接调平台）：
+
+| 探针 | 请求 | 结果 |
+|---|---|---|
+| A | 不传分组 | `1390001` |
+| B | 只传 `group_name`（顶层） | `1390001`（★ 证明"补 name 就好"**是错的假设**） |
+| C | 传**新** `group_code`（`jx_approval`） | `1390001 审批分组Code和名称不匹配…` |
+| **D** | 传**既有** `group_code=JXQA-GROUP-1`（不传 `group_name`） | ★ **`code=0`**，回填 `approval_code=80C5FF8D-B12A-4BB9-9E84-C35C77CD8EC8` |
+
+★ 既有分组值由**读回当年成功建的定义**得到（`GET /external_approvals/6AC44B6B-…` 返回 `group_code=JXQA-GROUP-1`）。
+
+**修法（最小）**：装配处补 `group_code`（来自配置），**不传 `group_name`**；并新增配置键与装载门禁。
+
+★★ **顺带实测回答 `docs/16 §7 V-4`**（此前"响应回填值属自定义池还是真实池"**未实测**）：
+→ **响应回填的 `approval_code` 是「真实池」值**（平台生成的 UUID `80C5FF8D-…`，**不等于**我方入参 `jx_ba`）⇒ `t_approval_def.feishu_code` 存的正是它，推送实例时**应优先取用**（现有代码已如此）。
 
 ---
 

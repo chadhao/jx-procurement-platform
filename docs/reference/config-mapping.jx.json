@@ -3,57 +3,57 @@
     {
       "code": "jx_ba",
       "doc_type": "BA",
-      "remark": "★ 我方自定义 code（defregistry.go:29「稳定标识；本地配置给出」）"
+      "remark": "采购报备单"
     },
     {
       "code": "jx_pr",
       "doc_type": "PR",
-      "remark": "★ 我方自定义 code（defregistry.go:29「稳定标识；本地配置给出」）"
+      "remark": "物资采购申请单"
     },
     {
       "code": "jx_sa",
       "doc_type": "SA",
-      "remark": "★ 我方自定义 code（defregistry.go:29「稳定标识；本地配置给出」）"
+      "remark": "费用事前申请单"
     },
     {
       "code": "jx_rfq",
       "doc_type": "RFQ",
-      "remark": "★ 我方自定义 code（defregistry.go:29「稳定标识；本地配置给出」）"
+      "remark": "询价单"
     },
     {
       "code": "jx_bj",
       "doc_type": "BJ",
-      "remark": "★ 我方自定义 code（defregistry.go:29「稳定标识；本地配置给出」）"
+      "remark": "比价表"
     },
     {
       "code": "jx_ss",
       "doc_type": "SS",
-      "remark": "★ 我方自定义 code（defregistry.go:29「稳定标识；本地配置给出」）"
+      "remark": "单一来源理由书"
     },
     {
       "code": "jx_ct",
       "doc_type": "CT",
-      "remark": "★ 我方自定义 code（defregistry.go:29「稳定标识；本地配置给出」）"
+      "remark": "合同 / 简式订单"
     },
     {
       "code": "jx_pc",
       "doc_type": "PC",
-      "remark": "★ 我方自定义 code（defregistry.go:29「稳定标识；本地配置给出」）"
+      "remark": "采购变更单"
     },
     {
       "code": "jx_gr",
       "doc_type": "GR",
-      "remark": "★ 我方自定义 code（defregistry.go:29「稳定标识；本地配置给出」）"
+      "remark": "到货验收单 / 入库单"
     },
     {
       "code": "jx_qc",
       "doc_type": "QC",
-      "remark": "★ 我方自定义 code（defregistry.go:29「稳定标识；本地配置给出」）"
+      "remark": "来料检验报告"
     },
     {
       "code": "jx_sub",
       "doc_type": "SUB",
-      "remark": "★ 我方自定义 code（defregistry.go:29「稳定标识；本地配置给出」）"
+      "remark": "集团提交流转单"
     }
   ],
   "ledger_type": [
