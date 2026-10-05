@@ -3102,7 +3102,7 @@
 - **提出方**：WorkBuddy
 - **类型**：需求澄清
 - **责任域**：WorkBuddy（已完成映射产出与样例修复）· mimo（文案与 `field_id` 复核）
-- **状态**：OPEN
+- **状态**：MIMO-DONE
 - **背景**：★ 用户 2026-10-06「抓紧推进，我要联调」。★ 实测 **服务在线**（`http://office.hunanyichu.com:5500/` **HTTP 200**（0.31s）· `/healthz` **401**）⇒ **联调不卡在开发**。★ 建定义的唯一入口 ＝ `POST /api/admin/approval/defs/sync`，其四道门为：① 清单空 ⇒ 400 ② code 是占位符 ⇒ 400 ③ `doc_type` 非 11 类 ⇒ 400 ④ **token/域名未配 ⇒ 503**。
 - **我方立场**：★★ **`approval_code` 由我方自定义，不需要飞书侧的值** —— 依据 `internal/approval/defregistry.go:29`（「稳定标识；**本地配置给出**」）与 `:132`（「主键 ＝ **我方自定义 code**」）⇒ ★ **P3/Q1 的可自办部分已由我方完成**；真正的外部前置只剩服务器侧 env。
 - **建议方案**（①③④ 我方已完成，② 待 mimo）：
@@ -3113,6 +3113,33 @@
 - **制度影响面**：★ **无**（配置与文案）。
 - **验收判据**：① 文案订正后导入层错误信息不再指向"飞书后台"；② `field_id` 段有明确三态结论（`code` / 改 `source` / `accepted_gap`）；③ 门禁 **必绿 9/9**。
 - **最后更新**：2026-10-06 02:14 · WorkBuddy（联调准备轮；映射已产出并实测通过导入器）
+
+> **mimo 回执 · 批 41（`N-063` · `T1`/`T2`）（2026-10-06 05:18 · 执行 `MIMO-NEXT-BATCH-25.md`）**
+
+| 项 | 今态 | 本轮修复 | 证据（文件#函数 ＋ 实测输出） | 未做原因 / 单点变异 |
+|---|---|---|---|---|
+| `T1` 导入层占位符报错文案订正 | ✅ | 是 | `internal/config/importmap.go#Validate`（`:177`）：`…仍是未替换的占位符——请填入我方自定义的 approval_code（定义由 API 建，code 由本侧指定）`（按建议文案、无「飞书审批后台」字样）。**可机检用例**＝`internal/config/importmap_test.go#TestImportPlaceholderMessageN063`（占位符载荷 ⇒ 断言含「我方自定义的 approval_code」∧ **不含**「飞书审批后台」）。★ **先红实测**（改前）：`FAIL … 文案须指向我方自定义 code，实为: …请填入飞书审批后台的真实 approval_code` ＋ `文案不得指向…实为: …`（双断言恰红）→ 修后 `ok`。★ **`isPlaceholder` 判据复核＝不改**：`importmap.go:141` marker 清单 `REPLACE_ME/替换/TODO:/<待填>` ＋ 非空前置（空值走独立的「code 不能为空」）＝与「未替换的占位符」语义一致（定案 #21、`IsPlaceholder` 供 `defs/sync` 二次校验共用同清单），复核未发现判据错误 | **单点变异 M1**：把 `.177` 文案改回旧版（`sha256 e199792f… → 48551c05…` 证明注入生效）⇒ `TestImportPlaceholderMessageN063` **恰红**（双断言）且无关用例 `TestImportValidateAcceptsValid`/`TestImportValidateRejects` **保持绿**（隔离成立）；`cp` 还原后 `sha256 = e199792ff69847d142dfdee866d3d05e95aedc072368da6505686a9c611e075d` 与变异前**逐字一致**、复绿 |
+| `T2` `field_id` 段三态结论 | ✅ | **③ 具名豁免 `accepted_gap`**（复核结论，零代码改动） | **逐问取证**：① **消费端在码不在产**——`config.LoadFieldMap`（`internal/config/field_map.go:18`，读 `map_kind='field_id'` 行）← `config.LoadMaps`（`maps.go:30`）← **唯一消费点** `internal/worker/extract.go#ExtractDetail`（`:33`，调用点 `ingest.go:72`）与 `#BuildExtJSON`（`:255` 附近同键查询）——两者都在 **worker→ingest 过渡链**上：`cmd/jxapproval/bootstrap.go:7-8` 明注「worker 事件链暂留作过渡，其写入者退役见 T02b」，而 inbox 的**唯一生产写入口**＝`internal/httpapi/dev_inject.go:27`（`/internal/dev/inject-event`，**仅 `DEV_MODE=true` 注册**，`router.go:114`）⇒ **生产路径无事件喂入，消费端形同退役**（仅 DEV 注入/测试可达，`worker/qa_b32_ingest_test.go` 证其在测试面仍活）。② **生产端确无**——(a)「11 张模板人工建」已作废（`docs/07` V2.1 改写、`docs/README` 定案 #48）；(b) ★ API 建定义载荷 `internal/approval/defregistry.go#toExternalDef`（`:194-212`）**只有链接/开关/回调字段、零 form/控件段** ⇒ 即使 API 建成也不产生控件 id；(c) 实测 `docs/reference/config-mapping.jx.json` **`field_id 0 条`**。③ **不填的后果**——生产提交路径**不依赖它**：我方页面载荷经 `flow/service.go:960#applyBizFields` 直取规范列（金额/供应商/用途分类），部门＝会话/OrgVerify 权威（`reservedInstanceIdentityKeys` 语义）；过渡/DEV 事件路径下未映射控件按 **TC-23 落 `t_instance_field` 不进业务列**（`bizfields.go:10-15` 头注）。★ **豁免理由（缺什么）**＝**缺生产端**：转向 ③ 后飞书侧控件 id **无任何来源**（人工建作废 ＋ API 载荷无 form 段）——本期不可填；消费端随 T02b 退役归零后再无填它的意义 ⇒ **具名豁免、不删段、不改 `spec/**`**；若将来飞书回传控件值需抽取，**恢复填写与消费端同批**（届时由我方裁定段语义） | —（结论型，无实现面） |
+
+**「飞书审批后台」残留清单（按交付要求 2 列出、不擅自改）**：
+1. `internal/httpapi/handlers_approval.go:1102` —— ★ **`defs/sync` 端点的同族占位符报错**（门②）仍用旧文案；**本包按「他处一并列出但不擅自改」未动**，★ **建议下批同款订正**（同为我方自定义 code 口径、且正对联调入口，误导面比导入层更大）；
+2. `internal/config/importmap.go:18` —— 文件头「背景」注释仍写「必须人工在飞书审批后台建」（转向 ③ 作废的旧设计叙述，注释非报错文案）；
+3. `cmd/jxapproval/seed.go:46` —— 同类陈旧注释；
+4. `internal/config/importmap_test.go:55/67/68` —— ★ **本包新用例自身的反向断言**（`Contains(msg,"飞书审批后台") ⇒ 报错`）——是护栏、非残留；
+5. `docs/` —— 6 个文件共 8 处（`01`/`01a`/`03`/`06`/`07`/`README`，多为「已作废」的历史叙述与用例步骤）—— `docs/**` 归我方、未动。
+★ 另附观察（同族滞留、未动）：`importmap.go:196` 的 **field_id 占位符文案**仍写「请填入**模板中控件**的真实 field_id」——「模板控件」在转向 ③ 下同样不可得，与 `T2` 结论同源；建议与上述第 1 条同批处置。
+
+**门禁原文**：
+
+```
+===== 总判定：**通过**（必绿基线 9/9 全绿；会报项如需处置见上）=====
+```
+
+★ `audit_silent.py` **合计命中 0 处**（`C1`–`C9` 全无命中，含 `C5` 已由我方批 40 收口）—— **会报零命中**达成。
+
+**本轮改动文件（显式路径）**：`internal/config/importmap.go`（文案一处）· `internal/config/importmap_test.go`（新增 `TestImportPlaceholderMessageN063`）· `COLLAB.md`（本回执）。★ `spec/**`、`docs/**` **零改动**。
+
+`MIMO-DONE`
 
 ### N-064 · `tier_record` 的两处 ext 回写须「可见失败」＋ 复用既有键级合并口径
 

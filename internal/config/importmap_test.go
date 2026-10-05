@@ -50,6 +50,25 @@ func TestImportValidateAcceptsValid(t *testing.T) {
 	}
 }
 
+// TestImportPlaceholderMessageN063 N-063 T1：占位符报错须指向「我方自定义的
+// approval_code」（转向 ③：定义由 API 建、code 由本侧指定），
+// **不得**再指向不存在的「飞书审批后台」路径。
+func TestImportPlaceholderMessageN063(t *testing.T) {
+	p := fullSample()
+	p.ApprovalCode[0].Code = "REPLACE_ME_APPROVAL_CODE_BA"
+	err := p.Validate()
+	if err == nil {
+		t.Fatal("占位符载荷必须被拒")
+	}
+	msg := err.Error()
+	if !strings.Contains(msg, "我方自定义的 approval_code") {
+		t.Errorf("文案须指向我方自定义 code，实为: %s", msg)
+	}
+	if strings.Contains(msg, "飞书审批后台") {
+		t.Errorf("文案不得指向不存在的飞书审批后台路径（N-063 T1），实为: %s", msg)
+	}
+}
+
 // TestImportValidateRejects 逐条注入非法值，确认全部被拒（整体拒绝，不部分导入）。
 func TestImportValidateRejects(t *testing.T) {
 	cases := []struct {

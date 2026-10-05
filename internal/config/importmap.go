@@ -174,7 +174,7 @@ func (p *ImportPayload) Validate() error {
 			return fmt.Errorf("approval_code[%d]：code 不能为空", i)
 		}
 		if isPlaceholder(code) {
-			return fmt.Errorf("approval_code[%d]（%s）：仍是未替换的占位符——请填入飞书审批后台的真实 approval_code", i, code)
+			return fmt.Errorf("approval_code[%d]（%s）：仍是未替换的占位符——请填入我方自定义的 approval_code（定义由 API 建，code 由本侧指定）", i, code)
 		}
 		if !inList(e.DocType, DocTypes) {
 			return fmt.Errorf("approval_code[%d]（%s）：doc_type 必须是 %s 之一，实际 %q",
