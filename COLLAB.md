@@ -2533,6 +2533,37 @@
 > 6. **F2 自适应公式**（我方技术方案，已写注释与测试）：`interval = base × factor`，`factor=max(在途≤20→1 / ≤100→2 / >100→4, 水位≥70→2)`，**钳制 [base, 10×base]**（不无限降频、无关闭档）；**90% 不额外放大**（保对账＝至少持续运行）＋ **90% 时 NotifySender 跳过 Bot**（降非关键）；`JX_APPROVAL_RECONCILE_INTERVAL`（默认 5m）＋ `JX_FEISHU_MONTHLY_QUOTA`（默认 10000 基线——01a §5.5 约束1 设计不依赖 100 万）。
 > 7. **会报 C5 新增 1 处**：`docs/05-API.md` 声明 `GET instances/*/fields` 但路由已摘（F7 收口的自然后果）—— ★ **docs 契约行归你方**，请删行或标注作废（我方只追加、不改你方已写内容）；该项为会报级、不阻塞 9/9。
 > 8. **F9 组内行级**：明细已到「组＋biz_nos」级；若「每笔一行的展开视图」另有要求，可再开半步（不阻塞本批验收）。
+> **mimo 回执 · 批 28（N-060 第三部分 G1–G3 · 2026-10-05 · 本轮交差标记 `MIMO-DONE`（★ 状态仍 `OPEN` —— G3 停手待裁定、结案由我方判定）**：
+>
+> ### 逐条（编号 ｜ 今态 ｜ 是否本轮完成 ｜ 证据 ｜ 单点变异 ｜ 未做原因）
+>
+> | # | 今态 | 本轮 | 证据 | 单点变异 | 未做/说明 |
+> |---|---|---|---|---|---|
+> | **G1**（F1/F3 form 半边） | ❌→✅ 复核：`InstanceSnapshot` 原无 `form` 字段（联调期刻意未发） | **完成** | `internal/platform/feishu/push.go`：`Form []ExternalFormField`（`[{name,value}]` R-32 形态）＋ `buildFormSummary`（**取值源**：申请人＝`applicant_name`→退 `applicant_open_id`；部门＝`department`；事项＝`ext_json.purpose`→退 `purpose_class_l2`）＋ `validateFormSummary`（**超 3 条/超 2048 两例必报、不截断**）；`BuildSnapshot` 构造即校验、超限上抛「推送组装失败」告警路径；测试 `push_body_test.go#TestFormSummaryThreeEntries`（3 条键名＋退化链＋两超限例＋snap.Form 序列化＋BuildSnapshot 集成超长失败） | **`formSummaryMaxEntries` 3→4** ⇒ `TestFormSummaryThreeEntries` **转红**（超3条不再报）；`cp .mutbak` 还原复绿 | ★ **形态张力如实登记**：`push.go` 头注（官方字段表）称 form name/value 为 i18n key 型，但 form 下发**从未实测**（联调刻意未发）；R-32 为裁定正本 ⇒ 按 `[{name,value}]` 直传文本实现 —— **若联调 1390001（key 型）再同批切 i18n**（回执提请知悉，未擅改口径） |
+> | **G2**（F10 第 13 指标） | ❌→✅ 复核：聚合 12 键 vs spec 13（**门禁预期红**：`输出指标数 = 12, spec 指标数 = 13`） | **完成（红窗收口）** | ① `specload.DocChainDoc` 补 `DeadlineWorkdays`（`doc_chains.SUB.deadline_workdays` 装载——此前未装载，Go 域允许）；② `dashboard.go`：`Builder.WithDeadlineWorkdays` 装配注入（**阈值不写死**；0 ⇒ `undefined_criteria` 不猜）＋ **纯函数 `countSubmitOverdue`**（`submit_group_at` 空 ∧ 距 `hunan_completed_at` 超 N 工作日，**复用 `submission.AddWorkingDays`**＝跳周六日＋HolidayChecker 挂点＝Q18 口径）＋ `buildAnomaly` 第 13 段（`guardedAlert` r3 守卫：L06 无行 ⇒ `not_connected` 无 count）；③ 装配 `handlers_dashboard.go`（**nil-safe**：`d.Spec==nil` 聚合测试路径不注入）；④ 硬编码同步 `TestDashboardGuardPerIndicator` `12→13`（N-046 同款）；⑤ 测试 `dashboard/submit_overdue_test.go#TestSubmitOverdueCountAndGuards`（公式逐字 4 例＋守卫 not_connected 无 count＋deadline=0 早退＋真实 0 非守卫态）；`TestDashboardAlertKeysMatchSpec` **13==13 绿** | **A**：去工作日比较（恒计）⇒ **转红**（未超期断言破）；**B**：删 deadline≤0 早退 ⇒ **转红**（恒 0 断言破）；`cp .mutbak` 还原复绿 | ★ **守卫（needGuard）变异面如实说明**：`newDashboardApp` 无 Spec 是既有设计（Spec 注入⇒看板 r1 灰态与聚合互斥）⇒ **deadline 装配与聚合路径在现有 fixture 下不可兼得**；守卫证据＝⑤ 直调组合断言 ＋ `TestDashboardGuardPerIndicator` 空库组（第 13 键进循环断言）；**「改 buildAnomaly 调用处 needGuard」的变异无自动化断言面**——不造假、如实登记 |
+> | **G3**（M6-05 原件消费侧） | ❌ 复核：**`handover_register` 段整段零消费方** | **否 —— 停手点名（规格结构性矛盾）** | 复核证据：① `grep originals_handover_note\|originals_receipt\|handover_register`（internal/＋web/）⇒ **全仓零命中**；② **连既有段字段 `reject_reason_and_disposition` 也全仓零实现** ⇒ 该段**整体未接线**（非「渲染方式」问题）；③ `t_submission`（migrations/0001:271）**无自由列**（note/ext/json 均无），`registerGroup` 端点仅收 `grp_accept_no/paid_date`；④ `SUB` 的 approval 通道不通（`ResolveRoute` 无 SUB case，走独立 `POST /api/submission`＝写死结构体） | 无实现 ⇒ 无变异面 | ★ **冲突点**：R-34 要求「两字段提交 ⇒ 落库/回读可见」 × 任务包②「不得新造专属端点/表/列、沿既有机制」 × **现状无任何承载列/通道**（三者不可同时满足）。**不硬造、不假接** ⇒ **停手**，请裁定：(a) 允许迁移加两列（`originals_handover_note TEXT`＋签收走附件机制）；或 (b) 指定既有 JSON 载体与登记入口；或 (c) 把「落库」改为「附件通道承载」的口径。★ 裁定后我方同批接线 |
+>
+> ### 本轮改动文件清单（显式路径）
+>
+> `internal/platform/feishu/push.go` ＋ `push_body_test.go`（G1）· `internal/specload/specload.go`（`DeadlineWorkdays` 装载）· `internal/dashboard/dashboard.go` ＋ `submit_overdue_test.go`（G2）· `internal/httpapi/handlers_dashboard.go`（装配）· `internal/httpapi/dashboard_key_align_test.go`（12→13 硬编码同步）· `COLLAB.md`（本回执）。
+> ★ **`spec/**` 与 `docs/**` 零改动**（`git diff --stat spec/ docs/` ＝ 空 —— R-32/33/34 只读消费）；未碰 T1–T4 产物与第二部分 10 项；未碰两个历史 `.bak`；`.mutbak` 全部已删。
+>
+> ### 门禁原文
+>
+> ```
+> ===== 总判定：**通过**（必绿基线 9/9 全绿；会报项如上）=====
+> ```
+> ★ **时序说明（如实）**：提交**前**的 `check_all` 有 1 项红＝**净检出**（HEAD＝你方已入库的 spec 13 指标 × 我实现**尚未提交**的 12 键）—— 这正是 G2 声明的**两侧同批预期红窗**（`N-046` 教训的镜像：spec 先行 ⇒ 实现未提交期间净检出必红）；**本回执提交后复跑即 9/9**（原文＝提交后所测）。其余 8 项提交前后**均绿**；`go test ./... -count=1` 零 FAIL、`gofmt -l` 空、`build.sh` 通过（本批未动前端 —— 未跑 build，dist 无变化）。
+>
+> ### 如实登记
+>
+> 1. **G3 停手**（规格三要素矛盾，见表；不硬造假接线）。
+> 2. **G1 形态张力**（文本 vs i18n key）——按 R-32 字面实现，联调实测后再切键（提请知悉）。
+> 3. **G2 守卫变异面**无自动化断言（fixture 灰态互斥结构所致）——不造假；守卫由 ⑤ 直调断言＋GuardPerIndicator 空库组承保。
+> 4. 会报 `audit_silent C5`（`docs/05-API` 的 `instances/*/fields` 契约行 vs 已摘路由）仍在 —— **docs 行归你方**（批 27 已提请，未自行改 docs）。
+> 5. 本批**未跑 `scripts/build.sh`**（未动 `web/**`；上一批 dist 为最新）—— 若你方验收要求，可补跑。
+>
+> **`MIMO-DONE`**
 - **状态**：OPEN
 - **背景**：★ 2026-10-05 联调前总检查（用户指令）查出**两类剩余开发项**：① **常驻探针体系有系统性缺陷**（详见第一部分）；② **FR 矩阵仍有未实现/部分实现项**（基线 `2026-09-28`：**6❌ ＋ 21⚠️**，见 `.mimocode/plans/1790584354638-stellar-squid.md §6`）。★ 用户要求**合成一个任务、下一轮一次做完**。
 - **我方立场**：★★ **两类的性质完全不同**：① 是**我们自己的验证体系在漏水**（红着的探针 ≈ 没有探针，会让人在联调时得出错结论）；② 是**业务功能仍有缺口**。★ 都要修，但**① 必须先修** —— 因为 ② 的交付质量要靠 ① 兜底。

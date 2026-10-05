@@ -15,6 +15,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"github.com/chadhao/jx-procurement-platform/internal/submission"
 	"math"
 	"sort"
 	"strconv"
@@ -127,11 +128,21 @@ type Builder struct {
 	corruptRows int
 	// dash 看板规格（r1 灰态由其 source_status 驱动；nil = 不启用灰态，仅测试直造时出现）。
 	dash *specload.DashboardDoc
+	// deadlineWorkdays N-060 G2（R-33）：SUB 提交集团时限（工作日）——
+	// 唯一来源＝spec doc_chains.SUB.deadline_workdays（WithDeadlineWorkdays 装配注入，
+	// **不写死 3**）；0 ＝ 未装配 ⇒ submit_overdue 输出 undefined_criteria（不猜口径）。
+	deadlineWorkdays int
 }
 
 // New 构造聚合器（默认时钟 time.Now，默认拆分阈值 1,000 元）。
 func New(db *store.DB) *Builder {
 	return &Builder{db: db, now: func() time.Time { return time.Now().UTC() }, splitCents: defaultSplitCents}
+}
+
+// WithDeadlineWorkdays 注入 SUB 提交集团时限（N-060 G2；值来自 spec 装载，非字面量）。
+func (b *Builder) WithDeadlineWorkdays(n int) *Builder {
+	b.deadlineWorkdays = n
+	return b
 }
 
 // WithNow 注入时钟（供测试与可控时间窗）。
@@ -528,6 +539,25 @@ func (b *Builder) buildAnomaly(ctx context.Context, res Result, period string, q
 	res.Alerts = append(res.Alerts,
 		guardedAlert("group_rejected_unhandled", "集团驳回后未处置", rej, srcSubm, true))
 
+	// ⑬ 提交超期（N-060 G2 · FR-M6-03 · R-33 · spec 第 13 指标 submit_overdue）：
+	//   L06.submit_group_at 空 ∧ 距 L06.hunan_completed_at 超 deadlineWorkdays 个工作日。
+	//   r3 守卫：L06 无行 ⇒ not_connected（guardedAlert needGuard）；
+	//   阈值未装配 ⇒ undefined_criteria（不把「口径未配」显示成 0）。
+	{
+		submitCnt := countSubmitOverdue(r06, b.deadlineWorkdays, b.now())
+		var submitAlert map[string]any
+		if b.deadlineWorkdays <= 0 {
+			submitAlert = map[string]any{
+				"key": "submit_overdue", "label": "提交超期（湖南侧完成 3 个工作日未提交集团）",
+				"status": "undefined_criteria", "message": "阈值未装配（doc_chains.SUB.deadline_workdays）—— 口径未定不显示 0",
+			}
+		} else {
+			submitAlert = guardedAlert("submit_overdue", "提交超期（湖南侧完成 3 个工作日未提交集团）",
+				submitCnt, len(r06), true)
+		}
+		res.Alerts = append(res.Alerts, submitAlert)
+	}
+
 	// ★ 监督指标（FR-M5-07）：单独成项。
 	sup := buildSupervision(r03, period, q, b)
 	requesterCount := intFromAny(sup["requester_as_handler_count"])
@@ -803,6 +833,37 @@ func (b *Builder) listSplitSuspect(rows []Row) []SplitSuspectGroup {
 		}
 	}
 	return out
+}
+
+// countSubmitOverdue 提交超期笔数（N-060 G2 · FR-M6-03 · R-33，逐字 spec formula）：
+// L06 行的 submit_group_at 为空 ∧ 距 hunan_completed_at 已超 deadlineWorkdays 个工作日。
+//   - 工作日口径＝submission.AddWorkingDays（跳周六日；HolidayChecker 非空一并跳法定节假日
+//     —— Q18 定案，复用该挂点、不另起一套）；
+//   - deadline<=0 ＝ 未装配 ⇒ 返回 0 且由调用方输出 undefined_criteria（不猜 3）；
+//   - hunan_completed_at 缺失/不可解析 ⇒ 不计（不误报）。
+func countSubmitOverdue(rows []Row, deadlineWorkdays int, now time.Time) int {
+	if deadlineWorkdays <= 0 {
+		return 0
+	}
+	n := 0
+	for _, r := range rows {
+		if strings.TrimSpace(r.OpsStr("submit_group_at")) != "" {
+			continue // 公式前半：提交集团日期为空
+		}
+		done := strings.TrimSpace(jsonStr(r.ArchiveExt["hunan_completed_at"]))
+		if done == "" {
+			continue
+		}
+		d, ok := submission.ParseDate(done)
+		if !ok {
+			continue // 不可解析不误报（可见性由行级数据质量另行负责）
+		}
+		deadline := submission.AddWorkingDays(d, deadlineWorkdays)
+		if now.After(deadline) {
+			n++
+		}
+	}
+	return n
 }
 
 // countSplitSuspect 统计拆分嫌疑组数（＝命中组数；F9 改为 list 的薄封装，调用面不变）。

@@ -14,6 +14,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 
 	"github.com/chadhao/jx-procurement-platform/internal/observ"
 	"github.com/chadhao/jx-procurement-platform/internal/store"
@@ -187,6 +188,16 @@ type InstanceSnapshot struct {
 	// ① instance_title（实例展示名）② 每个 task_list[*].node_name 的 key 配对文案
 	//（BuildSnapshot 保证交叉一致：node_name 里的每个 key 在此都有对应文案）。
 	I18nResources []ExternalI18nResource `json:"i18n_resources"`
+	// Form ★ N-060 G1（FR-M0-18 · R-32）：三方实例推送 form 三摘要 ——
+	// 只传 3 条（申请人 / 部门 / 事项）、总长 ≤2048；超限 ⇒ 组装失败（告警、
+	// **绝不静默截断**，01a §8 FR-M0-18）。形态＝[{name,value}] 简化键值对（FR-M0-14）。
+	Form []ExternalFormField `json:"form,omitempty"`
+}
+
+// ExternalFormField form 摘要条目（N-060 G1）。
+type ExternalFormField struct {
+	Name  string `json:"name"`
+	Value string `json:"value"`
 }
 
 // PushClient external_instances 推送端口（HTTP 实现 + 测试替身）。
@@ -355,6 +366,72 @@ func instanceI18nResources(defName, docType, bizNo string, nodeTexts []ExternalI
 // ★ log 仅用于数据异常的退化 warn（终态任务缺 closed_at / 终态实例缺结束时刻 /
 // 实例缺 created_at / 缺 applicant_open_id / 定义缺失降级 / 节点名缺失降级 /
 // 同 key 节点名冲突）；nil 时跳过 warn。
+// formSummaryMaxEntries / formSummaryMaxRunes R-32 硬界（01a FR-M0-18）：
+// 只传 3 条（申请人/部门/事项）；总长 ≤2048 字符。超限 ⇒ 报错（不截断、不静默）。
+const (
+	formSummaryMaxEntries = 3
+	formSummaryMaxRunes   = 2048
+)
+
+// buildFormSummary 构造 form 三摘要（N-060 G1 · R-32）。
+// ★ 取值源（回执点名）：
+//   - 申请人 ＝ t_instance.applicant_name（缺则退 applicant_open_id，再缺退空）；
+//   - 部门   ＝ t_instance.department；
+//   - 事项   ＝ ext_json.purpose（提交期非规范字段分流落 ext，handlers_approval 规范
+//     字段清单不含 purpose）⇒ 缺则退 purpose_class_l2（用途二级）⇒ 再缺退空串。
+//
+// ★ 形态按 R-32 字面：[{name,value}] 简化键值对（name＝中文标签、value＝实际值）。
+//
+//	★ 张力如实登记：push.go 头注（2026-09-28 官方核对）称 form[].name/value 属
+//	i18n key 型 —— 但该结论来自**官方字段表**、form 下发**从未实测**（联调期刻意未发）；
+//	R-32 为裁定正本 ⇒ 本实现按 R-32 直传文本；★ 若联调实测 1390001（key 型），
+//	再同批切 i18n 键值（回执已提请我方知悉）。
+func buildFormSummary(inst *store.Instance) []ExternalFormField {
+	if inst == nil {
+		return nil
+	}
+	applicant := strings.TrimSpace(inst.ApplicantName)
+	if applicant == "" {
+		applicant = strings.TrimSpace(inst.ApplicantOpenID)
+	}
+	subject := ""
+	if strings.TrimSpace(inst.ExtJSON) != "" {
+		var ext map[string]any
+		if err := json.Unmarshal([]byte(inst.ExtJSON), &ext); err == nil {
+			subject = strings.TrimSpace(fmt.Sprint(ext["purpose"]))
+			if subject == "<nil>" {
+				subject = ""
+			}
+		}
+	}
+	if subject == "" {
+		subject = strings.TrimSpace(inst.PurposeClassL2)
+	}
+	return []ExternalFormField{
+		{Name: "申请人", Value: applicant},
+		{Name: "部门", Value: strings.TrimSpace(inst.Department)},
+		{Name: "事项", Value: subject},
+	}
+}
+
+// validateFormSummary 超限校验（可机检两例：超 3 条 / 超 2048 字符）——
+// 任何一条命中即报错（S12 同族：推送组装失败路径上抛，告警可见、不静默截断）。
+func validateFormSummary(entries []ExternalFormField) error {
+	if len(entries) > formSummaryMaxEntries {
+		return fmt.Errorf("feishu: form 摘要 %d 条超过上限 %d（R-32 只传 3 条 —— 绝不静默截断）",
+			len(entries), formSummaryMaxEntries)
+	}
+	total := 0
+	for _, e := range entries {
+		total += utf8.RuneCountInString(e.Name) + utf8.RuneCountInString(e.Value)
+	}
+	if total > formSummaryMaxRunes {
+		return fmt.Errorf("feishu: form 摘要总长 %d 字符超过上限 %d（R-32/FR-M0-18 —— 绝不静默截断）",
+			total, formSummaryMaxRunes)
+	}
+	return nil
+}
+
 func BuildSnapshot(inst *store.Instance, tasks []store.FlowTask, ccList []string, detailBase string, defName string, log *slog.Logger) (InstanceSnapshot, error) {
 	if inst == nil {
 		return InstanceSnapshot{}, fmt.Errorf("feishu: 组装快照失败: 实例为空")
@@ -366,6 +443,11 @@ func BuildSnapshot(inst *store.Instance, tasks []store.FlowTask, ccList []string
 	// node_name i18n key → 实际节点名（循环内收集，循环后并入 I18nResources，
 	// 保证 key↔文案同批生成、严格成对）。
 	nodeI18nValues := make(map[string]string)
+	// ★ N-060 G1：form 三摘要 —— 构造后立即校验超限（超限 ⇒ 组装失败、上抛告警）。
+	formEntries := buildFormSummary(inst)
+	if err := validateFormSummary(formEntries); err != nil {
+		return InstanceSnapshot{}, err
+	}
 	snap := InstanceSnapshot{
 		ApprovalCode: inst.ApprovalCode,
 		InstanceID:   inst.InstanceCode,
@@ -382,6 +464,7 @@ func BuildSnapshot(inst *store.Instance, tasks []store.FlowTask, ccList []string
 		// ★ extra.business_key = biz_no（N-060 F3 · FR-M0-14）：对账/读回锚点
 		//（04a §3.2；05-API §6「单据编号走顶层 extra.business_key」）。
 		Extra: map[string]string{"business_key": inst.BizNo},
+		Form:  formEntries,
 		// I18nResources 在 task 循环后统一组装（需先收集 node_name 的 key↔文案）。
 	}
 	if log != nil {

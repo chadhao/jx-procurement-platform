@@ -101,6 +101,12 @@ func (d Deps) buildDashboard(c echo.Context, idn permission.Identity, rule permi
 	}
 
 	builder := dashboard.New(d.DB).WithNow(func() time.Time { return time.Now().UTC() })
+	// ★ N-060 G2（R-33）：submit_overdue 阈值＝ spec 唯一来源（不写死 3；0 ⇒ undefined_criteria）。
+	//   nil-safe：聚合路径测试不注入 Spec（d.Spec==nil ⇒ 不注入 ⇒ 0 ⇒ undefined_criteria，
+	//   该分支仍输出 key=submit_overdue ⇒ key 等量断言面不受影响）。
+	if d.Spec != nil {
+		builder = builder.WithDeadlineWorkdays(d.Spec.Chain.DocChains["SUB"].DeadlineWorkdays)
+	}
 	// ★ global_rules.r1：灰态判据来自 spec/dashboard.json（source_status 非 connected
 	//   ⇒ 全部指标「数据未接入」而非 0）。
 	if d.Spec != nil {

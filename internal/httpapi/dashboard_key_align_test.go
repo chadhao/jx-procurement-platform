@@ -244,8 +244,8 @@ func TestDashboardGuardPerIndicator(t *testing.T) {
 			m, _ := a.(map[string]any)
 			out[m["key"].(string)] = m
 		}
-		if len(out) != 12 {
-			t.Fatalf("alerts 数 = %d, want 12", len(out))
+		if len(out) != 13 {
+			t.Fatalf("alerts 数 = %d, want 13（N-060 G2：第 13 指标 submit_overdue）", len(out))
 		}
 		return out
 	}

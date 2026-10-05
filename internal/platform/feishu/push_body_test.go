@@ -588,3 +588,82 @@ func TestBuildSnapshotExtraBusinessKeyAndCCList(t *testing.T) {
 		t.Error("cc_list 超 200 应直接失败（S12 不静默截断）")
 	}
 }
+
+// N-060 G1（FR-M0-18 · R-32）：form 三摘要 —— 恰 3 条（申请人/部门/事项）·
+// 取值源退化链 · 超 3 条 / 超 2048 两例告警（绝不静默截断）。
+func TestFormSummaryThreeEntries(t *testing.T) {
+	// ① 正常：申请人名 + 部门 + ext purpose
+	inst := &store.Instance{
+		BizNo: "PR-2610-0101", ApplicantName: "张三", ApplicantOpenID: "ou_zhang",
+		Department: "仓储部", ExtJSON: `{"purpose":"补一批滤布"}`,
+	}
+	entries := buildFormSummary(inst)
+	if len(entries) != 3 {
+		t.Fatalf("form 条数 = %d, 期望恰 3（R-32：申请人/部门/事项）", len(entries))
+	}
+	if entries[0].Name != "申请人" || entries[0].Value != "张三" {
+		t.Errorf("申请人条 = %+v, 期望 {申请人 张三}", entries[0])
+	}
+	if entries[1].Name != "部门" || entries[1].Value != "仓储部" {
+		t.Errorf("部门条 = %+v, 期望 {部门 仓储部}", entries[1])
+	}
+	if entries[2].Name != "事项" || entries[2].Value != "补一批滤布" {
+		t.Errorf("事项条 = %+v, 期望取 ext_json.purpose", entries[2])
+	}
+	if err := validateFormSummary(entries); err != nil {
+		t.Errorf("正常 3 条应过校验：%v", err)
+	}
+
+	// ② 退化链：无 ApplicantName ⇒ 退 open_id；无 purpose ⇒ 退 purpose_class_l2
+	inst2 := &store.Instance{
+		BizNo: "PR-2610-0102", ApplicantOpenID: "ou_fallback",
+		Department: "生产部", PurposeClassL2: "主原料",
+	}
+	e2 := buildFormSummary(inst2)
+	if e2[0].Value != "ou_fallback" || e2[2].Value != "主原料" {
+		t.Errorf("退化链 = 申请人%q/事项%q, 期望 ou_fallback/主原料", e2[0].Value, e2[2].Value)
+	}
+
+	// ③ 超 3 条 ⇒ 报错（两例之一；绝不静默截断）
+	four := append(append([]ExternalFormField{}, entries...), ExternalFormField{Name: "第4条", Value: "x"})
+	err4 := validateFormSummary(four)
+	if err4 == nil || !strings.Contains(err4.Error(), "超过上限 3") {
+		t.Errorf("超 3 条应报错点名上限，实为 %v", err4)
+	}
+
+	// ④ 总长 >2048 ⇒ 报错（两例之二）
+	long := make([]ExternalFormField, 3)
+	for i := range long {
+		long[i] = ExternalFormField{Name: "标签", Value: strings.Repeat("字", 800)} // 3×(2+800)=2406>2048
+	}
+	errLong := validateFormSummary(long)
+	if errLong == nil || !strings.Contains(errLong.Error(), "2048") {
+		t.Errorf("超 2048 应报错点名 2048，实为 %v", errLong)
+	}
+
+	// ⑤ BuildSnapshot 集成：正常实例 form 进载荷；超长事项 ⇒ 组装失败（上抛）
+	instOK := &store.Instance{
+		BizNo: "BA-2610-0001", ApplicantName: "李四", Department: "综合运营部",
+		ExtJSON: `{"purpose":"季度备案"}`, ApprovalCode: "code-ba",
+		InstanceCode: "app:BA-2610-0001", Status: "APPROVED", UpdateTime: 1,
+		CreatedAt: snapCreatedAt, UpdatedAt: snapUpdatedAt, ApplicantOpenID: "ou_li",
+	}
+	snap, err := BuildSnapshot(instOK, nil, nil, testDetailBase, "", nil)
+	if err != nil {
+		t.Fatalf("正常实例 BuildSnapshot 应成功：%v", err)
+	}
+	if len(snap.Form) != 3 || snap.Form[2].Value != "季度备案" {
+		t.Errorf("snap.Form = %+v, 期望 3 条且事项=季度备案", snap.Form)
+	}
+	// 序列化形态 [{name,value}]
+	raw, _ := json.Marshal(snap.Form)
+	if !strings.Contains(string(raw), `"name":"申请人"`) || !strings.Contains(string(raw), `"value":"李四"`) {
+		t.Errorf("form 序列化应为 {name,value} 键值对：%s", string(raw))
+	}
+	instOver := *instOK
+	instOver.ExtJSON = `{"purpose":"` + strings.Repeat("超长事项", 800) + `"}`
+	if _, err := BuildSnapshot(&instOver, nil, nil, testDetailBase, "", nil); err == nil ||
+		!strings.Contains(err.Error(), "2048") {
+		t.Errorf("超 2048 事项应 BuildSnapshot 组装失败（告警上抛、不截断），实为 %v", err)
+	}
+}

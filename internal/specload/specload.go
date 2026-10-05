@@ -240,6 +240,10 @@ type DocChainDoc struct {
 	// GR/QC/RFQ/BJ。★ 明示排除 SUB（无 route 但走独立通道 POST /api/submission）
 	// ⇒ 不得用「route == ""」当判定（会把 SUB 卷进来）。
 	NoApprovalChain bool `json:"no_approval_chain"`
+	// DeadlineWorkdays N-060 G2（R-33）：SUB 提交集团时限（工作日数，
+	// spec/chain.json#doc_chains.SUB.deadline_workdays —— 看板 submit_overdue 的
+	// 阈值唯一来源，代码不得写死 3）。
+	DeadlineWorkdays int `json:"deadline_workdays"`
 }
 
 // UnmarshalJSON 兼容 doc_chains 中的注释性字符串条目（如 "_note"）——
