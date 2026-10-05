@@ -62,6 +62,14 @@ type Env struct {
 	RunEnv            string // JX_ENV: prod / test
 	DevMode           bool   // DEV_MODE
 	ReconcileInterval time.Duration
+	// ApprovalReconcileInterval 审批对账周期（JX_APPROVAL_RECONCILE_INTERVAL，
+	// Go duration 串如 "5m"，默认 5m —— 01a §5.5 约束2「对账频率可配置 + 自适应」；
+	// ★ 与上面旧 ReconcileInterval（JX_RECONCILE_INTERVAL_HOURS，旧器）无关）。
+	ApprovalReconcileInterval time.Duration
+	// FeishuMonthlyQuota 飞书 API 月配额基数（JX_FEISHU_MONTHLY_QUOTA，默认 10000）。
+	// ★ 01a §5.5 约束1：设计不得依赖限时 100 万（逐月续期不保证）⇒ **默认按基线 1 万**；
+	// 实际以管理后台「费用中心」为准，可经环境变量覆盖。
+	FeishuMonthlyQuota int64
 	// OrgSyncStaleHours 通讯录启动全量的新鲜度阈值（JX_ORG_SYNC_STALE_HOURS，默认 24）。
 	// ★ docs/08 §4.5：距上次**成功**同步超阈值才拉（避免每次重启打一波）；
 	//   启动全量为异步执行，失败不阻塞启动、不进就绪门禁。
@@ -94,36 +102,50 @@ func LoadEnv() (*Env, error) {
 		orgReconcileHours = 168
 	}
 
+	// N-060 F2：审批对账周期（可配置；解析失败 ⇒ 默认 5m 可见回退）＋ 飞书月配额基数。
+	approvalReconcileInterval := 5 * time.Minute
+	if raw := strings.TrimSpace(getenv("JX_APPROVAL_RECONCILE_INTERVAL", "")); raw != "" {
+		if d, err := time.ParseDuration(raw); err == nil && d > 0 {
+			approvalReconcileInterval = d
+		}
+	}
+	feishuMonthlyQuota := int64(getenvInt("JX_FEISHU_MONTHLY_QUOTA", 10000))
+	if feishuMonthlyQuota <= 0 {
+		feishuMonthlyQuota = 10000
+	}
+
 	return &Env{
-		AppID:               getenv("JX_APP_ID", ""),
-		AppSecret:           getenv("JX_APP_SECRET", ""),
-		DataDir:             dataDir,
-		AttachDir:           getenv("JX_ATTACH_DIR", filepath.Join(dataDir, "attachments")),
-		DBPath:              dbPath,
-		ListenAddr:          getenv("JX_LISTEN_ADDR", "127.0.0.1:8080"),
-		SessionKey:          getenv("JX_SESSION_KEY", ""),
-		InternalToken:       getenv("JX_INTERNAL_TOKEN", ""),
-		CallbackDomain:      getenv("JX_CALLBACK_DOMAIN", ""),
-		OAuthRedirectURI:    getenv("JX_OAUTH_REDIRECT_URI", ""),
-		ActionCallbackToken: getenv("JX_ACTION_CALLBACK_TOKEN", ""),
-		LockPath:            lockPath,
-		S3Endpoint:          getenv("JX_S3_ENDPOINT", ""),
-		S3Bucket:            getenv("JX_S3_BUCKET", ""),
-		S3Region:            getenv("JX_S3_REGION", "us-east-1"),
-		S3PathStyle:         getenvBool("JX_S3_PATH_STYLE", true),
-		S3AK:                getenv("JX_S3_AK", ""),
-		S3SK:                getenv("JX_S3_SK", ""),
-		RustFSEndpoint:      getenv("JX_RUSTFS_ENDPOINT", ""),
-		RustFSBucket:        getenv("JX_RUSTFS_BUCKET", getenv("JX_S3_BUCKET", "")),
-		RustFSRegion:        getenv("JX_RUSTFS_REGION", getenv("JX_S3_REGION", "us-east-1")),
-		RustFSPathStyle:     getenvBool("JX_RUSTFS_PATH_STYLE", getenvBool("JX_S3_PATH_STYLE", true)),
-		RustFSAK:            getenv("JX_RUSTFS_AK", ""),
-		RustFSSK:            getenv("JX_RUSTFS_SK", ""),
-		RunEnv:              getenv("JX_ENV", "prod"),
-		DevMode:             getenvBool("DEV_MODE", false),
-		ReconcileInterval:   time.Duration(intervalHours) * time.Hour,
-		OrgSyncStaleHours:   orgSyncStaleHours,
-		OrgReconcileHours:   orgReconcileHours,
+		AppID:                     getenv("JX_APP_ID", ""),
+		AppSecret:                 getenv("JX_APP_SECRET", ""),
+		DataDir:                   dataDir,
+		AttachDir:                 getenv("JX_ATTACH_DIR", filepath.Join(dataDir, "attachments")),
+		DBPath:                    dbPath,
+		ListenAddr:                getenv("JX_LISTEN_ADDR", "127.0.0.1:8080"),
+		SessionKey:                getenv("JX_SESSION_KEY", ""),
+		InternalToken:             getenv("JX_INTERNAL_TOKEN", ""),
+		CallbackDomain:            getenv("JX_CALLBACK_DOMAIN", ""),
+		OAuthRedirectURI:          getenv("JX_OAUTH_REDIRECT_URI", ""),
+		ActionCallbackToken:       getenv("JX_ACTION_CALLBACK_TOKEN", ""),
+		LockPath:                  lockPath,
+		S3Endpoint:                getenv("JX_S3_ENDPOINT", ""),
+		S3Bucket:                  getenv("JX_S3_BUCKET", ""),
+		S3Region:                  getenv("JX_S3_REGION", "us-east-1"),
+		S3PathStyle:               getenvBool("JX_S3_PATH_STYLE", true),
+		S3AK:                      getenv("JX_S3_AK", ""),
+		S3SK:                      getenv("JX_S3_SK", ""),
+		RustFSEndpoint:            getenv("JX_RUSTFS_ENDPOINT", ""),
+		RustFSBucket:              getenv("JX_RUSTFS_BUCKET", getenv("JX_S3_BUCKET", "")),
+		RustFSRegion:              getenv("JX_RUSTFS_REGION", getenv("JX_S3_REGION", "us-east-1")),
+		RustFSPathStyle:           getenvBool("JX_RUSTFS_PATH_STYLE", getenvBool("JX_S3_PATH_STYLE", true)),
+		RustFSAK:                  getenv("JX_RUSTFS_AK", ""),
+		RustFSSK:                  getenv("JX_RUSTFS_SK", ""),
+		RunEnv:                    getenv("JX_ENV", "prod"),
+		DevMode:                   getenvBool("DEV_MODE", false),
+		ReconcileInterval:         time.Duration(intervalHours) * time.Hour,
+		ApprovalReconcileInterval: approvalReconcileInterval,
+		FeishuMonthlyQuota:        feishuMonthlyQuota,
+		OrgSyncStaleHours:         orgSyncStaleHours,
+		OrgReconcileHours:         orgReconcileHours,
 	}, nil
 }
 

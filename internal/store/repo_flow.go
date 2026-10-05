@@ -278,6 +278,25 @@ func scanFlowTask(s interface {
 //	APPROVE/REJECT 写入点必须携带任务当前 round；其余 op_type 无该约束，填 0。
 //
 // 返回 inserted 表示本次是否真的写入（false＝幂等命中）。
+// CountFlowOpsByType 某单据某类操作的**成功留痕数**（N-060 F4 · FR-M9-04/05/06
+// 次数上限的数据源 —— 成功才写 op_log ⇒ count＝已成功次数）。
+func (d *DB) CountFlowOpsByType(ctx context.Context, bizNo, opType string) (int, error) {
+	var n int
+	err := d.QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM t_flow_op_log WHERE biz_no = ? AND op_type = ?`,
+		bizNo, opType).Scan(&n)
+	return n, err
+}
+
+// CountFlowOpsByTypeTx 同上（事务内 —— 上限判定与后续写入同事务原子）。
+func (d *DB) CountFlowOpsByTypeTx(ctx context.Context, tx *sql.Tx, bizNo, opType string) (int, error) {
+	var n int
+	err := tx.QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM t_flow_op_log WHERE biz_no = ? AND op_type = ?`,
+		bizNo, opType).Scan(&n)
+	return n, err
+}
+
 func (d *DB) InsertFlowOpLogTx(ctx context.Context, tx *sql.Tx, op *FlowOpLog) (bool, error) {
 	if op == nil || op.BizNo == "" || op.OpType == "" {
 		return false, fmt.Errorf("store: 写入操作留痕失败: biz_no/op_type 不能为空")

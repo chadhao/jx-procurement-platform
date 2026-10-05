@@ -140,29 +140,9 @@ func (g *Ingestor) Ingest(ctx context.Context, det *feishu.InstanceDetail, sourc
 			return err
 		}
 
-		fields := make([]store.InstanceField, 0, len(det.Fields))
-		for _, f := range det.Fields {
-			biz := f.BizField
-			if g.maps != nil && g.maps.Field != nil {
-				if mapped, ok := g.maps.Field.BizField(docType, f.FieldID); ok {
-					biz = mapped
-				}
-			}
-			fields = append(fields, store.InstanceField{
-				InstanceCode: det.InstanceCode,
-				FieldID:      f.FieldID,
-				FieldName:    f.FieldName,
-				BizField:     biz,
-				ValueText:    f.ValueText,
-				ValueType:    f.ValueType,
-				RawJSON:      f.RawJSON,
-			})
-		}
-		if len(fields) > 0 {
-			if err := g.db.UpsertFieldsTx(ctx, tx, det.InstanceCode, fields); err != nil {
-				return err
-			}
-		}
+		// ★ N-060 F7（FR-M2-02/M2-03）：t_instance_field 已随「③ 下主链弃用」——
+		// 此处**不再写入**（旧事件链保留其余功能：实例 upsert/附件/归档过渡）；
+		// 孤儿读端点 /instances/:code/fields 同批摘除（router+handler）。
 
 		// 附件元数据登记（B39）：**只登记、不下载** —— 事件处理有 3 秒窗口，
 		// 网络 IO 绝不能放在同步路径上；文件本体按需拉取（下载端点 / 凭证包）。

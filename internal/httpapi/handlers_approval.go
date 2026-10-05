@@ -279,6 +279,9 @@ func callbackErrorStatus(err error) (status int, code int) {
 		return http.StatusForbidden, codeForbidden
 	case errors.Is(err, flow.ErrNotAssignee):
 		return http.StatusForbidden, codeRowForbidden
+	case errors.Is(err, flow.ErrOpLimitExceeded):
+		// N-060 F4：四操作次数上限 3/3/2（FR-M9-04/05/06）——业务拒绝（400/40000）。
+		return http.StatusBadRequest, codeBadRequest
 	case errors.Is(err, flow.ErrInvalidSubmit):
 		return http.StatusBadRequest, codeBadRequest
 	case errors.Is(err, flow.ErrIllegalTransition),
@@ -638,6 +641,13 @@ func (d Deps) handleApprovalSubmit(c echo.Context) error {
 					map[string]any{"form_errors": []formError{fe}})
 			}
 			return fail(c, http.StatusBadRequest, codeBadRequest, "表单校验失败: "+verr.Error())
+		}
+		// ★ N-060 F5（FR-M9-11）：person 类型字段**镜像命不中 ⇒ 阻断**（提交页防错的服务端
+		// 半边 —— 前端下拉只出在职镜像；此处按 open_id / 显示名精确匹配镜像在职名单，
+		// 命不中（离职/停用/手填野值）⇒ 400 可见拒绝。与 D6 实时回源（超时告警放行）不同层：
+		// 本地镜像命中是提交前置、回源是提交时复核）。
+		if verr := d.validatePersonFields(ctx, form, mergeProvidedFields(&body, usageL1, usageL2)); verr != nil {
+			return fail(c, http.StatusBadRequest, codeBadRequest, verr.Error())
 		}
 		// ---- T2：constant_ref 字段 —— 值必须在常量表 active 集合内；通过则写**值快照** ----
 		//（policy.snapshot_rule：单据同时存 key 与显示值快照 ⇒ 字典改名/停用后历史单据一字不变）
@@ -1183,6 +1193,9 @@ func (d Deps) approvalError(c echo.Context, err error) error {
 	switch {
 	case errors.Is(err, store.ErrNotFound):
 		return fail(c, http.StatusNotFound, codeNotFound, "实例或任务不存在")
+	case errors.Is(err, flow.ErrOpLimitExceeded):
+		// N-060 F4：四操作次数上限 3/3/2（FR-M9-04/05/06）。
+		return fail(c, http.StatusBadRequest, codeBadRequest, err.Error())
 	case errors.Is(err, flow.ErrNotAssignee):
 		return fail(c, http.StatusForbidden, codeRowForbidden, err.Error())
 	case errors.Is(err, flow.ErrDefinitionMissing):

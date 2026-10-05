@@ -105,6 +105,17 @@ func (d *DB) GetInstance(ctx context.Context, instanceCode string) (*Instance, e
 }
 
 // GetInstanceByBizNo 按业务单号读取实例（我方审批核心以 biz_no 为业务键）；不存在返回 ErrNotFound。
+// CountPendingApprovalInstances 在途（status=PENDING）实例数 —— 对账频率自适应的
+// 「在途单数」因子（N-060 F2 · FR-M0-19 · 01a §5.5 约束2「按在途单数与配额余量调频」）。
+func (d *DB) CountPendingApprovalInstances(ctx context.Context) (int, error) {
+	var n int
+	if err := d.QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM t_instance WHERE status = ?`, "PENDING").Scan(&n); err != nil {
+		return 0, err
+	}
+	return n, nil
+}
+
 func (d *DB) GetInstanceByBizNo(ctx context.Context, bizNo string) (*Instance, error) {
 	row := d.QueryRowContext(ctx, instanceSelectSQL+` WHERE biz_no = ?`, bizNo)
 	return scanInstance(row)

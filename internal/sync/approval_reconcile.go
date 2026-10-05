@@ -92,6 +92,11 @@ type ApprovalReconciler struct {
 	log     *slog.Logger
 	now     func() time.Time
 
+	// N-060 F2（FR-M0-19 · 01a §5.5）：对账频率可配置 ＋ 自适应。
+	// 未 SetAdaptive 时用默认（5m / 基线 1 万）—— bootstrap 装配时注入 env 值。
+	baseInterval time.Duration
+	quota        int64
+
 	mu     sync.Mutex
 	streak map[string]int // instance_id → 连续不一致次数
 }
@@ -113,6 +118,47 @@ func NewApprovalReconciler(db *store.DB, checker ExtSyncChecker, pusher Repusher
 	}
 }
 
+// SetAdaptive 注入自适应参数（N-060 F2）：base＝对账基础周期（env JX_APPROVAL_RECONCILE_INTERVAL）；
+// quota＝飞书 API 月配额基数（env JX_FEISHU_MONTHLY_QUOTA，默认 1 万基线 —— 01a §5.5 约束1）。
+// 非法值（≤0）回落默认（5m / 10000），不报错（配置容错；日志见 Run 首轮）。
+func (r *ApprovalReconciler) SetAdaptive(base time.Duration, quota int64) {
+	if base > 0 {
+		r.baseInterval = base
+	}
+	if quota > 0 {
+		r.quota = quota
+	}
+}
+
+// computeReconcileInterval 对账周期自适应（纯函数可测 · N-060 F2 · 01a §5.5 约束2）：
+//
+//	in-flight（在途单数）与配额水位（level 0/70/90）两个因子取大：
+//	  pending ≤20 ⇒ ×1 · ≤100 ⇒ ×2 · >100 ⇒ ×4（在途多＝对账×在途是量大头 ⇒ 降频省量）；
+//	  level ≥70 ⇒ 至少 ×2（70% 告警档降频；★ 90% 同为 ×2 —— 约束3「降非关键〔Bot〕、
+//	  **保对账**」⇒ 对账绝不因 90% 停摆，只在告警档轻降）。
+//	★ 下限保护：结果钳制在 [base, 10×base] —— 不无限降频、且**无「关闭对账」档**
+//	（对账是静默的最后防线，01a §5.5 约束2）。
+func computeReconcileInterval(base time.Duration, pending int, level int) time.Duration {
+	if base <= 0 {
+		base = defaultReconcileInterval
+	}
+	factor := int64(1)
+	switch {
+	case pending > 100:
+		factor = 4
+	case pending > 20:
+		factor = 2
+	}
+	if level >= 70 && factor < 2 {
+		factor = 2
+	}
+	const maxFactor = int64(10)
+	if factor > maxFactor {
+		factor = maxFactor
+	}
+	return base * time.Duration(factor)
+}
+
 // Run 周期运行：先立即对账一次，随后按默认间隔执行，直到 ctx 取消。
 //
 // ★ 未配置外部 check 端口时**不启动周期任务**，并**明确告警**（可见，不静默跳过）——
@@ -122,19 +168,50 @@ func (r *ApprovalReconciler) Run(ctx context.Context) {
 		r.log.Warn("审批对账未配置外部 check 端口：周期对账不启动（★ 明确告警，非静默跳过）")
 		return
 	}
-	if _, err := r.RunOnce(ctx, ""); err != nil && ctx.Err() == nil {
-		r.log.Error("审批对账执行出错", "error", err.Error())
+	base := r.baseInterval
+	if base <= 0 {
+		base = defaultReconcileInterval
 	}
-	t := time.NewTicker(defaultReconcileInterval)
-	defer t.Stop()
+	quota := r.quota
+	if quota <= 0 {
+		quota = 10000 // 基线 1 万（01a §5.5 约束1：设计不依赖限时 100 万）
+	}
 	for {
+		// ★ 配额水位评估（N-060 F2 · 01a §5.5 约束3）：70% 告警 / 90% 报警
+		//（90% 的「降非关键」落在 NotifySender 的 Bot 跳过；对账本身**保**——见 compute 注释）。
+		monthCalls := r.m.FeishuCallsThisMonth()
+		level := observ.QuotaLevel(monthCalls, quota)
+		prev := r.m.QuotaLevelNow()
+		r.m.SetQuotaLevel(level)
+		switch {
+		case level == 90 && prev < 90:
+			r.log.Error("★ 飞书 API 月配额已达 90%：报警 ＋ Bot 通知降级（保对账；额度耗尽会静默停止 —— 01a §5.5）",
+				"month_calls", monthCalls, "quota", quota, "level", level)
+		case level == 70 && prev < 70:
+			r.log.Warn("★ 飞书 API 月配额已达 70%：告警并降频对账（自适应；详见 01a §5.5 约束3）",
+				"month_calls", monthCalls, "quota", quota, "level", level)
+		case level != prev:
+			r.log.Info("飞书 API 配额水位变化", "month_calls", monthCalls, "quota", quota, "level", level)
+		}
+		if _, err := r.RunOnce(ctx, ""); err != nil && ctx.Err() == nil {
+			r.log.Error("审批对账执行出错", "error", err.Error())
+		}
+		if ctx.Err() != nil {
+			return
+		}
+		// ★ 自适应：在途单数 × 配额水位（N-060 F2 · 01a §5.5 约束2）。
+		pending := 0
+		if n, err := r.db.CountPendingApprovalInstances(ctx); err == nil {
+			pending = n
+		} else {
+			r.log.Warn("统计在途单数失败（自适应退化为按配额水位调频）", "error", err.Error())
+		}
+		next := computeReconcileInterval(base, pending, level)
+		r.log.Debug("对账自适应", "pending_instances", pending, "quota_level", level, "next_in", next.String())
 		select {
 		case <-ctx.Done():
 			return
-		case <-t.C:
-			if _, err := r.RunOnce(ctx, ""); err != nil && ctx.Err() == nil {
-				r.log.Error("审批对账执行出错", "error", err.Error())
-			}
+		case <-time.After(next):
 		}
 	}
 }

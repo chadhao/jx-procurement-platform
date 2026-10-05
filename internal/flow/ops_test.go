@@ -605,3 +605,148 @@ func TestCancelLocksNumber(t *testing.T) {
 		t.Errorf("prev_biz_no = %s, 期望 %s", got, bizNo)
 	}
 }
+
+// ---------- N-060 F4：四操作次数上限 3/3/2（FR-M9-04/05/06） ----------
+
+// pendingTaskFor 该 assignee 的 **PENDING** 任务（★ 通用 taskFor 返回首个匹配 ——
+// 含转交后残留的 TRANSFERRED 旧任务 ⇒ 上限循环须按 PENDING 取当前任务；不动 taskFor 本体）。
+func pendingTaskFor(t *testing.T, db *store.DB, bizNo, assignee string) store.FlowTask {
+	t.Helper()
+	tasks, err := db.ListFlowTasks(context.Background(), bizNo)
+	if err != nil {
+		t.Fatalf("读取任务失败: %v", err)
+	}
+	for _, tk := range tasks {
+		if tk.AssigneeOpenID == assignee && tk.Status == flow.TaskPending {
+			return tk
+		}
+	}
+	t.Fatalf("未找到 assignee=%s 的 PENDING 任务（biz_no=%s）", assignee, bizNo)
+	return store.FlowTask{}
+}
+
+// TestOpLimitsTransferAddSignRollback 上限：转交 3（第 4 拒）· 加签 3（第 4 拒）·
+// 回退 2（第 3 拒）—— 双向：到限前成功、到限即可见拒绝（ErrOpLimitExceeded）。
+func TestOpLimitsTransferAddSignRollback(t *testing.T) {
+	db := newFlowDB(t)
+	svc := flow.New(db, "app")
+	ctx := context.Background()
+
+	// ① 转交上限 3：任务在 ou_m1/ou_m9 之间交替转交（每次转交后新任务即当前任务）。
+	t.Run("Transfer上限3", func(t *testing.T) {
+		bizNo := submitOneNode(t, svc, "ou_m1")
+		cur := "ou_m1"
+		other := "ou_m9"
+		for i := 1; i <= 3; i++ { // 期望字面 3（FR-M9-04）—— 不引用常量，防实现/测试同步漂移
+			tk := pendingTaskFor(t, db, bizNo, cur)
+			if err := svc.Transfer(ctx, bizNo, tk.TaskID, cur, other, "接替", "休假"); err != nil {
+				t.Fatalf("第 %d 次转交应成功：%v", i, err)
+			}
+			cur, other = other, cur
+		}
+		tk := pendingTaskFor(t, db, bizNo, cur)
+		err := svc.Transfer(ctx, bizNo, tk.TaskID, cur, other, "接替", "休假")
+		if !errors.Is(err, flow.ErrOpLimitExceeded) {
+			t.Fatalf("第 4 次转交应 ErrOpLimitExceeded，实为 %v", err)
+		}
+	})
+
+	// ② 加签上限 3：同一当前任务连续加签（当前任务不因加签结束）。
+	t.Run("AddSign上限3", func(t *testing.T) {
+		bizNo := submitOneNode(t, svc, "ou_a1")
+		tk := taskFor(t, db, bizNo, "ou_a1")
+		for i := 1; i <= 3; i++ { // 期望字面 3（FR-M9-05）—— 不引用常量，防实现/测试同步漂移
+			if err := svc.AddSign(ctx, bizNo, tk.TaskID, "ou_a1", "ou_a2", "加签人", "", flow.AddSignAfter); err != nil {
+				t.Fatalf("第 %d 次加签应成功：%v", i, err)
+			}
+		}
+		err := svc.AddSign(ctx, bizNo, tk.TaskID, "ou_a1", "ou_a2", "加签人", "", flow.AddSignAfter)
+		if !errors.Is(err, flow.ErrOpLimitExceeded) {
+			t.Fatalf("第 4 次加签应 ErrOpLimitExceeded，实为 %v", err)
+		}
+	})
+
+	// ③ 回退上限 2：两节点单——n2 活动时回退到 n1，approve n1 推进 n2，再回退……第 3 次拒。
+	t.Run("Rollback上限2", func(t *testing.T) {
+		bizNo := submitTwoNodes(t, svc, "ou_b1", "ou_b2")
+		// n1 approve → n2 活动
+		tk1 := taskFor(t, db, bizNo, "ou_b1")
+		if err := svc.Approve(ctx, bizNo, tk1.TaskID, "ou_b1", "ok", nil); err != nil {
+			t.Fatalf("n1 approve: %v", err)
+		}
+		for i := 1; i <= 2; i++ { // 期望字面 2（FR-M9-06）—— 不引用常量，防实现/测试同步漂移
+			// 回退到 n1（更早节点）
+			if err := svc.Rollback(ctx, bizNo, "ou_b2", "n1", "资料有误"); err != nil {
+				t.Fatalf("第 %d 次回退应成功：%v", i, err)
+			}
+			// 重新推进：approve n1 → n2 再活动
+			tkA := taskFor(t, db, bizNo, "ou_b1")
+			if err := svc.Approve(ctx, bizNo, tkA.TaskID, "ou_b1", "ok", nil); err != nil {
+				t.Fatalf("重推进 approve: %v", err)
+			}
+		}
+		err := svc.Rollback(ctx, bizNo, "ou_b2", "n1", "资料有误")
+		if !errors.Is(err, flow.ErrOpLimitExceeded) {
+			t.Fatalf("第 3 次回退应 ErrOpLimitExceeded，实为 %v", err)
+		}
+	})
+}
+
+// TestTransferAgentAuthorization 代理人正向（FR-M9-04/06）：
+// 非本人 + authorizer 放行 ⇒ 转交成功；authorizer 拒/nil ⇒ ErrNotAssignee（双向）；
+// AddSign **不走** authorizer（代理人不可加签 —— 恒 true 的门下非本人仍拒）。
+func TestTransferAgentAuthorization(t *testing.T) {
+	ctx := context.Background()
+
+	t.Run("代理放行", func(t *testing.T) {
+		db := newFlowDB(t)
+		svc := flow.New(db, "app")
+		svc.SetAgentAuthorizer(func(_ context.Context, _ *store.FlowTask, actor string) bool {
+			return actor == "ou_agent" // 仅 ou_agent 视为有效代理
+		})
+		bizNo := submitOneNode(t, svc, "ou_owner")
+		tk := taskFor(t, db, bizNo, "ou_owner")
+		if err := svc.Transfer(ctx, bizNo, tk.TaskID, "ou_agent", "ou_t", "接替", "代办"); err != nil {
+			t.Fatalf("代理人转交应放行：%v", err)
+		}
+	})
+
+	t.Run("代理拒绝", func(t *testing.T) {
+		db := newFlowDB(t)
+		svc := flow.New(db, "app")
+		svc.SetAgentAuthorizer(func(_ context.Context, _ *store.FlowTask, actor string) bool {
+			return actor == "ou_agent"
+		})
+		bizNo := submitOneNode(t, svc, "ou_owner")
+		tk := taskFor(t, db, bizNo, "ou_owner")
+		err := svc.Transfer(ctx, bizNo, tk.TaskID, "ou_stranger", "ou_t", "", "")
+		if !errors.Is(err, flow.ErrNotAssignee) {
+			t.Fatalf("非代理非本人应 ErrNotAssignee，实为 %v", err)
+		}
+	})
+
+	t.Run("nil门=仅本人", func(t *testing.T) {
+		db := newFlowDB(t)
+		svc := flow.New(db, "app") // 未注入 ⇒ 现状不放宽
+		bizNo := submitOneNode(t, svc, "ou_owner")
+		tk := taskFor(t, db, bizNo, "ou_owner")
+		err := svc.Transfer(ctx, bizNo, tk.TaskID, "ou_agent", "ou_t", "", "")
+		if !errors.Is(err, flow.ErrNotAssignee) {
+			t.Fatalf("nil 门下非本人应 ErrNotAssignee，实为 %v", err)
+		}
+	})
+
+	t.Run("AddSign不走代理门", func(t *testing.T) {
+		db := newFlowDB(t)
+		svc := flow.New(db, "app")
+		svc.SetAgentAuthorizer(func(_ context.Context, _ *store.FlowTask, _ string) bool {
+			return true // 恒放行的门也**不得**用于加签
+		})
+		bizNo := submitOneNode(t, svc, "ou_owner")
+		tk := taskFor(t, db, bizNo, "ou_owner")
+		err := svc.AddSign(ctx, bizNo, tk.TaskID, "ou_agent", "ou_t", "", "", flow.AddSignAfter)
+		if !errors.Is(err, flow.ErrNotAssignee) {
+			t.Fatalf("代理人不可加签（01a §4.1）：非本人应 ErrNotAssignee，实为 %v", err)
+		}
+	})
+}

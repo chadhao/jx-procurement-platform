@@ -501,7 +501,15 @@ func (b *Builder) buildAnomaly(ctx context.Context, res Result, period string, q
 			countExtRegistered(r06, "payee_account_verified"), true),
 
 		// ⑥ 拆分嫌疑：同供应商 + 同品类月累计 ≥ 1,000 元（且 ≥2 笔）。
-		guardedAlert("split_suspicion", "拆分嫌疑", b.countSplitSuspect(r01), len(r01), true),
+		func() map[string]any {
+			// ★ N-060 F9（FR-M4-06）：计数之外挂**组明细 detail**（按月清单可导出）；
+			//   仅 count>0 时附带（not_connected/0 不挂 —— 与「不显示假 0」同精神）。
+			a := guardedAlert("split_suspicion", "拆分嫌疑", b.countSplitSuspect(r01), len(r01), true)
+			if groups := b.listSplitSuspect(r01); len(groups) > 0 {
+				a["detail"] = groups
+			}
+			return a
+		}(),
 	)
 
 	// ⑦ 经办超期未完成：采购经办登记台账（L03）未完成且无完成日期。
@@ -736,13 +744,28 @@ func (b *Builder) countGroupRejectedUndisposed(ctx context.Context, q Query) (in
 	return n, nil
 }
 
-// countSplitSuspect 统计拆分嫌疑组数：同供应商 + 同品类（二级明细）月累计 ≥ 阈值且 ≥2 笔。
-func (b *Builder) countSplitSuspect(rows []Row) int {
+// SplitSuspectGroup 拆分嫌疑组明细（N-060 F9 · FR-M4-06：从「仅计数」到「可导出清单」）。
+// 月度＝month 字段；BizNose 供导出定位到行。
+type SplitSuspectGroup struct {
+	Supplier  string   `json:"supplier"`
+	PurposeL2 string   `json:"purpose_l2"`
+	Month     string   `json:"month"`
+	SumCents  int64    `json:"sum_cents"`
+	Count     int      `json:"count"`
+	BizNos    []string `json:"biz_nos"`
+}
+
+// listSplitSuspect 组明细：同供应商 + 同品类（二级明细）月累计 ≥ 阈值且 ≥2 笔。
+// 分组口径与原 countSplitSuspect 逐字一致（Q20 归一分组键）；count ＝ len(命中组)。
+func (b *Builder) listSplitSuspect(rows []Row) []SplitSuspectGroup {
 	type gk struct{ supplier, cat, month string }
-	groups := map[gk]struct {
-		sum int64
-		cnt int
-	}{}
+	type gval struct {
+		sum   int64
+		cnt   int
+		bizNo []string
+	}
+	groups := map[gk]*gval{}
+	order := []gk{}
 	for _, r := range rows {
 		if strings.TrimSpace(r.Supplier) == "" {
 			continue
@@ -758,17 +781,33 @@ func (b *Builder) countSplitSuspect(rows []Row) int {
 		}
 		k := gk{sup, r.PurposeL2, m}
 		g := groups[k]
+		if g == nil {
+			g = &gval{}
+			groups[k] = g
+			order = append(order, k)
+		}
 		g.sum += r.AmountCents
 		g.cnt++
-		groups[k] = g
-	}
-	n := 0
-	for _, g := range groups {
-		if g.sum >= b.splitCents && g.cnt >= 2 {
-			n++
+		if r.BizNo != "" {
+			g.bizNo = append(g.bizNo, r.BizNo)
 		}
 	}
-	return n
+	out := []SplitSuspectGroup{}
+	for _, k := range order { // 按行序稳定输出（可测、可复算）
+		g := groups[k]
+		if g.sum >= b.splitCents && g.cnt >= 2 {
+			out = append(out, SplitSuspectGroup{
+				Supplier: k.supplier, PurposeL2: k.cat, Month: k.month,
+				SumCents: g.sum, Count: g.cnt, BizNos: g.bizNo,
+			})
+		}
+	}
+	return out
+}
+
+// countSplitSuspect 统计拆分嫌疑组数（＝命中组数；F9 改为 list 的薄封装，调用面不变）。
+func (b *Builder) countSplitSuspect(rows []Row) int {
+	return len(b.listSplitSuspect(rows))
 }
 
 // countEmergencyUnclosed 统计紧急采购超 24 小时未补录或未核销闭合。

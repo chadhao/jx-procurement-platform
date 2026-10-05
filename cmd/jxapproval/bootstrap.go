@@ -260,7 +260,10 @@ func run(version string) error {
 	if hc, ok := client.(*feishu.HTTPClient); ok {
 		extClient, pushClient, checkClient = hc, hc, hc
 		messageClient = hc
-		notifySender = feishu.NewNotifySender(db, hc, env.CallbackDomain, logger)
+		ns := feishu.NewNotifySender(db, hc, env.CallbackDomain, logger)
+		// ★ N-060 F2（01a §5.5 约束3）：配额 ≥90% ⇒ 降非关键（跳过 Bot）、保对账。
+		ns.SetQuotaThrottle(func() bool { return metrics.QuotaLevelNow() >= 90 })
+		notifySender = ns
 		if strings.TrimSpace(env.CallbackDomain) == "" {
 			// ★ 通知的「查看详情」四 URL 缺一即 60001（实测）；无域名配置宁可可见失败
 			//   （t_notify_log.FAILED 留痕、漏发可检出），绝不编造 URL。
@@ -291,6 +294,10 @@ func run(version string) error {
 	//   的方法集与 flow.Sender 的编译期一致性由该赋值保证（feishu 包不反向依赖 flow）。
 	flowSvc.Subscribe(flow.NewNotifier(db, notifySender, logger))
 	flowSvc.Subscribe(&flowPushSubscriber{pusher: pusher, log: logger})
+	// ★ N-060 F4（FR-M9-04/06「本人或其代理人」）：转交/回退的代理人正向消费门
+	//（三重判定：节点角色 → t_role_agent active → NodeAllowsAgent；nil 即关闭的语义不变，
+	// 此处显式注入；AddSign 不经过 —— 代理人不可加签，01a §4.1 表二）。
+	flowSvc.SetAgentAuthorizer(httpapi.NewTaskAgentAuthorizer(specBundle, db))
 	// ★ 本批核心（2026-09-28 实测定稿）：审批 Bot 卡片「推进成功后主动刷新」。
 	//   实测：回调处理成功（accepted=true、状态机推进）后平台**并未自动刷新卡片**
 	//   （卡片仍带「同意/拒绝」两键）⇒ 不依赖平台自动更新，订阅 TASK_APPROVED /
@@ -344,6 +351,10 @@ func run(version string) error {
 			}
 			return out, nil
 		}), pusher, maps, metrics, logger)
+	// ★ N-060 F2（FR-M0-19 · 01a §5.5）：对账频率可配 ＋ 自适应（在途 × 配额水位；钳制 [base,10×base]）。
+	approvalRec.SetAdaptive(env.ApprovalReconcileInterval, env.FeishuMonthlyQuota)
+	// ★ N-060 F4（FR-M9-04/06）：代理人正向消费门（转交/回退「本人或其代理人」三重判定）。
+	// flowSvc 在此后装配，SetAgentAuthorizer 在 flowSvc 构造后调用（见下 flowSvc 装配处）。
 
 	// number 装配自检（R09）：单号周期错会**静默撞号**（04a §3.3）→ 启动即把当期 YYMM 打进日志。
 	logger.Info("单号格式自检（number 装配）", "yymm", number.YYMM(time.Now()), "sample_key", number.NumberKey("PR"))

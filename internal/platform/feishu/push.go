@@ -179,6 +179,9 @@ type InstanceSnapshot struct {
 	Links    ExternalInstanceLink `json:"links"`
 	TaskList []ExternalTask       `json:"task_list"`
 	CCList   []string             `json:"cc_list,omitempty"`
+	// Extra 顶层扩展对象（N-060 F3 · FR-M0-14）：`extra.business_key = biz_no`
+	// —— 对账/读回锚点（04a §3.2；05-API §6「单据编号走顶层 extra.business_key」）。
+	Extra map[string]string `json:"extra,omitempty"`
 	// I18nResources 国际化文案（实例级必填；**数组形态**——与 message/send 的 map
 	// 形态相反，见 ExternalI18nText 教训注释）。内容由两部分 key↔value 组成：
 	// ① instance_title（实例展示名）② 每个 task_list[*].node_name 的 key 配对文案
@@ -376,6 +379,9 @@ func BuildSnapshot(inst *store.Instance, tasks []store.FlowTask, ccList []string
 		OpenID: inst.ApplicantOpenID,
 		Links:  externalLinks(detailBase, inst.BizNo),
 		CCList: ccList,
+		// ★ extra.business_key = biz_no（N-060 F3 · FR-M0-14）：对账/读回锚点
+		//（04a §3.2；05-API §6「单据编号走顶层 extra.business_key」）。
+		Extra: map[string]string{"business_key": inst.BizNo},
 		// I18nResources 在 task 循环后统一组装（需先收集 node_name 的 key↔文案）。
 	}
 	if log != nil {
@@ -561,7 +567,25 @@ func (p *Pusher) Push(ctx context.Context, bizNo string) (PushResult, error) {
 		p.log.Warn("推送前读取审批定义失败（回退自定义 approval_code 推送）",
 			"biz_no", bizNo, "approval_code", inst.ApprovalCode, "error", derr.Error())
 	}
-	snap, err := BuildSnapshot(inst, tasks, nil, p.detailBase, defName, p.log)
+	// ★ N-060 F3（FR-M0-14）：cc_list ＝ 由规则带出的抄送人 —— **综合运营主管**
+	//（01a §「抄送人：由规则带出（如综合运营主管），来源同上〔镜像在职〕、不可手选」）；
+	// ChainRoleCandidates 已按镜像在职过滤（离职/停用不出现）。
+	// 超限（>200）由 BuildSnapshot 按 S12 直接失败并告警（不静默截断）。
+	ccList := []string{}
+	if cands, cerr := p.db.ChainRoleCandidates(ctx, "综合运营主管", "", false); cerr == nil {
+		seen := map[string]bool{}
+		for _, c := range cands {
+			if oid := strings.TrimSpace(c.OpenID); oid != "" && !seen[oid] {
+				seen[oid] = true
+				ccList = append(ccList, oid)
+			}
+		}
+	} else if p.log != nil {
+		// 抄送人解析失败：可见告警、按空列表继续（不编造人员；主链推送不因抄送规则查询失败而中断）。
+		p.log.Warn("抄送人（综合运营主管）解析失败 —— 本次 cc_list 置空（不编造）",
+			"biz_no", bizNo, "error", cerr.Error())
+	}
+	snap, err := BuildSnapshot(inst, tasks, ccList, p.detailBase, defName, p.log)
 	if err != nil {
 		// 超限等：告警且**不写流水**（这是"请求有误"，非"平台不支持"；S12）。
 		p.log.Error("推送组装失败（不静默截断）", "biz_no", bizNo, "error", err.Error())

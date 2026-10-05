@@ -10,7 +10,7 @@ import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import {
   fetchApprovalMeta, previewApproval, submitApproval, uploadApprovalAttachment,
-  fetchInstancePrefill,
+  fetchInstancePrefill, fetchOrgUsers,
 } from '../api'
 // N-050：重复段纯函数（不依赖 Vue/DOM —— Node 直跑验收）
 import { rowEditableFieldsOf, parseBulkRows, locateFormErrors } from '../repeatRows'
@@ -296,6 +296,17 @@ function yuanToCents(v) {
   if (!Number.isFinite(n)) return null
   return Math.round(n * 100)
 }
+// ---- N-060 F5（FR-M9-11）：person 字段镜像选人（下拉只出在职 —— 接口已滤离职/停用）----
+const personUsers = ref([])
+async function loadPersonUsers() {
+  try {
+    const data = await fetchOrgUsers({})
+    personUsers.value = Array.isArray(data) ? data : (data && data.items) || []
+  } catch (e) {
+    personUsers.value = [] // 拉取失败 ⇒ 下拉空（提交期服务端仍会镜像命中阻断，不静默放行）
+  }
+}
+
 // ---- N-054 ① · date_range（iso_interval：YYYY-MM-DD/YYYY-MM-DD）----
 // 两个日期输入草稿 ⇒ 组装写回 fields（实时 ⇒ missingRequired/doSubmit 收集照旧）；
 // 空 ⇒ fields 不带（收集处跳过）；起 > 止 ⇒ 可见报错、不得提交；既有值非法 ⇒ 提示不清空。
@@ -477,6 +488,7 @@ onMounted(async () => {
       curDocType.value = meta.value.doc_types_available[0] || ''
     }
     initRepeatingData() // 初始进入也要按表单 schema 建明细行组
+    loadPersonUsers() // N-060 F5：镜像人员（person 字段下拉）
     schedulePreview()
   } catch (e) {
     err.value = e.message || String(e)
@@ -613,6 +625,18 @@ watch(() => [curDocType.value, fields.amount_cents, fields.usage_category_l1, fi
               >
               <em v-if="dateRangeErrors[f.name]" class="dr-error">{{ dateRangeErrors[f.name] }}</em>
             </span>
+
+            <!-- N-060 F5（FR-M9-11）：person 字段＝镜像选人下拉（只列在职；不可选离职/停用）
+                 ★ 提交期服务端仍做「镜像命不中 ⇒ 400 阻断」双保险（person_fields.go） -->
+            <select
+              v-else-if="f.type === 'person'"
+              v-model="fields[f.name]"
+              :class="['inp', { 'field-error': hasTopFieldError(f.name) }]"
+              :data-fe-topfield="f.name"
+            >
+              <option value="">请选择</option>
+              <option v-for="u in personUsers" :key="u.open_id" :value="u.name">{{ u.name }}</option>
+            </select>
 
             <!-- 用途分类一级 -->
             <select

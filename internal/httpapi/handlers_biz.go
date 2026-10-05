@@ -297,38 +297,6 @@ func (d Deps) handleInstancePrefill(c echo.Context) error {
 	return ok(c, map[string]any{"prefill": out})
 }
 
-func (d Deps) handleInstanceFields(c echo.Context) error {
-	idn, _, err := d.identityFrom(c)
-	if err != nil {
-		return fail(c, http.StatusUnauthorized, codeRoleMapped, "未映射角色或会话失效")
-	}
-	ctx := c.Request().Context()
-	rule, _ := d.Perm.Resolve(ctx, "api:instances", idn)
-	code := c.Param("code")
-	if allowed, err := d.instanceAllowed(ctx, rule, idn, code); err != nil || !allowed {
-		return fail(c, http.StatusForbidden, codeRowForbidden, "越权访问：该实例不在你的可见范围内")
-	}
-	fields, err := d.DB.ListFields(ctx, code)
-	if err != nil {
-		return fail(c, http.StatusInternalServerError, codeInternal, err.Error())
-	}
-	out := make([]map[string]any, 0, len(fields))
-	for _, f := range fields {
-		var biz any
-		if strings.TrimSpace(f.BizField) != "" {
-			biz = f.BizField
-		}
-		out = append(out, map[string]any{
-			"field_id":   f.FieldID, // ★ 具体值待确认（Q1）
-			"field_name": f.FieldName,
-			"biz_field":  biz,
-			"value":      f.ValueText,
-			"value_type": f.ValueType,
-		})
-	}
-	return ok(c, map[string]any{"fields": out})
-}
-
 func (d Deps) handleInstanceTimeline(c echo.Context) error {
 	idn, _, err := d.identityFrom(c)
 	if err != nil {

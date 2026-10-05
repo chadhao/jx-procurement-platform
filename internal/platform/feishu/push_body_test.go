@@ -549,3 +549,42 @@ func TestPushSendsRequiredFieldsOverHTTP(t *testing.T) {
 		t.Errorf("texts[@i18n@node_n1] = %q, 期望实际节点名 \"部门负责人审批\"", got)
 	}
 }
+
+// N-060 F3（FR-M0-14）：extra.business_key = biz_no ＋ cc_list 透传 ＋ 超限直接失败（S12）。
+func TestBuildSnapshotExtraBusinessKeyAndCCList(t *testing.T) {
+	bizNo := "BA-2610-0001"
+	inst := &store.Instance{
+		BizNo: bizNo, ApprovalCode: "code-ba", InstanceCode: "app:" + bizNo,
+		DocType: "BA", UpdateTime: 7, Status: "APPROVED",
+		CreatedAt: snapCreatedAt, UpdatedAt: snapUpdatedAt, ApplicantOpenID: "ou_user",
+	}
+	// ① extra.business_key ＝ biz_no（对账/读回锚点）。
+	snap, err := BuildSnapshot(inst, nil, []string{"ou_ops1", "ou_ops2"}, testDetailBase, "", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if snap.Extra["business_key"] != bizNo {
+		t.Errorf("extra.business_key = %q, 期望 %q", snap.Extra["business_key"], bizNo)
+	}
+	// ② cc_list 透传（综合运营主管镜像在职；≤200 不截断）。
+	if len(snap.CCList) != 2 || snap.CCList[0] != "ou_ops1" {
+		t.Errorf("cc_list = %v, 期望 [ou_ops1 ou_ops2]", snap.CCList)
+	}
+	// ③ 快照 JSON 形态含顶层 extra 对象（契约面：字段名与嵌套形态）。
+	raw, jerr := json.Marshal(snap)
+	if jerr != nil {
+		t.Fatal(jerr)
+	}
+	want := `"extra":{"business_key":"` + bizNo + `"}`
+	if !strings.Contains(string(raw), want) {
+		t.Errorf("序列化应含顶层 extra.business_key（%s），实为：%s", want, string(raw))
+	}
+	// ④ cc_list > 200 ⇒ 直接失败（绝不静默截断，S12/QV2-17）。
+	big := make([]string, 0, MaxCCList+1)
+	for i := 0; i <= MaxCCList; i++ {
+		big = append(big, "ou_x")
+	}
+	if _, err := BuildSnapshot(inst, nil, big, testDetailBase, "", nil); err == nil {
+		t.Error("cc_list 超 200 应直接失败（S12 不静默截断）")
+	}
+}

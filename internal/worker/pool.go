@@ -176,8 +176,13 @@ func (w *Worker) ProcessDueOnce(ctx context.Context) (int, error) {
 			break
 		}
 		for i := range jobs {
-			if err := w.processJob(ctx, jobs[i]); err != nil {
-				w.log.Error("处理作业失败", "job_id", jobs[i].ID, "error", err)
+			// ★ N-060 F12（FR-M3-06）：事件处理耗时入指标（count/total/max/avg 可查询）——
+			// 此前仅 inbox 同步路径有日志 duration_ms，异步 job 无任何耗时指标。
+			jobStart := time.Now()
+			jobErr := w.processJob(ctx, jobs[i])
+			w.m.AddEventJobDuration(time.Since(jobStart).Milliseconds())
+			if jobErr != nil {
+				w.log.Error("处理作业失败", "job_id", jobs[i].ID, "error", jobErr)
 			}
 			total++
 		}

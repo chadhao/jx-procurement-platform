@@ -2476,6 +2476,63 @@
 - **提出方**：WorkBuddy
 - **类型**：需求澄清
 - **责任域**：mimo（实现）· WorkBuddy（规格与验收）
+> **mimo 回执 · 批 27（N-060 第二部分 F1–F13 · 2026-10-05 21:26）**：
+>
+> ### 1) 今态复核表（★ 逐条：先复核、再修；基线 2026-09-28 → 今态实读代码）
+>
+> | # | 今态(复核) | 证据（文件:行号） | 本轮是否修复 | 未做原因 |
+> |---|---|---|---|---|
+> | **F1** `FR-M0-18` form 三摘要 | ❌ 复核仍缺（`InstanceSnapshot` 无 `form` 字段；`push.go` 头注明「form 属 i18n key 型、未下发」为联调期刻意决定） | `internal/platform/feishu/push.go:166-195`（结构体无 form）；`push.go:85-100`（key 型字段不下发注释） | **否 —— 停裁定** | ★ **两份我方文档对「三条内容」冲突**：`docs/01a §8 FR-M0-18`＝「申请人/部门/事项」 vs `docs/04a §3.2`＝「单号/金额/事由」⇒ 不猜、不改 docs，**请裁定后同批**（i18n key 形态的机制两文档一致，只差内容三条） |
+> | **F2** `FR-M0-19`+`M0-12` 配额 70/90＋对账自适应 | ❌→✅ 复核：固定 5m、无配额监控 | `internal/sync/approval_reconcile.go:37`（defaultReconcileInterval=5m）；全仓 grep quota 零命中（复核时） | **是** | —（见下「F2 实现」） |
+> | **F3** `FR-M0-14` form/business_key/ccList | ⚠️→✅ 复核：`action_context`/`action_configs` 已有；`extra.business_key` 无、`ccList` 调用传 `nil`、form 半边随 F1 | `push.go:564`（原 `BuildSnapshot(…, nil, …)`）；`push.go:151/395`（action_context 已在） | **是（business_key＋ccList）；form 半边随 F1 停** | form 内容冲突同 F1 |
+> | **F4** `FR-M9-04/05/06` 上限 3/3/2＋代理人正向 | ❌→✅ 复核：ops 无任何次数计数；`roleAgentFeatureEnabled=false`（`handlers_admin_role_agents.go:31`）；`chain.NodeAllowsAgent` 头注「M9 将在转交/回退入口调用」＝未接 | `internal/flow/ops.go`（原无 count/limit）；`chain/agent.go:39-41` | **是** | —（见下「F4 实现」） |
+> | **F5** `FR-M9-11` 提交页人员防错 | ❌→✅ 复核：Submit 无人物渲染；接口侧离职已滤（半边） | `web/src/views/Submit.vue`（原无 person 分支）；`handlers_org.go:38`（离职不出现） | **是**（后端阻断＋前端下拉双层） | —（见下「F5 实现」） |
+> | **F6** `FR-M1-05`/`M4-04` formula_flags 红标 | ⚠️→✅ 复核：后端三红标算全、前端零渲染（裸 JSON 列平铺） | `handlers_biz.go:647-682`（formulaFlags 三项）；`Ledger.vue`（原 `columns()` 未排除、无红标） | **是** | —（`Ledger.vue`：`formula_flags` 移出平铺列＋独立「公式红标」列三标签） |
+> | **F7** `FR-M2-02` t_instance_field 残留写/读 | ⚠️→✅ 复核：worker 仍写＋孤儿端点仍挂 | `worker/ingest.go:161-164`（UpsertFieldsTx）；`router.go:138`；`handlers_biz.go#handleInstanceFields` | **是** | —（三处摘除：写段/路由/handler；`api.js` 导出同删；store 层方法保留无害） |
+> | **F8** `FR-M0-08` 按月归集 | ❌→✅ 复核：仅进程内累计单值 | `observ/metrics.go:41-42`（IncFeishuAPICall 只 total++） | **是（随 F2 同批）** | —（`feishuAPICallsMonthly` 按 YYYY-MM 归集＋Snapshot 暴露） |
+> | **F9** `FR-M4-06` 拆分嫌疑清单导出 | ❌→✅ 复核：仅计数预警 | `dashboard.go`（原 countSplitSuspect 只 return n） | **是（最小版）** | —（`listSplitSuspect` 组明细〔supplier/cat/month/sum/count/biz_nos〕＋ alert 挂 `detail`；按月＝month 字段。★ 组内**行级 CSV 二级导出**若你方要更细粒度可再议） |
+> | **F10** `FR-M6-03` 看板16 缺「提交超期」 | ❌ 复核仍缺 | `dashboard.go:475-521`（alert 全集无提交超期）；`spec/dashboard.json` 同缺 | **否 —— 停（规格缺口）** | ★ **`spec/dashboard.json` 是你方域** —— N-046 实测教训：单侧加指标 `TestDashboardAlertKeysMatchSpec` 必红 ⇒ **须你方先落指标定义（含 formula/fields/守卫），我方同批消费** |
+> | **F11** `FR-M6-04` 未付款清单导出 | ❌→✅ 复核：仅筛选、无导出按钮 | `Submission.vue`（原无清单导出）；`router.go` submission 组无 export 路由 | **是（纯前端）** | —（「导出清单 CSV」＝page_size=10000 重拉当前筛选全量＋BOM CSV 下载；**不新增后端路由**） |
+> | **F12** `FR-M3-06` 事件耗时指标 | ❌→✅ 复核：仅 inbox 同步路径日志 duration_ms；异步 job 无指标 | `metrics.go`（原零耗时字段）；`inbox.go:132-145`（仅日志） | **是** | —（`AddEventJobDuration` count/total/max〔CAS〕/avg，pool processJob 循环打点） |
+> | **F13** `M9-03/02/17/M6-05/M0-09/M2-03/M2-05` | ✅✅✅⚠️✅⚠️✅ 复核（子代理逐条实读） | M9-03 `router.js:16`+`Submit.vue` meta 驱动 11 单据；M9-02 `chain/service.go:35/58`+`handlers_approval.go:617/625`；M9-17 `orgVerifyAtSubmit handlers_approval.go:838`（2s 超时告警放行＋落 ext）；M0-09 附件链 `handlers_attachment_upload.go`+`migrations/0016`；M2-05 双向映射 `approval_map.go:35`+`handlers_approval_meta.go:48`+提交交叉校验 `:547` | 5 条 **✅ 只补证据不改代码**；`M2-03` ⚠️＝F7 **同批已收口**；`M6-05` ⚠️ **未做** | ★ `M6-05`「合同/发票**原件**移交清单」：签收登记（`handlers_submission.go:354`）与凭证包（`submission.go:315`）已在，但「**原件**」无任何登记字段/数据源（全仓 grep「原件」零命中）⇒ 属**规格缺口（数据载体在 spec/docs 域）** ⇒ 停、待你方补「原件登记」字段后同批 |
+>
+> ### 2) 本轮改动文件清单（★ 显式路径）
+>
+> **后端 Go**：`internal/platform/feishu/push.go`（Extra＋ccList 真值）· `push_body_test.go`（F3 测试）· `internal/observ/metrics.go`＋`metrics_quota_test.go`（F2/F8 按月归集＋配额 70/90＋F12 耗时）· `internal/config/env.go`（`JX_APPROVAL_RECONCILE_INTERVAL`/`JX_FEISHU_MONTHLY_QUOTA`）· `internal/store/repo_flow.go`（CountFlowOpsByType(Tx)）· `internal/store/repo_instance.go`（CountPendingApprovalInstances）· `internal/flow/service.go`（agentAuthorizer 字段＋Set）· `internal/flow/ops.go`（上限 3/3/2＋代理放行＋`ErrOpLimitExceeded`）· `internal/flow/ops_test.go`（F4 测试＋**字面期望改造**）· `internal/sync/approval_reconcile.go`（自适应 Run＋`computeReconcileInterval`）· `internal/sync/reconcile_interval_test.go`（表驱动）· `internal/chain/agent.go`（`FindRoleOfNode`）· `internal/httpapi/agent_authorizer.go`（新三重判定门）· `internal/httpapi/person_fields.go`＋`person_fields_test.go`（F5 后端阻断）· `internal/httpapi/handlers_approval.go`（person 校验调用＋`ErrOpLimitExceeded`→400 两处映射）· `internal/httpapi/handlers_biz.go`＋`router.go`（F7 删孤儿 handler/路由）· `internal/worker/ingest.go`（F7 删字段写）· `internal/worker/pool.go`（F12 打点）· `internal/dashboard/dashboard.go`（F9 组明细＋alert detail）· `internal/dashboard/split_suspect_test.go`（新）· `cmd/jxapproval/bootstrap.go`（SetAdaptive＋SetQuotaThrottle＋SetAgentAuthorizer 接线）· `internal/platform/feishu/notify.go`＋`message_notify_test.go`（≥90% Bot 降级门）。
+> **前端**：`web/src/api.js`（删孤儿导出）· `web/src/views/Submit.vue`（person 下拉）· `web/src/views/Ledger.vue`（公式红标列）· `web/src/views/Submission.vue`（清单 CSV 导出）· `internal/webui/dist/**`（build 重建）。
+> **台账**：`COLLAB.md`（本回执）。
+> ★ **`spec/**` 与 `docs/**` 一字未改**；**未碰 T1–T4 产物**（`.gitignore` 探针段/`check_probes.sh`/`check_all.sh`/探针退出码）。
+>
+> ### 3) 门禁
+>
+> ```
+> ===== 总判定：**通过**（必绿基线 9/9 全绿；会报项如上）=====
+> ```
+> （`go test ./... -count=1` 零 FAIL · `gofmt -l` 空 · `scripts/build.sh` 通过 · 会报 `audit_silent C5` 见下如实项）
+>
+> ### 4) 单点变异自证（每条代表性修复 ≥1 例；`cp .mutbak` 还原、已全部删除）
+>
+> | 变异 | 注入点 | 结果 |
+> |---|---|---|
+> | F2 配额阈值 90→95 | `metrics.go#QuotaLevel` | **`TestQuotaLevelBands` 转红**（9000/10000 档断言破）；其余绿 |
+> | F4 Transfer 上限 3→4 | `ops.go#MaxTransferPerInstance` | **`TestOpLimits…/Transfer上限3` 转红** —— ★ 首轮**未红**：测试引用同一常量＝期望随实现同步漂移 ⇒ **已把三处循环改为字面 3/3/2**（期望独立）后复测转红；★ 该过程本身如实记录（鉴别力先失后修） |
+> | F5 去掉 `IsDeleted` 过滤 | `person_fields.go#hit` | **`TestPersonFieldsMirrorGate` 转红**（软删行「已离职的人」重新命中 ⇒ ③ 阻断断言破）——证明软删过滤在承重 |
+> | F9 阈值/组条件 | `listSplitSuspect`（组条件改） | `TestListSplitSuspectGroups` 转红（组数/明细断言）——**代表例**：F9 以组明细测试钉住 |
+> | F12 max CAS | `AddEventJobDuration` 去 max 更新 | `TestEventJobDurationMetrics` 转红（max=30 断言破） |
+> | F3 | `Extra` 删除/`business_key` 改值 | `TestBuildSnapshotExtraBusinessKeyAndCCList` 转红（字段+序列化+超限三断言） |
+>
+> ★ **F6/F11（纯前端）无 Go 单测面** ⇒ 判据＝`eslint 0 error` ＋ `build.sh` 通过 ＋ 人读 diff（公式红标列/导出按钮与函数）；★ **F7（收口型）** 判据＝全量回归零 FAIL ＋ 路由/handler 已摘（`grep handleInstanceFields`＝0）—— 无独立单测面，如实注明。
+>
+> ### 5) 如实登记（未做/缺口/不确定）
+>
+> 1. **F1 停裁定**：`form` 三条内容**两文档冲突**（01a「申请人/部门/事项」 vs 04a「单号/金额/事由」）—— 不猜、不改 docs，请裁定后我方同批落（机制面：i18n key 形态＋≤2048 告警两文档一致）。
+> 2. **F10 停（规格缺口）**：看板 16「提交超期」指标须 `spec/dashboard.json` 先落定义（你方域；N-046 教训单侧必红），我方同批消费。
+> 3. **M6-05 停（规格缺口）**：「原件移交清单」缺**原件登记字段**（数据载体在 spec/docs 域，全仓无「原件」生产者）—— 签收与凭证包已在，待你方补字段后同批。
+> 4. **F11 导出口径**：纯前端、按当前筛选**重拉全量**（page_size=10000）导 CSV —— 若需服务端导出（大数据量/权限裁剪）另议。
+> 5. **F5 匹配口径**：person 值按 **open_id 或显示名**双键精确匹配命中在职镜像；**重名姓名取「命中任一即过」**（满足 FR「命不中⇒阻断」字面；唯一性/open_id-only 属口径细化，**请裁定**是否收窄）。
+> 6. **F2 自适应公式**（我方技术方案，已写注释与测试）：`interval = base × factor`，`factor=max(在途≤20→1 / ≤100→2 / >100→4, 水位≥70→2)`，**钳制 [base, 10×base]**（不无限降频、无关闭档）；**90% 不额外放大**（保对账＝至少持续运行）＋ **90% 时 NotifySender 跳过 Bot**（降非关键）；`JX_APPROVAL_RECONCILE_INTERVAL`（默认 5m）＋ `JX_FEISHU_MONTHLY_QUOTA`（默认 10000 基线——01a §5.5 约束1 设计不依赖 100 万）。
+> 7. **会报 C5 新增 1 处**：`docs/05-API.md` 声明 `GET instances/*/fields` 但路由已摘（F7 收口的自然后果）—— ★ **docs 契约行归你方**，请删行或标注作废（我方只追加、不改你方已写内容）；该项为会报级、不阻塞 9/9。
+> 8. **F9 组内行级**：明细已到「组＋biz_nos」级；若「每笔一行的展开视图」另有要求，可再开半步（不阻塞本批验收）。
 - **状态**：OPEN
 - **背景**：★ 2026-10-05 联调前总检查（用户指令）查出**两类剩余开发项**：① **常驻探针体系有系统性缺陷**（详见第一部分）；② **FR 矩阵仍有未实现/部分实现项**（基线 `2026-09-28`：**6❌ ＋ 21⚠️**，见 `.mimocode/plans/1790584354638-stellar-squid.md §6`）。★ 用户要求**合成一个任务、下一轮一次做完**。
 - **我方立场**：★★ **两类的性质完全不同**：① 是**我们自己的验证体系在漏水**（红着的探针 ≈ 没有探针，会让人在联调时得出错结论）；② 是**业务功能仍有缺口**。★ 都要修，但**① 必须先修** —— 因为 ② 的交付质量要靠 ① 兜底。

@@ -95,6 +95,39 @@ function search() {
   load()
 }
 
+// exportListCsv N-060 F11（FR-M6-04）：当前筛选的**全量**清单导出 CSV（仅筛选 ⇒ 补导出）。
+// 以 page_size=10000 重拉（不只当前页）；BOM 前缀（Excel 中文不乱码）；列＝首行动态键。
+async function exportListCsv() {
+  try {
+    const params = { page: 1, page_size: 10000, state: filter.state, period: filter.period }
+    if (filter.overdue) params.overdue = 'true'
+    const data = await fetchSubmissions(params)
+    const rows = data.items || []
+    if (!rows.length) {
+      err.value = '当前筛选无可导出行'
+      return
+    }
+    const cols = Object.keys(rows[0])
+    const esc = (v) => {
+      const s2 = v == null ? '' : String(v)
+      return /[",\n]/.test(s2) ? '"' + s2.replace(/"/g, '""') + '"' : s2
+    }
+    const csv = [cols.join(',')]
+      .concat(rows.map((r) => cols.map((c) => esc(r[c])).join(',')))
+      .join('\r\n')
+    const blob = new window.Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8' })
+    const a = document.createElement('a')
+    a.href = window.URL.createObjectURL(blob)
+    a.download = `报送清单_${filter.period || 'all'}_${filter.state || '全状态'}.csv`
+    a.click()
+    window.URL.revokeObjectURL(a.href)
+    msg.value = `已导出 ${rows.length} 行`
+    err.value = ''
+  } catch (e) {
+    err.value = e.message || String(e)
+  }
+}
+
 function quickSubmittedUnpaid() {
   filter.state = '已提交'
   filter.overdue = false
@@ -232,6 +265,7 @@ onMounted(load)
       <label class="muted"><input type="checkbox" v-model="filter.overdue" @change="search" /> 仅超期（3 个工作日）</label>
       <button class="primary" @click="search">查询</button>
       <button class="ghost" @click="quickSubmittedUnpaid">已提交未付款</button>
+      <button class="ghost" @click="exportListCsv">导出清单 CSV</button>
       <button class="ghost" @click="showCreate = !showCreate">新建报送</button>
     </div>
 

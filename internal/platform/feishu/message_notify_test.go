@@ -338,3 +338,35 @@ func TestHTTPClientUpdateApprovalMessage(t *testing.T) {
 		t.Errorf("请求体 = %s, 期望 {\"message_id\":\"om_1\",\"status\":\"APPROVED\"}", rawBody)
 	}
 }
+
+// N-060 F2（01a §5.5 约束3）：配额 ≥90% ⇒ 跳过 Bot 通知（降非关键、保对账）。
+// throttle=true ⇒ Send 返回 nil 且**零次** message/send；throttle=false ⇒ 正常发送。
+func TestNotifySenderQuotaThrottleSkipsBot(t *testing.T) {
+	f := newFakeFeishuServer(t, 0, "success")
+	db := storetest.NewDB(t)
+	bizNo := seedNotifyInstance(t, db)
+	sender := NewNotifySender(db, newTestHTTPClient(t, f), "https://jx.example.com", nil)
+	sender.SetQuotaThrottle(func() bool { return true }) // 模拟水位 ≥90%
+
+	if err := sender.Send(context.Background(), bizNo, "ou_target", "TRANSFERRED"); err != nil {
+		t.Fatalf("降级跳过应返回 nil（策略性不发送 ≠ 失败）：%v", err)
+	}
+	f.mu.Lock()
+	n := len(f.sendBodies)
+	f.mu.Unlock()
+	if n != 0 {
+		t.Errorf("message/send 调用 = %d, 期望 0（≥90%% 降非关键 Bot）", n)
+	}
+
+	// 反向：门关闭 ⇒ 正常发送（证明确实是 throttle 在拦，不是环境问题）。
+	sender.SetQuotaThrottle(func() bool { return false })
+	if err := sender.Send(context.Background(), bizNo, "ou_target", "TRANSFERRED"); err != nil {
+		t.Fatalf("门关闭后应正常发送：%v", err)
+	}
+	f.mu.Lock()
+	n = len(f.sendBodies)
+	f.mu.Unlock()
+	if n != 1 {
+		t.Errorf("反向 message/send 调用 = %d, 期望 1", n)
+	}
+}

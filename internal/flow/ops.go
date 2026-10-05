@@ -41,6 +41,17 @@ const (
 // ErrNotAssignee 操作者非该任务审批人（越权操作必须**可见地拒绝**）。
 var ErrNotAssignee = errors.New("flow: 操作者非该任务审批人")
 
+// ErrOpLimitExceeded 四操作次数上限（N-060 F4 · FR-M9-04/05/06）：
+// 转交 ≤3 · 加签 ≤3 · 回退 ≤2（按单据累计；成功才计数 ⇒ 上限＝第 N+1 次可见拒绝）。
+var ErrOpLimitExceeded = errors.New("flow: 操作次数已达上限")
+
+// 四操作次数上限（01a FR-M9-04/05/06 正文「上限 3 / 3 / 2」）。
+const (
+	MaxTransferPerInstance = 3
+	MaxAddSignPerInstance  = 3
+	MaxRollbackPerInstance = 2
+)
+
 // Transfer 转交：原任务 → TRANSFERRED，并**追加**同节点新任务（交给 targetOpenID）。
 //
 // ★ 推送口径（04a §3.1）：转交**含既有 task 的状态变更**（原 task → TRANSFERRED）+ **追加**新 task，
@@ -72,7 +83,17 @@ func (s *Service) Transfer(ctx context.Context, bizNo, taskID, actorOpenID, targ
 		if task.ReleaseState == ReleaseHeld {
 			return fmt.Errorf("%w: 任务 %s（节点 %s）", ErrTaskHeld, taskID, task.NodeID)
 		}
-		if task.AssigneeOpenID != actorOpenID {
+		// ★ N-060 F4（FR-M9-04）：转交次数上限 3（按单据累计；第 4 次可见拒绝）。
+		if n, cerr := s.db.CountFlowOpsByTypeTx(ctx, tx, bizNo, OpTransfer); cerr != nil {
+			return cerr
+		} else if n >= MaxTransferPerInstance {
+			return fmt.Errorf("%w: 转交已达上限 %d 次（FR-M9-04）", ErrOpLimitExceeded, MaxTransferPerInstance)
+		}
+		// 本人 **或** 有效代理人（N-060 F4 · FR-M9-04「本人或其代理人」；authorizer 由
+		// bootstrap 注入＝bundle 节点角色 → t_role_agent → NodeAllowsAgent 三重判定；
+		// nil ⇒ 仅本人（现状不放宽）。
+		if task.AssigneeOpenID != actorOpenID &&
+			(s.agentAuthorizer == nil || !s.agentAuthorizer(ctx, task, actorOpenID)) {
 			return fmt.Errorf("%w: %s 非任务 %s 的审批人", ErrNotAssignee, actorOpenID, taskID)
 		}
 		if strings.TrimSpace(targetOpenID) == "" {
@@ -176,6 +197,13 @@ func (s *Service) AddSign(ctx context.Context, bizNo, taskID, actorOpenID, targe
 		if task.Status != TaskPending {
 			return fmt.Errorf("%w: 任务 %s 状态为 %s，不可加签（仅 PENDING 可加签，04a §5.1）",
 				ErrIllegalTransition, taskID, task.Status)
+		}
+		// ★ N-060 F4（FR-M9-05）：加签次数上限 3（按单据累计）。★ 加签不开放代理人
+		//（01a §4.1 表二：代理人不可加签）⇒ 此处保持**仅本人**、不接 authorizer。
+		if n, cerr := s.db.CountFlowOpsByTypeTx(ctx, tx, bizNo, OpAddSign); cerr != nil {
+			return cerr
+		} else if n >= MaxAddSignPerInstance {
+			return fmt.Errorf("%w: 加签已达上限 %d 次（FR-M9-05）", ErrOpLimitExceeded, MaxAddSignPerInstance)
 		}
 		if task.AssigneeOpenID != actorOpenID {
 			return fmt.Errorf("%w: %s 非任务 %s 的审批人", ErrNotAssignee, actorOpenID, taskID)
@@ -292,6 +320,12 @@ func (s *Service) Rollback(ctx context.Context, bizNo, actorOpenID, targetNodeID
 		//   ＝ actor 须为**当前活动节点**（`maxReachedSeq`）的**当前 `PENDING` 任务** assignee。
 		//   ★ 原判据 `actorHasTask`（「实例内**任一**任务持有者」）过宽：**上游节点已通过者**
 		//     （其任务仍 `RELEASED`、`actorHasTask` 为真）也会被放行 → 比正本宽（fail-closed 修正）。
+		// ★ N-060 F4（FR-M9-06）：回退次数上限 2（按单据累计；第 3 次可见拒绝）。
+		if n, cerr := s.db.CountFlowOpsByTypeTx(ctx, tx, bizNo, OpRollback); cerr != nil {
+			return cerr
+		} else if n >= MaxRollbackPerInstance {
+			return fmt.Errorf("%w: 回退已达上限 %d 次（FR-M9-06）", ErrOpLimitExceeded, MaxRollbackPerInstance)
+		}
 		activeSeq := maxReachedSeq(tasks)
 		activeNodeID := nodeIDOfSeq(tasks, activeSeq)
 		if activeNodeID == "" {
@@ -302,7 +336,10 @@ func (s *Service) Rollback(ctx context.Context, bizNo, actorOpenID, targetNodeID
 			return err
 		}
 		cur := firstPendingTask(activeTasks)
-		if cur == nil || cur.AssigneeOpenID != actorOpenID {
+		// ★ N-060 F4（FR-M9-06「本人或其代理人」）：非本人时经 authorizer 判代理
+		//（三重判定见 Transfer 注释；nil ⇒ 仅本人）。
+		if cur == nil || (cur.AssigneeOpenID != actorOpenID &&
+			(s.agentAuthorizer == nil || !s.agentAuthorizer(ctx, cur, actorOpenID))) {
 			return fmt.Errorf("%w: %s 非当前节点 %s 的当前审批人，不可回退（04a §5.1）",
 				ErrNotAssignee, actorOpenID, activeNodeID)
 		}

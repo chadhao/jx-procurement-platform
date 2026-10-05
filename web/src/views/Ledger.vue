@@ -127,7 +127,22 @@ function columns() {
   // 去掉明细大字段与展示辅助列
   set.delete('archive')
   set.delete('ops')
+  // ★ N-060 F6（FR-M1-05/M4-04）：formula_flags 不平铺原始 JSON —— 改为独立红标列渲染
+  set.delete('formula_flags')
   return Array.from(set)
+}
+
+// formulaBadges 三公式红标（N-060 F6；后端 handlers_biz.go#formulaFlags 三项）：
+// same_person＝自任经办 · supplier_month_sum.over_threshold＝供应商月累计超阈 ·
+// spot_check_range＝抽盘区间命中。命中 ⇒ 返回中文标签数组（行内红标展示）。
+function formulaBadges(row) {
+  const f = row.formula_flags
+  if (!f || typeof f !== 'object') return []
+  const out = []
+  if (f.same_person === true) out.push('自任经办')
+  if (f.supplier_month_sum && f.supplier_month_sum.over_threshold === true) out.push('供应商月累计超阈')
+  if (f.spot_check_range === true) out.push('抽盘区间')
+  return out
 }
 
 onMounted(load)
@@ -163,12 +178,17 @@ onMounted(load)
       <thead>
         <tr>
           <th v-for="c in columns()" :key="c">{{ c }}</th>
+          <th>公式红标</th>
           <th>操作</th>
         </tr>
       </thead>
       <tbody>
         <tr v-for="row in items" :key="rowKey(row)">
           <td v-for="c in columns()" :key="c">{{ row[c] }}</td>
+          <td>
+            <span v-for="b in formulaBadges(row)" :key="b" class="tag danger">{{ b }}</span>
+            <span v-if="!formulaBadges(row).length" class="muted">-</span>
+          </td>
           <td>
             <button v-if="canEdit(row)" class="ghost" @click="editOps(row)">写运营字段</button>
             <span v-else class="muted">只读</span>

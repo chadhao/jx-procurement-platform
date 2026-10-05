@@ -1,5 +1,7 @@
 package chain
 
+import "strings"
+
 // 代理人节点适用面（N-031 · 制度第十二条「备付金审批不得代理」的系统执行体）。
 //
 // ★★ **业务名单在 spec、不在代码**（与 checks.json「判据＝数据」同一条纪律）：
@@ -43,4 +45,33 @@ func NodeAllowsAgent(b *specload.Bundle, sourceNodeID string) (bool, string) {
 		return false, fmt.Sprintf("节点 %q 标记为不可代理（agent_allowed=false —— 制度第十二条：备付金审批不得代理）", sourceNodeID)
 	}
 	return true, ""
+}
+
+// FindRoleOfNode 节点 id → 审批角色（N-060 F4 · 代理人正向消费的第一重判定）：
+//   - 全 routes 精确匹配 nodes[*].id 且 actor ∈ approverRoles ⇒ 返回该 actor；
+//   - 展开型节点 id（`<node>_<role>`，如 tier_chain_supervisor）⇒ 后缀 role ∈ approverRoles；
+//   - `contract_pgm` 特例后缀 pgm ⇒ project_general_manager（expandContract 命名族）；
+//   - 找不到 ⇒ ok=false（保守 fail-closed：不可代理）。
+//
+// ★ 纯 spec 扫描、不依赖 store —— chain 不连库（RoleSource 由装配层适配的既有架构）。
+func FindRoleOfNode(b *specload.Bundle, nodeID string) (string, bool) {
+	if b == nil || nodeID == "" {
+		return "", false
+	}
+	for _, rt := range b.Chain.Routes {
+		for _, n := range rt.Nodes {
+			if n.ID == nodeID && approverRoles[n.Actor] {
+				return n.Actor, true
+			}
+		}
+	}
+	if i := strings.LastIndex(nodeID, "_"); i > 0 {
+		if role := nodeID[i+1:]; approverRoles[role] {
+			return role, true
+		}
+	}
+	if strings.HasSuffix(nodeID, "_pgm") {
+		return "project_general_manager", true
+	}
+	return "", false
 }

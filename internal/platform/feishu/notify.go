@@ -61,7 +61,13 @@ type NotifySender struct {
 	// 缺一即 60001；绝不静默编造 URL，漏发由 t_notify_log.FAILED 检出）。
 	detailBase string
 	log        *slog.Logger
+	// throttle 配额降级门（N-060 F2 · 01a §5.5 约束3）：true ⇒ 跳过 Bot 通知
+	//（降**非关键调用**、保对账）；nil ⇒ 不过滤（默认）。
+	throttle func() bool
 }
+
+// SetQuotaThrottle 注入配额降级门（bootstrap 装配：>=90% 时跳过 Bot）。
+func (s *NotifySender) SetQuotaThrottle(f func() bool) { s.throttle = f }
 
 // NewNotifySender 构造通知发送器（生产装配；开发无凭据场景用 NewFakeNotifySender）。
 func NewNotifySender(db *store.DB, client *HTTPClient, detailBase string, log *slog.Logger) *NotifySender {
@@ -92,6 +98,15 @@ func (s *NotifySender) Send(ctx context.Context, bizNo, targetOpenID, event stri
 	target := strings.TrimSpace(targetOpenID)
 	if bizNo == "" || target == "" {
 		return fmt.Errorf("feishu: 发送待办通知失败: biz_no/open_id 不能为空")
+	}
+	// ★ N-060 F2（01a §5.5 约束3）：配额 ≥90% ⇒ 降非关键（Bot 通知）、保对账。
+	// 返回 nil＝本通道按降级策略不发送（可见 Warn 留痕；站内兜底通道独立、不受此门影响）。
+	if s.throttle != nil && s.throttle() {
+		if s.log != nil {
+			s.log.Warn("★ 配额水位 ≥90%：跳过 Bot 通知（降非关键调用，保对账 —— 01a §5.5 约束3）",
+				"biz_no", bizNo, "target", target, "event", event)
+		}
+		return nil
 	}
 	if s.client == nil {
 		return fmt.Errorf("feishu: 发送待办通知失败: 未配置飞书客户端")

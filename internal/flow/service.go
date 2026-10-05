@@ -149,6 +149,11 @@ type SubmitInput struct {
 
 // Service 审批领域服务。
 type Service struct {
+	// agentAuthorizer 代理人正向消费门（N-060 F4 · FR-M9-04/06「本人或其代理人」）：
+	// (ctx, task, actor) → 是否放行；判定三重（bundle 节点角色 → t_role_agent active →
+	// NodeAllowsAgent）由 bootstrap 注入。nil ⇒ 仅本人（现状不放宽）。加签不经过此门。
+	agentAuthorizer func(ctx context.Context, task *store.FlowTask, actorOpenID string) bool
+
 	db       *store.DB
 	gen      *number.Generator
 	appID    string
@@ -1053,3 +1058,8 @@ var amountNoise = strings.NewReplacer(
 	"￥", "", "¥", "", "$", "", "元", "", "人民币", "",
 	"RMB", "", "rmb", "", "CNY", "", "cny", "",
 )
+
+// SetAgentAuthorizer 注入代理人正向消费门（N-060 F4；bootstrap 装配；nil＝关闭）。
+func (s *Service) SetAgentAuthorizer(f func(ctx context.Context, task *store.FlowTask, actorOpenID string) bool) {
+	s.agentAuthorizer = f
+}

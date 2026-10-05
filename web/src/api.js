@@ -78,7 +78,6 @@ export const fetchInstances = (params) => api.get('/api/instances', params)
 export const fetchInstance = (code) => api.get(`/api/instances/${encodeURIComponent(code)}`)
 
 /** 实例字段明细。 */
-export const fetchInstanceFields = (code) => api.get(`/api/instances/${encodeURIComponent(code)}/fields`)
 
 /** 关联单预填（B6）：取 spec 中 source=system 关联带入型键在该实例 ext 的值。 */
 export const fetchInstancePrefill = (code, keys) =>
