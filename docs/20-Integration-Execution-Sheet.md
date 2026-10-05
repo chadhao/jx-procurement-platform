@@ -61,17 +61,19 @@ jxapproval       监听 127.0.0.1:5001（★ 由 .env 的 JX_LISTEN_ADDR 决定�
 
 | 项 | 值 | 证据来源 |
 |---|---|---|
-| 部署版本 | `0.3.5-s3-209-gf6ed88e`（＝ 仓库 HEAD `f6ed88e`） | `/healthz` 的 `data.version` |
+| 部署版本 | ★ **`0.3.5-s3-231-g0e2c4eb`**（＝ 仓库 HEAD `0e2c4eb`，含 `N-066` 的 `group_code` 修复） | `/healthz` 的 `data.version` |
 | `JX_ENV` / `DEV_MODE` | `test` / `true` | 服务器 `.env` |
 | 飞书凭据 | `JX_APP_ID=cli_aa33a8b22f78dcb4` **已配**，长连接**已建立** | 日志 `connected to wss://msg-frontier.feishu.cn` |
 | `JX_CALLBACK_DOMAIN` | `http://office.hunanyichu.com:5500` | 服务器 `.env` |
 | `JX_ACTION_CALLBACK_TOKEN` | **已设**（16 位测试 token） | 服务器 `.env` |
 | `JX_APPROVAL_GROUP_CODE` | ★ **2026-10-06 实测新增**：飞书 `external_approvals` 的 `group_code` **必填** ⇒ 测试环境用租户内既有分组 **`JXQA-GROUP-1`**（名「江熙新材审批」） | 实测：不给 ⇒ 飞书 `1390001`；给 ⇒ `code=0` |
-| 通讯录镜像 | dept 6 / user 5，最近一次全量成功 | 日志 `通讯录全量同步完成` |
+| 通讯录镜像 | ★ **据实更正（2026-10-06 实测）**：镜像**为空**（`org_sync.user_count=0` / `dept_count=0`）⇒ 本次测试用 `ou_test_*` 合成 open_id。★ 飞书侧**真实部门 5 个**（综合运营部 / 销售部 / 质检技术部 / 生产部 / 总经办），**用户 0**（`contact/v3/users` 返回 0 条） | `/readyz` 的 `org_sync`；`contact/v3/departments` |
 | 权限规则 | 70 条 | 表 `t_permission_rule` |
 | 系统管理员 | `郝端` / `ou_7a88…c40a`（`active=1`） | 表 `t_user_role` |
-| 已建飞书定义 | **1 张**：`JXQA-TEST-0001`（`doc_type=PR`）`feishu_code=6AC44B6B-…BA72` | 表 `t_approval_def` |
+| ★ **业务角色（2026-10-06 新配）** | `ou_test_ops_supervisor` 综合运营主管（综合运营部）· `ou_test_pgm` 项目总经理（总经办）· `ou_test_inspector` 验收人（质检技术部）· `ou_test_supervisor` 主管领导（综合运营部） | 表 `t_user_role`；★ 配齐后 `preview` **15 组用例零缺失** |
+| 已建飞书定义 | ★ **11 张**（`jx_ba`…`jx_sub`，每 `doc_type` **唯一**，`def_version=1`）；★ 旧 `JXQA-TEST-0001` 已按用户裁定 **A** 清除。★ **实测：飞书侧读回 11/11 全 `code=0`**、`group_code` 全为 `JXQA-GROUP-1` | 表 `t_approval_def`；`GET /external_approvals/<feishu_code>` |
 | `/healthz` 五项 | `subscribe` / `longconn` / `db_writable` / `single_instance` / `approval_defs` **全 true** | `--check-only` 输出 |
+| ★ **测试角色缺口的实测值** | 配角色**前**：启动自检 `unresolved=3`；配齐**后**：`unresolved=1`，★ 且**剩的那 1 个是探针偏差**（见 §1B.9.3） | 日志 `启动自检：…算不到人的角色` |
 
 ### 1B.3 开动序列（★ 可直接复制）
 
@@ -83,6 +85,16 @@ jxapproval       监听 127.0.0.1:5001（★ 由 .env 的 JX_LISTEN_ADDR 决定�
 | **④ 导入配置** | 服务器 | `cd ~/services/jxapproval && set -a; . ./.env; set +a && ./jxapproval import-config <config.json>` | 打印 `校验通过：… 合计 N 条`（★ **本载荷涉及的映射类全量替换**） |
 | **⑤ 装载定义** | ★ **我方自办**（会话见 §1B.7，**无需人工点击**） | `POST /api/admin/approval/defs/sync`（无请求体） | 返回 `synced/created/updated/skipped/failed` 计数；飞书侧出现对应三方定义 |
 | **⑥ 开测** | 按 §2 逐项 | — | — |
+
+> ★★ **实测执行记录（2026-10-06，用户裁定 A 之后）** —— 上表 ①–⑤ **已全部执行完毕**：
+> | 步 | 结果 |
+> |---|---|
+> | ① 环境自检 | 全绿（含公网 200） |
+> | ② 映射（含 `group_code` 预置） | `approval_code 11 / ledger_type 9 / threshold 5 / ledger_field 25`，回读校验通过 |
+> | ③ 配置分组 code | 服务器 `.env` 已加 `JX_APPROVAL_GROUP_CODE=JXQA-GROUP-1` |
+> | ④ 导入配置 | ★ **本载荷涉及映射类全量替换** ⇒ 旧 `JXQA-TEST-0001` **导入即自动清除**（另手工清 `t_approval_def` 同 `doc_type` 行，防反查二义） |
+> | ⑤ 装载定义 | ★★ **`created=11 failed=0 synced=11`**（修复前为 **11 张全失败**）；幂等重跑 ⇒ `updated=11`、库内未增 |
+> ★ **下一步＝第 ⑥ 步：按 §2 第一批 8 项开测。**
 
 ### 1B.4 ★★ 开动前必须先裁定的口径（否则第 ④ 步会踩静默歧义）
 
@@ -177,6 +189,54 @@ code=1390001 msg=Group code cannot be empty when create approval definition
 → **响应回填的 `approval_code` 是「真实池」值**（平台生成的 UUID `80C5FF8D-…`，**不等于**我方入参 `jx_ba`）⇒ `t_approval_def.feishu_code` 存的正是它，推送实例时**应优先取用**（现有代码已如此）。
 
 ---
+
+---
+
+### 1B.9 ★★ 三个「验证口径」—— 查错了会得出相反结论（2026-10-06 实测）
+
+联调期要做大量「成了没有」的判断。以下三处**第一直觉是错的**，实测已各踩一次：
+
+#### 1B.9.1 ★★ 验证「定义是否已装载」**不能看 `/healthz`**
+
+`healthz.checks.approval_defs` 是**启动时点快照**（`cmd/jxapproval/bootstrap.go:170-179`：仅在启动期读一次 `CountApprovalDefs`）。
+★ 实测：装载 **11 张之后**、**未重启**时该值仍为 **`false`**；**重启后变 `true`**（日志 `启动自检：三方审批定义已装载 def_count=11`）。
+
+| 想验证 | ❌ 不要看 | ✅ 应该看 |
+|---|---|---|
+| 定义是否装载成功 | `/healthz` 的 `approval_defs`（时点快照，会滞后到下次重启） | ★ `POST /api/admin/approval/defs/sync` 的**响应计数**（`created/updated/failed`） |
+| 本地库里有哪些定义 | — | ★ `GET /api/approval/defs`（**不重启即可查**，实测返回 11 条） |
+| 飞书侧是否真的建成了 | 本地库（只能证明本地有记录） | ★ **直调平台读回**（见 §1B.9.2） |
+
+#### 1B.9.2 ★★ 读回飞书定义**必须用 `feishu_code`，不是我方 `jx_*` code**
+
+`GET /open-apis/approval/v4/external_approvals/<code>` 的 `<code>` 是**平台返回的 UUID**（真实池），**不是**我方入参的 `jx_ba`。
+★ 实测：用 `jx_ba` 读 ⇒ **`1390002`**；用库里的 `feishu_code`（如 `80C5FF8D-B12A-4BB9-9E84-C35C77CD8EC8`）读 ⇒ **`code=0`**。
+
+```bash
+# 用库里的 feishu_code 逐个读回（11/11 应全 code=0）
+sqlite3 data/jxapproval.db "select doc_type||' '||approval_code||' '||feishu_code from t_approval_def order by doc_type;"
+```
+
+★ 这同时**实测回答了 `docs/16 §7 V-4`**（此前标「未实测」）：响应回填的 `approval_code` 属**真实池**（平台 UUID），`t_approval_def.feishu_code` 存的正是它，推送实例时应优先取用。
+
+#### 1B.9.3 ★ 启动自检的 `unresolved` 计数**恒比真实缺失多 1**（探针偏差，非配置问题）
+
+`bootstrap.go:188-195` 的烟测只传 `DocType/AmountCents/UsageCategoryL1`，**未传 `ApplicantOpenID`**；
+而 `internal/chain/assign.go:90-97` 对 `actor=applicant` 的节点在缺申请人身份时**记一条 unresolved** ⇒ **恒存在一条，与配置无关**。
+
+★ 实测对照（同一采一链）：
+
+| 查法 | 配角色前 | 配齐 4 个业务角色后 |
+|---|---|---|
+| 启动自检日志 `unresolved` | **3** | ★ **1**（正是 `回交凭据` 那个 `applicant` 节点） |
+| `POST /api/approval/preview`（携带会话身份） | 2（`综合运营主管`×2 节点） | ★ **0** |
+
+⇒ ★★ **判断「到底缺哪个角色」一律用 `POST /api/approval/preview`**（它给 `unresolved_roles` 明细：节点名 ＋ 角色 ＋ 原因），**不要照启动日志的数字去权限管理页找** —— 找不到对应关系。
+★ 已登记 `COLLAB.md#N-068` 要求把该计数与 `preview` 口径对齐。
+
+> ★ 附：`unresolved_roles` 目前的**响应键名是 `NodeID/NodeName/Role/Reason`**（大写驼峰），
+> 与 `docs/05` 契约声明的 `node_id/node_name/role/reason` **不一致**（`chain/assign.go` 漏 `json tag`）
+> ⇒ ★ 脚本取值时**两种都试**，以实测为准；已登记 `N-068` 修复。
 
 ---
 
