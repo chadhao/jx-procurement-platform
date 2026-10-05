@@ -31,6 +31,15 @@
      **把 `_institution_anchors_counts()` 调用摘掉 ⇒ rc=0（静默放行）**。
   7. **fail-closed**：索引**不可解析** ⇒ 报可见失败（**不许静默通过** —— 否则「检查不了」
      会被当成「没问题」）。
+  8. ★★★ **`target_filter` 派生白名单（② 第二半 · **落地段③**）：两侧真引擎的缺口存在性反证** ——
+     ★ 本段是**唯一会临时改动 `spec/chain.json` 与 `scripts/check_spec.py` 之外真源**的部分
+     （`chain.json` 变异 + `checks.json` 摘参数），但**逐项还原并 `sha256` 核对**。
+     · **P1** 无变异 ＋ 新白名单 ⇒ `S19` **0 处**（切换**无红窗**）；
+     · **P2** 同一变异（某 `actor` → `group_finance`）＋ **新白名单** ⇒ **恰 1 处**且点名该取值；
+     · **P3** ★★ 同一变异 ＋ **旧白名单**（摘掉 `target_filter`）⇒ **0 处静默放行**
+       ⇒ **「本参数确实关掉了这个洞」的反证**；
+     · **P4** 无变异 ＋ 旧白名单 ⇒ 0 处（对照：P3 的 0 不是「摘参数把报错也吞了」）。
+     ★ Go 侧的同一反证见 `internal/specload/n049_target_filter_probe_test.go`（`P1`–`P4` 同名同序）。
 
 ★ 口径正本 ＝ `scripts/gen_institution_anchors.py` 头注；本探针**不重复实现口径**，只调用它。
 """
@@ -294,6 +303,118 @@ rc, _, anchor = with_mutation(INDEX, b"{ this is not json", run_check_spec)
 ok("索引不可解析 ⇒ 报可见失败（不许静默通过）",
    rc == 1 and any("锚点索引重算失败" in x for x in anchor),
    "rc=%d anchor=%d 条" % (rc, len(anchor)))
+
+# ------------------------------------------------------------------ 8. target_filter（落地段③）两侧真引擎反证
+print("\n== 8. ★★★ `target_filter` 派生白名单（落地段③）：两侧真引擎的缺口存在性反证（Python 侧） ==")
+CHAIN = os.path.join(ROOT, "spec", "chain.json")
+CHECKS = os.path.join(ROOT, "spec", "checks.json")
+cks_orig = read(CHECKS)
+
+
+def s19_lines(out):
+    # ★ 违规行在 `check_spec.py` 里以 `"  " + p` 打印（**两个空格缩进**）
+    #   ⇒ ★ 必须用**子串**匹配，用 `startswith` 会**静默匹配不到**
+    #   （★ 这个坑当场让 P2 假红、P3/P4 变成**恒真的空断言**）。
+    return [ln.strip() for ln in out.splitlines() if "[S19]" in ln]
+
+
+def _set_first_route_actor(doc, to):
+    """★ 与 Go 侧 `n049SetFirstRouteActor` **同规则**（字典序首路由 ＋ 排序键 DFS 首个 `actor`），
+    保证两侧探针钉的是**同一处位点**（否则「两侧一致」会变成「两侧各变异各的」）。"""
+    routes = doc.get("routes") or {}
+    assert routes, "chain.json#routes 为空"
+    name = sorted(routes)[0]
+    seen = []
+
+    def dfs(node):
+        if isinstance(node, dict):
+            for k in sorted(node):
+                if k == "actor" and isinstance(node[k], str):
+                    if not seen:
+                        seen.append(node[k])
+                    node[k] = to
+                    return True
+                if dfs(node[k]):
+                    return True
+        elif isinstance(node, list):
+            for e in node:
+                if dfs(e):
+                    return True
+        return False
+
+    assert dfs(routes[name]), "routes.%s 下未见字符串 `actor`（探针前提不成立）" % name
+    return name, seen[0]
+
+
+def _mutated_chain_bytes(to):
+    doc = json.loads(read(CHAIN).decode("utf-8"))
+    name, old = _set_first_route_actor(doc, to)
+    return (json.dumps(doc, ensure_ascii=False, indent=2) + "\n").encode("utf-8"), name, old
+
+
+def _stripped_checks_bytes():
+    doc = json.loads(cks_orig.decode("utf-8"))
+    for c in doc["checks"]:
+        if c["id"] == "S19":
+            assert "target_filter" in c["args"], "S19.args 无 target_filter（落地段③ 未生效）"
+            del c["args"]["target_filter"]
+    return (json.dumps(doc, ensure_ascii=False, indent=2) + "\n").encode("utf-8")
+
+
+def run_two(chain_bytes=None, strip=False):
+    """同一次运行里（必要时）变异 `chain.json` 与摘掉 `S19.args.target_filter`，跑**真门禁**后全部还原。"""
+    chain_orig = read(CHAIN)
+    before = (sha(CHAIN), sha(CHECKS))
+    try:
+        if chain_bytes is not None:
+            write(CHAIN, chain_bytes)
+        if strip:
+            write(CHECKS, _stripped_checks_bytes())
+        p = subprocess.run([sys.executable, CHECK_SPEC], cwd=ROOT, capture_output=True, text=True)
+        return p.returncode, p.stdout + p.stderr
+    finally:
+        write(CHAIN, chain_orig)
+        write(CHECKS, cks_orig)
+        ok("还原 spec/chain.json（sha256 逐字节相同）", sha(CHAIN) == before[0])
+        ok("还原 spec/checks.json（sha256 逐字节相同）", sha(CHECKS) == before[1])
+
+
+# 前提：S19.args 已按落地段③ 切换
+_pre = json.loads(cks_orig.decode("utf-8"))
+_s19 = [c for c in _pre["checks"] if c["id"] == "S19"][0]
+ok("前提：`S19.args` 带 `target_filter{field=node_actor_kind, in=[approver,action]}` 且 `collect=routes.**.actor`",
+   _s19["args"].get("target_filter") == {"field": "node_actor_kind", "in": ["approver", "action"]}
+   and _s19["args"].get("collect") == "routes.**.actor",
+   "collect=%s" % _s19["args"].get("collect"))
+
+# P1 无变异 ＋ 新白名单 ⇒ 0 处
+rc, out = run_two()
+p1 = s19_lines(out)
+ok("P1 无变异 ＋ 新白名单 ⇒ `S19` **0 处**（切换无红窗）", rc == 0 and not p1,
+   "rc=%d S19=%d" % (rc, len(p1)))
+
+# 变异（与 Go 侧同一位点规则）
+m_chain, mut_route, mut_old = _mutated_chain_bytes("group_finance")
+
+# P2 变异 ＋ 新白名单 ⇒ 恰 1 处且点名
+rc, out = run_two(chain_bytes=m_chain)
+p2 = s19_lines(out)
+ok("P2 同一变异（`routes.%s` 的 %r → `group_finance`）＋ 新白名单 ⇒ **恰 1 处**且点名该取值"
+   % (mut_route, mut_old),
+   rc == 1 and len(p2) == 1 and "group_finance" in p2[0],
+   "rc=%d S19=%d %s" % (rc, len(p2), (p2[0][:90] if p2 else "")))
+
+# P3 ★★ 同一变异 ＋ 旧白名单（摘 target_filter）⇒ 0 处静默放行
+rc, out = run_two(chain_bytes=m_chain, strip=True)
+p3 = s19_lines(out)
+ok("P3 ★★ 同一变异 ＋ **旧白名单**（摘 `target_filter`）⇒ **0 处静默放行**（缺口存在性反证）",
+   rc == 0 and not p3, "rc=%d S19=%d" % (rc, len(p3)))
+
+# P4 无变异 ＋ 旧白名单 ⇒ 0 处（对照）
+rc, out = run_two(strip=True)
+p4 = s19_lines(out)
+ok("P4 无变异 ＋ 旧白名单 ⇒ 0 处（对照：P3 的 0 非「摘参数连报错一起吞」）",
+   rc == 0 and not p4, "rc=%d S19=%d" % (rc, len(p4)))
 
 # ------------------------------------------------------------------ 收尾
 bad = [r for r in RESULT if not r[0]]

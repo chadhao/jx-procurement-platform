@@ -272,20 +272,82 @@ def prim_enum_subset(args):
     return probs
 
 
+def _parse_ref_target_filter(args, cid):
+    """
+    `N-049` ② 第二半：解析可选 `target_filter`（**派生白名单**）。★ 与 Go 侧
+    `parseRefTargetFilter`（`internal/specload/checklist.go`）**逐字同口径**；
+    规格正本 ＝ `spec/checks.json#_pending_arg_note`。
+
+    返回 `(filter, problems)`：
+      · 未设该键 ⇒ `(None, [])` —— **完全旁路**（行为与原先逐字节一致）；
+      · 形态非法（非对象 / 缺非空字符串 `field` / 缺数组 `in` / `in` 非数组）
+        ⇒ `(None, [一条可见报错])` —— **fail-closed ①：不静默忽略**
+        （否则「参数写错」＝「白名单照旧全收」，判据回到失效态）。
+    ★ `in: []` **不算**形态非法（其后果由「过滤后白名单为空」兜住）。
+    """
+    if "target_filter" not in args:
+        return None, []
+    tf = args["target_filter"]
+    if not isinstance(tf, dict):
+        return None, ["[%s] target_filter 形态非法：必须是对象 {\"field\":…,\"in\":[…]}（实为 %s）"
+                      % (cid, type(tf).__name__)]
+    field = tf.get("field")
+    if not isinstance(field, str) or not field.strip():
+        return None, ["[%s] target_filter 形态非法：缺非空字符串字段 field" % cid]
+    if "in" not in tf:
+        return None, ["[%s] target_filter 形态非法：缺数组字段 in" % cid]
+    inraw = tf["in"]
+    if not isinstance(inraw, list):
+        return None, ["[%s] target_filter 形态非法：in 必须是数组（实为 %s）"
+                      % (cid, type(inraw).__name__)]
+    inset = set()
+    for x in inraw:
+        s = _scalar_str(x)          # ★ 复用既有标量归一（与 Go `scalarString` 同口径）
+        if s is not None:
+            inset.add(s)
+    return {"field": field, "in": inset}, []
+
+
 def prim_ref_exists(args):
     # ★ `split`（议题 N-021）：某些字段把多个引用**串在一个字符串里**（管道串），
     #   如 `route_by_condition: "expense_sales | expense_mgmt_advance | expense_mgmt_direct"`
     #   ⇒ 须先按分隔符拆段、逐段 TrimSpace、**空段跳过**（容忍多余空格/尾随分隔符）再逐段校验。
     #   ★ **未设 split ⇒ 行为与原先逐字节一致**（向后兼容，不影响任何既有判据）。
     #   ★ 语义与 Go 侧 `argStringOpt` 分支**逐字对齐**（两侧共同契约，见 spec/checks.json#consumer_obligations）。
+    #
+    # ★ `target_filter`（议题 N-049 ② 第二半）：**派生白名单** —— 只收窄 `target_dict` 的键集合，
+    #   不改收集面（收集面归 N-057）、不新增判据。语义（规格正本＝#_pending_arg_note）：
+    #     ① 白名单 ＝「`field` 取得到标量值 **且** 该值 ∈ `in`」的键；取不到值（键不存在/路径中断/
+    #        null/非标量）或值不在 `in` ⇒ 该键**不进白名单**（＝与 `none` 同等：非节点 actor）；
+    #     ② 与 `split` **互不影响、顺序无关**（`split` 作用于**收集到的引用值**，本参数作用于**目标白名单**）；
+    #     ③ 标量归一复用 `_scalar_str`（与 `set_covers`/`path_exists` 完全一致）。
+    #   ★ **未设 ⇒ 行为与原先逐字节一致**（向后兼容）；★★ 与 Go 侧同批落地（`N-049` ② 硬次序第 ③ 步）——
+    #     两侧任一单侧先行 ⇒ **白名单宽度不同、同一判据两个结论**，且该分歧**在当前数据上两侧都绿**（更难发现）。
     cid, split = _cid(args), args.get("split")
+    flt, probs = _parse_ref_target_filter(args, cid)      # fail-closed ①（形态非法）
     target = set(args.get("extra_allowed") or [])
+    missing = []
     for tf in expand(args["target_file"]):
         for nd in sel(load_json(tf), toks(args["target_dict"])):
             ks = _dict_keys(nd)
             if ks:
-                target |= ks
-    probs = []
+                for k in sorted(ks):
+                    if flt is not None:
+                        s = _scalar_str(_dig(nd[k], flt["field"]))   # ★ 复用 `dig` 点路径语义
+                        if s is None:
+                            # fail-closed ②：键不存在/路径中断/null/非标量 ⇒ **点名该键**
+                            # （★「未分类」≠「分类为 none」；同 `S15` 之精神）
+                            missing.append(k)
+                            continue
+                        if s not in flt["in"]:
+                            continue          # 值不在 in ⇒ 不进白名单（＝与 none 同等）
+                    target.add(k)
+    for k in missing:
+        probs.append("[%s] target_dict 键 %r 缺字段 %r（取不到标量值 —— 未分类不许静默当成可入白名单）"
+                     % (cid, k, flt["field"]))
+    # fail-closed ③：过滤后白名单为空（★ extra 并入后仍空 ⇒ 过滤写错不许静默掏空判据面）
+    if flt is not None and not target:
+        probs.append("[%s] target_filter 过滤后白名单为空（过滤写错不许静默掏空判据面）" % cid)
     for f in expand(args["file"]):
         vals = sel(load_json(f), toks(args["collect"]))
         probs += _hits_guard(cid, args["collect"], vals, args)
