@@ -198,6 +198,12 @@
       "is_sensitive": false
     },
     {
+      "ledger_type": "L01",
+      "field_key": "核销后余额",
+      "is_sensitive": true,
+      "remark": "★ N-061 T1：L01 实例级台账真缺登记（spec writable:true · writer=综合运营主管 · when=月度核销时）—— 与 H3.2 同类，漏登记则界面按规格 label 写入 403"
+    },
+    {
       "ledger_type": "L03",
       "field_key": "经办状态",
       "is_sensitive": false

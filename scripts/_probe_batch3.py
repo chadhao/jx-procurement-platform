@@ -180,10 +180,16 @@ try:
         have = {(e["ledger_type"], e["field_key"]) for e in cm["ledger_field"]}
         miss = [(lt, lbl) for lt in sorted(want) for lbl in want[lt] if (lt, lbl) not in have]
         readonly_leak = [x for x in miss if x[0] in ("L10", "L11", "L12")]
-        ok = (len(miss) == 7) and not readonly_leak
-        results.append(("P6 真 spec 下 T5 期望＝7 条且无只读台账", ok,
-                        "实报 %d 条 · 只读台账泄漏 %d 条 → %s" % (
+        # N-061 T2：口径=具名豁免集相等（数会漂、名可核对）。
+        # 豁免名清单唯一依据 = spec/ledger-mapping.json#ledgers.L08.known_gaps（指针引用）。
+        exempt = {("L08", x) for x in ["供应商名称", "统一社会信用代码", "账户信息",
+                                         "准入日期", "评级", "关联关系申报"]}
+        drift = set(miss)
+        ok = (drift == exempt) and not readonly_leak
+        results.append(("P6 真 spec 下 T5 期望＝L08 具名豁免六列且无只读台账", ok,
+                        "实报 %d 条 · 只读泄漏 %d · 漂移集%s → %s" % (
                             len(miss), len(readonly_leak),
+                            "恰等于豁免集" if drift == exempt else "≠豁免集",
                             "；".join("%s/%s" % x for x in miss))))
     except Exception as e:  # noqa: BLE001
         results.append(("P6 真 spec 下 T5 期望", False, "计算失败：%s" % e))
