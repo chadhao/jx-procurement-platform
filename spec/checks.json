@@ -1,5 +1,5 @@
 {
-  "version": "1.23",
+  "version": "1.24",
   "generated_by": "WorkBuddy",
   "date": "2026-10-05",
   "scope": "spec/",
@@ -488,7 +488,8 @@
           "manual",
           "pending_wiring",
           "pending_implementation",
-          "submit"
+          "submit",
+          "accepted_gap"
         ],
         "min_hits": 1
       }
@@ -810,6 +811,11 @@
       "version": "1.23",
       "date": "2026-10-05",
       "change": "★★ **`N-049` ② 第二半落地段③：`ref_exists` 的派生参数 `target_filter` 两侧同批生效 ⇒ `N-049` 全议题闭环**（★ **判据仍 30 / 原语仍 12** —— 本参数**只收窄白名单、不新增判据**；必绿基线仍 8）。★★ **本版变更**：① `S19.args` 增 `target_filter` ＝ `{\"field\": \"node_actor_kind\", \"in\": [\"approver\", \"action\"]}` ⇒ `S19` 白名单由「`roles` **全表键**（10 个）」收窄为「**7 个节点 actor 角色键** ∪ `system`」—— ★ **与 Go 侧两张硬编码表 `approverRoles`(5) ∪ `isActionActor`(3) 集合相等**（`N-049` ② 的收口判据）；② `primitives.ref_exists.args` 补该参数的说明（文档面）；③ `scripts/check_spec.py#prim_ref_exists` 落**同名实现**（`_parse_ref_target_filter` ＋ 白名单过滤；复用 `_dig`/`_scalar_str`，缺省完全旁路）；④ `_pending_arg_note` 追加**落地段**（★ 头段「只声明、不消费」已过期，以落地段为准）。★★ **硬次序（三步，全完成）**：① 我方规格（v1.22）→ ② mimo 落 Go 侧（`c081eb4`，我方独立验收：门禁 8/8 ＋ 三条单点变异自做 ＋ `cp`/`sha256` 还原 ＋ `spec/**` 零改动）→ ③ 我方同批（本版）。★★ **为什么必须两侧同批**：Go 侧对**未实现的参数**会**静默忽略** ⇒ 单侧先行 ⇒ **同一判据两个结论**，且该分歧**在当前数据上两侧都绿**（更难发现；`N-048` 段归一顺序／`N-055` 的 `min_hits` 同族）。★ **切换无红窗的实测**：`routes.**.actor` 机械收集 **45 处**、去重 **7 个取值** ⇒ 新旧白名单下**两侧均 0 处报错**（三个 `node_actor_kind == \"none\"` 的角色**零出现** ⇒ 本半**自始至终是「假想洞」**，故优先级低于 `N-057` 的真实洞）；★ **反向变异**（任一 `actor` → `group_finance`／`sys_admin`）⇒ **旧白名单 0 处静默放行、新白名单两侧各恰 1 处报错** ⇒ 缺口存在性由**两侧真引擎**的探针钉住（Python `scripts/_probe_n049.py` ＋ Go `internal/specload/n049_target_filter_probe_test.go`）。★ 归属：`COLLAB.md#N-049` · `REMAINING.md §1 B15`／`§5 批 24` · `MIMO-NEXT-BATCH-19.md`。"
+    },
+    {
+      "version": "1.24",
+      "date": "2026-10-06",
+      "change": "★★★★ **`S14.args.allowed` 增受控值 `accepted_gap`（「具名豁免」）** —— ★ 依据 `N-062`（「声明-执行」收口）：全仓穷举发现 `spec` 仍挂 **19 项** `pending_implementation`/`pending_wiring`（字段 10 ＋ 判据 9），即「**声明了却没人执行**」。★★ 我方定：这类项**只有三种正当归宿** —— ① 补执行体（`code`）② 改声明（如 `source` 由 `system` 改 `user`）③ **具名豁免**；★ 而第③种**此前没有词可用** ⇒ 只能继续挂着 `pending_implementation`（＝「声明了什么都不发生」）。⇒ 本版**只增一个受控值**：**`accepted_gap`＝「本期确无数据源/通路，显式登记不做并写明理由」**。★★ **零新增判据、零新增原语、零引擎改动**（`allowed` 是**数据**，两侧引擎均按数据执行）⇒ 门禁判定值零波动。"
     }
   ]
 }
