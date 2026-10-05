@@ -2352,6 +2352,40 @@
 - **建议方案**：★ **① 采纳「放宽收集面 ＋ 归一数据」，不采纳「扩 `[k=v]` 引擎」** —— 依据三条：ⓐ 本议题的需求是「**让被真实消费的 `actor` 位点进判据面**」，而**既有 `**` 已足够**；ⓑ 通用 `[k=v]` 只对**数组**有定义（**返回节点**），对**对象取「匹配键」**需**另立语义**，却要同时改**两侧 × 12 个原语**的路径引擎（**爆炸半径**远大于收益）；ⓒ `ref_exists` **已有可选参数先例**（`N-021` 的 `split`）⇒ 若将来确需收白名单，**优先给该原语加派生参数**，而非动通用引擎。
   ★★ **② 三项具名余项（本批不决定，登记不静默）**：ⓐ `NodeBranch.Actor`（上表 ③）—— ★ **spec 声明了 R-03 上抬角色，实现却硬编码 `supervisor`**（`nodes.go:93`）⇒ 属「**判据＝数据，不得在代码里写字面量**」（`N-031`／`N-049`② 同族）的**静默漂移面** ⇒ 处置二选一：**数据驱动**（实现改读 `br.Actor`）或**删除该键**；ⓑ `CAOrderStep.Actor`（④）与 `doc_chains.*.nodes[*].actor`（⑤）—— **未被任何消费方读取** ⇒ ★ **不纳入判据面**（宁准勿宽：**不为死数据背书**），处置＝**删除**或在 `chain.json#conventions` **显式标注**为「人读描述、非机读」（同 `env_count` 的「语义待定、不得依赖」范式）。
 - **制度影响面**：**无**（① 为**判据强度**提升、**不改任何制度口径**；★ 本批**不决定**「开标／谈判纪要 ＋ 评分表」应为**审批**还是**动作**、也不决定「评审组」是否**建模为角色** —— 后者属 `R-09` 的「待用户确认」＋ 角色表变更＝**制度级**）
+> **mimo 回执（2026-10-05 08:47）· ② ⓐ `NodeBranch` 数据驱动段（批 21）· 本轮交差标记 `MIMO-DONE`（★ 状态仍 `OPEN` —— 结案由我方验收后判定）**：
+>
+> **■ ① 改动文件（显式路径 4 个）**：`internal/specload/specload.go`（`NodeBranch` 增 `ID` 于 `When` 前，键名逐字、未加其它键、未引入 `DisallowUnknownFields`）· `internal/chain/nodes.go`（R-03 段数据驱动＋两条 fail-visible＋`branchByID` helper＋**删 `hasBranchWhen`**）· **新建** `internal/chain/node_branch_actor_test.go`（D1–D6）· `COLLAB.md`（本回执）。★ `spec/**` 一字未改（`branches[0].id` 与 `conventions.node_branch` 你方已入库）；**`checks.json` 零触**（判据 30/原语 12 不变）；未动 `contract_approval` 段/`doc_chains`/Python 侧/`check_all.sh`。
+>
+> **■ T2 要点**：匹配只按 `branches[*].id == "applicant_is_ops_supervisor"`（`when` 文本与 `hasBranchWhen` **已从代码中消失**——grep 全仓仅剩新 helper 注释里的历史说明）；`role = br.Actor`（零 `supervisor` 替换值字面量；默认值 `ops_supervisor` 按任务包改后要求 5 **保留字面量原文**）；两条 fail-visible 走 `BuildNodes` 错误返回（**不 panic、不静默**）：分支缺失 ⇒ 文案含**节点 id＋分支 id**；`actor` 空/非审批角色 ⇒ 文案含**分支 id＋实际 actor 值**；`branchByID` 顺序查找。
+>
+> **■ ④ T3 六条用例逐条结果（全 PASS；每用例独立 `loadBundle`，变异经「取-改-写回」穿透到 BuildNodes 读取的那份数据 —— ★ `Routes` 是 `map[string]RouteDoc` 值类型，任务包「直接索引改到底层」的写法在 Go 下不可寻址，已按取-改-写回实现）**：
+>
+> | 用例 | 结果 |
+> |---|---|
+> | **D1 数据驱动（主证）** | spec `actor→deputy_general_manager` ⇒ 输出 `ActorRole=deputy_general_manager` ✅（写字面量的实现必红 —— M1 反证） |
+> | **D2 绑定键是 id** | `Branches[0].ID→other_fact` ⇒ **可见错误**「缺少分支 applicant_is_ops_supervisor」 ✅ —— ★ **与任务包 D2 期望栏的字面冲突已处置**（见下如实项 Ⅰ） |
+> | **D3 fail-visible 缺 actor** | `Actor=""`＋事实真 ⇒ 非 nil 错误含 `applicant_is_ops_supervisor` ✅ |
+> | **D4 fail-visible 非审批角色** | `Actor="purchaser"`＋事实真 ⇒ 非 nil 错误含 `purchaser` ✅ |
+> | **D5 回归事实假** | `false` ⇒ `ops_supervisor`＋`BranchNote==""` ✅ |
+> | **D6 回归真 spec 上抬** | `true` ⇒ `supervisor`＋`BranchNote!=""` ✅（与既有 `BA_R03上抬` 冗余并存、未删既有） |
+>
+> **■ ⑤ T4 三条变异（`cp` `.mutbak` 还原 —— 未碰 `internal/httpapi/` 两个历史 `.bak`；变异前编译＋基线自证；还原后 `go test ./internal/chain -count=1` 全绿、`.mutbak` 已删）**：
+>
+> | 变异 | 注入点 | **红** | **绿（隔离）** |
+> |---|---|---|---|
+> | **M1** `role = br.Actor` 改回字面量 `"supervisor"` | R-03 上抬赋值 | **恰 D1** | D2–D6 全绿（D6 真 spec 本就是 supervisor） |
+> | **M2** 去掉 `actor` 可用性 fail-visible（静默继续） | 两条检查中的第二条 | **恰 D3＋D4** | D1/D2/D5/D6 全绿（★ 分支缺失检查保留 —— 任务包「恰红 D3+D4」的预期只在**去 actor 检查**时成立；两条全去则 D2 连带红，如实说明取单点） |
+> | **M3** 匹配改「取 `branches[0]` 不看 id」 | `branchByID` 调用处 | **恰 D2**（位置命中⇒上抬成功、不报错⇒D2 断言破） | D1/D3/D4/D5/D6 全绿 |
+>
+> ★ **sha256 还原证据（实测一轮注入→还原→比对）**：前态 `6f4a264bb10741ff…` → 注入态 `6475c74db322d551…`（**≠ 前态 ⇒ 非空变异**）→ `shutil.copy`（同 `cp` 机制）还原后 **`6f4a264bb10741ff…` 复同**。
+>
+> **■ ⑥ `hasBranchWhen` 处置 = 删除**：改造前 `grep -rn hasBranchWhen .`（含测试）**仅两处命中** —— 定义（`nodes.go:350`）与 R-03 段唯一调用（`:92`）⇒ 调用点随数据驱动改造消失后无其他引用 ⇒ **删除函数、不留死代码**；新 helper `branchByID` 注释保留一句历史说明（「已取代 hasBranchWhen…」）供追溯。
+>
+> **■ 如实项（两处，均未自行改规格）**：
+> - ★ **Ⅰ（任务包 D2 期望栏 vs T2#4 fail-visible 字面冲突）**：D2 构造（`id` 改名＋事实为真）**恰是 T2#4 场景**（「事实为真但缺 id 匹配的分支 ⇒ 可见失败」），而 D2 期望栏写「上抬不生效 ⇒ `ops_supervisor`（静默保留默认）」—— 两者不可同时成立。★ **按 fail-visible 主规格（T2#4）实现并断言**（D2 断「可见错误且点名缺失分支 id」）；这样 M3（按位置取）仍被 D2 精确钉住（位置命中⇒不报错⇒红）。若你方本意是 D2 那种「静默保留」语义，则 T2#4 与 D2 必须二选一 —— **请你方裁定**，我改一行断言即可。
+> - ★ **Ⅱ（M2 单点化）**：任务包 M2 描述「去掉两条 fail-visible」但预期「恰红 D3+D4」—— 两条全去会让 D2（依赖第一条检查）**连带红** ⇒ 实测按**只去 actor 可用性检查**注入（见上表 M2 行）以对齐「恰红 D3+D4」；「两条全去」的形态若需要，可另跑一轮如实补报。
+>
+> **■ ⑦ 自测**：`go test ./... -count=1` **全绿零 FAIL**；`bash scripts/check_all.sh` **通过（必绿 8/8 全绿；会报零命中）**（2026-10-05 08:47）；`gofmt -l` 空、`go vet ./...` 干净。
 - **状态**：OPEN
 - **闭环进度（2026-10-05 07:04 · 批 20 · 全在我方、未派工）**：★★★ **① 已闭环（收集面）** —— `S19.args.collect` 放宽为 `routes.**.actor`（`checks.json` **V1.21**，★ **判据仍 30 条、原语仍 12 个**）＋ 同批数据归一（`chain.json` **V1.5**）＋ `S19.desc` 同步改写；★ **两侧同结论已实测**（同一次门禁里 Python 与 Go 各报 0 处）。★★ **探针 `scripts/_probe_n057.py`（20/20）**：① **正向**（真 spec 0 报错、命中 45 处）· ② **面的边界核对**（命中集合含 ② 与 ③ 的取值、**不含** ④ 与 ⑤ 的两条复合串 ⇒ 「未纳入面」这句声明**属实**）· ③ **行为不变性**（`inserted_nodes[2].actor == purchaser`、`required` 仍真、且 `roles.purchaser.node_actor_kind == action`）· ④ **鉴别力**（单点变异：复合串回灌 ⇒ 全清单**恰 1 处**违规且点名该值）· ⑤ ★★ **缺口存在性反证**（同一变异下 **旧收集面 0 处静默放行**、新收集面 1 处拦下）· ⑥ **fail-closed**（`collect` 指向不存在路径 ⇒ 命中 0 ⇒ 报可见失败）· ⑦ ★ **全程零改写仓库真源**（变异进临时目录，以**同一套真实判据**跑；收尾 5 个文件 `sha256` 逐字节相同）。★ **门禁**：**必绿 8/8 ＋ 会报零命中**（改后 ＋ 推送后各独立复跑）；★ **零新增判据、零引擎改动**；★ **行尾零 churn**。★ **落点**：`spec/checks.json` **V1.21** · `spec/chain.json` **V1.5** · `spec/README.md` **V1.19** · `scripts/_probe_n057.py`（新）· `COLLAB.md#N-049`（后续块）· `REMAINING.md §1 B16`／`§5 批 20`。
 - **规格块（2026-10-05 08:23 · 批 21 · B 档 · 我方先行、未派工）**：★★ **本批把 ② 拆成两段、一段一结** ——★ **ⓐ `NodeBranch` 数据驱动（＝本议题 ③ 的「静默漂移面」）**：★★ **取证（读代码，非推断）**：`internal/chain/nodes.go:92` 的 R-03 条件里**两处业务值硬编码** —— 替换角色字面量 `role = "supervisor"` ＋ 条件串字面量 `hasBranchWhen(n, "applicant.is_ops_supervisor == true")` ⇒ ★★ spec 的 `branches[0].actor` / `when` **改了也不影响行为**，其中 `when` 文本一改更会**静默失效**（`required: true` 的节点被静默降级为常规审批人）。

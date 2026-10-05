@@ -85,12 +85,26 @@ func BuildNodes(b *specload.Bundle, routeID string, f Facts) ([]RoleNode, error)
 			continue
 		}
 
-		// ---- 条件分支：R-03 备付金节点上抬 ----
+		// ---- 条件分支：R-03 备付金节点上抬（N-057 ② 数据驱动）----
+		//   绑定键＝branches[*].id（稳定标识可入代码）；when 只是人读描述（真值＝
+		//   Facts.ApplicantIsOpsSupervisor）；actor 从 spec 取（唯一来源、零字面量）。
+		//   fail-visible：命中事实但分支缺失 / actor 不可用 ⇒ 可见错误（不静默降级）。
 		if n.ID == "approve_petty_cash" {
 			role := "ops_supervisor"
 			note := ""
-			if f.ApplicantIsOpsSupervisor && hasBranchWhen(n, "applicant.is_ops_supervisor == true") {
-				role = "supervisor"
+			if f.ApplicantIsOpsSupervisor {
+				br, ok := branchByID(n, "applicant_is_ops_supervisor")
+				if !ok {
+					return nil, fmt.Errorf(
+						"chain: 节点 %s 的事实 applicant_is_ops_supervisor=true 但缺少分支 applicant_is_ops_supervisor（spec 分支声明缺失 —— 不静默降级）",
+						n.ID)
+				}
+				if br.Actor == "" || !approverRoles[br.Actor] {
+					return nil, fmt.Errorf(
+						"chain: 分支 %s 的 actor=%q 不可用（须为审批角色）—— 不静默保留默认角色",
+						br.ID, br.Actor)
+				}
+				role = br.Actor
 				note = "R-03：申请人＝综合运营主管，本节点上抬至主管领导"
 			}
 			appendApproval(n.ID, n.Label, role, note)
@@ -332,14 +346,16 @@ func expandContract(b *specload.Bundle, f Facts) []RoleNode {
 	return out
 }
 
-// hasBranchWhen 节点是否声明了指定 when 的条件分支。
-func hasBranchWhen(n specload.NodeDoc, when string) bool {
+// branchByID 按稳定绑定键 branches[*].id 顺序查找分支（N-057 ②）。
+// ★ 已取代 hasBranchWhen（比对 when 文本 —— 文本一改分支静默失效，正是本契约动因；
+// grep 确认全仓除定义外仅 R-03 段一处引用 ⇒ 随数据驱动改造一并删除，不留死代码）。
+func branchByID(n specload.NodeDoc, id string) (specload.NodeBranch, bool) {
 	for _, br := range n.Branches {
-		if br.When == when {
-			return true
+		if br.ID == id {
+			return br, true
 		}
 	}
-	return false
+	return specload.NodeBranch{}, false
 }
 
 // isActionActor 动作/系统环节的 actor —— 不生成审批任务。

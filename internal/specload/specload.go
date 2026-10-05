@@ -216,6 +216,11 @@ type TierExpand struct {
 
 // NodeBranch 节点级条件分支：when 命中时 actor 被替换/行为修正。
 type NodeBranch struct {
+	// ID 分支的稳定绑定键（N-057 ②）：代码按该 id 匹配分支；
+	// When 是人读条件描述（其真值由 chain.Facts 提供）—— 代码不得比对 When 文本；
+	// Actor 是命中后该节点的替换角色（唯一来源，不得在代码里写字面量）。
+	// 规格正本 ＝ spec/chain.json#conventions.node_branch。
+	ID     string `json:"id"`
 	When   string `json:"when"`
 	Actor  string `json:"actor"`
 	Effect string `json:"effect"`
