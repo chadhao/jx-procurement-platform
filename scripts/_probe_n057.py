@@ -105,7 +105,8 @@ S19_RAW = s19(CHECKS_RAW)
 ok('真清单 S19.args.collect == routes.**.actor', S19_RAW['args'].get('collect') == NEW_COLLECT,
    'actual=%r' % S19_RAW['args'].get('collect'))
 ok('真清单 S19.args 其余键仍在（file/target_file/target_dict/extra_allowed/min_hits）',
-   set(S19_RAW['args']) == {'file', 'collect', 'target_file', 'target_dict', 'extra_allowed', 'min_hits'},
+   # ★ 2026-10-05 修：批 23/24 为 S19 增了派生参数 target_filter（N-049②第二半）⇒ 期望键集同步
+   set(S19_RAW['args']) == {'file', 'collect', 'target_file', 'target_dict', 'extra_allowed', 'min_hits', 'target_filter'},
    'keys=%s' % sorted(S19_RAW['args']))
 
 # ------------------------------------------------------------------ 1. 正向

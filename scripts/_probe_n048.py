@@ -56,9 +56,14 @@ def main():
     probs = C.prim_path_exists({"__cid__": "PROBE-N048",
                                 "file": "spec/institution-anchors.json",
                                 "collect": "clauses[*].spec[*].at", "min_hits": 1})
-    ok = (len(refs) == 158 and len(probs) == 0)
+    # ★ 2026-10-05 修（联调前总检查发现的"探针过期"）：原断言硬编码 `len(refs) == 158`，
+    #   而锚点索引已随批 22 扩围（158→304+）⇒ 探针长期报红、且因带 `_` 前缀不在门禁内无人发现。
+    #   ⇒ ★ 不再由本探针钉"条数"（条数属**计数面**，已由门禁内的 `gen_institution_anchors.py --check`
+    #   逐条款核对）——本探针只钉**指针面不变式**：「索引里每条锚点都能解析」。
+    #   注：`min_hits: 1` 保证 collect 为空时报错 ⇒ `probs == []` 已蕴含"非空"。
+    ok = (len(probs) == 0)
     RESULT.append((ok, "正向·真锚点全量", len(probs), 0, probs))
-    print("%s %-28s 收集 %d 条指针 → %d 条报错（期望 158 / 0）"
+    print("%s %-28s 收集 %d 条指针 → %d 条报错（不变式：每条锚点可解析 ⇒ 期望 0 条报错）"
           % ("✓" if ok else "✗", "正向·真锚点全量", len(refs), len(probs)))
     for p in probs[:5]:
         print("      · " + p)

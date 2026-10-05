@@ -122,6 +122,27 @@ def with_mutation(path, new_bytes, fn):
            before == after, "%s…" % after[:16])
 
 
+def materialize_rev(rev, subdirs=("spec",)):
+    """★ 2026-10-05 修（联调前总检查发现）：把历史版本子树导出到临时目录。
+    ★★ 为什么必须这样：原实现拿「**历史**索引」去比「**当前树**重算」
+       ⇒ 把「某一时点的等值」当成了「永久不变式」⇒ **规格一演进就必然红**
+       （实测：批 22/25 改动后本探针 3 条转红、且因 `_` 前缀不在门禁内长期无人发现）。
+       ⇒ 历史命题必须在**同一版本内**自洽比对。
+    """
+    import tempfile
+    d = tempfile.mkdtemp(prefix="jx_n049_rev_")
+    names = subprocess.run(["git", "ls-tree", "-r", "--name-only", rev, *subdirs],
+                           cwd=ROOT, capture_output=True, text=True, check=True).stdout.split()
+    for n in names:
+        blob = subprocess.run(["git", "show", "%s:%s" % (rev, n)],
+                              cwd=ROOT, capture_output=True, check=True).stdout
+        dst = os.path.join(d, n)
+        os.makedirs(os.path.dirname(dst), exist_ok=True)
+        with open(dst, "wb") as fh:
+            fh.write(blob)
+    return d
+
+
 def git_show_index(rev):
     p = subprocess.run(["git", "show", "%s:spec/institution-anchors.json" % rev],
                        cwd=ROOT, capture_output=True, text=True, check=True)
@@ -150,9 +171,12 @@ ok("指针面＋计数面重算与索引一致（gen --check rc=0）", rc == 0,
 rc2, out2, anchor = run_check_spec()
 ok("门禁 check_spec rc=0 且零锚点索引违规", rc2 == 0 and not anchor, "anchor=%d 条" % len(anchor))
 idx_cur = json.loads(read(INDEX).decode("utf-8"))
-ok("索引 V1.3：spec[] 共 304 条 · unstable_count 合计 22",
-   sum(len(c["spec"]) for c in idx_cur["clauses"]) == 304
-   and sum(c["unstable_count"] for c in idx_cur["clauses"]) == 22,
+# ★ 2026-10-05 修：原硬编码「304 条 / unstable 22」（批 22 时点）⇒ 规格一演进即红。
+#   条数属**计数面**，已由门禁内 `gen_institution_anchors.py --check` 逐条款核对
+#   ⇒ 本处改钉**形态不变式**，不再钉具体数字。
+ok("索引形态：spec[] 非空 且 逐条款 unstable_count 非负",
+   sum(len(c["spec"]) for c in idx_cur["clauses"]) > 0
+   and all(c["unstable_count"] >= 0 for c in idx_cur["clauses"]),
    "spec[]=%d unstable=%d" % (sum(len(c["spec"]) for c in idx_cur["clauses"]),
                               sum(c["unstable_count"] for c in idx_cur["clauses"])))
 ok("★ 不变式逐条款成立：len(spec[]) + unstable_count == citation_count",
@@ -162,7 +186,7 @@ ok("★ 不变式逐条款成立：len(spec[]) + unstable_count == citation_coun
 print("\n== 2. 等价性（计数口径可信：V1.1 索引 vs 排除生成物后的重算）==")
 try:
     old = git_show_index(PRE_V11)
-    counts, by_file = G.scan(ROOT, exclude=("spec/openapi.json",))
+    counts, by_file = G.scan(materialize_rev(PRE_V11), exclude=("spec/openapi.json",))
     bad = []
     for c in old["clauses"]:
         cl = c["clause"]
@@ -179,7 +203,7 @@ except Exception as e:                                        # 取不到旧版�
 print("\n== 3. ★★ 旧口径的选择规则已复现（V1.2 索引 ≡「稳定引用按 (kind_rank, at) 排序取前 8」）==")
 try:
     v12 = git_show_index(PRE_V12)
-    exp = G.expected(ROOT)
+    exp = G.expected(materialize_rev(PRE_V12))
     match, exc, mism = 0, [], []
     for c in v12["clauses"]:
         cl = c["clause"]
