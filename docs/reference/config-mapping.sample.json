@@ -251,8 +251,21 @@
     },
     {
       "ledger_type": "L06",
-      "field_key": "付款完成日期",
-      "is_sensitive": false
+      "field_key": "付款 / 报销完成日期",
+      "is_sensitive": false,
+      "remark": "★ N-060 H3.3：由「付款完成日期」改名对齐 spec/ledger-mapping label"
+    },
+    {
+      "ledger_type": "L06",
+      "field_key": "移交凭证（签收）",
+      "is_sensitive": false,
+      "remark": "★ N-060 H3.3 补登记（制度明文「无凭证视为未提交」—— 此前可写未登记，台账页无写入入口）"
+    },
+    {
+      "ledger_type": "L06",
+      "field_key": "驳回原因与处置",
+      "is_sensitive": false,
+      "remark": "★ N-060 H3.3 补登记"
     },
     {
       "ledger_type": "L06",

@@ -153,7 +153,8 @@ func TestQAMigrationFreshAndIdempotent(t *testing.T) {
 	//   0017 运营性常量表 t_constant（T2/R-24：只停用不删 + 值快照）。
 	//   0018 角色代理人 t_role_agent（N-028：每角色至多 1 条 active + 只停用不删）。
 	//   0019 权限位点 t_instance/t_ledger_archive 补 designated_open_id/acceptors（N-042，照 0003）。
-	const wantMigrations = 19
+	// N-060 H1②：0020_ops_writable_refresh（综合运营主管可写白名单幂等刷新 —— 只增不覆盖）。
+	const wantMigrations = 20
 	if total != wantMigrations {
 		t.Errorf("迁移版本总数 = %d, 期望 %d（重复执行不得重复登记）", total, wantMigrations)
 	}

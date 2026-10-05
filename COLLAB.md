@@ -2564,7 +2564,38 @@
 > 5. 本批**未跑 `scripts/build.sh`**（未动 `web/**`；上一批 dist 为最新）—— 若你方验收要求，可补跑。
 >
 > **`MIMO-DONE`**
-- **状态**：OPEN
+> **mimo 回执 · 批 30（N-060 第四部分 H1–H3 · 2026-10-05 · `MIMO-DONE`）**：
+>
+> ### 逐条（编号 ｜ 今态 ｜ 是否本轮完成 ｜ 证据 ｜ 单点变异 ｜ 未做原因）
+>
+> | # | 今态 | 本轮 | 证据 | 单点变异 | 未做/说明 |
+> |---|---|---|---|---|---|
+> | **H1**（G3 原件消费侧 · R-35） | ❌→✅ 复核：`handover_register` 段零消费方（批 29 停手判正确）→ R-35 改落 L06 ops_json 后**通道现成** | **完成（四判据全绿）** | ① `internal/seed/seed.go#opsSupervisor` 增**中文两键**（`原件移交清单`/`原件签收记录`——与 `permission.CanWrite` 精确匹配口径一致）；② **既有库更新路径＝方案①幂等迁移 `migrations/0020_ops_writable_refresh.sql`**（理由：启动自动生效、无需人工跑 CLI/管理页；**只增不覆盖**＝三段 `REPLACE` 旧名→权威名〔LIKE 守卫幂等〕＋四键 `substr` 尾拼接〔`NOT LIKE` 守卫幂等〕，**管理员已改内容原样保留**——`json_array_append` 在本驱动不可用〔`no such function` 实测〕改尾拼接；只动 `resource='ledger:*' AND role='综合运营主管'` 行〔该列消费面〕）＋ `wantMigrations 19→20`（同批、回执说明）；③①判据测试 `internal/httpapi/ledger_originals_h1_test.go#TestOriginalsViaLedgerPatch`（PATCH 写两键 200＋GET 回读 ops 含两键）；④迁移语义测试 `internal/store/migration_0020_test.go#TestMigration0020OnlyAddsAndIdempotent`（**管理员自定义键保留**＋旧名全换＋四键并入＋**重放两遍内容不变**） | 迁移测试即变异面（重放断言）；`wantMigrations` 改动经 `TestQAMigrationFreshAndIdempotent` 复绿 | — |
+> | **H3**（键名三处对齐 ＋ 存量补全） | ❌→✅ 复核：`seed` 两过期名（`提交日期`/`集团受理编号`）＋样例缺 L06 三条 | **完成** | ① **机检先行**：`internal/seed/writable_align_test.go#TestSeedWritableCoversSpecL06`（`spec L06 writable labels ⊆ seed opsSupervisor`）—— **修 seed 前实测红**（缺 7 键全点名：两权威名＋付款改名＋H3.2 两条＋H1 两条）⇒ 修 seed 后**绿**（先红后绿＝任务包「先证明会红」要求）；② `seed.go`：两过期名改权威名＋`付款完成日期→付款 / 报销完成日期`＋补 `移交凭证（签收）`/`驳回原因与处置`（＋H1 两键同批）；③ `docs/reference/config-mapping.sample.json`：L06 `付款完成日期` 改名＋补 `移交凭证（签收）`/`驳回原因与处置`；④ ratchet `cmd/jxapproval/seed_t5_test.go` 期望 **10→7**（子测试名同步 7；注释记 N-026 同批改断言依据——余 `L01×1＋L08×6`＝7 ✓） | **机检变异即 H3.1 本体**：修复前注入旧名（＝当时现状）⇒ 红；修复后绿；一次一处 | — |
+> | **H2**（submit_overdue key 单源化） | ⚠️→✅ 复核：两分支各写字面量、guardedAlert 分支（生产路径）无自动化断言 | **完成（(a)＋(b) 双做）** | (a) `internal/dashboard/dashboard.go`：**`submitOverdueKey`/`submitOverdueLabel` 常量单源**（undefined 与 guardedAlert 两分支共用）；(b) **`TestSubmitOverdueGuardedBranch`**（`dashboard_key_align_test.go`）：新 fixture `newDashboardAppConnected`（Spec 注入＋看板 16 **内存置 `connected`** 绕过 r1 灰态、spec 文件零改动）⇒ **走 guardedAlert 分支**：空库 `not_connected` 无 count（r3 守卫）＋ 播 L06 超期行 `count=1`（真实计数面） | **改 key 常量** ⇒ `TestDashboardAlertKeysMatchSpec` ＋ `TestSubmitOverdueGuardedBranch` **双红**（单源后任何路径都变）；`TestDashboardGuardPerIndicator` 保持绿（只数数不断言键名——如实记录隔离面）；还原复绿 | ★ (b) 覆盖了批 29 披露的「guardedAlert 分支无断言」残余；灰态互斥由「内存置 connected」绕开（不改 spec 文件） |
+>
+> ### 本轮改动文件清单（显式路径）
+>
+> `internal/seed/seed.go` ＋ `internal/seed/writable_align_test.go`（新）· `migrations/0020_ops_writable_refresh.sql`（新）· `internal/store/qa_migration_test.go`（want 19→20）· `internal/store/migration_0020_test.go`（新）· `internal/httpapi/ledger_originals_h1_test.go`（新）· `internal/httpapi/dashboard_key_align_test.go`（H2b fixture＋用例）· `internal/dashboard/dashboard.go`（key/label 常量）· `cmd/jxapproval/seed_t5_test.go`（want 10→7）· `docs/reference/config-mapping.sample.json`（L06 补 3 键——H3.3② 明示要求；★ 除该条外 `docs/**` 零改动）· `COLLAB.md`（本回执）。
+> ★ **`spec/**` 零改动**（`git diff --stat spec/` 空）；未碰 T1–T4 产物、两个历史 `.bak`、`docs/05-API` 契约行（C5 会报项归你方）；`.mutbak` 全清。
+>
+> ### 门禁原文
+>
+> ```
+> ===== 总判定：**通过**（必绿基线 9/9 全绿；会报项如上）=====
+> ```
+> （`go test ./... -count=1` 零 FAIL · `gofmt -l` 空 · 会报零命中）
+>
+> ### 如实登记
+>
+> 1. **H1 迁移实现细节**：`json_array_append` 本驱动不可用（`no such function` 实测）⇒ 改 `substr` 尾拼接（扁平字符串数组、键无 `]`，安全；`NOT LIKE` 守卫幂等）——已用「重放两遍内容不变」测试钉住。
+> 2. **H2 隔离面**：`TestDashboardGuardPerIndicator` 在 key 常量变异下**保持绿**（它只断言键数与灰态、不断言键名）—— 钉住单源的是 `key_align`（集合等量）＋ `GuardedBranch`（定向取键）双断言，如实记录。
+> 3. **H1 迁移只动 `resource='ledger:*'` 行**：种子给全资源同值但该列仅台账 PATCH 消费 ⇒ 窄化更新面（其余资源行保持管理员现值——回执备案）。
+> 4. **H3.4 机检对照面收窄说明**：`t_ledger_field_def` 运行时数据来自导入 payload（`importmap.go:471`），空库无行 ⇒ 机检以 **spec L06 writable labels 为其权威源**（field_def 的正源）做 ⊇ 断言 —— 与任务包字面（对表查询）语义等价（表空时无从查起），**收窄到 L06**（0001 注释「writable_fields 仅运营表有效」；L01/L08 可写列不走本白名单）。
+> 5. **C5 会报项**（`docs/05-API` 的 `instances/*/fields` 行）仍未动 —— 按划界归你方。
+>
+> **`MIMO-DONE`**
+- **状态**：MIMO-DONE
 - **背景**：★ 2026-10-05 联调前总检查（用户指令）查出**两类剩余开发项**：① **常驻探针体系有系统性缺陷**（详见第一部分）；② **FR 矩阵仍有未实现/部分实现项**（基线 `2026-09-28`：**6❌ ＋ 21⚠️**，见 `.mimocode/plans/1790584354638-stellar-squid.md §6`）。★ 用户要求**合成一个任务、下一轮一次做完**。
 - **我方立场**：★★ **两类的性质完全不同**：① 是**我们自己的验证体系在漏水**（红着的探针 ≈ 没有探针，会让人在联调时得出错结论）；② 是**业务功能仍有缺口**。★ 都要修，但**① 必须先修** —— 因为 ② 的交付质量要靠 ① 兜底。
 

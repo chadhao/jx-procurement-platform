@@ -29,14 +29,18 @@ import (
 
 // 看板 id → 名称（docs/01-PRD.md §6.3 第 13~16 行）。
 const (
-	DashboardBudget     = 13            // 预算执行看板（本期不启用，空态）
-	DashboardPurchase   = 14            // 采购执行看板
-	DashboardExpense    = 15            // 费用结构看板
-	DashboardAnomaly    = 16            // 异常预警面板
-	defaultSplitCents   = int64(100000) // 同供应商 + 同品类月累计阈值：1,000 元 = 100,000 分
-	defaultCycleMonths  = 6             // 趋势默认回看月数
-	defaultEmergencyHrs = 24            // 紧急采购补录/闭合时限（小时）
-	defaultReviewHours  = 72            // 超时未审口径（3 个工作日近似）
+	DashboardBudget    = 13            // 预算执行看板（本期不启用，空态）
+	DashboardPurchase  = 14            // 采购执行看板
+	DashboardExpense   = 15            // 费用结构看板
+	DashboardAnomaly   = 16            // 异常预警面板
+	defaultSplitCents  = int64(100000) // 同供应商 + 同品类月累计阈值：1,000 元 = 100,000 分
+	defaultCycleMonths = 6             // 趋势默认回看月数
+	// N-060 H2：submit_overdue 的 key/label 单源（undefined_criteria 与 guardedAlert
+	// 两分支共用 —— 改名一处、全路径生效；key 集合断言（key_align）即天然钉住两分支）。
+	submitOverdueKey    = "submit_overdue"
+	submitOverdueLabel  = "提交超期（湖南侧完成 3 个工作日未提交集团）"
+	defaultEmergencyHrs = 24 // 紧急采购补录/闭合时限（小时）
+	defaultReviewHours  = 72 // 超时未审口径（3 个工作日近似）
 )
 
 // 运营表（ops_json）与存档表（ext_json）中使用的业务键。
@@ -543,16 +547,17 @@ func (b *Builder) buildAnomaly(ctx context.Context, res Result, period string, q
 	//   L06.submit_group_at 空 ∧ 距 L06.hunan_completed_at 超 deadlineWorkdays 个工作日。
 	//   r3 守卫：L06 无行 ⇒ not_connected（guardedAlert needGuard）；
 	//   阈值未装配 ⇒ undefined_criteria（不把「口径未配」显示成 0）。
+	//   ★ N-060 H2：key/label 收成常量（两分支单源 —— 改名必同步，key 集合断言两侧路径都钉住）。
 	{
 		submitCnt := countSubmitOverdue(r06, b.deadlineWorkdays, b.now())
 		var submitAlert map[string]any
 		if b.deadlineWorkdays <= 0 {
 			submitAlert = map[string]any{
-				"key": "submit_overdue", "label": "提交超期（湖南侧完成 3 个工作日未提交集团）",
+				"key": submitOverdueKey, "label": submitOverdueLabel,
 				"status": "undefined_criteria", "message": "阈值未装配（doc_chains.SUB.deadline_workdays）—— 口径未定不显示 0",
 			}
 		} else {
-			submitAlert = guardedAlert("submit_overdue", "提交超期（湖南侧完成 3 个工作日未提交集团）",
+			submitAlert = guardedAlert(submitOverdueKey, submitOverdueLabel,
 				submitCnt, len(r06), true)
 		}
 		res.Alerts = append(res.Alerts, submitAlert)

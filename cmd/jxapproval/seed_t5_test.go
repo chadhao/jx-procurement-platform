@@ -90,7 +90,7 @@ func TestUnregisteredWritableLedgerFields(t *testing.T) {
 		}
 	})
 
-	t.Run("真实spec_断言10条且无只读台账泄漏", func(t *testing.T) {
+	t.Run("真实spec_断言7条且无只读台账泄漏", func(t *testing.T) {
 		// ★ N-026：原「不设期望条数」无鉴别力 —— 真 spec 插入假可写列也测不出。
 		//   期望清单由 WorkBuddy 独立算出（2026-09-30，议题 N-026），直接采用；
 		//   ★ spec 演进使条数变化时**同步改断言并在议题回执**，不得改回「不设条数」。
@@ -112,11 +112,11 @@ func TestUnregisteredWritableLedgerFields(t *testing.T) {
 		p := &payload
 		got := unregisteredWritableLedgerFields(p, specBytes)
 
+		// ★ N-060 H3.3③（N-026 口径：spec/样例演进 ⇒ 同批改断言并在议题回执，不静默调数）：
+		//   样例补登 L06 三条（移交凭证（签收）/ 付款 · 报销完成日期改名 / 驳回原因与处置）
+		//   ⇒ 缺口 10 → 7（余 L01×1 ＋ L08×6；★ H1 的原件两键已由 R-35 同批登记，不进缺口）。
 		want := []string{
 			"台账 L01 的可写列 `核销后余额`",
-			"台账 L06 的可写列 `移交凭证（签收）`",
-			"台账 L06 的可写列 `付款 / 报销完成日期`",
-			"台账 L06 的可写列 `驳回原因与处置`",
 			"台账 L08 的可写列 `供应商名称`",
 			"台账 L08 的可写列 `统一社会信用代码`",
 			"台账 L08 的可写列 `账户信息`",

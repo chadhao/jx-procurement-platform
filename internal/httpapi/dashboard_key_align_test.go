@@ -9,10 +9,19 @@ package httpapi
 
 import (
 	"context"
+	"io"
 	"net/http"
 	"testing"
+	"time"
 
+	"github.com/chadhao/jx-procurement-platform/internal/access"
+	"github.com/chadhao/jx-procurement-platform/internal/config"
+	"github.com/chadhao/jx-procurement-platform/internal/observ"
+	"github.com/chadhao/jx-procurement-platform/internal/permission"
 	"github.com/chadhao/jx-procurement-platform/internal/seed"
+	"github.com/chadhao/jx-procurement-platform/internal/store"
+	storetest "github.com/chadhao/jx-procurement-platform/internal/store/storetest"
+	"github.com/labstack/echo/v4"
 )
 
 // specAlertKeys 看板 spec 指标 key 集合（真 spec 直读，不复制快照 —— N-008）。
@@ -685,5 +694,85 @@ func TestDashboardChangeAnomalyListed(t *testing.T) {
 	m3 := fetch()["change_anomaly_listed"]
 	if c, _ := m3["count"].(float64); c != 2 {
 		t.Errorf("字符串形态后 count=%v, 期望 2（「是」计、「否」不计；m=%v）", m3["count"], m3)
+	}
+}
+
+// ---- N-060 H2(b)：submit_overdue 走 guardedAlert 分支（生产路径）的覆盖 ----
+// ★ 背景：newDashboardApp 无 Spec ⇒ deadlineWorkdays=0 ⇒ 走 undefined_criteria 分支 ⇒
+// guardedAlert 分支（key 字面量）此前无自动化断言（G2-M3 变异仍绿之因）。
+// 本用例：Spec 注入 ＋ 看板16 内存置 connected（绕过 r1 灰态）⇒ 走聚合+guardedAlert。
+
+func newDashboardAppConnected(t *testing.T) (*echo.Echo, *store.DB, *access.Authenticator) {
+	t.Helper()
+	db := storetest.NewDB(t)
+	perm := permission.NewLoader(db)
+	sessions := access.NewStore("test-session-key", time.Hour)
+	auth := access.NewAuthenticator(db, sessions, nil, true, nil)
+	bundle := metaTestBundle(t)
+	for i := range bundle.Dashboard.Dashboards {
+		if bundle.Dashboard.Dashboards[i].ID == 16 {
+			bundle.Dashboard.Dashboards[i].SourceStatus = "connected" // 内存 mutate（spec 文件零改动）
+		}
+	}
+	d := Deps{
+		Env: &config.Env{DevMode: true, InternalToken: testInternalToken, RunEnv: "test"},
+		DB:  db, Log: observ.NewLogger("error", io.Discard), Metrics: observ.NewMetrics(),
+		Perm: perm, Auth: auth, Maps: &config.Maps{}, Spec: bundle,
+	}
+	e := echo.New()
+	api := e.Group("/api", d.requireSession)
+	api.GET("/dashboard/:id", d.handleDashboard)
+	api.GET("/dashboard/:id/export", d.handleDashboardExport)
+	return e, db, auth
+}
+
+func TestSubmitOverdueGuardedBranch(t *testing.T) {
+	e, db, auth := newDashboardAppConnected(t)
+	if _, err := seed.SeedQ3Defaults(context.Background(), db); err != nil {
+		t.Fatal(err)
+	}
+	seedRole(t, db, "ou_pm", "项目总经理", "")
+	fetch := func() map[string]map[string]any {
+		t.Helper()
+		rec, env := doRequest(e, http.MethodGet, "/api/dashboard/16?period=2026-09", auth.Establish("ou_pm"), "")
+		if rec.Code != http.StatusOK {
+			t.Fatalf("http=%d body=%s", rec.Code, rec.Body.String())
+		}
+		data := mustData(t, env)
+		out := map[string]map[string]any{}
+		for _, a := range data["alerts"].([]any) {
+			m, _ := a.(map[string]any)
+			out[m["key"].(string)] = m
+		}
+		return out
+	}
+
+	// ① 空库（L06 无行）⇒ guardedAlert 分支输出 not_connected 且**无 count**（r3 守卫）
+	// ★ 这条断言只在 Spec/connected 路径下有意义 —— undefined 分支输出 undefined_criteria，
+	//   两分支由 submitOverdueKey 单源常量钉住（改常量 ⇒ 本断言 + key_align 双红）。
+	m0 := fetch()["submit_overdue"]
+	if m0 == nil {
+		t.Fatal("缺指标 submit_overdue（常量单源后 key 应与 spec 一致）")
+	}
+	if m0["status"] != "not_connected" {
+		t.Errorf("guarded 分支空库应 not_connected（r3），实为 %v（走错分支？）", m0)
+	}
+	if _, has := m0["count"]; has {
+		t.Errorf("not_connected 不得带 count：%v", m0)
+	}
+
+	// ② 播 L06 超期行 ⇒ count=1（guardedAlert 真实计数面）
+	seedArchiveExt(t, db, "L06", "SUB-2610-0001", "ou_pm", "综合运营部", 100,
+		`{"hunan_completed_at":"2026-09-01"}`) // 完成日早于账期 ⇒ 超 3 工作日
+	seedOps(t, db, "L06", "SUB-2610-0001", `{}`) // submit_group_at 空 ⇒ 公式前半成立
+	m1 := fetch()["submit_overdue"]
+	if m1 == nil {
+		t.Fatal("缺指标 submit_overdue")
+	}
+	if c, has := m1["count"]; !has || c != float64(1) {
+		t.Errorf("超期未提交 count=%v(has=%v), 期望 1（guardedAlert 分支计数）", m1["count"], has)
+	}
+	if m1["status"] == "not_connected" {
+		t.Errorf("有行不得 not_connected：%v", m1)
 	}
 }
