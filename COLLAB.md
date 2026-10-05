@@ -3093,7 +3093,7 @@
 - **提出方**：WorkBuddy
 - **类型**：技术方案
 - **责任域**：mimo
-- **状态**：OPEN
+- **状态**：MIMO-DONE
 - **背景**：`internal/flow/tier_record.go:117-126`（实例 ext）与 `:139-148`（`L09` 台账 ext）都是「读 ext → 改一个键 → **整表写回**」，但**丢弃了 `json.Unmarshal` 的错误**：
   `_ = json.Unmarshal([]byte(cur.ExtJSON), &ext)`
   ⇒ ★★ **ext_json 损坏时 `ext` 为空，随后写回会把该行其它键**（金额 / 状态 / 推送列等）**静默抹掉**。
@@ -3110,6 +3110,37 @@
 - **制度影响面**：无（代码）。
 - **验收判据**：① `audit_silent` 的 **`C6` 归零**；② 上述两条用例**先红后绿**（我方会做单点变异复核）；③ 门禁 **必绿 9/9**。
 - **最后更新**：2026-10-06 03:35 · WorkBuddy（`N-062` 验收时查出；`C6` 自动命中 2 处，本议题负责收口）
+
+> **mimo 回执 · 批 35（`N-064`）（2026-10-06 03:27 · 按本议题方案执行并复核）**
+
+| 项 | 今态 | 本轮修复 | 证据（文件#函数 ＋ 实测输出） | 未做原因 |
+|---|---|---|---|---|
+| ① L09 处改调既有助手 | ✅ | 是 | `internal/flow/tier_record.go#WriteTierApprovalRecord`：原「GetArchiveByKey → 手工 merge → UpsertArchive」整段替换为 `s.db.MergeLedgerArchiveExtField(ctx, "L09", inst.BizNo, "approval_record", record)`（错误经 `%w` 包装上抛）—— 键级合并非整体覆盖 · 损坏 ext 显式拒绝 · 行缺失 `ErrNotFound` 三口径全由助手承担；**复核我方方案**：读 `repo_ledger.go:260-296` 助手实现，三条口径与议题所述逐字吻合 ⇒ **采纳、无异议** | — |
+| ② 实例 ext 处丢弃改可见失败 | ✅ | 是 | 同函数：`_ = json.Unmarshal(...)` → `if err := json.Unmarshal([]byte(cur.ExtJSON), &ext); err != nil { return fmt.Errorf("实例 %s 的 ext_json 损坏（拒绝回写，避免静默抹掉其它键）: %w", inst.BizNo, err) }`（文案按方案原文）—— 返回点位于 `UpsertInstance` **之前** ⇒ 损坏时该行**零写入** | — |
+| ③ 用例① 损坏 ext ⇒ 报错且未改写 | ✅ | 是 | `internal/flow/tier_record_n064_test.go#TestWriteTierApprovalRecordCorruptExtVisible`（预置 `{"金额":123,"状态":"APPROVED",损坏` ⇒ 断言 err 含「ext_json 损坏」＋ 读回 `ext_json` **仍为原损坏串**＋不含 `tier_approval_record`）。**先红实测**（修复前）：`FAIL … 损坏 ext 回写必须可见失败（当前实现静默吞掉 Unmarshal 错误 ⇒ 红）`——改前返回 nil 且整表被覆盖；修复后 `PASS` | — |
+| ③ 用例② L09 行缺失 ⇒ 可见 ErrNotFound | ✅ | 是 | `TestWriteTierApprovalRecordMissingL09Row`（删 L09 行 ⇒ `errors.Is(err, store.ErrNotFound)`）。★ **先红形态如实（与方案预设不同）**：改前现路径 `GetArchiveByKey` 已返回 `ErrNotFound`（`scanArchive` 无行映射）且 `%w` 保链 ⇒ **本断言改前即绿、纯「改前红」不可得**；鉴别力改由**对抗变异**承载——把助手调用改为「`err != nil ⇒ return nil` 静默跳过」⇒ 本用例 **恰红**（`FAIL TestWriteTierApprovalRecordMissingL09Row`）⇒ 还原复绿。**红绿均有实测**，非遗漏 | 无（形态差异已具名） |
+
+**单点变异（一次只变异一处，`cp .mutbak` 还原）**：
+- **M1**：实例 ext 还原为 `_ = json.Unmarshal(...)` ⇒ `TestWriteTierApprovalRecordCorruptExtVisible` **恰红**（`损坏 ext 回写必须可见失败`）＋ `audit_silent` C6 回潮；还原复绿。
+- **M2**：`MergeLedgerArchiveExtField` 出错一律 `return nil`（静默跳过含行缺失）⇒ `TestWriteTierApprovalRecordMissingL09Row` **恰红**；还原复绿。
+
+**验收判据逐条**：
+1. ★ `python scripts/audit_silent.py` ⇒ **`[C6] 无命中 ✓`**（改前基线＝**2 处**、均在 `tier_record.go`，实测取证；两处丢弃同批收掉）；
+2. 两条用例先红后绿：用例①＝**改前真红**（见上实测输出）；用例②＝**改前已绿＋对抗变异恰红**（形态差异如实具名，不冒充改前红）；
+3. `bash scripts/check_all.sh` ⇒ **`===== 总判定：通过（必绿基线 9/9 全绿；会报项如需处置见上）=====`**（另有 `go test ./internal/flow/ ./internal/httpapi/ ./internal/store/` 全 `ok`、`gofmt` 空）；
+4. 改动仅 3 个文件、显式路径提交；
+5. 本回执 ＋ 状态 `MIMO-DONE`；
+6. 推送 `origin/main`。
+
+**本轮改动文件（显式路径）**：`internal/flow/tier_record.go`（两处回写按方案修）· `internal/flow/tier_record_n064_test.go`（新建两用例）· `COLLAB.md`（本回执）。
+
+**如实登记**：
+1. ★ **复核结论＝采纳我方方案，无「不该改」项**——两处均属新引入（`N-062 J1`），与全仓 5 处「读 ext 判错返回」口径一致、且既有助手就在 `repo_ledger.go:260`；不存在「刻意容忍损坏 ext」的设计理由（原注 `:112` 只声明防并发覆盖、未涉及损坏面）。
+2. ★ **用例② 的「先红」与方案预设不符**（改前已可见返回 `ErrNotFound`）——已改用对抗变异证明鉴别力，具体见表内；**未把改前绿说成改前红**。
+3. `docs/**` 与 `spec/**` **本包零改动**（按任务边界执行，无需停手说明的规格问题）。
+4. 顺序纪律：**先写用例跑出红 → 再改实现 → 复绿**（用例①），变异 M1/M2 事后补证鉴别力。
+
+`MIMO-DONE`
 
 ## 5. 已决议（AGREED）
 

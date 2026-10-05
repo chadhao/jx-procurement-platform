@@ -116,7 +116,11 @@ func (s *Service) WriteTierApprovalRecord(ctx context.Context, inst *store.Insta
 	}
 	ext := map[string]any{}
 	if cur.ExtJSON != "" {
-		_ = json.Unmarshal([]byte(cur.ExtJSON), &ext)
+		// N-064：损坏 ext ⇒ **可见失败**（拒绝回写）——与全仓 5 处读 ext 判错返回同口径；
+		// 静默吞错会让空表写回把该行其它键全部抹掉（C6 命中点）。
+		if err := json.Unmarshal([]byte(cur.ExtJSON), &ext); err != nil {
+			return fmt.Errorf("实例 %s 的 ext_json 损坏（拒绝回写，避免静默抹掉其它键）: %w", inst.BizNo, err)
+		}
 	}
 	ext[fieldKey] = record
 	b, err := json.Marshal(ext)
@@ -130,25 +134,11 @@ func (s *Service) WriteTierApprovalRecord(ctx context.Context, inst *store.Insta
 		return fmt.Errorf("回写实例字段失败: %w", err)
 	}
 
-	// ② L09 台账行 ext 的 approval_record 列（台账页读列名键；行缺失＝落账未发生，
-	//    报错可见 —— PC/SS 终态必落 L09，缺行即异常）。
-	arch, err := s.db.GetArchiveByKey(ctx, "L09", inst.BizNo)
-	if err != nil {
-		return fmt.Errorf("读 L09 台账行失败: %w", err)
-	}
-	aext := map[string]any{}
-	if arch.ExtJSON != "" {
-		_ = json.Unmarshal([]byte(arch.ExtJSON), &aext)
-	}
-	aext["approval_record"] = record
-	ab, err := json.Marshal(aext)
-	if err != nil {
-		return err
-	}
-	arch.ExtJSON = string(ab)
-	arch.UpdatedAt = time.Now()
-	if err := s.db.UpsertArchive(ctx, s.db, arch); err != nil {
-		return fmt.Errorf("回写 L09 台账行失败: %w", err)
+	// ② L09 台账行 ext 的 approval_record 列 —— N-064：复用既有键级合并助手
+	//    （JSON 键级合并非整体覆盖 · 损坏 ext 显式拒绝 · 行缺失 ErrNotFound 可见失败），
+	//    不再自建「读 ext → 改一键 → 整表写回」。
+	if err := s.db.MergeLedgerArchiveExtField(ctx, "L09", inst.BizNo, "approval_record", record); err != nil {
+		return fmt.Errorf("回写 L09 台账行 approval_record 失败: %w", err)
 	}
 	return nil
 }
