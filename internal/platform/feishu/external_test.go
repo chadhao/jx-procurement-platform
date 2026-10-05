@@ -151,3 +151,42 @@ func TestExternalApprovalBodyNewCreateOmitsCode(t *testing.T) {
 		t.Fatalf("新建形态 enable_quick_operate = %v, 期望显式 true", ext["enable_quick_operate"])
 	}
 }
+
+// TestExternalApprovalBodyGroupCodeN066 N-066 验收①：请求体**含 `group_code`**
+// （仅非空时送，与 approval_code 同款写法）且**不含 `group_name`** ——
+// ★ 后者是探针实测的正确形状：传 group_name（中文名）会撞既有分组名 ⇒ 1390001。
+// （改前 body 无 group_code 键 ⇒ 本用例红。）
+func TestExternalApprovalBodyGroupCodeN066(t *testing.T) {
+	raw, err := externalApprovalBody(ExternalApprovalDef{
+		ApprovalCode: "jx_ba",
+		Name:         "①采购报备单",
+		GroupCode:    "JXQA-GROUP-1",
+		// GroupName 刻意留空：本侧不传（分组显示名沿用既有，见 N-066 探针证据）。
+	})
+	if err != nil {
+		t.Fatalf("组装失败: %v", err)
+	}
+	var body map[string]any
+	if err := json.Unmarshal(raw, &body); err != nil {
+		t.Fatalf("解析 body 失败: %v", err)
+	}
+	if body["group_code"] != "JXQA-GROUP-1" {
+		t.Errorf("group_code = %v, 期望 JXQA-GROUP-1（飞书 create 必填）", body["group_code"])
+	}
+	if _, has := body["group_name"]; has {
+		t.Errorf("不得传 group_name（传中文名会撞既有分组 ⇒ 1390001），实测 body 含该键: %v", body["group_name"])
+	}
+
+	// 对照：GroupCode 为空 ⇒ 键不下发（与 approval_code 的仅非空写法同款）。
+	raw2, err := externalApprovalBody(ExternalApprovalDef{Name: "①采购报备单"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var body2 map[string]any
+	if err := json.Unmarshal(raw2, &body2); err != nil {
+		t.Fatal(err)
+	}
+	if _, has := body2["group_code"]; has {
+		t.Errorf("GroupCode 为空时不应下发 group_code 键, 实测: %v", body2["group_code"])
+	}
+}

@@ -37,12 +37,25 @@ const (
 // newDefsSyncTestApp 装配含 ApprovalDefs 的开发模式路由（复用 admin_test.go 的构造惯例）。
 func newDefsSyncTestApp(t *testing.T, withCallbackConfig bool) (*echo.Echo, *store.DB, *access.Authenticator, *feishu.FakeExternalApprovalClient) {
 	t.Helper()
+	return newDefsSyncTestAppEnv(t, withCallbackConfig, nil)
+}
+
+// newDefsSyncTestAppEnv 同上，tweak 可在装配前覆写 env（N-066 用例②：单独抽空
+// JX_APPROVAL_GROUP_CODE 而保留 token/域名 —— 证第五道门自身可达）。
+func newDefsSyncTestAppEnv(t *testing.T, withCallbackConfig bool, tweak func(*config.Env)) (*echo.Echo, *store.DB, *access.Authenticator, *feishu.FakeExternalApprovalClient) {
+	t.Helper()
 	db := storetest.NewDB(t)
 	metrics := observ.NewMetrics()
 	env := &config.Env{DevMode: true, InternalToken: testInternalToken, RunEnv: "test"}
 	if withCallbackConfig {
 		env.CallbackDomain = defsSyncDomain
 		env.ActionCallbackToken = defsSyncToken
+		// ★ N-066：与 token/域名同批给全 —— 第五道门（group_code）就位后，
+		//   既有「正常装载」路径须带分组 code 才能过门（本值＝测试环境实测可用值）。
+		env.ApprovalGroupCode = "JXQA-GROUP-1"
+	}
+	if tweak != nil {
+		tweak(env)
 	}
 	maps := &config.Maps{}
 
@@ -148,6 +161,30 @@ func TestAdminApprovalDefsSyncPlaceholderMessageN065(t *testing.T) {
 	}
 	if strings.Contains(env.Message, "飞书审批后台") {
 		t.Errorf("文案不得指向不存在的飞书审批后台路径（N-065 T1①）, got: %s", env.Message)
+	}
+}
+
+// TestAdminApprovalDefsSyncMissingGroupCode503N066 N-066 验收②：token/域名齐备但
+// JX_APPROVAL_GROUP_CODE 为空 ⇒ 第五道门 503（可预见的前置缺失当场拒装，
+// 不让它去平台撞 1390001 再失败）。★ 改前无此门 ⇒ 走到装载（期望 503 实得 200/500）⇒ 红。
+func TestAdminApprovalDefsSyncMissingGroupCode503N066(t *testing.T) {
+	e, db, auth, fake := newDefsSyncTestAppEnv(t, true, func(env *config.Env) {
+		env.ApprovalGroupCode = "" // token/域名保留 ⇒ 只抽掉分组 code
+	})
+	seedDefaultUsers(t, db, store.UserRole{OpenID: "ou_admin", Role: roleSysAdmin, Active: true})
+	seedApprovalCodeRow(t, db, "jx_ba", "BA", "①采购报备单")
+	adminCookie := auth.Establish("ou_admin")
+
+	rec, env := doRequest(e, http.MethodPost, "/api/admin/approval/defs/sync", adminCookie, "")
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("缺 group_code 应 503, 实为 %d, body=%s", rec.Code, rec.Body.String())
+	}
+	if !strings.Contains(env.Message, "JX_APPROVAL_GROUP_CODE") ||
+		!strings.Contains(env.Message, "group_code") {
+		t.Errorf("503 文案须点名配置键与必填字段, got: %s", env.Message)
+	}
+	if fake.UpsertCount() != 0 {
+		t.Errorf("门禁前置缺失不得触达飞书, upserts=%d", fake.UpsertCount())
 	}
 }
 

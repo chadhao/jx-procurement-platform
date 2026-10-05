@@ -1061,7 +1061,8 @@ func (d Deps) handleApprovalDefs(c echo.Context) error {
 //	① 清单为空              → 400（未导入配置映射）；
 //	② code 仍是占位符       → 400（复用 config.IsPlaceholder，与导入层同一 marker 清单）；
 //	③ doc_type 不在 11 类内 → 400；
-//	④ 回调 token/域名未配置 → 503（定义无 token 则回调校验恒失败，拒绝装载）。
+//	④ 回调 token/域名未配置 → 503（定义无 token 则回调校验恒失败，拒绝装载）；
+//	⑤ 分组 code 未配置      → 503（飞书 create 的 group_code 必填，缺失 ⇒ 1390001 全失败；N-066）。
 //
 // ★ token 一处配置两侧一致：`Env.ActionCallbackToken`（JX_ACTION_CALLBACK_TOKEN）随
 //
@@ -1088,6 +1089,13 @@ func (d Deps) handleAdminApprovalDefsSync(c echo.Context) error {
 	if d.Env == nil || strings.TrimSpace(d.Env.CallbackDomain) == "" {
 		return fail(c, http.StatusServiceUnavailable, codeNotReady,
 			"回调域名未配置（JX_CALLBACK_DOMAIN）：无法组装 action_callback_url，拒绝装载")
+	}
+	// ⑤ 分组 code 门禁（N-066）：飞书 external_approvals 的 group_code 是 create **必填**
+	//    （缺失 ⇒ 1390001「Group code cannot be empty」⇒ 11 张全部失败）——
+	//    可预见的前置缺失当场拒装，而不是让它去平台撞一次再失败（与 ④ 同口径同写法）。
+	if d.Env == nil || strings.TrimSpace(d.Env.ApprovalGroupCode) == "" {
+		return fail(c, http.StatusServiceUnavailable, codeNotReady,
+			"分组 code 未配置（JX_APPROVAL_GROUP_CODE）：飞书 external_approvals 的 group_code 必填，缺失会导致全部定义建不出来（1390001），拒绝装载")
 	}
 
 	// ① 读清单（读库而非启动期 Maps 快照：导入后无需重启即可装载）。
@@ -1123,7 +1131,9 @@ func (d Deps) handleAdminApprovalDefsSync(c echo.Context) error {
 	}
 
 	// 组装 DefInput：名称取配置 remark（清单正本各条自带单据名），缺省退回 doc_type；
-	// 分组留空（飞书 group_name 可选，COALESCE 保留既有值）；回调 URL/token 来自环境配置。
+	// ★ 分组：group_code **必填**（飞书 external_approvals create 要求，JX_APPROVAL_GROUP_CODE
+	//   配置；不存在则由平台新建分组 —— N-066）；group_name 仅用于更新分组显示名，**本侧不传**
+	//   （传中文名会撞既有分组名 ⇒ 1390001，探针实测）；回调 URL/token 来自环境配置。
 	//
 	// ★★ 开关必须显式传全（2026-09-27 实测教训）：飞书 external_approvals 是 upsert，
 	// 未传的开关字段被平台重置为默认 false ⇒ 一次装载就会把飞书侧已配置好的定义
@@ -1152,6 +1162,7 @@ func (d Deps) handleAdminApprovalDefsSync(c echo.Context) error {
 			EnableMarkReaded:   false,
 			CallbackURL:        callbackURL,
 			CallbackToken:      d.Env.ActionCallbackToken,
+			GroupCode:          strings.TrimSpace(d.Env.ApprovalGroupCode), // N-066：飞书 create 必填
 		})
 	}
 

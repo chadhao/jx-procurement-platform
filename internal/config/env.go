@@ -58,6 +58,11 @@ type Env struct {
 	//   （external.action_callback_token），本地落 `t_approval_def.callback_token` 同值
 	//   （docs/16 §2-C）。未配置 ⇒ sync 端点**可见拒绝**（定义无 token 则回调校验恒失败）。
 	ActionCallbackToken string // JX_ACTION_CALLBACK_TOKEN（敏感）
+	// ApprovalGroupCode 三方审批定义的分组 code（N-066 · docs/04 §6.4）。
+	// ★ 飞书 `external_approvals` create 的**必填**字段（缺失 ⇒ 1390001
+	//   「Group code cannot be empty」⇒ 全部定义建不出来）；测试环境＝JXQA-GROUP-1。
+	//   未配置 ⇒ sync 端点**第五道门可见拒绝**（不让它去平台撞一次再失败）。
+	ApprovalGroupCode string // JX_APPROVAL_GROUP_CODE
 
 	RunEnv            string // JX_ENV: prod / test
 	DevMode           bool   // DEV_MODE
@@ -126,6 +131,7 @@ func LoadEnv() (*Env, error) {
 		CallbackDomain:            getenv("JX_CALLBACK_DOMAIN", ""),
 		OAuthRedirectURI:          getenv("JX_OAUTH_REDIRECT_URI", ""),
 		ActionCallbackToken:       getenv("JX_ACTION_CALLBACK_TOKEN", ""),
+		ApprovalGroupCode:         getenv("JX_APPROVAL_GROUP_CODE", ""),
 		LockPath:                  lockPath,
 		S3Endpoint:                getenv("JX_S3_ENDPOINT", ""),
 		S3Bucket:                  getenv("JX_S3_BUCKET", ""),

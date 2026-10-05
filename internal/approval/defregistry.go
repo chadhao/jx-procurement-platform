@@ -28,7 +28,8 @@ type DefInput struct {
 	DocType            string // 我方单据类型（BA/PR/SA/RFQ/BJ/SS/CT/PC/GR/QC/SUB）
 	ApprovalCode       string // 三方审批定义码（稳定标识；本地配置给出）
 	Name               string // 审批名称（飞书侧展示）
-	GroupName          string // 分组
+	GroupName          string // 分组（显示名；本侧 sync 不传，见 N-066）
+	GroupCode          string // 分组 code（★ 飞书 create 必填 —— N-066；JX_APPROVAL_GROUP_CODE）
 	VisibleScopeJSON   string // 可见范围（原样 JSON）
 	CreateLinkPC       string // 发起页 PC（指向我方页面）
 	CreateLinkMobile   string // 发起页 Mobile
@@ -196,6 +197,7 @@ func toExternalDef(in DefInput) feishu.ExternalApprovalDef {
 		ApprovalCode:       in.ApprovalCode,
 		Name:               in.Name,
 		GroupName:          in.GroupName,
+		GroupCode:          in.GroupCode, // N-066：飞书 create 必填的分组 code
 		VisibleScopeJSON:   in.VisibleScopeJSON,
 		CreateLinkPC:       in.CreateLinkPC,
 		CreateLinkMobile:   in.CreateLinkMobile,

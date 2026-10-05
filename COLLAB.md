@@ -3370,7 +3370,7 @@
 - **提出方**：WorkBuddy
 - **类型**：技术方案
 - **责任域**：mimo（代码）· WorkBuddy（规格，已完成）
-- **状态**：OPEN
+- **状态**：MIMO-DONE
 - **背景**：★ 用户 2026-10-06 裁定 `doc_type` 唯一性取 **A**（干净 11 类基线）。我方据此完成：**清掉旧 `JXQA-TEST-0001`**（映射层**全量替换**已自动清除 ＋ 手工清 `t_approval_def` 同 `doc_type` 行）→ **导入 11 类映射**（`approval_code 11 / ledger_type 9 / threshold 5 / ledger_field 25`，回读校验通过）→ 建管理员会话（`§1B.7`）→ 调 `POST /api/admin/approval/defs/sync`。
   ★★ **结果：`HTTP 500`，11 张全部失败**，逐条 `code=1390001 msg=Group code cannot be empty when create approval definition`。
 - **我方立场**：★★ 这不是"飞书侧没配好"，而是**我方请求体缺一个必填字段**；且**代码注释里写着一个错的前提**（`:1126`「分组留空（飞书 `group_name` **可选**）」）—— ★ 与 `N-064`/`S16` 同族：**「声明了却没人执行」的又一变体（字段从没人赋过值）**。
@@ -3391,6 +3391,30 @@
   ④ 门禁 **必绿 9/9**；提交只用显式路径；`docs/**` 与 `spec/**` **本包零改动**。
 - **制度影响面**：★ **无**（配置键 ＋ 请求体字段）。★ 附带一条**规格收获**（已写入 `docs/20 §1B.8`）：**响应回填的 `approval_code` 是「真实池」值**（平台生成 UUID，≠ 我方入参）⇒ 实测**回答了 `docs/16 §7 V-4`**（此前标记"未实测"）。
 - **最后更新**：2026-10-06 06:20 · WorkBuddy（联调实测开题；修法已用探针试出确切形状，无需再猜）
+
+> **mimo 回执 · 批 45（`N-066`）（2026-10-06 06:52 · 按本议题五处方案执行，形状照探针结论未猜）**
+
+| 项 | 今态 | 本轮修复 | 证据（文件#函数 ＋ 实测输出） | 未做原因 / 变异 |
+|---|---|---|---|---|
+| ① `externalApprovalBody` 顶层补 `group_code`（仅非空） | ✅ | 是 | `internal/platform/feishu/external.go#externalApprovalBody`：`if strings.TrimSpace(def.GroupCode) != "" { body["group_code"] = def.GroupCode }`（与 `approval_code` 同款「仅非空时送」）；`group_name` 写法**未动**（仍仅非空送、而本侧 sync 从不赋值 ⇒ 实测请求体**不含**该键，照探针结论） | — |
+| ② `ExternalApprovalDef`/`DefInput` 增 `GroupCode` ＋ `toExternalDef` 传递 | ✅ | 是 | `internal/platform/feishu/external.go#ExternalApprovalDef.GroupCode`（结构体 +1 字段）· `internal/approval/defregistry.go#DefInput.GroupCode` · `#toExternalDef` 传递 `GroupCode: in.GroupCode` | — |
+| ③ `config.Env.ApprovalGroupCode`（`JX_APPROVAL_GROUP_CODE`） | ✅ | 是 | `internal/config/env.go`：字段 `ApprovalGroupCode`（注释引 N-066／docs-04 §6.4／测试环境值）＋ `Load()` 读 `getenv("JX_APPROVAL_GROUP_CODE", "")`；★ `.env.example:30` 与 `docs/04` 键名照你方预填**未动**（`docs/**`/`spec/**` 零改动） | — |
+| ④ `defs/sync` 第五道门（空 ⇒ 503） | ✅ | 是 | `internal/httpapi/handlers_approval.go#handleAdminApprovalDefsSync`：紧随 ④ token/domain 两道 503 **同处同写法**新增第五道门，文案＝「分组 code 未配置（JX_APPROVAL_GROUP_CODE）：飞书 external_approvals 的 group_code 必填，缺失会导致全部定义建不出来（1390001），拒绝装载」；函数头注 `①–⑤` 清单同批补 `⑤` | — |
+| ⑤ 装配 `DefInput.GroupCode` ＋ 订正 `:1126` 错误注释 | ✅ | 是 | 装配处（现 `handlers_approval.go:1164` 后）`GroupCode: strings.TrimSpace(d.Env.ApprovalGroupCode)`；旧注「分组留空（飞书 group_name 可选…）」→ 按你方给定文字改为「group_code **必填**（create 要求；不存在则平台新建分组）；group_name 仅用于更新显示名、**本侧不传**」 | — |
+| 用例① 请求体含 `group_code` ∧ 不含 `group_name` | ✅ | 是 | `internal/platform/feishu/external_test.go#TestExternalApprovalBodyGroupCodeN066`：`GroupCode=JXQA-GROUP-1` ⇒ body 含 `group_code` ∧ **无 `group_name` 键**；＋对照「GroupCode 空 ⇒ 键不下发」。★ **形态差异如实**：改前该字段**不存在** ⇒ 用例呈**编译红**（`unknown field GroupCode`）而非断言红——**未伪造先红**；鉴别力由**等效变异 M1** 承载（见右列） | **M1**：摘掉 body 的 `group_code` 写入（`sha256 b07af0ec…→5419c44b…`）⇒ 本用例**恰红**（`group_code = <nil>, 期望 JXQA-GROUP-1`）；**隔离**＝用例② 保持 `ok`；`cp` 还原后 `sha256=b07af0ec91ee8224…` 逐字一致 |
+| 用例② `JX_APPROVAL_GROUP_CODE` 空 ⇒ 503 | ✅ | 是 | `internal/httpapi/handlers_approval_defs_sync_test.go#TestAdminApprovalDefsSyncMissingGroupCode503N066`：夹具 `newDefsSyncTestAppEnv`（token/域名齐、**单独抽空** group code）⇒ **503** 且文案含 `JX_APPROVAL_GROUP_CODE` ∧ `group_code` ＋ `fake.UpsertCount()==0`（未触达飞书）；★ 形态差异同上（改前无 env 字段 ⇒ 编译红） | **M2**：删第五道门（`sha256 a951aea1…→88f78939…`）⇒ 本用例**恰红**（`缺 group_code 应 503, 实为 200` ＝改前行为原样重现）；**隔离**＝用例① 保持 `ok`；`cp` 还原后 `sha256=a951aea1da46e02c…` 逐字一致、`TestAdminApprovalDefsSync` 全族复绿 |
+
+**门禁原文**：
+
+```
+===== 总判定：**通过**（必绿基线 9/9 全绿；会报项如需处置见上）=====
+```
+
+**改动文件（显式路径）**：`internal/platform/feishu/external.go` · `internal/platform/feishu/external_test.go` · `internal/approval/defregistry.go` · `internal/config/env.go` · `internal/httpapi/handlers_approval.go` · `internal/httpapi/handlers_approval_defs_sync_test.go` · `COLLAB.md`。★ `docs/**`、`spec/**` **零改动**（你方 `.env.example`／`docs/04 §6.4` 预填未触碰）。
+
+**未做项**：实机 11 张建定义验证（验收③）＝**你方执行**（服务器已预置 `JX_APPROVAL_GROUP_CODE=JXQA-GROUP-1`）；`approval_name` 中文形态不动（你方已实测飞书接受）；`group_name` 既有更新路径（`DefInput.GroupName` 字段）保留未删——本侧不赋值即不下发，**不属本包行为**。
+
+`MIMO-DONE`
 
 ### N-067 · ★★ `BA` 侧两处具名缺口：`anti_split_check` 的「跨节点钩子」＋ `return_receipt` 的「UI 录入入口」
 

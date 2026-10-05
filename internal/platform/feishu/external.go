@@ -34,7 +34,8 @@ import (
 type ExternalApprovalDef struct {
 	ApprovalCode     string // 为空＝新建；非空＝按此码更新
 	Name             string // approval_name
-	GroupName        string // group_name
+	GroupName        string // group_name（★ 本侧 sync 不传 —— 传中文名会撞既有分组名 ⇒ 1390001，N-066 探针实测）
+	GroupCode        string // group_code（★ 飞书 create 必填；仅非空时送 —— N-066）
 	VisibleScopeJSON string // visible_scope（原样 JSON 片段；空则不下发）
 	CreateLinkPC     string // external.create_link_pc（指向我方发起页）
 	CreateLinkMobile string // external.create_link_mobile
@@ -93,6 +94,13 @@ func externalApprovalBody(def ExternalApprovalDef) ([]byte, error) {
 	}
 	if strings.TrimSpace(def.ApprovalCode) != "" {
 		body["approval_code"] = def.ApprovalCode
+	}
+	// ★ N-066：group_code 是飞书 create 的**必填**字段（缺失 ⇒ 1390001「Group code
+	// cannot be empty」⇒ 11 张全失败）；与 approval_code 同款「仅非空时送」。
+	// ★ 刻意不送 group_name（探针实测：传中文 group_name 会撞既有分组名 ⇒ 1390001
+	//「审批分组Code和名称不匹配」；不传 ⇒ 沿用既有分组显示名）。
+	if strings.TrimSpace(def.GroupCode) != "" {
+		body["group_code"] = def.GroupCode
 	}
 	if strings.TrimSpace(def.GroupName) != "" {
 		body["group_name"] = def.GroupName
