@@ -3,8 +3,8 @@
   "label": "费用事前申请单",
   "prefix": "SA",
   "number_format": "SA-YYMM-####",
-  "version": "1.3",
-  "date": "2026-10-04",
+  "version": "1.4",
+  "date": "2026-10-06",
   "generated_by": "WorkBuddy",
   "sources": {
     "tool_table": "采购与费用审批体系配置工具表_v3.0.xlsx → sheet「表单字段清单」R22–R29（表头 8 字段）＋ R48–R51（结算补录组 4 字段）",
@@ -201,17 +201,28 @@
           "rule": "发票号、金额、开票日期与票据扫描件。★ **无关联的票据一律不予受理**；建议接入发票验真（本期不做 —— PRD N8）"
         },
         {
+          "name": "actual_cents",
+          "label": "实际金额",
+          "type": "money_cents",
+          "required": false,
+          "source": "user",
+          "origin": "spec_increment",
+          "origin_ref": "COLLAB.md#N-062 族 J3（`REMAINING.md#B23`）—— 承 `SA#actual_not_exceed` 的 `assert` 反推补入",
+          "rule": "★★ **本字段是 `SA#actual_not_exceed`（`when=backfill(settlement_backfill)`）的承载字段** —— 该判据的 `assert` 原文写「`actual_cents <= approved_cents`」，而**本段此前无同名字段** ⇒ 判据**无输入可求值**（这正是它长期 `pending_wiring` 的一半原因，`N-062` 族 `J3` 实测）。★ 语义：补录时登记的**实际发生金额**（分）。★ 判据口径：`approved_cents` ≡ `sections[id=header].fields[name=amount_cents]`（事前申请批准额）。★★ **未填 ≠ 0** —— `required: false` 表示「补录时可能尚未发生」，**不得**以 0 代入判据（否则「未发生」会被静默判成「未超支」）。",
+          "note": "★★ **本字段为规格补齐**（`REMAINING.md#B23` · 我方域）：工具表 R48–R51 的补录段四字段里**没有**「实际金额」行，而判据却引用它 ⇒ ★ 属「**判据引用了不存在的字段**」这一族缺口（同 `PR#safety_branch` 遇过的「无字段可承载」）。★ **不是把工具表抄漏的行补回来**，而是**我方据判据反推补入** ⇒ `origin` 标 `spec_increment`（**不冒充** `tool_table` / `institution`）。★ 与 `SA.actual_vs_approved_diff_cents`（`source=computed`）**分工**：本字段是**输入**，后者是**差额**。"
+        },
+        {
           "name": "actual_vs_approved_diff_cents",
           "carried_by_kind": "accepted_gap",
-          "carried_by": "★★ 具名豁免（N-062 J1 ③ · 本期不做）：补录段（settlement_backfill）**无「实际金额」输入字段** —— `actual_cents` 仅出现在 SA#actual_not_exceed 的 assert 文本、表单无该字段 ⇒ 差额无输入可算（批准额侧＝header amount_cents 有）；★ 增设实际金额字段属**规格域**（本批不改 spec 字段、停手点名待裁）；字段补入后同批改 code 并销项",
+          "carried_by": "★★ **具名豁免仍未解除，但理由已收窄**（`N-062` J1 ③ 立 → **批 42 更新**）：原豁免理由是「补录段**无实际金额输入字段** ⇒ 差额无输入可算」—— ★ **该理由已由本批补齐**（`actual_cents` 入库）；⇒ ★ **剩余缺口只剩「生产者」**（无代码计算该差额）。★ 故 `carried_by_kind` **仍保留 `accepted_gap`** —— ★★ **同批纪律**：`source=computed` 的字段**不得**在**无执行体**时声明 `code`（`S16` 立此字段就是为了抓「声明了却没人执行」；`N-038` 的真实教训）。★ **解除条件**：补录入口 ＋ 差额计算**落地并过独立验收** ⇒ **同批**把本键翻 `code`、`carried_by` 落具体文件#函数、并销掉本条具名豁免。",
           "label": "实际金额与申请额差异",
           "type": "money_cents",
           "required": false,
           "source": "computed",
           "origin": "tool_table",
           "origin_ref": "表单字段清单 R50",
-          "rule": "★ **实际金额不得超过事前申请批准额**；超出须走**超支确认**，**未确认不得移交集团**",
-          "note": "原挂在「报销单」上的本字段，随 A4 改挂事前申请单"
+          "rule": "★ **实际金额不得超过事前申请批准额**；超出须走**超支确认**，**未确认不得移交集团**　★★ **计算口径（2026-10-06 补 · `N-062` 族 `J3`）**：**差额 ＝ `sections[id=settlement_backfill].fields[name=actual_cents]` − `sections[id=header].fields[name=amount_cents]`**（**正数 ＝ 超支；负数 ＝ 结余**）。★ **不得以 0 代替「未填」**。",
+          "note": "原挂在「报销单」上的本字段，随 A4 改挂事前申请单　★ **批 42 追加**：`actual_cents`（输入）已入库 ⇒ 本条已具备**可计算性**，只差实现；★ 制度口径（「超出须走超支确认、未确认不得移交集团」）**一字未改**。"
         },
         {
           "name": "invoice_count_and_overrun_note",
@@ -348,6 +359,11 @@
       "gap": "P08 / M07 是否允许个人垫付",
       "status": "已裁定（按原文）",
       "note": "用途分类表把 P08 写作「费用线（**对公直付**）」、M07 同 ⇒ **只能对公直付**；而 M01/M02/M03/M06 写作「费用线（**可**对公直付）」⇒ **可垫付可直付**。这是原文区分，勿合并"
+    },
+    {
+      "gap": "`settlement_backfill`（结算补录段）的**入口未建** ⇒ `SA#actual_not_exceed` / `SA#invoice_must_link` 两条 `hard` 判据的时点永不到来",
+      "status": "★★ **规格已齐（批 42）· 待实现**",
+      "note": "★ 原先的两个缺口：① **无「实际金额」输入字段** —— ✅ **已由批 42 补齐**（`actual_cents` 入库）；② **无补录入口** —— ⏳ 待实现。★ 入口最小契约已由批 42 写入 `spec/chain.json#conventions.checks_when`（第 ② 条）：`POST /api/approval/{biz_no}/backfill`，白名单 ＝ 该段 `source=user` 字段，落 `ext_json`，写后执行 `when=backfill(<section_id>)` 的判据。★★ **契约行（`docs/05-API.md`）必须与路由实现同批落** —— 否则当场造出「文档声明了、路由不存在」（`C9` / `S21`–`S23`）。★ 交办包：`MIMO-NEXT-BATCH-26.md`。"
     }
   ]
 }

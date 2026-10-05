@@ -107,7 +107,11 @@ green       "spec 机读规格门禁"          "$PY" scripts/check_spec.py
 green       "净检出可构建门禁"          bash scripts/check_head_buildable.sh
 # N-060 T4：常驻探针回归按**必绿**级入闸（T1 隔离副本执行 ⇒ 主工作区零污染；
 # T2 各探针 rc 表达失败；T3 残目录已清）。★ 探针红不降级为会报 —— 先修探针或修规格。
-green       "常驻探针回归（12/12）"     bash scripts/check_probes.sh
+# ★ 2026-10-06（批 42）标签去计数：原写死「（12/12）」，而 `check_probes.sh` 按
+#   `scripts/_probe*.py` **通配动态收录** ⇒ 新增一个常驻探针（`_probe_n062j3.py`）标签即失真
+#   （**写死的计数＝会漂移的文档**，本仓库一贯的教训）⇒ 改为**不带计数的标签**，
+#   真实计数由 `check_probes.sh` 末尾的「通过 N / 失败 M / 共 N+M 个」输出**自报**。
+green       "常驻探针回归（隔离副本执行）" bash scripts/check_probes.sh
 echo
 echo "[会报既存问题]（不阻塞）"
 report      "静默缺陷排查 audit_silent" "$PY" scripts/audit_silent.py

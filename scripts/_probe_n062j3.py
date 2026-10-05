@@ -1,0 +1,150 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+scripts/_probe_n062j3.py —— 常驻探针：`N-062` 族 `J3` 的**规格先行**（批 42 · `REMAINING.md#B23`）。
+
+★★ 为什么存在：本批**只改规格、零引擎改动**（判据仍 30 / 原语仍 12），
+   ★ 而「只声明、未消费」的新键如果**没人钉**，下一次改动就可能**静默删掉**它 ——
+   与 `N-058` 的「验收组重复体」、`N-061` 的「孤儿契约行」同族：
+   **声明一旦与消费面脱钩，门禁看不见**。本探针把本批的**四条声明**钉住，
+   并附**缺口存在性反证**（把修复前的形态塞回内存副本 ⇒ 对应断言必须报红）。
+
+★ 纪律：**只改内存副本**（`copy.deepcopy`），**绝不落盘** ——
+   收尾核对两个真源文件的 `sha256` 与探针启动时逐字节一致。
+
+跑法：python scripts/_probe_n062j3.py   （退出码 0 = 全通过；1 = 有失败项）
+"""
+import copy
+import hashlib
+import json
+import os
+import re
+import sys
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+ROOT = os.path.dirname(HERE)
+
+
+def sha(p):
+    with open(p, "rb") as f:
+        return hashlib.sha256(f.read()).hexdigest()
+
+
+def load(rel):
+    with open(os.path.join(ROOT, rel), "r", encoding="utf-8") as f:
+        return json.load(f)
+
+
+CHAIN = "spec/chain.json"
+SA = "spec/forms/SA.json"
+CHECKS = "spec/checks.json"
+README = "spec/README.md"
+
+fails = []
+oks = 0
+
+
+def chk(cond, label, detail=""):
+    global oks
+    if cond:
+        oks += 1
+        print("  ✓ " + label)
+    else:
+        fails.append(label)
+        print("  ✗ " + label + ("　—— " + detail if detail else ""))
+
+
+def main():
+    before = {p: sha(os.path.join(ROOT, p)) for p in (CHAIN, SA, CHECKS, README)}
+
+    chain = load(CHAIN)
+    sa = load(SA)
+    checks = load(CHECKS)
+
+    conv = chain.get("conventions") or {}
+
+    # ---- 1. 新约定：node_task_generation（只声明、未消费）----
+    ntg = conv.get("node_task_generation", "")
+    chk(bool(ntg), "1a 存在 conventions.node_task_generation")
+    for token in ("generates_task", "isActionActor", "节点是否生成待办", "零变化", "未消费"):
+        chk(token in ntg, "1b 约定含关键口径「%s」" % token)
+
+    # ---- 2. 显式声明 1 处：purchase_tier1.return_receipt ----
+    nodes = chain["routes"]["purchase_tier1"]["nodes"]
+    byfreed = {n.get("id"): n for n in nodes}
+    r = byfreed.get("return_receipt", {})
+    chk(r.get("generates_task") is True, "2a return_receipt 显式 generates_task=true")
+    chk("task_note" in r, "2b return_receipt 带 task_note（写明依据与实现侧边界）")
+    # 具名保留：self_purchase 不得被顺手声明
+    sp = byfreed.get("self_purchase", {})
+    chk("generates_task" not in sp, "2c self_purchase 具名保留（未声明 generates_task）")
+
+    # ---- 3. 缺口存在性反证 A：摘掉 generates_task ⇒ 2a 必红 ----
+    mut = copy.deepcopy(chain)
+    for n in mut["routes"]["purchase_tier1"]["nodes"]:
+        if n.get("id") == "return_receipt":
+            n.pop("generates_task", None)
+    r2 = {n.get("id"): n for n in mut["routes"]["purchase_tier1"]["nodes"]}["return_receipt"]
+    chk((r2.get("generates_task") is True) is False,
+        "3 反证 A：摘掉 generates_task ⇒ 断言 2a 转红（内存副本，未落盘）")
+
+    # ---- 4. checks_when 的两处承载口径 ----
+    cw = conv.get("checks_when", "")
+    for token in ("通用求值器", "fail-closed", "POST /api/approval/{biz_no}/backfill",
+                  "白名单", "ext_json", "必须与路由实现同批落"):
+        chk(token in cw, "4 约定 checks_when 含「%s」" % token)
+
+    # ---- 5. SA 补录段新增 actual_cents（输入字段）----
+    sec = [s for s in sa["sections"] if s["id"] == "settlement_backfill"][0]
+    names = [f["name"] for f in sec["fields"]]
+    chk("actual_cents" in names, "5a settlement_backfill 含 actual_cents")
+    ac = [f for f in sec["fields"] if f["name"] == "actual_cents"][0]
+    chk(ac["type"] == "money_cents" and ac["source"] == "user" and ac["required"] is False,
+        "5b actual_cents = money_cents/user/required false")
+    chk(ac.get("origin") == "spec_increment",
+        "5c origin 标 spec_increment（不冒充 tool_table / institution）")
+    chk(names.index("actual_cents") < names.index("actual_vs_approved_diff_cents"),
+        "5d actual_cents 在差额字段之前（输入先于派生）")
+
+    # ---- 6. 缺口存在性反证 B：摘掉 actual_cents ⇒ 5a / 5d 必红 ----
+    mut2 = copy.deepcopy(sa)
+    s2 = [s for s in mut2["sections"] if s["id"] == "settlement_backfill"][0]
+    s2["fields"] = [f for f in s2["fields"] if f["name"] != "actual_cents"]
+    n2 = [f["name"] for f in s2["fields"]]
+    chk(("actual_cents" in n2) is False,
+        "6 反证 B：摘掉 actual_cents ⇒ 断言 5a 转红（内存副本，未落盘）")
+
+    # ---- 7. 差额字段：声明不得先于执行体 ----
+    diff = [f for f in sec["fields"] if f["name"] == "actual_vs_approved_diff_cents"][0]
+    chk(diff.get("carried_by_kind") == "accepted_gap",
+        "7a 差额字段仍为 accepted_gap（无执行体时不得声明 code）")
+    chk("amount_cents" in diff.get("rule", "") and "−" in diff.get("rule", ""),
+        "7b 差额字段 rule 含计算口径（actual_cents − header.amount_cents）")
+
+    # ---- 8. 不变量：本批零新增判据 / 零新增原语 ----
+    nchecks = len(checks["checks"])
+    nprims = len(checks.get("primitives") or {})
+    with open(os.path.join(ROOT, README), "r", encoding="utf-8") as f:
+        rd = f.read()
+    m = re.search(r"V(\d+\.\d+)（(\d+) 原语 / (\d+) 判据）", rd)
+    chk(bool(m), "8a README §2 的 checks.json 行可解析（真源版本 + 计数）")
+    if m:
+        chk(checks["version"] == m.group(1),
+            "8b 版本一致 checks.json=%s ↔ README=%s" % (checks["version"], m.group(1)))
+        chk(nprims == int(m.group(2)) and nchecks == int(m.group(3)),
+            "8c 计数一致 原语 %d/%s · 判据 %d/%s" % (nprims, m.group(2), nchecks, m.group(3)))
+
+    # ---- 9. 收尾：本探针只改内存副本，真源逐字节未变 ----
+    after = {p: sha(os.path.join(ROOT, p)) for p in before}
+    chk(before == after, "9 真源 4 文件 sha256 逐字节未变（探针未落盘）")
+
+    print()
+    print("合计：通过 %d / 失败 %d" % (oks, len(fails)))
+    if fails:
+        print("★ 失败项：" + "；".join(fails))
+        return 1
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
