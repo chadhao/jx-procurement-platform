@@ -3,7 +3,7 @@
   "label": "集团提交流转单",
   "prefix": "SUB",
   "number_format": "SUB-YYMM-####",
-  "version": "1.0",
+  "version": "1.1",
   "date": "2026-10-01",
   "generated_by": "WorkBuddy",
   "sources": {
@@ -299,6 +299,28 @@
           "origin": "ledger",
           "origin_ref": "`L06.fields[reject_reason_and_disposition]`（`writable: true`，`note: 取消 / 驳回重走`）",
           "rule": "★ `group_status = 已驳回` ⇒ **必填**（写明集团驳回原因 与 采用哪条处置：取消 ／ 驳回重走）；其余状态**不填**（双向）"
+        },
+        {
+          "name": "originals_handover_note",
+          "label": "原件移交清单（合同 / 发票）",
+          "type": "textarea",
+          "required": false,
+          "source": "user",
+          "origin": "resolution",
+          "origin_ref": "`FR-M6-05`（必须）「合同 / 发票原件移交清单 + 签收」；★ **工具表表单字段清单 R39–R47 未列此项**（真实缺口）⇒ 本方据 `FR-M6-05` 补入，裁定 `R-34`",
+          "rule": "★ **逐项列明本次移交的原件**（合同 / 发票各几份、编号）；★ 与 `handover_receipt`（移交凭证）**配套**：清单说「交了什么」、凭证说「谁签收了」",
+          "critical_note": "★★ **两处刻意的设计取舍**：① **必须是「清单」而不是一个布尔** —— ★ 一个布尔只能说「交了 / 没交」，**说不出交了什么**，而「原件移交」的争议**恰恰出在「哪几份」**（如发票少一张）；★ 先例同 `payee` 段（工具表只给一个布尔时，我方拆为可区分的字段）。② **本版刻意不设硬必填** —— 「是否每单都涉原件」的口径未定，★ 硬必填会对**不涉原件**的 SUB 误拦；★★ 而 `FR-M6-05` 的验收面是「**原件移交清单可生成并可登记签收**」（能力），★ 不是「每单必填」⇒ **口径未定时宁可不做硬拦截**（同 `A4` / `item_type` / 三单匹配容差的克制）。"
+        },
+        {
+          "name": "originals_receipt",
+          "label": "原件签收记录",
+          "type": "attachment",
+          "required": false,
+          "source": "user",
+          "origin": "resolution",
+          "origin_ref": "`FR-M6-05`（必须）「……并可登记签收」；★ 与 `handover_receipt` **同范式、不同对象**",
+          "rule": "★ 登记后即视为原件签收凭据（签收人 / 日期 / 回执影像）；★ **无签收即视为原件未移交**（同 `handover_receipt` 的「无凭证视为未提交」口径）",
+          "critical_note": "★ 本字段**必填性同为待定**（理由见上条 ②）；★★ **与 `handover_receipt` 不可合并** —— 两者**证明的对象不同**：「移交凭证」证明的是**提交集团这个动作**（`L06.handover_receipt`，且「无凭证视为未提交」）；「原件签收」证明的是**合同 / 发票原件本身**的流向。★ 合并即回到「一个载体承担两个语义」的老问题。"
         }
       ]
     }

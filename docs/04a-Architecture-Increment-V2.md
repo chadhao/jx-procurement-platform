@@ -320,7 +320,7 @@ stateDiagram-v2
 
 | 部分 | 构造规则 | 约束 |
 |---|---|---|
-| `form` | 仅关键 3 项：**单号 / 金额 / 事由**，`[{name,value}]` 简化键值对 | 仅前 3 条、**≤2048 字符**；真正的表单在我方页面 |
+| `form` | 仅关键 3 项：**申请人 / 部门 / 事项**（★★ **2026-10-05 裁定 `R-32`** —— 本节原写「单号／金额／事由」，与 `01a §8 FR-M0-18`（必须）及 `09 CHK-3` **冲突**；★ 需求正本 = `FR-M0-18`，**据正本订正**；★ `单号` 已由 `extra.business_key = biz_no` 单独承载，不必挤进摘要），`[{name,value}]` 简化键值对 | 仅前 3 条、**≤2048 字符**；超限**告警、绝不静默截断**；真正的表单在我方页面 |
 | `task_list[]` | 由 `t_flow_task` 导出，**仅含 `release_state=RELEASED` 的 task**（顺序会签分段释放，§2.3）；每项含 `task_id`/assignee/`status`/`title`/`node_id`/`node_name`/三时间戳/**`action_context`**/**`action_configs`** | **≤300**；超限**直接失败告警、绝不截断**（见 §10）；★ **若用 `REPLACE`（全量替换），快照必须含「全部已 `RELEASED` 的 task」** —— 否则会**删掉本次未推送的已释放 task**（与 §2.3「未释放 task 整体省略」叠加，见 §10 S3）。★★ **`action_context` 必须写压缩 JSON 字符串 `{"biz_no":"<单号>","task_id":"<task_id>"}`** —— ★ **官方回调【不发】顶层 `biz_no`，本字段是 `biz_no` 回传的【唯一载体】**；推侧（写）与解侧（读）**键名必须同批约定**，缺一即链路断裂（定案 #53；第 2 批 `d94580f`）。★★ **`action_configs` 必须配「同意 / 拒绝」两键**（`[{"action_type":"APPROVE"},{"action_type":"REJECT"}]`）—— 与定义级 `enable_quick_operate=true` **两者都要到位**，否则飞书侧两键不出现（口径 2 落空；`reference/README.md` ★★ 条） |
 | `cc_list[]` | 由规则带出的抄送人（镜像在职人员） | **≤200** |
 | `display_method` | 推荐 `SIDEBAR`（不打断飞书上下文）；可选 `BROWSER` | 见 `01a` §5.1 |
