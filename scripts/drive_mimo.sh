@@ -86,7 +86,7 @@ while [ "$attempt" -le "$MAX" ]; do
     PROMPT="$(cat "$PROMPT_FILE")"
   else
     # ★ 续跑：同一会话（它记得原任务）＋ 防重做措辞 ＋ 复述完成判据
-    PROMPT="继续 $ISSUE 未完成的项。★★ 已完成的项**不要重做**。完成判据（三条全满足）：① COLLAB.md 的 $ISSUE 段内写入你的回执且状态改 MIMO-DONE；② 提交代码（显式路径，禁止 git add -A）；③ 提交前跑 bash scripts/check_all.sh 必绿 8/8，然后推送 origin/main。★ 若中途被打断，直接从断点继续。"
+    PROMPT="继续 $ISSUE 未完成的项。★★ 已完成的项**不要重做**。完成判据（三条全满足）：① COLLAB.md 的 $ISSUE 段内写入你的回执且状态改 MIMO-DONE；② 提交代码（显式路径，禁止 git add -A）；③ 提交前跑 bash scripts/check_all.sh 必绿 9/9（会报项应零命中），然后推送 origin/main。★ 若中途被打断，直接从断点继续。"
   fi
 
   echo "── 第 $attempt/$MAX 次 ──"
