@@ -16,11 +16,12 @@
 import hashlib
 import pathlib
 import subprocess
+import tempfile
 import sys
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 TARGET = ROOT / "internal" / "chain" / "agent.go"
-BAK = ROOT / "scripts" / "_probe_n031_backup" / "agent.go"
+BAK = pathlib.Path(tempfile.gettempdir()) / "_probe_n031_agent.go"  # N-060 T3: 不落仓
 
 DRIVEN = "if n.AgentAllowed != nil && !*n.AgentAllowed {"
 LITERAL = 'if n.ID == "approve_petty_cash" || n.ID == "disburse" {'

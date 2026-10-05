@@ -60,3 +60,12 @@ scripts/_commit*.txt
 # 备份目录每次跑都全量重建；毒化副本跑完即删。入库只会造成"两份 spec"的漂移源。
 scripts/_probe_spec_backup/
 scripts/_probe_poisoned_check_spec.py
+# N-060 T3 收口：一切探针残目录（backup/tmp）与隔离 worktree 一律不入库
+_probe_*_backup/
+_probe_*_tmp/
+scripts/_probe_*_backup/
+scripts/_probe_*_tmp/
+.probe_worktree/
+# N-060 T3 收口（我方补足）：跑探针会 import check_spec ⇒ 生成 __pycache__（运行期产物）
+__pycache__/
+*.pyc

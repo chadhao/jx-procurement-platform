@@ -105,6 +105,9 @@ green       "COLLAB 协商台账门禁"        "$PY" scripts/check_collab.py
 #   另已用探针自证（删流程线 / ledger 指向禁落账的 L10 / route 悬空 / 档位重叠 ⇒ 逐条报出）。
 green       "spec 机读规格门禁"          "$PY" scripts/check_spec.py
 green       "净检出可构建门禁"          bash scripts/check_head_buildable.sh
+# N-060 T4：常驻探针回归按**必绿**级入闸（T1 隔离副本执行 ⇒ 主工作区零污染；
+# T2 各探针 rc 表达失败；T3 残目录已清）。★ 探针红不降级为会报 —— 先修探针或修规格。
+green       "常驻探针回归（12/12）"     bash scripts/check_probes.sh
 echo
 echo "[会报既存问题]（不阻塞）"
 report      "静默缺陷排查 audit_silent" "$PY" scripts/audit_silent.py

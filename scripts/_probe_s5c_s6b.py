@@ -23,7 +23,7 @@ from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent
 SPEC = REPO / "spec"
-BACKUP = REPO / "scripts" / "_probe_spec_backup"
+BACKUP = Path(tempfile.mkdtemp(prefix="probe_spec_"))  # N-060 T3: 系统临时目录（不落仓）
 PY = sys.executable
 CHECK = REPO / "scripts" / "check_spec.py"
 
@@ -40,8 +40,9 @@ def run_gate(cl=None):
 
 
 def restore():
-    shutil.rmtree(SPEC, ignore_errors=True)
-    shutil.copytree(BACKUP, SPEC)
+    # N-060 T3: 覆盖式还原（篡改只是改文件内容 ⇒ copytree 覆盖即可）；
+    # ★ 不 rmtree(SPEC) —— 单次删 >50 文件会被环境 safe-delete 拦截（63 个 spec 文件）。
+    shutil.copytree(BACKUP, SPEC, dirs_exist_ok=True)
 
 
 def probe_spec(name, mutate, expect_id):
@@ -110,9 +111,7 @@ def probe_gap(name, mutate_spec, drop_ids, forbidden_in_out):
 
 
 # ---------- 准备：全量备份 ----------
-if BACKUP.exists():
-    shutil.rmtree(BACKUP, ignore_errors=True)
-shutil.copytree(SPEC, BACKUP)
+shutil.copytree(SPEC, BACKUP, dirs_exist_ok=True)  # BACKUP=mkdtemp 空目录（无需先清）
 print("[备份] 全量 spec/ -> %s\n" % BACKUP)
 
 # ---------- P0 控制组：原始必须绿 ----------

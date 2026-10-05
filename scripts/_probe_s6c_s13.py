@@ -24,7 +24,7 @@ from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent
 SPEC = REPO / "spec"
-BACKUP = REPO / "scripts" / "_probe_spec_backup"
+BACKUP = Path(tempfile.mkdtemp(prefix="probe_spec_"))  # N-060 T3: 系统临时目录（不落仓）
 PY = sys.executable
 CHECK = REPO / "scripts" / "check_spec.py"
 CHAIN = SPEC / "chain.json"
@@ -138,9 +138,7 @@ def probe(name, mutate, expect_id, also_go=False, expect_pass=False):
 
 
 # ---------- 准备 ----------
-if BACKUP.exists():
-    shutil.rmtree(BACKUP, ignore_errors=True)
-shutil.copytree(SPEC, BACKUP)
+shutil.copytree(SPEC, BACKUP, dirs_exist_ok=True)  # mkdtemp 空目录（无需先清；避免批量 rmtree）
 BACKUP_SNAP = _snapshot(BACKUP)
 print("[备份] 全量 spec/ -> %s（%d 个文件，已取哈希指纹）\n" % (BACKUP, len(BACKUP_SNAP)))
 

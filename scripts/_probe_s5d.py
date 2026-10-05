@@ -18,11 +18,12 @@ import hashlib
 import pathlib
 import re
 import subprocess
+import tempfile
 import sys
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 TARGET = ROOT / "spec" / "forms" / "BA.json"
-BAK = ROOT / "scripts" / "_probe_s5d_backup" / "BA.json"
+BAK = pathlib.Path(tempfile.gettempdir()) / "_probe_s5d_BA.json"  # N-060 T3: 不落仓
 
 results = []
 

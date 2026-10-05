@@ -18,13 +18,15 @@ import json
 import pathlib
 import re
 import shutil
+import tempfile
+from pathlib import Path
 import subprocess
 import sys
 import time
 
 REPO = pathlib.Path(__file__).resolve().parent.parent
 SPEC = REPO / "spec"
-BACKUP = REPO / "scripts" / "_probe_spec_backup"
+BACKUP = Path(tempfile.mkdtemp(prefix="probe_spec_"))  # N-060 T3: 系统临时目录（不落仓）
 
 TARGETS = [
     "./internal/httpapi/",
@@ -100,9 +102,7 @@ def probe(name, mutate, expect_fail=True):
 
 
 # ---------- 准备 ----------
-if BACKUP.exists():
-    shutil.rmtree(BACKUP, ignore_errors=True)
-shutil.copytree(SPEC, BACKUP)
+shutil.copytree(SPEC, BACKUP, dirs_exist_ok=True)  # mkdtemp 空目录（无需先清；避免批量 rmtree）
 BACKUP_SNAP = snap(BACKUP)
 print("[备份] 全量 spec/（%d 文件，已取 sha256 指纹）\n" % len(BACKUP_SNAP))
 

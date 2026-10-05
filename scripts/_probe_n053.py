@@ -25,6 +25,7 @@ import contextlib
 import io as _io
 import json
 import os
+import tempfile
 import shutil
 import subprocess
 import sys
@@ -33,7 +34,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 import check_spec as C  # noqa: E402
 
-TMPDIR = os.path.join(C.ROOT, "_probe_n053_tmp")
+TMPDIR = os.path.join(C.ROOT, "_probe_n053_tmp")  # N-060: 仓内相对（用例 file 字面依赖）；隔离跑=WT内、手工跑=.gitignore 兜底；★ 不 rmtree（bulk 删被环境拦）
 RESULT = []
 
 
@@ -85,9 +86,7 @@ def keycol(prob):
 
 def main():
     print("═══ N-053 探针 · csv_col_eq_json_by_key（第 12 原语）＋ S26 ═══\n")
-    if os.path.isdir(TMPDIR):
-        shutil.rmtree(TMPDIR)
-    os.makedirs(TMPDIR)
+    os.makedirs(TMPDIR, exist_ok=True)  # mkdtemp 已建（N-060: 不 rmtree —— 避免 bulk 删除拦截）
 
     args = s26_args()
     print("从清单读出的 S26.args.file = %s / primitives = %d 个\n"
@@ -293,7 +292,6 @@ def main():
          len(p) == 1 and "不可比" in p[0], p[0][:74] if p else "（无）")
 
     # ── 收尾 ─────────────────────────────────────────────────────────
-    shutil.rmtree(TMPDIR, ignore_errors=True)
     bad = [r for r in RESULT if not r[0]]
     print("\n═══ 汇总：%d/%d 用例通过 ═══" % (len(RESULT) - len(bad), len(RESULT)))
     for _, name, detail in bad:
@@ -305,5 +303,5 @@ if __name__ == "__main__":
     try:
         sys.exit(main())
     finally:
-        shutil.rmtree(TMPDIR, ignore_errors=True)
+        # N-060: 不 rmtree(TMPDIR) —— bulk 删除会被环境 safe-delete 拦（temp 留置系统自清）
         C._cache.clear()
