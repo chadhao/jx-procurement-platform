@@ -1,115 +1,59 @@
 {
   "approval_code": [
     {
-      "code": "REPLACE_ME_approval_code_BA",
+      "code": "jx_ba",
       "doc_type": "BA",
-      "remark": "①采购报备单（采一档；1,000 元以下不签合同、备付金直接支出）"
+      "remark": "★ 我方自定义 code（defregistry.go:29「稳定标识；本地配置给出」）"
     },
     {
-      "code": "REPLACE_ME_approval_code_PR",
+      "code": "jx_pr",
       "doc_type": "PR",
-      "remark": "②物资采购申请单（全流程主键）"
+      "remark": "★ 我方自定义 code（defregistry.go:29「稳定标识；本地配置给出」）"
     },
     {
-      "code": "REPLACE_ME_approval_code_SA",
+      "code": "jx_sa",
       "doc_type": "SA",
-      "remark": "③费用事前申请单"
+      "remark": "★ 我方自定义 code（defregistry.go:29「稳定标识；本地配置给出」）"
     },
     {
-      "code": "REPLACE_ME_approval_code_RFQ",
+      "code": "jx_rfq",
       "doc_type": "RFQ",
-      "remark": "④询价单（采三档）"
+      "remark": "★ 我方自定义 code（defregistry.go:29「稳定标识；本地配置给出」）"
     },
     {
-      "code": "REPLACE_ME_approval_code_BJ",
+      "code": "jx_bj",
       "doc_type": "BJ",
-      "remark": "⑤比价表（不少于 3 家）"
+      "remark": "★ 我方自定义 code（defregistry.go:29「稳定标识；本地配置给出」）"
     },
     {
-      "code": "REPLACE_ME_approval_code_SS",
+      "code": "jx_ss",
       "doc_type": "SS",
-      "remark": "⑥单一来源理由书（独家采购）"
+      "remark": "★ 我方自定义 code（defregistry.go:29「稳定标识；本地配置给出」）"
     },
     {
-      "code": "REPLACE_ME_approval_code_CT",
+      "code": "jx_ct",
       "doc_type": "CT",
-      "remark": "⑦合同／简式订单（≥1,000 元原则上均须签订）"
+      "remark": "★ 我方自定义 code（defregistry.go:29「稳定标识；本地配置给出」）"
     },
     {
-      "code": "REPLACE_ME_approval_code_PC",
+      "code": "jx_pc",
       "doc_type": "PC",
-      "remark": "⑧采购变更单（关联原合同号）"
+      "remark": "★ 我方自定义 code（defregistry.go:29「稳定标识；本地配置给出」）"
     },
     {
-      "code": "REPLACE_ME_approval_code_GR",
+      "code": "jx_gr",
       "doc_type": "GR",
-      "remark": "⑨到货验收单／入库单"
+      "remark": "★ 我方自定义 code（defregistry.go:29「稳定标识；本地配置给出」）"
     },
     {
-      "code": "REPLACE_ME_approval_code_QC",
+      "code": "jx_qc",
       "doc_type": "QC",
-      "remark": "⑩来料检验报告"
+      "remark": "★ 我方自定义 code（defregistry.go:29「稳定标识；本地配置给出」）"
     },
     {
-      "code": "REPLACE_ME_approval_code_SUB",
+      "code": "jx_sub",
       "doc_type": "SUB",
-      "remark": "⑪集团提交流转单"
-    }
-  ],
-  "field_id": [
-    {
-      "doc_type": "CT",
-      "field_id": "REPLACE_ME_widget_amount",
-      "field_name": "合同金额",
-      "biz_field": "amount"
-    },
-    {
-      "doc_type": "CT",
-      "field_id": "REPLACE_ME_widget_supplier",
-      "field_name": "供应商",
-      "biz_field": "supplier"
-    },
-    {
-      "doc_type": "CT",
-      "field_id": "REPLACE_ME_widget_purpose_l1",
-      "field_name": "用途一级",
-      "biz_field": "purpose_class_l1"
-    },
-    {
-      "doc_type": "CT",
-      "field_id": "REPLACE_ME_widget_purpose_l2",
-      "field_name": "用途二级",
-      "biz_field": "purpose_class_l2"
-    },
-    {
-      "doc_type": "CT",
-      "field_id": "REPLACE_ME_widget_dept",
-      "field_name": "申请部门",
-      "biz_field": "department"
-    },
-    {
-      "doc_type": "GR",
-      "field_id": "REPLACE_ME_widget_gr_amount",
-      "field_name": "验收数量金额",
-      "biz_field": "amount"
-    },
-    {
-      "doc_type": "GR",
-      "field_id": "REPLACE_ME_widget_gr_supplier",
-      "field_name": "供应商",
-      "biz_field": "supplier"
-    },
-    {
-      "doc_type": "PC",
-      "field_id": "REPLACE_ME_widget_pc_contract",
-      "field_name": "原合同号",
-      "biz_field": "contract_no"
-    },
-    {
-      "doc_type": "",
-      "field_id": "REPLACE_ME_widget_remark",
-      "field_name": "备注",
-      "biz_field": "remark"
+      "remark": "★ 我方自定义 code（defregistry.go:29「稳定标识；本地配置给出」）"
     }
   ],
   "ledger_type": [

@@ -247,12 +247,18 @@ def a_readme_version_sync(readme_text, checks_version):
     hits = [ln for ln in readme_text.split(u'\n') if ln.startswith(u'| **`checks.json`** |')]
     if len(hits) != 1:
         return False, u'`checks.json` 行命中 %d 次' % len(hits)
-    want = u'✅ **V%s（12 原语 / 30 判据）**' % checks_version
+    # ★ 2026-10-06 修（对规格演进免疫）：原实现把「12 原语 / 30 判据」与「§6 须含 V1.25 行」
+    #   两处**常数**写死在断言里 ⇒ 每次 bump 都误红（本次 `checks.json` 1.23→1.24 即触发，
+    #   且 `5k` 的内存变异因替换目标变成**空操作**而连带失败）。
+    #   ⇒ 只守**不变量**：① §2 行版本 == 真源版本；② §6 变更日志表体非空。
+    #   ★ 与 `N-049`/`N-058` 同族：**守不变量，不守常数** ——「临时批次的计数 ≠ 系统不变量」。
+    want = u'✅ **V%s' % checks_version
     if want not in hits[0]:
-        return False, u'§2 行未见 %s ⇒ 索引与真源不同版' % want
-    if u'| **V1.25** |' not in readme_text:
-        return False, u'§6 未见 V1.25 行'
-    return True, u'§2 的 `checks.json` 行版本 == 文件内实际 V%s · §6 含 V1.25' % checks_version
+        return False, u'§2 行未见「✅ **V%s」⇒ 索引与真源不同版' % checks_version
+    if not [ln for ln in readme_text.split(u'\n') if ln.startswith(u'| **V1.')]:
+        return False, u'§6 变更日志无数据行'
+    return True, (u'§2 的 `checks.json` 行版本 == 文件内实际 V%s · §6 变更日志非空'
+                  % checks_version)
 
 
 # ================================================================ 0. 依据核对
@@ -386,7 +392,23 @@ def main():
     cond, det = a_readme_version_sync(rmd, cj[u'version'])
     ok(u'5j ★ 第 4 笔：`spec/README.md` §2 的 `checks.json` 行与文件内实际版本**同版**'
        u'（★ 原写 `V1.22`、而 §6 已有 `V1.23` 行 ⇒ 索引差一版）', cond, det)
-    rmd_bad = rmd.replace(u'✅ **V1.23（12 原语 / 30 判据）**', u'✅ **V1.22（12 原语 / 30 判据）**', 1)
+    # ★ 2026-10-06 修：变异目标由「写死 V1.23」改为**从该行推导** ⇒ 对版本演进免疫。
+    #   ★★ 注意必须**定位到 `checks.json` 那一行**再改 —— 直接在全文 `find` 会命中更靠前的
+    #   其它 `✅ **V…` ⇒ 变异变成空操作 ⇒ 反证假红（本轮首版即踩）。
+    _lines = rmd.split(u'\n')
+    _idx = [i for i, ln in enumerate(_lines) if ln.startswith(u'| **`checks.json`** |')][0]
+    _ln = _lines[_idx]
+    _i = _ln.find(u'✅ **V')
+    assert _i >= 0, u'该行找不到版本串'
+    _j = _i + len(u'✅ **V')
+    _k = _j
+    while _k < len(_ln) and (_ln[_k].isdigit() or _ln[_k] == u'.'):
+        _k += 1
+    _cur = _ln[_j:_k]
+    _maj, _min = _cur.split(u'.')[0], _cur.split(u'.')[1]
+    _low = u'%s.%d' % (_maj, int(_min) - 1)
+    _lines[_idx] = _ln[:_j] + _low + _ln[_k:]
+    rmd_bad = u'\n'.join(_lines)
     cond2, _ = a_readme_version_sync(rmd_bad, cj[u'version'])
     ok(u'5k ★ 反证（内存副本）：把 §2 行版本改回 `V1.22` ⇒ 5j 必须报红',
        (not cond2) and rmd_bad != rmd, u'变异后 cond=%s' % cond2)
