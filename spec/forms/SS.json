@@ -3,7 +3,7 @@
   "label": "单一来源理由书",
   "prefix": "SS",
   "number_format": "SS-YYMM-####",
-  "version": "1.2",
+  "version": "1.3",
   "date": "2026-10-04",
   "generated_by": "WorkBuddy",
   "sources": {
@@ -533,7 +533,7 @@
   "known_gaps": [
     {
       "gap": "★ `chain.json` 的 `env_count` **语义未定义**（`conventions` 里没有这一项）",
-      "status": "已记录，建议在 `conventions` 补一句",
+      "status": "✅ **已据实订正（2026-10-05 · `N-058`）** —— ★ 原文称该约定**不存在于 `conventions`** —— 该表述**已过期**：`conventions.env_count` **2026-10-01 就已立**（原文＝「本键语义待定，当前不得依赖它做任何判定」，并列两种候选与实测矛盾：`purchase_tier1` 的 6 与其 6 个节点一致、而 `sole_source` 的 1 却有 5 个节点）⇒ ★ 结论不变（**不得依赖**），但**理由已从「没有约定」变为「有约定且明令不得依赖」** —— ★ 后者更强：`conventions.no_approval_chain`（V1.3）已**明文点名不得读取本键**，`N-056` 实现侧亦只读 `no_approval_chain`。★ 本项遗留**仅剩数据口径统一**（属数据层：须在补链时统一口径并同步修正已有值）。",
       "note": "★ 实测：`routes.sole_source.env_count = 1`，但该路由**有 5 个节点**；`doc_chains.SS.env_count` 同样为 1。而 `purchase_tier1.env_count = 6` 与其节点数一致。⇒ **同一字段在不同处含义像是不一样**，而 `conventions` 未定义它 ⇒ 后人无法判断该写几。★ 建议：在 `chain.json#conventions` 明确「`env_count` ＝ 该链路**相对基准新增的必经环节数**」或「＝ 节点总数」，二选一。★ 属**spec 侧待明确**，不影响本表单字段。"
     },
     {

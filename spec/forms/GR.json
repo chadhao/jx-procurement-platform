@@ -3,7 +3,7 @@
   "label": "到货验收单 / 入库单",
   "prefix": "GR",
   "number_format": "GR-YYMM-####",
-  "version": "1.0",
+  "version": "1.1",
   "date": "2026-10-01",
   "generated_by": "WorkBuddy",
   "sources": {
@@ -108,7 +108,7 @@
           "carried_by_kind": "manual",
           "carried_by": "验收组由 `GR` 提交时登记，★ 属现场实体（本项目无对应组织镜像）⇒ 人工登记（依据见字段 `origin`）",
           "origin": "chain",
-          "origin_ref": "`chain.json#doc_chains.GR.acceptance_groups` ＋ `enums.json#acceptance_groups.by_category_prefix`",
+          "origin_ref": "`enums.json#acceptance_groups.by_category_prefix`（★★ **唯一正本**；★ 原 `chain.json#doc_chains.GR` 侧的同名重复体已由 `N-058` 删除 ⇒ 本引用已重指 enums，口径见 `chain.json#conventions.acceptance_groups`）",
           "rule": "★ **由品类自动推导，不可手选**（手选＝把「该谁验收」交给填表人决定）",
           "critical_note": "★★ **本字段存在的理由**：三组的**成员构成不同**（3 人 / 2 人 / 2 人）⇒ 必须先确定组别，才谈得上「成员齐不齐」。★ 但组别不是独立信息 —— 它**完全由用途分类决定** ⇒ **不单独采集，只计算**。"
         }
@@ -291,7 +291,7 @@
       "assert": "按 `acceptance_group` 校验成员构成**逐组精确**：`P01` ⇒ `member_purchaser` + `member_qc` + `member_warehouse` 三者齐备；`P02–P04` ⇒ `member_purchaser` + `member_qc`；`P05–P08` ⇒ `member_purchaser` + `member_ops`。★ **不属于该组的成员字段必须为空**",
       "else": "★ 拒绝并逐项提示（缺哪个角色 / 多了哪个角色）",
       "origin": "chain",
-      "origin_ref": "`chain.json#doc_chains.GR.acceptance_groups` ＋ `enums.json#acceptance_groups.by_category_prefix`（含 `size`）",
+      "origin_ref": "`enums.json#acceptance_groups.by_category_prefix`（★★ **唯一正本**；★ 原 `chain.json#doc_chains.GR` 侧的同名重复体已由 `N-058` 删除 ⇒ 本引用已重指 enums，口径见 `chain.json#conventions.acceptance_groups`）（含 `size`）",
       "severity": "hard",
       "carried_by_kind": "submit",
       "note": "★★ **本判据是双向的（＝而非⇒）**：只写「该有的要有」会放过「**不该有的也有**」（例如 `P05–P08` 却填了库管）—— 那不叫「更严格」，那叫**背离了品类对应的验收责任**。★ 与 `QC#sample_quantity_pair`、`CT#prepay_pair` 同款写法（**成对字段必须一起出现、也必须一起不出现**）。"
@@ -368,7 +368,7 @@
   "known_gaps": [
     {
       "gap": "工具表 `表单字段清单` 只给 GR **4 个字段**，`related_order_or_record_no` 未说明**如何判定取值类型**",
-      "status": "已记录（`R-22` 同族：须标注「制度未明说」）",
+      "status": "✅ **据实订正（2026-10-05 · `N-058`）** —— ★ 原建议「由 `chain.json#doc_chains` 为每类单据补一个可机读的 `prefix`」是**前半已落、后半未落**：`doc_chains.*.prefix` **早已在位**（11 类单据**全部**有该键），★ 但**全仓零消费方**（机械实测：`doc_chains` 被实际消费的字段只有 `Route` / `RouteByTier` / `NoApprovalChain` 三个，见 `internal/chain/route.go` 的 `dc.<Field>`）⇒ ★ **全仓零消费端** ⇒ 现状 ＝ **假配置**（`README` 定案 #24：无消费端＝假配置）⇒ ★ 真正的缺口是**消费端**，不是数据。★ 已登记进 `chain.json#conventions.non_machine_read_keys` 第 ③ 条，**不得**再把该键当机读口径依赖；★ 按前缀判定单据类型的**硬编码**（`strings.HasPrefix` ＋ `CT-` 字面量）**仍在本单范围外** —— 属接消费端，须两侧同批。★ 取样核对见 `scripts/_probe_n058.py` 第 6 节。",
       "note": "★ 本表按**单据号前缀**判定（`CT-` / `BA-`）。★ 若上游对「订单」另有独立编号体系（例如 PO 保留独立号段），需改为**按单据类型字段**判定而非按字符串前缀 —— ★ 前缀判定在编号规则变化时会静默失配。★ **建议**：由 `chain.json#doc_chains` 为每类单据补一个可机读的 `prefix` 口径（`GR`/`QC` 已有 `prefix`，可推广），届时本判据改为查表。"
     },
     {
@@ -393,12 +393,12 @@
     },
     {
       "gap": "★ `doc_chains.GR.acceptance_groups` 与 `enums.json#acceptance_groups` **两份重复定义**",
-      "status": "已登记多次（**同义异名／重复真相**）—— ★ 建议**随本单交付一并收敛**",
+      "status": "✅ **已闭环（2026-10-05 · `N-058`）** —— ★ 采纳本处原建议「以 `enums.json#acceptance_groups` 为唯一正本」：`chain.json#doc_chains.GR.acceptance_groups` **重复体已删除**、改为 `acceptance_groups_ref` 指针键，并新增 `conventions.acceptance_groups`（★ 方向**不是我方新口径** —— `constants.json#three_way_split` 已把 `acceptance_groups` 登记为**制度性枚举**、`store` ＝ `enums.json`）。★★ **删除的直接依据是实测**：两份定义**已经漂移**（范围分隔符 ASCII `-` vs EN DASH `–`，而组名 / 成员 / 人数逐字相同）⇒ 不是「预期会漂移」，是**已经漂移**。★ 常驻探针 `scripts/_probe_n058.py`（含缺口存在性反证）。",
       "note": "★ 同一份「验收人按品类三组」的定义**各写了一份**（内容目前一致）。⇒ **两处必然漂移**（本项目已多次证实）。★ **收敛方案（建议）**：以 **`enums.json#acceptance_groups` 为唯一正本**，`chain.json#doc_chains.GR` 侧改为**引用**（或直接删除该键）。★ **前置条件**：先确认 Go 侧是否读 `doc_chains.GR.acceptance_groups` —— ★ 若读，则须**两侧同批**改（否则红窗）。★ 本单**不擅自改动**（避免打断消费端）。"
     },
     {
       "gap": "`doc_chains.GR` 里的 `\"finalized\": \"已作废口径\"` 键名与取值**含义不明**",
-      "status": "已登记（★ 建议随本单交付一并改为具名键）",
+      "status": "✅ **已闭环（2026-10-05 · `N-058`）** —— ★ 已按本处建议改为**具名键** `obsolete_rules`（`chain.json#doc_chains.GR`），并写明原文：「原『验收人 ≠ 采购经办人』口径**已作废**（`R-16` / 批复 A2：经办人本身就是验收人之一）」⇒ ★ 键名（`finalized`）与取值（`已作废口径`）不再语义相反。",
       "note": "★ 该键既不说明**哪条**口径被作废，键名 `finalized`（定稿）也与取值（作废）**语义相反**。★ `R-16` 另注了「旧『经办人不得验收』口径作废」⇒ ★ 建议改为具名键（如 `obsolete_rules: [\"验收人 ≠ 采购经办人（R-16 作废）\"]`）并写清原文，否则后人无法判断哪条还有效。"
     },
     {

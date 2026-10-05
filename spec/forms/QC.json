@@ -3,7 +3,7 @@
   "label": "来料检验报告",
   "prefix": "QC",
   "number_format": "QC-YYMM-####",
-  "version": "1.2",
+  "version": "1.3",
   "date": "2026-09-30",
   "generated_by": "WorkBuddy",
   "sources": {
@@ -311,12 +311,12 @@
     },
     {
       "gap": "★ `doc_chains.GR.acceptance_groups` 与 `enums.json#acceptance_groups` **两份重复定义**",
-      "status": "已记录（**同义异名／重复真相**风险）",
+      "status": "✅ **已闭环（2026-10-05 · `N-058`）** —— `chain.json#doc_chains.GR.acceptance_groups` **重复体已删除**（唯一正本 ＝ `enums.json#acceptance_groups.by_category_prefix` ＋ `chain.json#conventions.acceptance_groups`；★ 删除依据 ＝ **实测已漂移**：两处范围分隔符 ASCII `-` vs EN DASH `–`）⇒ ★ 本单 `why_no_chain` / `avoidance` 所引 `enums.json#acceptance_groups.hard_rules` **路径不变、逐字仍有效**（引用的正是被保留的唯一正本）。",
       "note": "★ 同一份「验收人按品类三组」的定义，在 `chain.json#doc_chains.GR.acceptance_groups` 与 `enums.json#acceptance_groups` **各写了一份**（★ 内容目前一致：`P01` 3 人／`P02–P04` 2 人／`P05–P08` 2 人）。⇒ **两处定义必然漂移**（本项目已多次证实这一形态）。★ 建议**收敛为一处**（`enums.json` 为准，`chain.json` 侧改为引用或删除）。★ **需先确认 Go 侧是否读 `doc_chains.GR.acceptance_groups`**，故**本单不擅自改动**（避免打断消费端）；★ 建议随 `GR` 交付时一并处理。"
     },
     {
       "gap": "`doc_chains.GR` 里的 `finalized: \"已作废口径\"` 是个**含义不明**的键",
-      "status": "已记录（属 `GR` 侧，本单不擅改）",
+      "status": "✅ **已闭环（2026-10-05 · `N-058`）** —— `chain.json#doc_chains.GR` 的 `finalized: 已作废口径` 已改为**具名键** `obsolete_rules`（并写明「验收人 ≠ 采购经办人」原文与 `R-16`）⇒ ★ 键名 / 取值不再语义相反；★ 本单**未改任何内容**（处置在 `GR` 侧，符合本处原判断）。",
       "note": "★ `chain.json#doc_chains.GR` 有一个 `\"finalized\": \"已作废口径\"` —— 该键名（`finalized`）与取值（`已作废口径`）**都不说明它到底指哪一条被作废的口径**，`R-16` 另注了「旧『经办人不得验收』口径作废」。⇒ ★ 建议在交付 `GR` 时改成具名键（如 `obsolete_rules`）并写清原文，否则后人无从判断哪条还有效。"
     },
     {

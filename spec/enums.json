@@ -1,5 +1,5 @@
 {
-  "version": "1.1",
+  "version": "1.2",
   "generated_by": "WorkBuddy",
   "date": "2026-09-29",
   "sources": {
@@ -465,6 +465,7 @@
     "rule": "超容差须说明，由**集团财务最终复核**"
   },
   "acceptance_groups": {
+    "_sole_source": "★★ **本组「验收人按品类三组」定义的唯一正本在此**（`N-058`，2026-10-05）—— ★ 此前同一份定义在 `spec/chain.json#doc_chains.GR.acceptance_groups` **另写一份**，且**已实测漂移**（两处的范围分隔符不同：chain 侧 **ASCII `-`**、本处 **EN DASH `–`**，组名 / 成员 / 人数逐字相同）⇒ ★ 该**重复体已删除**，`chain.json` 侧只留 `acceptance_groups_ref` 指针键。★★ **消费端一律读本处**（`by_category_prefix`），**不得**读 `chain.json` 侧；★ 本组属**制度性枚举**（`spec/constants.json#three_way_split`），取值本身**零改动**。★ 正本口径见 `spec/chain.json#conventions.acceptance_groups`。",
     "_source": "工具表 表单字段清单 R38（GR「验收人」）+ 批复 A2",
     "by_category_prefix": [
       {
@@ -524,6 +525,11 @@
       "version": "V1.0",
       "date": "2026-09-29",
       "change": "首版：用途分类 23 类（含二级明细与流程线映射）+ 8 组枚举 + 1 项待定枚举"
+    },
+    {
+      "version": "V1.2",
+      "date": "2026-10-05",
+      "change": "★★ `N-058`：`acceptance_groups` 确立为**唯一正本** —— 删除 `spec/chain.json#doc_chains.GR.acceptance_groups` 的**重复体**（★ 已实测漂移：范围分隔符 ASCII `-` vs EN DASH `–`），`chain.json` 侧改为 `acceptance_groups_ref` 指针键，并新增 `conventions.acceptance_groups` 声明唯一来源与三条硬性约束；★ **本文件数据零改动**（`by_category_prefix` 逐字节不动）。"
     }
   ],
   "_scope": "★★ **本文件只管「制度性枚举」**（用户 2026-09-30 定案 A4 ⇒ 裁定 `R-24` 确立三分法）：改掉某个值**会改变某笔支出的审批链或校验结论** ⇒ 属本文件，**后台不得修改**，改动须**新增裁定**并同步制度条款。★ **不在本文件的另外两类**：① **运营性常量**（单位 / 角色显示名 / 合同范本清单）见 `spec/constants.json`，**系统管理员后台可增删改**；② **人员与部门**由**飞书通讯录镜像**提供，**本系统不维护**（用户 2026-09-28 明确）。★★ 判据一句话：**改它会不会改变审批链或校验结论？会 ⇒ 本文件；不会 ⇒ `constants.json`。**"
