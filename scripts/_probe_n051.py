@@ -13,7 +13,11 @@
      —— OpenAPI 3.0 的硬性要求，也是机读消费方唯一能自动推出的参数信息。
   3. **operationId 唯一性 ＋ 规则一致**：全局唯一，且与 `{method_lower}_{路径归一段}` 规则逐条吻合
      （生成器遇冲突会 `SystemExit`；本探针独立再算一遍，避免"生成器自己说了算"）。
-  4. **路由集合双向等价**：入库契约的 (method, path) 全集 == 生成器从正本提取的全集（69 条）。
+  4. **路由集合双向等价**：入库契约的 (method, path) 全集 == 生成器从正本提取的全集（68 条）。
+  5. ★★ **作废声明不得回流**（`N-061 ④`）：§3.4 的「实例表单字段」端点**已摘除**（router＋handler
+     同批，`internal/worker/ingest.go:145`）⇒ 正本**不得**再把它当**现行声明**（否则 C5 反向
+     立刻报「正本声明、router 未注册」）—— ★ 本项用**缺口存在性反证**钉住：把原块**塞回内存副本**，
+     路由集必须**立刻由 68 变 69**，且 `C9` 口径下「正本有、契约无」的差集**恰好只有它**。
 
 ★ 每个"反例"用例都**先证基线是绿的**（0 条），再变异、要求**恰好多出 1 条** ——
   否则「不报」会被误读成「判据无鉴别力」（`N-048` 教训：变异必须打在**数据流经的那份数据**上）。
@@ -49,7 +53,7 @@ def iter_ops(doc):
 
 # ---------------------------------------------------------------- 四项检查
 def check_regenerate(disk_text, regen_doc, regen_routes):
-    """入库文件必须与「从正本重建」的文本逐字相同；且正本路由集非空且为 69 条。"""
+    """入库文件必须与「从正本重建」的文本逐字相同；且正本路由集非空且为 68 条。"""
     probs = []
     want = G.dumps(regen_doc)
     if disk_text != want:
@@ -61,8 +65,8 @@ def check_regenerate(disk_text, regen_doc, regen_routes):
                 break
         probs.append("入库文件与重现结果不一致（索引失真）—— %s"
                      % (first or "行数不同 %d vs %d" % (len(a), len(b))))
-    if len(regen_routes) != 69:
-        probs.append("生成器从正本提取 %d 条路由（期望 69）⇒ 抽取规则可能已失效" % len(regen_routes))
+    if len(regen_routes) != 68:
+        probs.append("生成器从正本提取 %d 条路由（期望 68）⇒ 抽取规则可能已失效" % len(regen_routes))
     return probs
 
 
@@ -112,6 +116,42 @@ def check_route_set(doc, regen_routes):
     for m, p in sorted(got - want):
         probs.append("契约收录 `%s %s`，**正本未声明**（第二份真相）" % (m, p))
     return probs
+
+
+# ---------------------------------------------------------------- 第五项：作废声明不得回流
+# ★★ `N-061 ④`：§3.4 的「实例表单字段」端点**已摘除**（router＋handler 同批，
+#    `internal/worker/ingest.go:145`）⇒ 正本**不得**再把它当**现行声明** —— 否则
+#    `audit_silent#C5` 反向立刻报「正本声明、router 未注册」（受理前实测＝ 1 处）。
+OBSOLETE = ("GET", "/api/instances/{instance_code}/fields")
+
+
+def check_obsolete_absent(md_lines, regen_routes, disk_doc):
+    """正向：正本声明集**不得**含已摘除端点；并返回**缺口存在性反证**的实测数据。
+
+    ★ 反证做法（★ 变异打在**数据流经的那份数据**上）：把原 `####` 强声明标题**塞回内存副本**
+      ⇒ 路由集必须**立刻由 68 变 69**，且 `C9` 口径（正本声明 − 机读契约收录）的差集
+      **恰好只有这一条** —— 这正是「删掉该块才让门禁转绿」的可复现证据（不是"跑一下没报错"）。
+    """
+    probs = []
+    got = {(m, p) for m, p, _k, _ln in regen_routes}
+    if OBSOLETE in got:
+        probs.append("正本仍把**已摘除**端点当现行声明：%s %s ⇒ C5 反向会报「正本声明、router 未注册」"
+                     % OBSOLETE)
+    if len(got) != 68:
+        probs.append("正本声明集 %d 条（期望 68）" % len(got))
+
+    mut = list(md_lines)
+    anchor = next((i for i, ln in enumerate(mut)
+                   if ln.startswith("#### `GET /api/instances/{instance_code}/prefill`")), None)
+    if anchor is None:
+        probs.append("找不到 `prefill` 小节标题 ⇒ 反证用例无法构造（抽取规则可能已变）")
+        return probs, {}
+    mut.insert(anchor, "#### `%s %s`" % OBSOLETE)
+    mut_set = {(m, p) for m, p, _k, _ln in G.extract_routes(mut)[0]}
+    disk_ops = {(meth, path) for meth, path, _op in iter_ops(disk_doc)}
+    return probs, {"mut_count": len(mut_set),
+                   "extra": sorted(mut_set - got),
+                   "c9_diff": sorted(mut_set - disk_ops)}
 
 
 # ---------------------------------------------------------------- 断言工具
@@ -180,7 +220,20 @@ def main():
 
     # ── 正向 4：路由集合双向等价 ──
     p_rs = check_route_set(doc, regen_routes)
-    case("正向·路由集合双向等价（69 条）", p_rs, 0)
+    case("正向·路由集合双向等价（68 条）", p_rs, 0)
+
+    # ── 正向 5：作废声明不得回流（`N-061 ④`）＋ 缺口存在性反证 ──
+    md_lines = G.read_text(G.MD_PATH).split("\n")
+    p_ob, counter = check_obsolete_absent(md_lines, regen_routes, doc)
+    case("正向·作废声明不得回流（N-061 ④）", p_ob, 0)
+    ok_ctr = (counter.get("mut_count") == 69
+              and counter.get("extra") == [OBSOLETE]
+              and counter.get("c9_diff") == [OBSOLETE])
+    RESULT.append((ok_ctr, "反证·塞回作废块 ⇒ 68→69 且 C9 恰多这一条",
+                   len(counter.get("extra") or []), 1))
+    print("%s %-40s 塞回后 %s 条 · 多出 %s · C9 差集 %s"
+          % ("✓" if ok_ctr else "✗", "反证·塞回作废块 ⇒ 68→69 且 C9 恰多这一条",
+             counter.get("mut_count"), counter.get("extra"), counter.get("c9_diff")))
 
     print()
 

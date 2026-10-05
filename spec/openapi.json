@@ -800,83 +800,7 @@
           "FR-M2-04",
           "FR-M2-06"
         ],
-        "x-doc-ref": "docs/05-API.md#L250-L260",
-        "responses": {
-          "200": {
-            "description": "成功（`code=0`）",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiEnvelope"
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "错误码 40301（HTTP 403；含义见 docs/05-API.md §2.1 错误码表）",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "错误码 40400（HTTP 404；含义见 docs/05-API.md §2.1 错误码表）",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            }
-          },
-          "default": {
-            "description": "未列举的错误码（统一错误包裹 `code != 0`；完整码表见 docs/05-API.md §2.1）",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/instances/{instance_code}/fields": {
-      "get": {
-        "operationId": "get_api_instances_instance_code_fields",
-        "tags": [
-          "3.4 实例（M2）"
-        ],
-        "summary": "实例表单字段（**键值对**，按映射表转业务字段名",
-        "security": [
-          {
-            "sessionCookie": []
-          }
-        ],
-        "x-auth-domain": "飞书免登会话（§1.2；`open_id` 未映射 ⇒ 40101）",
-        "parameters": [
-          {
-            "name": "instance_code",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "x-error-codes": [
-          40301,
-          40400
-        ],
-        "x-related-fr": [
-          "FR-M2-02",
-          "FR-M2-05"
-        ],
-        "x-doc-ref": "docs/05-API.md#L261-L275",
+        "x-doc-ref": "docs/05-API.md#L250-L264",
         "responses": {
           "200": {
             "description": "成功（`code=0`）",
@@ -952,7 +876,7 @@
         "x-related-fr": [
           "FR-M9-03"
         ],
-        "x-doc-ref": "docs/05-API.md#L276-L290",
+        "x-doc-ref": "docs/05-API.md#L265-L279",
         "responses": {
           "200": {
             "description": "成功（`code=0`）",
@@ -1039,7 +963,7 @@
           "FR-M3-05",
           "FR-M7-02"
         ],
-        "x-doc-ref": "docs/05-API.md#L291-L302",
+        "x-doc-ref": "docs/05-API.md#L280-L291",
         "responses": {
           "200": {
             "description": "成功（`code=0`）",
@@ -1107,7 +1031,7 @@
             }
           }
         ],
-        "x-doc-ref": "docs/05-API.md#L305",
+        "x-doc-ref": "docs/05-API.md#L294",
         "x-doc-note": "正本中该路由**无独立 `####` 小节**（仅有 §3.13 全路径清单行/正文提及）⇒ 逐端点字段与语义以正本为准",
         "responses": {
           "200": {
@@ -1156,7 +1080,7 @@
             }
           }
         ],
-        "x-doc-ref": "docs/05-API.md#L305",
+        "x-doc-ref": "docs/05-API.md#L294",
         "x-doc-note": "正本中该路由**无独立 `####` 小节**（仅有 §3.13 全路径清单行/正文提及）⇒ 逐端点字段与语义以正本为准",
         "responses": {
           "200": {
@@ -1205,7 +1129,7 @@
             }
           }
         ],
-        "x-doc-ref": "docs/05-API.md#L305",
+        "x-doc-ref": "docs/05-API.md#L294",
         "x-doc-note": "正本中该路由**无独立 `####` 小节**（仅有 §3.13 全路径清单行/正文提及）⇒ 逐端点字段与语义以正本为准",
         "responses": {
           "200": {
@@ -1255,7 +1179,7 @@
           "FR-M6-05",
           "FR-M6-03"
         ],
-        "x-doc-ref": "docs/05-API.md#L307-L317",
+        "x-doc-ref": "docs/05-API.md#L296-L306",
         "responses": {
           "200": {
             "description": "成功（`code=0`）",
@@ -1329,7 +1253,7 @@
           "FR-M6-04",
           "FR-M6-08"
         ],
-        "x-doc-ref": "docs/05-API.md#L318-L328",
+        "x-doc-ref": "docs/05-API.md#L307-L317",
         "responses": {
           "200": {
             "description": "成功（`code=0`）",
@@ -1395,7 +1319,7 @@
           "FR-M6-06",
           "FR-M7-03"
         ],
-        "x-doc-ref": "docs/05-API.md#L329-L342",
+        "x-doc-ref": "docs/05-API.md#L318-L331",
         "responses": {
           "200": {
             "description": "成功（`code=0`）",
@@ -1460,7 +1384,7 @@
           "FR-M1-04",
           "FR-M1-07"
         ],
-        "x-doc-ref": "docs/05-API.md#L345-L356",
+        "x-doc-ref": "docs/05-API.md#L334-L345",
         "responses": {
           "200": {
             "description": "成功（`code=0`）",
@@ -1516,7 +1440,7 @@
           "FR-M1-01",
           "FR-M1-05"
         ],
-        "x-doc-ref": "docs/05-API.md#L357-L367",
+        "x-doc-ref": "docs/05-API.md#L346-L356",
         "responses": {
           "200": {
             "description": "成功（`code=0`）",
@@ -1582,7 +1506,7 @@
         "x-related-fr": [
           "FR-M1-07"
         ],
-        "x-doc-ref": "docs/05-API.md#L368-L378",
+        "x-doc-ref": "docs/05-API.md#L357-L367",
         "responses": {
           "200": {
             "description": "成功（`code=0`）",
@@ -1659,7 +1583,7 @@
           "FR-M7-03",
           "FR-M7-04"
         ],
-        "x-doc-ref": "docs/05-API.md#L381-L391",
+        "x-doc-ref": "docs/05-API.md#L370-L380",
         "responses": {
           "200": {
             "description": "成功（`code=0`）",
@@ -1711,7 +1635,7 @@
           "FR-M8-02",
           "FR-M0-05"
         ],
-        "x-doc-ref": "docs/05-API.md#L396-L406",
+        "x-doc-ref": "docs/05-API.md#L385-L395",
         "responses": {
           "200": {
             "description": "成功（`code=0`）",
@@ -1753,7 +1677,7 @@
           50000,
           50300
         ],
-        "x-doc-ref": "docs/05-API.md#L407-L417",
+        "x-doc-ref": "docs/05-API.md#L396-L406",
         "responses": {
           "200": {
             "description": "成功（`code=0`）",
@@ -1818,7 +1742,7 @@
           "FR-M8-02",
           "FR-M1-05"
         ],
-        "x-doc-ref": "docs/05-API.md#L418-L427",
+        "x-doc-ref": "docs/05-API.md#L407-L416",
         "responses": {
           "200": {
             "description": "成功（`code=0`）",
@@ -1870,7 +1794,7 @@
           "FR-M0-07",
           "FR-M0-08"
         ],
-        "x-doc-ref": "docs/05-API.md#L428-L438",
+        "x-doc-ref": "docs/05-API.md#L417-L427",
         "responses": {
           "410": {
             "description": "**入口已退役**（`410 Gone`，body 指明权威入口；退役后仍校验管理凭据，见 §3.8）",
@@ -1912,7 +1836,7 @@
           "FR-M0-07",
           "FR-M0-08"
         ],
-        "x-doc-ref": "docs/05-API.md#L439-L451",
+        "x-doc-ref": "docs/05-API.md#L428-L440",
         "responses": {
           "200": {
             "description": "成功（`code=0`）",
@@ -1954,7 +1878,7 @@
           "FR-M0-03",
           "FR-M0-04"
         ],
-        "x-doc-ref": "docs/05-API.md#L452-L461",
+        "x-doc-ref": "docs/05-API.md#L441-L450",
         "responses": {
           "200": {
             "description": "成功（`code=0`）",
@@ -2005,7 +1929,7 @@
         "x-related-fr": [
           "FR-M3-07"
         ],
-        "x-doc-ref": "docs/05-API.md#L462-L472",
+        "x-doc-ref": "docs/05-API.md#L451-L461",
         "responses": {
           "200": {
             "description": "成功（`code=0`）",
@@ -2047,7 +1971,7 @@
           "FR-M3-01",
           "FR-M3-03"
         ],
-        "x-doc-ref": "docs/05-API.md#L473-L488",
+        "x-doc-ref": "docs/05-API.md#L462-L477",
         "responses": {
           "200": {
             "description": "成功（`code=0`）",
@@ -2091,7 +2015,7 @@
         "x-related-fr": [
           "FR-M5-09"
         ],
-        "x-doc-ref": "docs/05-API.md#L494-L503",
+        "x-doc-ref": "docs/05-API.md#L483-L492",
         "responses": {
           "200": {
             "description": "成功（`code=0`）",
@@ -2145,7 +2069,7 @@
           "FR-M5-09",
           "FR-M5-11"
         ],
-        "x-doc-ref": "docs/05-API.md#L504-L515",
+        "x-doc-ref": "docs/05-API.md#L493-L504",
         "responses": {
           "200": {
             "description": "成功（`code=0`）",
@@ -2212,7 +2136,7 @@
           "FR-M5-10",
           "FR-M5-11"
         ],
-        "x-doc-ref": "docs/05-API.md#L516-L526",
+        "x-doc-ref": "docs/05-API.md#L505-L515",
         "responses": {
           "200": {
             "description": "成功（`code=0`）",
@@ -2287,7 +2211,7 @@
           "FR-M5-10",
           "FR-M5-11"
         ],
-        "x-doc-ref": "docs/05-API.md#L516-L526",
+        "x-doc-ref": "docs/05-API.md#L505-L515",
         "responses": {
           "200": {
             "description": "成功（`code=0`）",
@@ -2374,7 +2298,7 @@
           "FR-M5-10",
           "FR-M5-11"
         ],
-        "x-doc-ref": "docs/05-API.md#L516-L526",
+        "x-doc-ref": "docs/05-API.md#L505-L515",
         "responses": {
           "200": {
             "description": "成功（`code=0`）",
@@ -2448,7 +2372,7 @@
           40400,
           40900
         ],
-        "x-doc-ref": "docs/05-API.md#L527-L541",
+        "x-doc-ref": "docs/05-API.md#L516-L530",
         "responses": {
           "200": {
             "description": "成功（`code=0`）",
@@ -2530,7 +2454,7 @@
           40400,
           40900
         ],
-        "x-doc-ref": "docs/05-API.md#L527-L541",
+        "x-doc-ref": "docs/05-API.md#L516-L530",
         "responses": {
           "200": {
             "description": "成功（`code=0`）",
@@ -2624,7 +2548,7 @@
           40400,
           40900
         ],
-        "x-doc-ref": "docs/05-API.md#L527-L541",
+        "x-doc-ref": "docs/05-API.md#L516-L530",
         "responses": {
           "200": {
             "description": "成功（`code=0`）",
@@ -2716,7 +2640,7 @@
           40400,
           40900
         ],
-        "x-doc-ref": "docs/05-API.md#L527-L541",
+        "x-doc-ref": "docs/05-API.md#L516-L530",
         "responses": {
           "200": {
             "description": "成功（`code=0`）",
@@ -2800,7 +2724,7 @@
           40400,
           40900
         ],
-        "x-doc-ref": "docs/05-API.md#L542-L560",
+        "x-doc-ref": "docs/05-API.md#L531-L549",
         "responses": {
           "200": {
             "description": "成功（`code=0`）",
@@ -2882,7 +2806,7 @@
           40400,
           40900
         ],
-        "x-doc-ref": "docs/05-API.md#L542-L560",
+        "x-doc-ref": "docs/05-API.md#L531-L549",
         "responses": {
           "200": {
             "description": "成功（`code=0`）",
@@ -2976,7 +2900,7 @@
           40400,
           40900
         ],
-        "x-doc-ref": "docs/05-API.md#L542-L560",
+        "x-doc-ref": "docs/05-API.md#L531-L549",
         "responses": {
           "200": {
             "description": "成功（`code=0`）",
@@ -3068,7 +2992,7 @@
           40400,
           40900
         ],
-        "x-doc-ref": "docs/05-API.md#L542-L560",
+        "x-doc-ref": "docs/05-API.md#L531-L549",
         "responses": {
           "200": {
             "description": "成功（`code=0`）",
@@ -3149,7 +3073,7 @@
         "x-related-fr": [
           "FR-M0-13"
         ],
-        "x-doc-ref": "docs/05-API.md#L561-L574",
+        "x-doc-ref": "docs/05-API.md#L550-L563",
         "responses": {
           "200": {
             "description": "成功（`code=0`）",
@@ -3194,7 +3118,7 @@
         "x-related-fr": [
           "FR-M1-02"
         ],
-        "x-doc-ref": "docs/05-API.md#L584-L595",
+        "x-doc-ref": "docs/05-API.md#L573-L584",
         "responses": {
           "200": {
             "description": "成功（`code=0`）",
@@ -3256,7 +3180,7 @@
         "x-related-fr": [
           "FR-M1-02"
         ],
-        "x-doc-ref": "docs/05-API.md#L596-L606",
+        "x-doc-ref": "docs/05-API.md#L585-L595",
         "responses": {
           "200": {
             "description": "成功（`code=0`）",
@@ -3322,7 +3246,7 @@
         "x-related-fr": [
           "FR-M1-02"
         ],
-        "x-doc-ref": "docs/05-API.md#L607-L618",
+        "x-doc-ref": "docs/05-API.md#L596-L607",
         "responses": {
           "200": {
             "description": "成功（`code=0`）",
@@ -3405,7 +3329,7 @@
           40301,
           40000
         ],
-        "x-doc-ref": "docs/05-API.md#L626-L634",
+        "x-doc-ref": "docs/05-API.md#L615-L623",
         "responses": {
           "200": {
             "description": "成功（`code=0`）",
@@ -3478,7 +3402,7 @@
           40301,
           50200
         ],
-        "x-doc-ref": "docs/05-API.md#L635-L647",
+        "x-doc-ref": "docs/05-API.md#L624-L636",
         "responses": {
           "200": {
             "description": "成功（`code=0`）",
@@ -3543,7 +3467,7 @@
         "x-related-fr": [
           "FR-M4-07"
         ],
-        "x-doc-ref": "docs/05-API.md#L648-L661",
+        "x-doc-ref": "docs/05-API.md#L637-L650",
         "responses": {
           "200": {
             "description": "成功（`code=0`）",
@@ -3612,7 +3536,7 @@
           "FR-M2-01",
           "FR-M9-02"
         ],
-        "x-doc-ref": "docs/05-API.md#L674-L688",
+        "x-doc-ref": "docs/05-API.md#L663-L677",
         "responses": {
           "200": {
             "description": "成功（`code=0`）",
@@ -3683,7 +3607,7 @@
         "x-related-fr": [
           "FR-M9-03"
         ],
-        "x-doc-ref": "docs/05-API.md#L689-L697",
+        "x-doc-ref": "docs/05-API.md#L678-L686",
         "responses": {
           "200": {
             "description": "成功（`code=0`）",
@@ -3727,7 +3651,7 @@
         "x-related-fr": [
           "FR-M9-02"
         ],
-        "x-doc-ref": "docs/05-API.md#L698-L707",
+        "x-doc-ref": "docs/05-API.md#L687-L696",
         "responses": {
           "200": {
             "description": "成功（`code=0`）",
@@ -3779,7 +3703,7 @@
           "FR-M0-09",
           "FR-M9-03"
         ],
-        "x-doc-ref": "docs/05-API.md#L708-L717",
+        "x-doc-ref": "docs/05-API.md#L697-L706",
         "responses": {
           "200": {
             "description": "成功（`code=0`）",
@@ -3831,7 +3755,7 @@
           "FR-M0-09",
           "FR-M9-03"
         ],
-        "x-doc-ref": "docs/05-API.md#L708-L717",
+        "x-doc-ref": "docs/05-API.md#L697-L706",
         "responses": {
           "200": {
             "description": "成功（`code=0`）",
@@ -3889,7 +3813,7 @@
           "FR-M0-15",
           "FR-M9-18"
         ],
-        "x-doc-ref": "docs/05-API.md#L718-L729",
+        "x-doc-ref": "docs/05-API.md#L707-L718",
         "responses": {
           "200": {
             "description": "成功（`code=0`）",
@@ -3977,7 +3901,7 @@
             }
           }
         ],
-        "x-doc-ref": "docs/05-API.md#L753",
+        "x-doc-ref": "docs/05-API.md#L742",
         "x-doc-note": "正本中该路由**无独立 `####` 小节**（仅有 §3.13 全路径清单行/正文提及）⇒ 逐端点字段与语义以正本为准",
         "responses": {
           "200": {
@@ -4026,7 +3950,7 @@
             }
           }
         ],
-        "x-doc-ref": "docs/05-API.md#L754",
+        "x-doc-ref": "docs/05-API.md#L743",
         "x-doc-note": "正本中该路由**无独立 `####` 小节**（仅有 §3.13 全路径清单行/正文提及）⇒ 逐端点字段与语义以正本为准",
         "responses": {
           "200": {
@@ -4075,7 +3999,7 @@
             }
           }
         ],
-        "x-doc-ref": "docs/05-API.md#L755",
+        "x-doc-ref": "docs/05-API.md#L744",
         "x-doc-note": "正本中该路由**无独立 `####` 小节**（仅有 §3.13 全路径清单行/正文提及）⇒ 逐端点字段与语义以正本为准",
         "responses": {
           "200": {
@@ -4124,7 +4048,7 @@
             }
           }
         ],
-        "x-doc-ref": "docs/05-API.md#L756",
+        "x-doc-ref": "docs/05-API.md#L745",
         "x-doc-note": "正本中该路由**无独立 `####` 小节**（仅有 §3.13 全路径清单行/正文提及）⇒ 逐端点字段与语义以正本为准",
         "responses": {
           "200": {
@@ -4173,7 +4097,7 @@
             }
           }
         ],
-        "x-doc-ref": "docs/05-API.md#L757",
+        "x-doc-ref": "docs/05-API.md#L746",
         "x-doc-note": "正本中该路由**无独立 `####` 小节**（仅有 §3.13 全路径清单行/正文提及）⇒ 逐端点字段与语义以正本为准",
         "responses": {
           "200": {
@@ -4215,7 +4139,7 @@
         "x-related-fr": [
           "FR-M9-14"
         ],
-        "x-doc-ref": "docs/05-API.md#L767-L776",
+        "x-doc-ref": "docs/05-API.md#L756-L765",
         "responses": {
           "200": {
             "description": "成功（`code=0`）",
@@ -4272,7 +4196,7 @@
           "FR-M2-04",
           "FR-M9-14"
         ],
-        "x-doc-ref": "docs/05-API.md#L777-L786",
+        "x-doc-ref": "docs/05-API.md#L766-L775",
         "responses": {
           "200": {
             "description": "成功（`code=0`）",
@@ -4333,7 +4257,7 @@
         "x-related-fr": [
           "FR-M0-13"
         ],
-        "x-doc-ref": "docs/05-API.md#L787-L794",
+        "x-doc-ref": "docs/05-API.md#L776-L783",
         "responses": {
           "200": {
             "description": "成功（`code=0`）",
@@ -4376,7 +4300,7 @@
         "x-related-fr": [
           "FR-M0-15"
         ],
-        "x-doc-ref": "docs/05-API.md#L797-L809",
+        "x-doc-ref": "docs/05-API.md#L786-L798",
         "responses": {
           "200": {
             "description": "成功（`code=0`）",
@@ -4458,7 +4382,7 @@
           40100,
           50000
         ],
-        "x-doc-ref": "docs/05-API.md#L867-L877",
+        "x-doc-ref": "docs/05-API.md#L856-L866",
         "responses": {
           "200": {
             "description": "成功（`code=0`）",
@@ -4520,7 +4444,7 @@
           40100,
           50000
         ],
-        "x-doc-ref": "docs/05-API.md#L878-L889",
+        "x-doc-ref": "docs/05-API.md#L867-L878",
         "responses": {
           "200": {
             "description": "成功（`code=0`）",
@@ -4831,11 +4755,12 @@
   "x-source": {
     "human_readable_authority": "docs/05-API.md",
     "doc_version": "?",
-    "doc_lines": 1223,
-    "doc_sha256": "bda650698baf5b99b3d82fd08c5f47353756e1dc0e6c7059dbb9086e9ff5ae82",
+    "doc_lines": 1213,
+    "doc_sha256": "7e60f919effada1ccd91b694b41ae0ada1542769845d9e54864ca966d20bd439",
     "generator": "scripts/gen_openapi.py",
-    "route_count": 69,
-    "router_go_route_count": 69
+    "route_count": 68,
+    "router_go_route_count": 68,
+    "router_go_route_count_note": "`internal/httpapi/router.go` 已注册 **API 路由**条数 —— ★ 口径：`GET /` 与 `GET /*` 两条**前端 SPA 静态兜底不计**。`V2.21` 起两侧基数一致（正本 68 ⇔ router 68）；此前两侧同为 69 属**巧合**（正本多的是 §3.4 作废声明、router 多的是 `GET /*`）。"
   },
   "x-generation": {
     "declaration_sites": [
@@ -4847,15 +4772,15 @@
     "weak_declarations_kept": [
       {
         "route": "POST /api/submission/{id}/receipt",
-        "line": 305
+        "line": 294
       },
       {
         "route": "POST /api/submission/{id}/group",
-        "line": 305
+        "line": 294
       },
       {
         "route": "POST /api/submission/{id}/reject",
-        "line": 305
+        "line": 294
       }
     ],
     "weak_declarations_dropped": [
@@ -4878,94 +4803,94 @@
       }
     ],
     "routes_without_endpoint_block": [
-      "POST /api/submission/{id}/receipt (line 305)",
-      "POST /api/submission/{id}/group (line 305)",
-      "POST /api/submission/{id}/reject (line 305)"
+      "POST /api/submission/{id}/receipt (line 294)",
+      "POST /api/submission/{id}/group (line 294)",
+      "POST /api/submission/{id}/reject (line 294)"
     ],
-    "prose_mentions_of_known_routes": 72,
+    "prose_mentions_of_known_routes": 71,
     "ambiguous_declarations": [
       {
         "route": "POST approval/submit",
         "sites": [
-          "heading@674",
-          "table313@747"
+          "heading@663",
+          "table313@736"
         ]
       },
       {
         "route": "GET approval/meta",
         "sites": [
-          "heading@689",
-          "table313@748"
+          "heading@678",
+          "table313@737"
         ]
       },
       {
         "route": "POST approval/preview",
         "sites": [
-          "heading@698",
-          "table313@749"
+          "heading@687",
+          "table313@738"
         ]
       },
       {
         "route": "POST approval/attachments",
         "sites": [
-          "heading@708",
-          "table313@750"
+          "heading@697",
+          "table313@739"
         ]
       },
       {
         "route": "GET approval/attachments/*",
         "sites": [
-          "heading@708",
-          "table313@751"
+          "heading@697",
+          "table313@740"
         ]
       },
       {
         "route": "POST approval/*/approve",
         "sites": [
-          "heading@718",
-          "table313@752"
+          "heading@707",
+          "table313@741"
         ]
       },
       {
         "route": "GET approval/tasks",
         "sites": [
-          "table313@758",
-          "heading@767"
+          "table313@747",
+          "heading@756"
         ]
       },
       {
         "route": "GET approval/*",
         "sites": [
-          "table313@759",
-          "heading@777"
+          "table313@748",
+          "heading@766"
         ]
       },
       {
         "route": "GET approval/defs",
         "sites": [
-          "table313@760",
-          "heading@787"
+          "table313@749",
+          "heading@776"
         ]
       },
       {
         "route": "GET org/users",
         "sites": [
-          "table313@761",
-          "heading@867"
+          "table313@750",
+          "heading@856"
         ]
       },
       {
         "route": "GET org/departments",
         "sites": [
-          "table313@762",
-          "heading@878"
+          "table313@751",
+          "heading@867"
         ]
       },
       {
         "route": "POST approval/external/callback",
         "sites": [
-          "table313@763",
-          "heading@797"
+          "table313@752",
+          "heading@786"
         ]
       }
     ],
