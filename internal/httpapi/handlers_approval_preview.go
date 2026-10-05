@@ -77,9 +77,13 @@ func (d Deps) handleApprovalPreview(c echo.Context) error {
 	if d.Spec == nil || d.Chain == nil {
 		return fail(c, http.StatusServiceUnavailable, codeNotReady, "机读规格/链计算未装配")
 	}
-	idn, _, err := d.identityFrom(c)
+	idn, ur, err := d.identityFrom(c)
 	if err != nil {
 		return fail(c, http.StatusUnauthorized, codeRoleMapped, "未映射角色或会话失效")
+	}
+	applicantName := ""
+	if ur != nil {
+		applicantName = ur.Name
 	}
 	var req previewRequest
 	if err := json.NewDecoder(c.Request().Body).Decode(&req); err != nil {
@@ -98,6 +102,10 @@ func (d Deps) handleApprovalPreview(c echo.Context) error {
 		ApplicantIsOpsSupervisor: idn.Role == "综合运营主管",
 		IsFixedAsset:             req.IsFixedAsset,                       // N-013
 		HasContract:              req.HasContract || req.DocType == "CT", // T3/R-26
+		// N-065 T2：与提交侧同源（generates_task 显式 applicant 待办）——
+		// 缺此两值 ⇒ preview 对 BA 会显示 unresolved（误导），故同批传入。
+		ApplicantOpenID: idn.OpenID,
+		ApplicantName:   applicantName,
 	}
 	paymentRoute, pErr := chain.PaymentRouteOf(d.Spec, facts)
 	if pErr != nil {

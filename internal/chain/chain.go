@@ -91,6 +91,11 @@ type Facts struct {
 	// ★ 本字段仅 chain 层可测：emergency 链未接线（ResolveRoute/doc_chains 无
 	// emergency case，属 A8），生产者随通路批接入。
 	RelatedPRAmountCents *int64
+	// ★ N-065 T2（generates_task 显式 applicant 待办）：办理人＝申请人本人 ——
+	// action 型 actor 在角色候选表里查不到人（无 role→候选 语义），故由提交/预览侧
+	// 随 Facts 传入；缺省空 ⇒ Resolve 记 unresolved（可见失败，不静默造任务）。
+	ApplicantOpenID string
+	ApplicantName   string
 }
 
 // RoleNode 链计算的中间产物：角色级节点（含非审批环节，供 preview 展示全流程）。

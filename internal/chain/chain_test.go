@@ -121,7 +121,9 @@ func TestBuildNodes(t *testing.T) {
 			t.Fatal(err)
 		}
 		got := approvalIDs(nodes)
-		want := []string{"approve_petty_cash", "disburse"}
+		// ★ N-065 T2：return_receipt 经 generates_task: true 显式声明进入审批任务集
+		//（spec chain.json V1.10 · conventions.node_task_generation；缺省推导下它不生成）。
+		want := []string{"approve_petty_cash", "disburse", "return_receipt"}
 		if strings.Join(got, ",") != strings.Join(want, ",") {
 			t.Errorf("审批节点 = %v，应为 %v", got, want)
 		}

@@ -208,6 +208,10 @@ type NodeDoc struct {
 	// anti_split_check 的 same_supplier_same_category_monthly_cents /
 	// dept_monthly_max_count 阈值 —— spec 是唯一真相，Go 侧不写死）。
 	Params map[string]float64 `json:"params"`
+	// GeneratesTask 节点是否生成待办（N-065 T2 · conventions.node_task_generation）：
+	// nil＝未声明（沿用 isActionActor 缺省推导）；true/false＝显式权威声明（显式优先，
+	// 这正是指针形态的设计要点 —— bool 无法区分「未声明」与「显式 false」）。
+	GeneratesTask *bool `json:"generates_task"`
 }
 
 // TierExpand 节点级档位审批链展开声明（N-044）。

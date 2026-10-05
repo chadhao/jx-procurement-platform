@@ -122,6 +122,18 @@ func BuildNodes(b *specload.Bundle, routeID string, f Facts) ([]RoleNode, error)
 		}
 
 		// ---- 一般节点 ----
+		// ★ N-065 T2（conventions.node_task_generation ☆ 显式优先）：
+		//   generates_task 显式声明 > isActionActor 缺省推导；键缺失 ⇒ 行为与既往完全一致
+		//   （既有 9 条流程线零变化）。true ⇒ 该节点必须生成待办（哪怕 actor 是动作型，
+		//   如 return_receipt 的 applicant —— 办理人在 Resolve 侧解析为申请人本人）。
+		if n.GeneratesTask != nil {
+			if *n.GeneratesTask {
+				appendApproval(n.ID, n.Label, n.Actor, "generates_task 显式声明（conventions.node_task_generation）")
+			} else {
+				appendAction(n.ID, n.Label, "generates_task: false 显式声明（不生成待办）")
+			}
+			continue
+		}
 		if approverRoles[n.Actor] {
 			appendApproval(n.ID, n.Label, n.Actor, "")
 			continue

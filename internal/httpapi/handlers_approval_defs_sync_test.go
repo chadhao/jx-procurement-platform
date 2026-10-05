@@ -131,6 +131,26 @@ func TestAdminApprovalDefsSyncPlaceholderVisible(t *testing.T) {
 	}
 }
 
+// TestAdminApprovalDefsSyncPlaceholderMessageN065 N-065 T1①：defs/sync 占位符文案须指
+// 「我方自定义的 approval_code」且**不含**旧措辞「飞书审批后台」（双断言，缺一即只证一半）。
+func TestAdminApprovalDefsSyncPlaceholderMessageN065(t *testing.T) {
+	e, db, auth, _ := newDefsSyncTestApp(t, true)
+	seedDefaultUsers(t, db, store.UserRole{OpenID: "ou_admin", Role: roleSysAdmin, Active: true})
+	seedApprovalCodeRow(t, db, "REPLACE_ME_approval_code_BA", "BA", "①采购报备单")
+	adminCookie := auth.Establish("ou_admin")
+
+	rec, env := doRequest(e, http.MethodPost, "/api/admin/approval/defs/sync", adminCookie, "")
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("占位符应 400, 实为 %d, body=%s", rec.Code, rec.Body.String())
+	}
+	if !strings.Contains(env.Message, "我方自定义的 approval_code") {
+		t.Errorf("文案须指向我方自定义 code, got: %s", env.Message)
+	}
+	if strings.Contains(env.Message, "飞书审批后台") {
+		t.Errorf("文案不得指向不存在的飞书审批后台路径（N-065 T1①）, got: %s", env.Message)
+	}
+}
+
 // TestAdminApprovalDefsSyncMissingCallbackConfig 回调 token / 域名未配置 ⇒ 可见错误（503）。
 func TestAdminApprovalDefsSyncMissingCallbackConfig(t *testing.T) {
 	e, db, auth, fake := newDefsSyncTestApp(t, false)

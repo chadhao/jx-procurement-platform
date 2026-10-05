@@ -84,6 +84,23 @@ func (s *Service) Resolve(ctx context.Context, nodes []RoleNode, f Facts) ([]flo
 		if !n.IsApproval {
 			continue
 		}
+		// ★ N-065 T2：generates_task 显式的 applicant 待办 —— 办理人＝申请人本人
+		//（动作型 actor 无角色候选可查；身份由提交/预览侧随 Facts 传入）。
+		// 缺省空 ⇒ 记 unresolved 可见失败（绝不静默生成无人可办的任务）。
+		if n.ActorRole == "applicant" {
+			if strings.TrimSpace(f.ApplicantOpenID) == "" {
+				unresolved = append(unresolved, UnresolvedRole{
+					NodeID: n.SourceNodeID, NodeName: n.NodeName, Role: "applicant",
+					Reason: "申请人身份未随 Facts 传入（generates_task 显式待办的办理人＝申请人本人）",
+				})
+				continue
+			}
+			specs = append(specs, flow.NodeSpec{
+				NodeID: n.SourceNodeID, NodeName: n.NodeName, Seq: n.Seq,
+				Approvers: []flow.Approver{{OpenID: f.ApplicantOpenID, Name: f.ApplicantName}},
+			})
+			continue
+		}
 		q, err := s.queryFor(n.ActorRole, f)
 		if err != nil {
 			return nil, nil, err

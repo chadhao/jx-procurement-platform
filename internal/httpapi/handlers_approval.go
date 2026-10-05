@@ -335,6 +335,11 @@ func (d Deps) approveReject(c echo.Context, op string) error {
 		if fields == nil {
 			fields = map[string]any{}
 		}
+		// ★ N-065 T3：approval(<node_id>) 时点通用求值器（checks_when ①）——
+		// 拦在 Flow.Approve **之前**（事务外）：hard 未注册 ⇒ 可见失败（400 点名）。
+		if verr := d.evaluateApprovalChecks(ctx, body.TaskID, idn.OpenID, fields); verr != nil {
+			return fail(c, http.StatusBadRequest, codeBadRequest, verr.Error())
+		}
 		err = d.Flow.Approve(ctx, bizNo, body.TaskID, idn.OpenID, reason, fields)
 	} else {
 		err = d.Flow.Reject(ctx, bizNo, body.TaskID, idn.OpenID, reason)
@@ -532,9 +537,13 @@ func (d Deps) handleApprovalSubmit(c echo.Context) error {
 	if d.Spec == nil || d.Chain == nil {
 		return fail(c, http.StatusServiceUnavailable, codeNotReady, "机读规格/链计算未装配")
 	}
-	idn, _, err := d.identityFrom(c)
+	idn, ur, err := d.identityFrom(c)
 	if err != nil {
 		return fail(c, http.StatusUnauthorized, codeRoleMapped, "未映射角色或会话失效")
+	}
+	applicantName := ""
+	if ur != nil {
+		applicantName = ur.Name
 	}
 	var body approvalSubmitBody
 	if err := json.NewDecoder(c.Request().Body).Decode(&body); err != nil {
@@ -599,6 +608,9 @@ func (d Deps) handleApprovalSubmit(c echo.Context) error {
 		IsFixedAsset: boolFromBodyField(body.Fields, "is_fixed_asset"),
 		// T3 / R-26：CT 即有合同（强制 true）；其余按请求显式值。
 		HasContract: body.HasContract || body.DocType == "CT",
+		// N-065 T2：generates_task 显式 applicant 待办的办理人＝申请人本人。
+		ApplicantOpenID: idn.OpenID,
+		ApplicantName:   applicantName,
 	}
 	// ★ N-044 T2（r15_max 输入）：PC 注入后的两金额填入 Facts —— Compute/BuildNodes
 	// 消费 tier_expand.tier_source=r15_max 时就高定档（inject 已前移，值在此刻就绪）。
@@ -1099,7 +1111,7 @@ func (d Deps) handleAdminApprovalDefsSync(c echo.Context) error {
 			violations = append(violations, fmt.Sprintf("code=%q doc_type=%q：存在空值", code, dt))
 		case config.IsPlaceholder(code):
 			violations = append(violations,
-				fmt.Sprintf("code=%s：仍是未替换的占位符——请填入飞书审批后台的真实 approval_code", code))
+				fmt.Sprintf("code=%s：仍是未替换的占位符——请填入我方自定义的 approval_code（定义由 API 建，code 由本侧指定）", code))
 		case !inDocTypes(dt):
 			violations = append(violations,
 				fmt.Sprintf("code=%s：doc_type=%q 不在 11 类（%s）之内", code, dt, strings.Join(config.DocTypes, "/")))

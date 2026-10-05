@@ -69,6 +69,25 @@ func TestImportPlaceholderMessageN063(t *testing.T) {
 	}
 }
 
+// TestImportFieldIDPlaceholderMessageN065 N-065 T1②：field_id 占位符文案须如实说明
+// 「本系统当前不产出该映射」（N-063 T2 具名豁免），**不得**再教人去「模板里找控件」——
+// 双断言（含新口径 ∧ 不含旧措辞「模板中控件」）。
+func TestImportFieldIDPlaceholderMessageN065(t *testing.T) {
+	p := fullSample()
+	p.FieldID[0].FieldID = "REPLACE_ME_WIDGET"
+	err := p.Validate()
+	if err == nil {
+		t.Fatal("field_id 占位符载荷必须被拒")
+	}
+	msg := err.Error()
+	if !strings.Contains(msg, "field_id 段已具名豁免") {
+		t.Errorf("文案须说明段已具名豁免（N-063 T2 结论），实为: %s", msg)
+	}
+	if strings.Contains(msg, "模板中控件") {
+		t.Errorf("文案不得再指向不可得的「模板中控件」（N-065 T1②），实为: %s", msg)
+	}
+}
+
 // TestImportValidateRejects 逐条注入非法值，确认全部被拒（整体拒绝，不部分导入）。
 func TestImportValidateRejects(t *testing.T) {
 	cases := []struct {

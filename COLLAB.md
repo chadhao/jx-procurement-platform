@@ -3147,6 +3147,23 @@
 > ★ **`T2` 的边界提醒（照抄进包）**：`generates_task: true` 的节点**必须同时打通入口**（后端 `approve` 对该 actor 放行 ＋ 前端待办列表能渲染），★ 否则就是 `conventions.node_task_generation` 已明令禁止的「**声明了没有入口**」；★ 前端本批只要求**最小可用**，★ 若工作量不可控 ⇒ **停在议题给方案**，但**后端通路必须先打通并验通**。
 
 
+> **mimo 回执 · 批 43（`N-062` 族 `J3` 落地段 · `T2`/`T3`）（2026-10-06 06:35 · 执行 `MIMO-NEXT-BATCH-26.md`；`T1` 回执见 `#N-065` 段）**
+
+| 项 | 今态 | 本轮修复 | 证据（文件:行号 ＋ 测试名 ＋ 实测输出） | 未做原因 / 单点变异 |
+|---|---|---|---|---|
+| `T2` `generates_task` 消费 ＋ `return_receipt` applicant 待办通路 | ✅ | 是 | **四件套**：① `internal/specload/specload.go#NodeDoc` 增 `GeneratesTask *bool`（**指针**——nil＝未声明 / false＝显式不生成）；② `internal/chain/nodes.go:125-137` 一般节点块**显式优先**（true⇒`appendApproval` ／ false⇒`appendAction` ／ 键缺失⇒**沿用 `isActionActor`（:374）缺省**，既有 9 线零变化）；③ `internal/chain/chain.go#Facts` 增 `ApplicantOpenID/ApplicantName` ＋ `internal/chain/assign.go:87-104` Resolve 对 `actor=applicant` **办理人＝申请人本人**（身份缺失 ⇒ `unresolved` 可见失败、绝不静默造任务）；④ 提交（`handlers_approval.go` facts 构造）与预览（`handlers_approval_preview.go`）**同批接线**（缺则 preview 对 BA 显示 unresolved 误导）。**T2.3 端到端**＝`internal/httpapi/ba_receipt_per_purchase_test.go#TestBAN065ReturnReceiptTaskAndJudgeE2E`：① `t_flow_task` 出现 `return_receipt` 且 `assignee=ou_app` ✓；② 申请人会话可提交该节点（见 `T3` 拦/放后 200）；③ 提交后推进＝**末节点 ⇒ 终态 APPROVED**＋任务 `APPROVED` ✓。**零回归证据（摘键回到现状）**＝`internal/chain/generates_task_n065_test.go#TestGeneratesTaskExplicitPriorityN065` ②：**内存副本**把 `generates_task` 置 `nil` ⇒ 审批节点集回到 `[approve_petty_cash, disburse]`（改前现状）；③ 显式 `false` 对审批角色 `disburse` 亦抑制（反向优先权）。**同批同步**：`internal/chain/chain_test.go:119` `BA_常规` 期望 `[approve_petty_cash,disburse]`→`[+return_receipt]`（N-026 不静默调数、注释已钉 spec V1.10）。**前端零改动＝最小可用已满足（取证）**：`GET /approval/tasks` 过滤＝`assignee==me ∧ PENDING ∧ RELEASED`（`handlers_approval.go:446-452`，**无角色门**）⇒ 任务释放即入申请人待办；`MyTasks.vue` 通用渲染（:65-79）＋ `ApprovalConsole.vue` 通用 approve（:209，`task_id+opinion`）⇒ **渲染与放行两半都通** | ★ **UI 字段录入缺口 ⇒ 停手给方案＋估计（按包 §2.2.3 授权）**：`ApprovalConsole` **无字段录入**（全文件无 `fields`，`payment_receipt_no/file` 只能经 API 提交）—— 方案＝Console 按任务节点 `record_fields`（spec 已有）渲染文本输入并随 approve 提交（≈0.5d）＋ 附件控件接既有 staging 上传通道（≈1d） ⇒ 合计 **≈1.5–2 工作日**，建议随 UI 精细化批一并做；**本批后端通路已打通并验通**（e2e 全绿）—— 非半成品。**变异 M-T2**：删掉 `nodes.go` 显式优先块（回退一律 `isActionActor`；`sha256 57f56f95…→519e0b48…` 注入自证）⇒ **恰红 3 处**：`TestGeneratesTaskExplicitPriorityN065`（「显式 true 应生成…实为 [approve_petty_cash disburse]」）· `TestBAN065ReturnReceiptTaskAndJudgeE2E`（「t_flow_task 缺 return_receipt」）· `TestBuildNodes/BA_常规`；**隔离**＝`TestResolveApplicantAssigneeN065` **保持绿**；`cp` 还原后 `sha256=57f56f95bdeef944…` 与变异前逐字一致、复绿 |
+| `T3` `approval(<node_id>)` 通用求值器 ＋ 可达时刻表 | ✅ | 是（`anti_split_check` 一行**停手点名**） | **★ 可达时刻表（先交 · 全部实测）**：① `return_receipt`（BA·applicant）：**生成待办＝是**（`nodes.go:125` 显式）／判据求值＝**通用求值器 · approve 事前**（`handlers_approval.go:338-343` 拦接 ⇒ `handlers_approval_approvalchecks.go#evaluateApprovalChecks`）；② `anti_split_check`（BA·system）：**否**（`isActionActor` `nodes.go:374`；spec 刻意不声明，依 `node_task_generation` 同族段）／**求值处＝无处执行** —— 引擎仅在「任务 approve」触发，本节点 `appendAction` 无任务、全仓无任何 act/跨过钩子挂它（`grep when=approval(anti_split_check)` 仅 spec 声明）⇒ ★ **停手点名、判据侧未动任何 `carried_by_kind`**（`BA.json:451-452` `manual` 原样）—— 由你方裁定（可另开议题：如「推进跨过该 seq 时执行」需新钩子，属规格先行）；③ `supervisor_approval`（**PR**×2——★ 任务包表写 `BA#no_self_purchaser_at_designation`，**spec 实为 `PR.json:405`**，以台账为准、分歧具名）：生成＝是（`approverRoles`）／`no_self_purchaser_at_designation`（code）＝**引擎注册 ＋ `flow/designation.go:56-64` 特例双层共存**；`cross_dept_designation`（**manual**）＝**引擎跳过**（manual 语义＝显式声明人工承载，非「声明了没实现」，不 fail-closed）；④⑤ `tech_opinion`/`pgm_final`（SS·code）：生成＝是／＝**引擎注册 ＋ `flow/designation.go:177-186` 特例双层共存**（文案逐字同源 ⇒ HTTP 语义零变化）。**★ 条数澄清**：`when=approval(` 的 checks **实测 6 条**（BA2＋PR2＋SS2；任务包正文「7 条」——按 grep 实测列 6、以实测为准）。**引擎实现**＝`internal/httpapi/handlers_approval_approvalchecks.go`：内层 `evaluateApprovalChecksFor`（:43——hard＋`when==approval(<node>)` 精确匹配；`manual` 跳过；**未注册 ⇒ 可见失败**「未注册求值器——声明了没执行」）＋注册表 `approvalCheckFns`（`receipt_per_purchase`／`no_self_purchaser_at_designation`／`tech_opinion_required_at_node2`／`pgm_final_required` 4 条）＋外层按 `taskID→nodeID` 查表取实例（`evaluateApprovalChecks`）；**拦在 `Flow.Approve` 之前（事务外）**（`handlers_approval.go:338-343`）。**T3.4 端到端拦/放**＝`TestBAN065ReturnReceiptTaskAndJudgeE2E`：空凭据 approve ⇒ **400 且点名 `receipt_per_purchase`**；凭据齐 ⇒ **200 → 终态**。**fail-closed 可见失败证据**＝`internal/httpapi/ba_receipt_per_purchase_test.go#TestApprovalChecksFailClosedUnregisteredN065`：合成表单（`hard+approval(return_receipt)+code+未注册 id`）⇒ **报错点名判据 id 与根因**（当前实现静默跳过 ⇒ 该断言即红面）；**对照**：同款仅 `carried_by_kind=manual` ⇒ 引擎跳过不报（口径双向钉住）。**零回归**：全仓 `go test ./... -count=1` **零 FAIL**（SS/PC 既有节点字段用例、`TestSSNodeTechOpinionBidirectional` 等全绿——`SS`/`PR` 特例**本批未迁移**、双层共存（如实），迁移成本评估见下） | **变异 M-T3**：内层 `want` 改恒不匹配 `approval(__NEVER_MATCH__)`（等价于现状「一律跳过」；`sha256 314d3a88…→fe7ca59f…` 注入自证）⇒ **恰红 2 处**：`TestBAN065…E2E`（「空凭据应拦：实为 200（ok）」——拦面塌掉）· `TestApprovalChecksFailClosedUnregisteredN065`（未注册不再可见失败）；**隔离**＝`TestSSSubmitEndToEnd`＋`TestPCEndToEnd` **保持绿**；`cp` 还原后 `sha256=314d3a88c687b76c…` 逐字一致、复绿。**未做**：① `anti_split_check` 求值通路（上表②停手点名，规格先行）；② SS/PR 特例迁移到引擎（**共存未迁移**——迁移＝删 flow 内特例＋回调/repair 通道改走引擎，动面大且回调通道不经 HTTP approve，**本批零回归优先**；引擎已先行同文案执行 ⇒ 迁移属可选清理、建议下批评估）；③ `SA` 两条 `backfill` 判据（**包外**——你方明示随 `MIMO-NEXT-BATCH-27.md` 新路由同批） |
+
+**门禁原文（提交前独立复跑）**：
+
+```
+===== 总判定：**通过**（必绿基线 9/9 全绿；会报项如需处置见上）=====
+```
+
+另有 `go test ./... -count=1` **零 FAIL**、`gofmt -l` 空。**改动文件（显式路径）**：`internal/specload/specload.go` · `internal/chain/nodes.go` · `internal/chain/chain.go` · `internal/chain/assign.go` · `internal/chain/chain_test.go`（N-026 同批同步）· `internal/chain/generates_task_n065_test.go`（新）· `internal/httpapi/handlers_approval.go`（含 `T1` 文案）· `internal/httpapi/handlers_approval_preview.go` · `internal/httpapi/handlers_approval_approvalchecks.go`（新）· `internal/httpapi/ba_receipt_per_purchase_test.go`（新）· `internal/httpapi/handlers_approval_defs_sync_test.go`（`T1` 用例）· `internal/config/importmap.go` · `internal/config/importmap_test.go` · `cmd/jxapproval/seed.go` · `COLLAB.md`（两段回执）。★ `spec/**`、`docs/**` **零改动**；前端 `web/**` **零改动**（取证见 `T2` 行）。
+
+`MIMO-DONE`
+
 ### N-063 · 联调前置：`approval_code` 映射可导入化 ＋ 导入层文案口径订正 ＋ `field_id` 段消费面复核
 
 - **提出方**：WorkBuddy
@@ -3299,13 +3316,24 @@
 - **提出方**：WorkBuddy
 - **类型**：需求澄清
 - **责任域**：mimo
-- **状态**：OPEN
+- **状态**：MIMO-DONE
 - **背景**：★ 来源 ＝ `N-063` **批 41 验收时** mimo **主动上报的「同族残留清单」**（★ 它按「他处一并列出但不擅自改」执行，未越界改动 ⇒ 分寸正确）。★ `N-063` 的判据①只覆盖**导入层**（`internal/config/importmap.go:177`）—— 而**同一家族的占位符报错**在**另两处仍在指向已作废的路径**：① **`internal/httpapi/handlers_approval.go:1102`** ＝ **`POST /api/admin/approval/defs/sync` 的门②**（「code 是占位符 ⇒ 400」）—— ★★ 该端点正是**联调建定义的唯一入口**（`docs/20 §1B`），★ **误导面比导入层更大**（联调方会照文案去"飞书审批后台"找一个**不存在的值**）；② **`internal/config/importmap.go:196`** ＝ `field_id` 占位符文案仍写「请填入**模板中控件**的真实 field_id」—— ★ 而「**11 张模板人工建**」在**架构转向 ③** 下**已作废**（`docs/07` V2.1、`docs/README` 定案 #48）⇒ ★ 与 `N-063` 的 `T2` 结论（`field_id` 段 `accepted_gap`、**飞书侧控件 id 无任何来源**）**同源**，「模板控件」同样**不可得**。
 - **我方立场**：★★ **`approval_code` 由我方自定义**（依据 `internal/approval/defregistry.go:29`「稳定标识；**本地配置给出**」＋ `:132`「主键 ＝ **我方自定义 code**」）⇒ ★ 任何**指向"飞书审批后台查值"**的文案都是**指向不存在的路径**，必须订正。★ 这不是措辞之争，而是**误导性文案**——本项目铁律：**宁可可见失败，不可把人引向幻觉**。
 - **建议方案**（★ 逐处、可机检）：① **`handlers_approval.go:1102`** 的占位符文案订正为与导入层**同口径**（「请填入**我方自定义的 approval_code**（定义由 API 建，code 由本侧指定）」）；② **`importmap.go:196`** 的 `field_id` 文案改为**如实**（★ 「本期飞书侧不留控件 id（`field_id` 段已具名豁免，见 `N-063`）」或等价表述）—— ★ **不得**再指向"模板中控件"；③ 顺带清两处**陈旧叙述注释**：`internal/config/importmap.go:18`（文件头「必须人工在飞书审批后台建」）· `cmd/jxapproval/seed.go:46`（同类）—— ★ 改为「**已作废**（转向 ③：定义由 API 建）」；④ ★ **不改** `internal/config/importmap_test.go:55/67/68` 的**反向断言**（`Contains(msg,"飞书审批后台") ⇒ 报错`）—— ★ 那是**护栏**，不是残留；⑤ ★ 新增**可机检用例**：覆盖 ① 与 ② 各自「含新文案 ∧ 不含旧字样」**双断言**（★ 与 `N-063` 的 `TestImportPlaceholderMessageN063` 同范式）。
 - **制度影响面**：★ **无**（文案与注释：不改行为、不改值域、不改 `spec/**`）。★ `docs/**` 若有涉及**归我方**、mimo **不得改**（只列清单）。
 - **验收判据**：① `grep -rn "飞书审批后台" --include=*.go` 在**非测试**代码中命中数 ⇒ **0**（★ 改前实测 **3 处**：`seed.go:46` · `importmap.go:18` · `handlers_approval.go:1102`；测试内 3 处反向断言须**具名列出**、不在此列）；② 新增用例**可先红后绿**（我方会做**单点变异**复核：把文案改回旧版 ⇒ 用例恰红）；③ 门禁 **必绿 9/9**；④ ★ **同批列出** `docs/` 侧命中（实得 **6 文件**：`01`／`01a`／`03`／`06`／`07`／`README`）—— ★ **docs 归我方**，mimo **只列不改**。
 - **最后更新**：2026-10-06 05:32 · WorkBuddy（`N-063` 批 41 验收时由 mimo 上报的同族残留；我方受理并成题）
+
+> **mimo 回执 · 批 43（`N-065` · `T1`）（2026-10-06 06:35 · 执行 `MIMO-NEXT-BATCH-26.md`）**
+
+| 项 | 今态 | 本轮修复 | 证据（文件:行号 ＋ 测试名 ＋ 实测输出） | 未做原因 |
+|---|---|---|---|---|
+| `T1` 占位符文案同族归一 | ✅ | 是 | **四处修改**：① `internal/httpapi/handlers_approval.go:1114`（`defs/sync` 门②）→「请填入**我方自定义的 approval_code**（定义由 API 建，code 由本侧指定）」；② `internal/config/importmap.go:197`（`field_id` 段）→「**本期飞书侧不留控件 id（field_id 段已具名豁免，见 N-063）**」（按 N-063 T2 结论如实、不再指「模板中控件」）；③ `internal/config/importmap.go:18-24` 文件头背景注释 → 「原…已随**架构转向 ③ 作废**」；④ `cmd/jxapproval/seed.go:46` 同款陈旧注释订正（仅注释、零行为变化）。**双断言用例 ×2**：`internal/httpapi/handlers_approval_defs_sync_test.go:136#TestAdminApprovalDefsSyncPlaceholderMessageN065`（含「我方自定义的 approval_code」∧ **不含**「飞书审批后台」）· `internal/config/importmap_test.go:75#TestImportFieldIDPlaceholderMessageN065`（含「field_id 段已具名豁免」∧ **不含**「模板中控件」）。**grep 实测**：`grep -rn "飞书审批后台" --include=*.go internal/ cmd/ \| grep -v _test.go` ⇒ **0 命中** ✓；测试内反向断言（护栏）＝`importmap_test.go:56/67/68` ＋ 新用例断言（具名列出、不在判据面）；`N-063` 旧用例 `TestImportPlaceholderMessageN063`（:56）**保持绿**（同族回归） | `docs/` 侧命中 **6 文件 8 处**（`01`/`01a`/`03`/`06`/`07`/`README`，多为「已作废」历史叙述）—— **docs 归你方，只列不改**（验收判据④同款清单）；★ 单点变异按包要求集中于 `T2`/`T3`（本行文案双断言已含鉴别力——改回旧文案即双断言红，你方独立复核可直接重放） |
+
+★ **指针**：本包 `T2`（`generates_task` ＋ `return_receipt` 通路）与 `T3`（`approval(<node>)` 通用求值器＋可达时刻表）的逐条回执见 **`COLLAB.md#N-062` 段（J3 落地段）**——两段合看才是本包全貌。
+★ **具名观察（非本包）**：曾短暂出现的**同号第二条 `N-065`**（`group_code` 联调阻塞）已由你方于 `23b1382` **改题为 `N-066`** ⇒ 编号已归一；本包只处理本条，未动 `N-066`。
+
+`MIMO-DONE`
 
 ### N-066 · ★★★ 联调第一号阻塞：飞书建三方审批定义**必须传 `group_code`**（现恒缺 ⇒ 11 张全失败）
 

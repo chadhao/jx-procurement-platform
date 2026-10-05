@@ -43,8 +43,9 @@ func runSeed() error {
 
 // runImportConfig 从 JSON 文件导入五类配置（approval_code / field_id / ledger_type / threshold / ledger_field）。
 //
-// ★ 为什么需要它：11 张审批模板必须**人工在飞书审批后台建**，建完才会拿到 `approval_code`
-// 与各控件 `field_id`。这两组值按纪律 7/8 不得硬编码进代码，只能落 `t_config_mapping`。
+// ★ 为什么需要它：11 张审批模板原须**人工建**——★ 该口径已随**架构转向 ③ 作废**（2026-10-06
+// 据 N-063 订正：三方审批定义可纯 API 建，`approval_code` 由我方自定义）。历史上建完拿到的
+// `approval_code` 与控件 `field_id` 按纪律 7/8 不得硬编码进代码，只能落 `t_config_mapping`。
 // 手写 SQL 是「错一处就全线静默无数据」的地方（模板订阅不到事件时系统不会报错，只是永远没有数据），
 // 故提供带严格校验的导入：**任一条不合规即整体拒绝，不做部分导入**。
 //

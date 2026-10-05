@@ -15,11 +15,12 @@ import (
 
 // 配置映射导入（PRD Q1 闭合路径）。
 //
-// ★ 背景：11 张审批模板**必须人工在飞书审批后台建**（开放平台原文「API 方式不支持设置条件分支」，
-// 且 API 建的审批定义无法停用/删除、官方不推荐）。模板建好后会产生两组「只有人能看到」的值：
+// ★ 背景（**已作废的旧口径 · 2026-10-06 据 N-063 订正**）：原「11 张审批模板必须人工在飞书审批
+// 后台建」已随**架构转向 ③ 作废** —— 三方审批定义**可纯 API 创建/更新**（`external_approvals`，
+// `approval_code` 命中即更新），code 由**我方自定义**。历史两组「只有人能看到」的值：
 //
-//	① approval_code（每张模板一个）；
-//	② 各模板表单控件的 field_id。
+//	① approval_code（每张模板一个）⇒ 现由我方自定义（导入仍要求非占位符）；
+//	② 各模板表单控件的 field_id ⇒ 转向 ③ 后**飞书侧不留控件 id**（该段已具名豁免，见 N-063 T2）。
 //
 // 这两组值按纪律 7/8 **不得硬编码进代码**，一律落 `t_config_mapping`。本文件提供**带校验的导入**，
 // 免去手工写 SQL（那是唯一曾有其它写法的口子，也是错一处就全线静默无数据的地方）。
@@ -193,7 +194,7 @@ func (p *ImportPayload) Validate() error {
 			return fmt.Errorf("field_id[%d]：field_id 不能为空", i)
 		}
 		if isPlaceholder(fid) {
-			return fmt.Errorf("field_id[%d]（%s）：仍是未替换的占位符——请填入模板中控件的真实 field_id", i, fid)
+			return fmt.Errorf("field_id[%d]（%s）：仍是未替换的占位符——本期飞书侧不留控件 id（field_id 段已具名豁免，见 N-063）", i, fid)
 		}
 		if strings.TrimSpace(e.BizField) == "" {
 			return fmt.Errorf("field_id[%d]（%s）：biz_field 不能为空（否则该字段落库但不进业务列）", i, fid)
