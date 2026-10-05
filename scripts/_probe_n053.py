@@ -10,8 +10,9 @@
 
   1. **正向**：用**真 `spec/checks.json#S26` 的 args**（从清单里读出来，不手抄）跑真台账 ⇒ **0 报错**。
   2. ★★ **等价性**：拿**修复前**的台账（`ef532dc` 版本，`git show` 取字节）跑 `S26` ⇒
-     **逐条报出 28 处**，且 (判据键, 列) 集合与**迁移前 `_ledger_vs_forms()` 在同一夹具上的实测基线逐项相同**
-     （★ N-062 J2 连带：forms 六条 soft `carried_by_kind` pending→submit ⇒ 旧 csv 夹具漂移集 −5＋1＝28；N-026 双边同步、非静默调数） ⇒ ★ 「把兜底升级为正式判据」**没有丢语义**（这是本条最重要的证据）。
+     **逐条报出 29 处**，且 (判据键, 列) 集合与**迁移前 `_ledger_vs_forms()` 在同一夹具上的实测基线逐项相同**
+     （★ N-062 J2 连带：forms 六条 soft `carried_by_kind` pending→submit ⇒ 旧 csv 夹具漂移集 −5＋1＝28；
+     ★ N-062 族 J3（批 44）连带：`BA#receipt_per_purchase` 实体落地（求值器入闸）⇒ 旧 csv 夹具再 +1 ＝29；N-026 双边同步、非静默调数） ⇒ ★ 「把兜底升级为正式判据」**没有丢语义**（这是本条最重要的证据）。
   3. **鉴别力（真数据上）**：在**内存里**改真 `forms/BA.json` 一条 `severity` ⇒ **恰 1 条**、且点名该判据
      （★ 不落盘、零副作用）。
   4. ★★ **缺口存在性反证**：同一份合成夹具 —— **有 `S26` ⇒ 红**、**把 `S26` 从清单摘掉 ⇒ 静默放行**
@@ -98,7 +99,7 @@ def main():
     for p in probs[:5]:
         print("      · " + p)
 
-    # ── 2 等价性：修复前台账（ef532dc）⇒ 28 处，且与迁移前基线逐项相同 ──
+    # ── 2 等价性：修复前台账（ef532dc）⇒ 29 处，且与迁移前基线逐项相同 ──
     pre = os.path.join(TMPDIR, "prefix_acceptance.csv")
     with open(pre, "wb") as fh:
         fh.write(subprocess.run(["git", "show", "ef532dc:spec/acceptance.csv"],
@@ -112,6 +113,7 @@ def main():
         ("BA#amount_positive", "severity"), ("BA#amount_tier1_only", "severity"),
         ("BA#amount_tier1_only", "carrier_kind"), ("BA#completeness_l2", "severity"),
         ("BA#safety_certificate", "severity"), ("BA#receipt_per_purchase", "severity"),
+        ("BA#receipt_per_purchase", "carrier_kind"),
         ("BA#anti_split_before_disburse", "severity"), ("BA#no_purchaser_field", "severity"),
         ("BA#idempotency_key", "severity"),
         ("PR#amount_positive", "severity"), ("PR#completeness_l2", "severity"),
@@ -124,7 +126,7 @@ def main():
         ("SA#cross_month_allocation", "carrier_kind"), ("SA#actual_not_exceed", "severity"),
         ("SA#invoice_must_link", "severity"), ("SA#idempotency_key", "severity"),
     }
-    case("等价性·修复前台账 ⇒ 28 处", len(cols) == 28, "逐列报出 %d 条（期望 28）" % len(cols))
+    case("等价性·修复前台账 ⇒ 29 处", len(cols) == 29, "逐列报出 %d 条（期望 29）" % len(cols))
     case("等价性·与迁移前基线逐项相同", got_keys == BASE,
          "差集 = %s" % (sorted(got_keys ^ BASE) or "（空）"))
     case("等价性·无越界报错（无未登记/列数）",
