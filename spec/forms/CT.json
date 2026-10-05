@@ -3,7 +3,7 @@
   "label": "合同 / 简式订单",
   "prefix": "CT",
   "number_format": "CT-YYMM-####",
-  "version": "1.0",
+  "version": "1.1",
   "date": "2026-09-29",
   "generated_by": "WorkBuddy",
   "sources": {
@@ -49,6 +49,34 @@
             "_why": "★ 可抽取规范列（ExtractableBizFields）—— 本单自身业务单号 ★★ 桥接：表单字段名是 `biz_no`（全单据统一业务单号），而 **L04 台账列名是 `contract_no`** —— 二者不同名。L04 用 `contract_no` 是 **Q14 定稿**的「合同链单一契约键」（`bizfields.go#BizFieldContractNo`），Go 侧多处消费（`handlers_contract.go` / `flow/finalize.go` / `handlers_ledger_derived.go` 的 `ct.BizNo → contract_no`）⇒ **不得因为「名字不一样」就把它改名**。此处显式登记桥接，免得后人再\"修\"一遍。",
             "ledger_column": "L04.contract_no"
           }
+        },
+        {
+          "name": "applicant",
+          "label": "申请人",
+          "type": "person",
+          "required": true,
+          "source": "system",
+          "immutable": true,
+          "carried_by_kind": "code",
+          "carried_by": "httpapi#handleApprovalSubmit 取 `idn.OpenID`（飞书免登身份）写入 `t_instance.applicant_open_id` 规范列；★ 客户端 `body.Fields[\"applicant\"]` **写不进规范列**（同其余 10 张表，实测探针）",
+          "origin": "institution",
+          "origin_ref": "制度第十一条「申请人 / 所属部门」（★ `N-059` 据实补入）",
+          "note": "★★ **本字段是 11 张表里最后补上的一张** —— 其余 **10 张全部**已有 `applicant` ＋ `applicant_department` 一对，`CT` 此前只有 `purchaser`（**1/11 缺席**）。★ 补入依据四条：① 制度第十一条「申请人 / 所属部门」；② `docs/07-Template-Build-Guide.md` §4.2 把 `department` 列为**必须登记的映射**、并写明缺失后果 ＝「**部门维度统计与行级权限（`DEPT` / `CHARGE_DEPT`）失去依据**」；③ 实现面实测：`internal/permission/dataset.go` 的 `DEPT` / `CHARGE_DEPT` 令牌即 `department IN (…)`，`internal/store/models.go` 注明该列存在的**目的**正是这两个令牌；④ ★ **同类先例**：`internal/httpapi/handlers_submission.go` 为解决「`DEPT` / `CHARGE_DEPT` 两个 `row_scope` 令牌在该报送上**永远命中 0 条**」专门补写身份字段 ⇒ 「**单据缺部门 ⇒ 行级权限无依据**」在本项目**是已确认的缺陷模式**。★ 与 `purchaser` **语义不同、并存不冲突**：`applicant` ＝ **提交人**（登录身份，落 `t_instance.applicant_open_id`）；`purchaser` ＝ **审批节点指定的采购经办人**（`N-015` 指定经办块）—— ★ `PR` / `BA` / `PR` 等表同样两者并存。",
+          "rule": "取当前登录人，不可手改"
+        },
+        {
+          "name": "applicant_department",
+          "label": "所属部门",
+          "type": "department",
+          "required": true,
+          "source": "system",
+          "immutable": true,
+          "carried_by_kind": "code",
+          "carried_by": "httpapi#handleApprovalSubmit 取 `idn.Department` 写入 `t_instance.department` 规范列（实测写法：`handlers_approval.go` 的 `firstNonEmptyStr(body.Department, idn.Department)`）",
+          "origin": "institution",
+          "origin_ref": "制度第十一条「申请人 / 所属部门」（★ `N-059` 据实补入）",
+          "note": "★★ **行级权限的依据字段**（`docs/07 §4.2`）：`internal/permission/dataset.go` 的 `DEPT`（本部门含分管部门）与 `CHARGE_DEPT`（分管部门）两个令牌即 `department IN (…)` ⇒ ★ 缺它则**合同类记录对主管领导 / 副总的行级可见性失去依据**（同 `handlers_submission.go` 已修掉的那处，`PRD §4.2` 的行级口径即「主管领导＝本部门」「副总＝所分管部门」）。★ 本字段与其余 10 张表**逐字同范式**（`type: department` · `required: true` · `source: system` · `immutable: true` · `carried_by_kind: code`）。★ 飞书侧「部门」控件须与其余模板一致（模板侧配置，见 `docs/07 §4.5`）。★ 校验见 `scripts/_probe_n059.py` 第 3 节。",
+          "rule": "取当前登录人所在部门，不可手改"
         },
         {
           "name": "related_biz_no",
@@ -887,8 +915,8 @@
     },
     {
       "gap": "★ `R-21#6` 只列举了 **4 组**必备条款，而制度第三十五条实为 **8 组**",
-      "status": "以制度为准，本表单已落全 8 组",
-      "note": "`R-21#6` 原文括注为「标的与规格 / 价格与含税口径 / 交付与工期 / 违约责任与争议解决」＝**8 组里的 4 组**（疑为简写）。★ **以制度第三十五条的 8 组为准**（本表单按 8 组落字段与硬拦截）。建议回填 `RESOLUTIONS.md#R-21` 加注，避免后人以为只有 4 组"
+      "status": "✅ **已闭环（2026-10-05 · `N-059` 据实订正）** —— ★ 本处建议「回填 `RESOLUTIONS.md#R-21` 加注」**已于 2026-09-29 落实**（★ **建议已执行、只是本处 `known_gaps` 未销项**）",
+      "note": "`R-21#6` 原文括注为「标的与规格 / 价格与含税口径 / 交付与工期 / 违约责任与争议解决」＝**8 组里的 4 组**（疑为简写）。★ **以制度第三十五条的 8 组为准**（本表单按 8 组落字段与硬拦截）。建议回填 `RESOLUTIONS.md#R-21` 加注，避免后人以为只有 4 组 ★★ **据实核验（非推断）**：`spec/RESOLUTIONS.md#R-21` 段内**已有**「★ 对 #6 的澄清（2026-09-29 补注，写 `spec/forms/CT.json` 时发现）」整段（含 8 组逐项对照与「少一组即少一道硬拦截」的说明），且该文件 `change_log` **V1.3**（2026-09-30）明文「对 `R-21#6` 加澄清附注」⇒ ★ 本笔属「**建议已执行、台账未销项**」（与 `GR.json#known_gaps` 第 1 条、`SS.json#known_gaps` 第 1 条同族）。★ 校验见 `scripts/_probe_n059.py` 第 2 节。"
     },
     {
       "gap": "★ 配置映射样例 `ledger_field` 未登记 L04 的 3 个运营列 ⇒ 台账页无写入入口",
@@ -897,8 +925,8 @@
     },
     {
       "gap": "★ 配置映射样例的 `field_id` 给 CT 映射了本单【不存在】的控件",
-      "status": "待我方定（样例为占位参考，但会被照抄）",
-      "note": "样例 `field_id` 中 `doc_type` 为 CT 的五条含『用途一级 / 用途二级 / 申请部门』（`purpose_class_l1` / `purpose_class_l2` / `department`）—— 但**制度第三十五条的合同必备条款里没有用途分类，`CT.json` 也未设该字段**。★ 若照抄样例，会把 CT 的模板控件映射到 CT 上不存在的语义，导入时既不会报错、也提不出有效字段。★ 需我方定：CT 是否应补『用途分类』（为让 CT 行也能按用途汇总），或样例应删掉这三条 CT 映射。"
+      "status": "✅ **已闭环（2026-10-05 · `N-059` 据实收窄并补齐）** —— ★ 原表述**两半半真半过期**：① **用途一级 / 二级**两条映射 ⇒ **已由 `B6`（2026-09-30 用户定案）解决**（本表单已补 `usage_category_l1` / `usage_category_l2`，理由见其 `critical_note`：★ 否则用途汇总台账与抽查清单会**缺「合同」这一块**）；② **申请部门**一条 ⇒ **本版据实补入 `applicant` ＋ `applicant_department` 一对**（依据见该字段 `note`；★ 此前 11 张表里**唯 `CT` 缺这一对**）⇒ ★ 样例的三条 CT 映射**现全部有承载**。",
+      "note": "★★ **本条是「台账没销」的又一例，且是「一笔里混着已解决与未解决两半」**：原判断「`CT.json` 也未设该字段」在 `usage_category_*` 上**早已过期**，而 `department` 一笔**确为真实残留** ⇒ ★ **一笔缺口里两半状态不同时，必须逐半取证**，否则要么**重复派工**、要么**把真实残留一起销掉**。★★ **补字段而非删映射的取舍（三案）**：① 删样例映射 ⇒ 与 `docs/07 §4.2`「`department` 必须登记映射」**直接冲突**；② 维持现状不改 ⇒ 合同行的**行级权限依据缺位**（`handlers_submission.go` 已确认该缺陷模式）；③ ⇒ **补字段（本版采纳）** —— ＋ 与其余 10 张表一致、＋ **零引擎改动**（服务端通用写法 `firstNonEmptyStr(body.Department, idn.Department)` 已在位）、＋ 两条映射的承载同时成立。★ 校验见 `scripts/_probe_n059.py` 第 3 / 4 节。"
     },
     {
       "gap": "★『合同金额』的两个名字必须显式桥接（高危）",
