@@ -3,6 +3,7 @@
 > **定位**：把 `docs/09-Integration-Verification-Checklist.md`（**41 项需执行**）改写为**可逐项执行、可逐项回报**的操作单。
 > `docs/09` 是**权威口径**（判定标准不得改）；本文只做**排序、分工、可分步性标注**。
 > **编制**：WorkBuddy · 2026-10-05 · **进度**见 §8
+> ★★ **更新 2026-10-06（联调环境实测核实）**：新增 **§1B 测试环境**（**已配好，可直接开跑**）；**更正 §1 的 `P3`/`P4`** —— 实测 `approval_code` **由我方自定义**（无需飞书侧值）、且**测试环境的回调 token 与域名均已配置** ⇒ `defs/sync` 的 503 门**已解除**。
 
 ---
 
@@ -10,10 +11,11 @@
 
 每一轮我们这样走：
 
-1. **你看 §1 前置**：只需确认 `P2 / P3 / P4` 三项（`P1` 只挡「第二批」）。
-2. **你说「开始第 N 项」** ⇒ 我方给出该项的**完整操作步骤 ＋ 可直接照做的请求体/脚本**。
-3. **你执行并把结果（响应/截图/报文）发我** ⇒ 我方**判读**（对照 `docs/09` 的 A/B/C 判定），落到台账并给出「下一步」。
-4. **不通过的项**，我方按 `docs/09` 给定的处置方向**直接改代码/规格**（不会只说"不通过"）。
+1. **你（或我方）先跑一次环境自检**：`bash scripts/deploy-test-server.sh --check-only` —— 全绿即说明**测试环境活着、代码是当前 HEAD**（详见 **§1B**）。
+2. **你看 §1 前置**：★ 实测后**只剩 `P1`（服务器 DNS）与 `P2`（飞书侧权限清单/事件订阅）**需要外部动作；`P3` 已由我方自办完成、`P4` 测试环境已配好。
+3. **你说「开始第 N 项」** ⇒ 我方给出该项的**完整操作步骤 ＋ 可直接照做的请求体/脚本**。
+4. **你执行并把结果（响应/截图/报文）发我** ⇒ 我方**判读**（对照 `docs/09` 的 A/B/C 判定），落到台账并给出「下一步」。
+5. **不通过的项**，我方按 `docs/09` 给定的处置方向**直接改代码/规格**（不会只说"不通过"）。
 
 ★ **分步原则（本单最有用的东西）**：
 把 12 项阻塞项按「**是否要求链路连续稳定**」拆开 ——
@@ -28,11 +30,91 @@
 |---|---|---|---|---|
 | **P1** | 服务器 `/etc/resolv.conf` 被 `dhcpcd` 周期性写空（`R33`） | **只挡 §3 第二批（4 项）** | 你/运维 | 未修 |
 | **P2** | 飞书侧：应用权限清单齐全 ＋ 事件订阅已开 | 挡 §3 ＋ §4 的 `CHK-6` | 你（开放平台） | ★ 先做 `CHK-8` 核对 |
-| **P3** | 飞书侧：**`approval_code` ↔ 单据类型 映射表填值** | **挡所有"建定义/推实例"** | 你（需飞书侧实际配置值） | 未填（`Q1`） |
-| **P4** | 回调入站面：`JX_ACTION_CALLBACK_TOKEN` 换真实值 ＋ 关 `DEV_MODE` | 挡回调相关（`QV2-A28` 等） | 你 | 未做（`D3`） |
+| **P3** | **`approval_code` ↔ 单据类型 映射表填值** | **挡所有"建定义/推实例"** | ★ **我方自办（已完成）** | ★★ **更正**：`approval_code` **由我方自定义**，**不需要飞书侧的值** —— 依据 `internal/approval/defregistry.go:29`「稳定标识；**本地配置给出**」与 `:132`「主键 ＝ **我方自定义 code**」。映射文件 `docs/reference/config-mapping.jx.json` 已产出并通过导入器实测（`approval_code 11 / ledger_type 9 / threshold 5 / ledger_field 25`） |
+| **P4** | 回调入站面：回调 token ＋ 回调域名 | 挡回调相关（`QV2-A28` 等） | ★ **测试环境（已配好）** | ★★ **更正**：测试服务器 `.env` 里 `JX_ACTION_CALLBACK_TOKEN`（16 位测试 token）与 `JX_CALLBACK_DOMAIN`（`http://office.hunanyichu.com:5500`）**均已设置** ⇒ `defs/sync` 的 503 门**已解除**。★ `DEV_MODE=true` 是**测试环境有意为之**（允许 `?open_id=` 直连登录），**上线前**才需关闭 |
+| **P6** | **测试环境代码版本** | 不阻塞 | ★ **我方自办（已完成）** | 已把仓库 **HEAD `f6ed88e`** 部署到测试服务器并自检通过（详见 §1B）；★ 重申入口：`bash scripts/deploy-test-server.sh` |
 | **P5** | 回调地址确认 | 不阻塞 | — | ★ **`QV2-A19` 已实测**：飞书**接受 `http` ＋ 非 443 端口** ⇒ **HTTPS 不是阻塞项**（降为上线前可选加固） |
 
 > ★ **结论：修好 `P1` 才能做 §3 那 4 项；其余批次**（§2 §4 §5）**不依赖 `P1`**。
+
+---
+
+## 1B. 测试环境（★★ 2026-10-06 实测核实 · **已配好，可直接开跑**）
+
+### 1B.1 拓扑（实测确认，非推断）
+
+```
+公网   http://office.hunanyichu.com:5500
+         │   （路由器端口转发 5500 → 192.168.10.50:5000）
+         ▼
+Caddy  :5000   ── reverse_proxy ──▶  127.0.0.1:5001
+         ▼
+jxapproval       监听 127.0.0.1:5001（★ 由 .env 的 JX_LISTEN_ADDR 决定）
+部署目录         hnyc-server（192.168.10.50）:~/services/jxapproval
+```
+
+★ **踩坑记录（务必注意）**：我方应用在 **`127.0.0.1:5001`**，而 `*:8080` / `*:8088` 上是**别的服务**。
+直接 `curl 127.0.0.1:8080/` 会拿到 `401 {"message":"missing or malformed jwt"}` —— **那不是我们的应用**。
+⇒ ★ **自检端口一律现读 `.env`**（`deploy-test-server.sh --check-only` 已内建此规则）。
+
+### 1B.2 环境现状（逐项实测）
+
+| 项 | 值 | 证据来源 |
+|---|---|---|
+| 部署版本 | `0.3.5-s3-209-gf6ed88e`（＝ 仓库 HEAD `f6ed88e`） | `/healthz` 的 `data.version` |
+| `JX_ENV` / `DEV_MODE` | `test` / `true` | 服务器 `.env` |
+| 飞书凭据 | `JX_APP_ID=cli_aa33a8b22f78dcb4` **已配**，长连接**已建立** | 日志 `connected to wss://msg-frontier.feishu.cn` |
+| `JX_CALLBACK_DOMAIN` | `http://office.hunanyichu.com:5500` | 服务器 `.env` |
+| `JX_ACTION_CALLBACK_TOKEN` | **已设**（16 位测试 token） | 服务器 `.env` |
+| 通讯录镜像 | dept 6 / user 5，最近一次全量成功 | 日志 `通讯录全量同步完成` |
+| 权限规则 | 70 条 | 表 `t_permission_rule` |
+| 系统管理员 | `郝端` / `ou_7a88…c40a`（`active=1`） | 表 `t_user_role` |
+| 已建飞书定义 | **1 张**：`JXQA-TEST-0001`（`doc_type=PR`）`feishu_code=6AC44B6B-…BA72` | 表 `t_approval_def` |
+| `/healthz` 五项 | `subscribe` / `longconn` / `db_writable` / `single_instance` / `approval_defs` **全 true** | `--check-only` 输出 |
+
+### 1B.3 开动序列（★ 可直接复制）
+
+| 步 | 谁 | 命令 | 期望 |
+|---|---|---|---|
+| **① 环境自检** | 任意 | `bash scripts/deploy-test-server.sh --check-only` | 全绿（含公网入口 200） |
+| **② 准备映射** | 我方 | 见 §1B.4 —— ★ **先裁定 `doc_type` 重复问题** | — |
+| **③ 导入配置** | 服务器 | `cd ~/services/jxapproval && set -a; . ./.env; set +a && ./jxapproval import-config <config.json>` | 打印 `校验通过：… 合计 N 条` |
+| **④ 装载定义** | 系统管理员会话 | `POST /api/admin/approval/defs/sync`（无请求体） | 返回 `synced/created/updated/skipped/failed` 计数；飞书侧出现对应三方定义 |
+| **⑤ 开测** | 按 §2 逐项 | — | — |
+
+### 1B.4 ★★ 开动前必须先裁定的口径（否则第 ④ 步会踩静默歧义）
+
+`internal/store/repo_approval_def.go#GetApprovalDefByDocType` 的 SQL 是 `WHERE doc_type = ?`，
+**没有 `ORDER BY`、没有 `LIMIT`**。
+⇒ ★ **同一个 `doc_type` 若存在两条定义，反查结果不确定**（返回哪条取决于存储顺序），**而且不报错**。
+
+现状：库里已有 `JXQA-TEST-0001 → PR`。若要导入 11 类新 code（`jx_pr` 等），`PR` 会**有两条**。
+⇒ ★ **二选一**：① 删掉旧的 `JXQA-TEST-0001`（联调基线要"11 类各一条"）；② 或沿用其 code、不给 PR 新增。
+**建议 ①** —— 并建议同批把"`doc_type` 唯一"做成机检（避免下次再踩）。
+
+### 1B.5 日志（★ 联调期排障入口）
+
+★ **程序自身不写日志文件（只走 stdout）** ⇒ 已由 `scripts/start.sh` **固定落 `logs/app.log`**。
+（实测教训：换二进制后若按旧文档 `nohup ./start.sh >/dev/null 2>&1 &` 启动，日志**整条丢失**，
+`logs/app.log` 停在旧时间戳、新请求一条不落 ⇒ 联调期等于没有日志。）
+
+```
+ssh chadhao@192.168.10.50 'tail -f ~/services/jxapproval/logs/app.log'
+```
+
+### 1B.6 部署 / 回滚入口（★ 不再手工敲）
+
+```
+bash scripts/deploy-test-server.sh              # 构建(取 HEAD 干净树) → 上传 → 备份 → 切换 → 自检
+bash scripts/deploy-test-server.sh --check-only # 只自检
+bash scripts/deploy-test-server.sh --rollback   # 回滚二进制 + 数据库到最近一次备份
+```
+
+★ **为什么必须"取 HEAD 干净树"构建**：本仓库有**第二个 Agent 并行开发**，工作区随时可能是在途半成品。
+实测撞上过（`handlers_approval.go` / `specload.go` 正被改 ＋ 一个未跟踪新文件）——
+那种状态构建出的二进制**没有任何报错**，但内容是**没人验收过的中间态**（最危险的一类）。
+
+---
 
 ---
 

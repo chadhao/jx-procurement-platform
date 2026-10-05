@@ -15,7 +15,8 @@
 #   ③ run.pid 必须可信：本脚本在 exec 前把 $$ 写入 run.pid（exec 后 pid 不变），
 #      保证 run.pid ＝ 最终进程 pid；stop.sh 只在确认进程退出后才删它。
 #
-# 用法：前台观察日志 `./start.sh`；后台 `nohup ./start.sh >/dev/null 2>&1 &`。
+# 用法：后台启动 `nohup ./start.sh &`，观察 `tail -f logs/app.log`；
+#       前台调试（日志直接打屏）`JX_LOG_DEST=/dev/stdout ./start.sh`。
 
 set -eu
 
@@ -34,4 +35,13 @@ set +a
 # 记录 pid：$$ 经 exec 后不变，run.pid 即最终 jxapproval 进程的 pid。
 echo $$ > ./run.pid
 
-exec ./jxapproval
+# ★★ 教训④（2026-10-06 联调环境搭建时实测，勿删）：**程序自身不打开任何日志文件**，
+#   日志只写 stdout/stderr（全仓无 `logs/app.log` 的 OpenFile；唯一的 OpenFile 是单实例锁）。
+#   ⇒ 旧脚本头推荐的 `nohup ./start.sh >/dev/null 2>&1 &` 会把日志**整条丢掉**：
+#     实测换二进制重启后，`logs/app.log` 停在旧时间戳、新请求一条不落
+#     ⇒ **联调期等于没有日志，排障全靠猜**。
+#   ⇒ 故改为**本脚本固定落日志**（默认 `logs/app.log`，可由 `JX_LOG_DEST` 覆盖）。
+#     后台启动只需 `nohup ./start.sh &`，不必再记重定向 —— 去掉一个"记不住就静默丢日志"的坑。
+LOG_DEST="${JX_LOG_DEST:-$APP_DIR/logs/app.log}"
+mkdir -p "$(dirname "$LOG_DEST")"
+exec ./jxapproval >>"$LOG_DEST" 2>&1
