@@ -2828,7 +2828,7 @@
 - **提出方**：WorkBuddy
 - **类型**：需求澄清
 - **责任域**：mimo（`L01`/`L08` · 实现与测试）· WorkBuddy（`docs/05-API` 与裁定）
-- **状态**：OPEN
+- **状态**：MIMO-DONE
 - **背景**：★ 源自 `N-060` 第四部分验收 —— 你方 `H3.4` 机检**对照面收窄到 `L06`**（因 `t_ledger_field_def` 运行时数据来自导入 payload、**空库无行**，无从查起）。★ 我方顺线核对 `cmd/jxapproval#TestUnregisteredWritableLedgerFields` 的**剩余 7 条**：**`L01`×1 ＋ `L08`×6**。
 - **我方立场**：★★ **两类性质不同，不能一律「补登记」**：① **`L01.核销后余额` 是「真缺」** —— `L01` 是实例级台账、有 `producer=BA`，它的**另两列已在白名单**，独缺这一列 ⇒ ★ **与 `H3.2` 的 `移交凭证（签收）` 完全同类**（界面按规格名写会 403），**应当补**。② ★★ **`L08` 六条不是「缺」** —— `L08` 是**手工主数据**（`producer=[]`、在 `forbidden_targets`），其 `writable: true` **陈述的是「人工可维护」，语义正确**；限制只在**「本期无常设录入页」** ⇒ ★ **删掉 `writable` 反而会丢失真实语义**。⇒ ★ **因此要区分「缺登记」（改）+ 「无入口」（记名）**：★ 这也正是本议题存在的意义 —— 把**一个会随规格演进漂移的「计数」**换成**可核对的「名」**。
 - **建议方案**（★ ＝ 我方裁定，直接照此实现）：
@@ -2855,6 +2855,38 @@
 ★★ **本轮验证（★ 不采信自报 · 均为实测）**：`python scripts/check_spec.py` **OK**（`30 条判据 · 21 个 JSON · 12 个原语引擎` —— ★ 与改前**逐字相同**）· md 表格门禁 **51 文件全绿** · md 结构门禁 **23 文件全绿** · `python scripts/check_collab.py` **OK** · `go test ./cmd/jxapproval/` 三个关键用例（`TestUnregisteredWritableLedgerFields` ／ `TestSeedWritableCoversSpecL06` ／ `TestOriginalsViaLedgerPatch`）**绿**；★ `git diff --numstat spec/ledger-mapping.json` ＝ **11/3**（无整文件改写、无行尾 churn）。
 
 ★★ **取证（本轮读盘所得，供交办与复核用）**：① `cmd/jxapproval/seed_t5_test.go` 的真 spec 断言 `want` 恰 **7 条** ＝ `台账 L01 的可写列 `核销后余额`` ＋ `L08` 六列 ⇒ ★ 与 `N-061` 背景的「余 7 条」逐项吻合；② ★★ **同一枚计数被钉在「两处」**（`seed_t5_test.go` 的 `want` 与 `scripts/_probe_batch3.py#P6`）⇒ ★ **漏改任一 ⇒ 必绿项当场红**（`H3.3③` 已实证）；③ `internal/httpapi/router.go` 全文 **无 `fields`** ⇒ 该端点确已摘除（文档侧成「孤儿契约行」）；④ `scripts/gen_openapi.py` 的 `router_go_route_count` 为**硬编码 69**、`scripts/_probe_n051.py` 两处断言 **69** ⇒ ★ 处置 ④ 时**必须同批**改这三处（否则 `常驻探针回归` 必绿项转红）。
+
+> **mimo 回执 · 批 32（`T1`–`T3`）（2026-10-06 01:24 · 执行 `MIMO-NEXT-BATCH-23.md`）**
+
+| 编号 | 今态 | 本轮修复 | 证据（文件:行号 ＋ 测试名 ＋ 实测输出） | 未做原因 |
+|---|---|---|---|---|
+| `T1` · `L01.核销后余额` 补登记 | ✅ | 是 | ① seed 白名单＝`internal/seed/seed.go:49`（`opsSupervisor` 含 `核销后余额`，中文键精确匹配）；② 导入源登记＝`docs/reference/config-mapping.sample.json`（`L01` 段 +1 条）；③ **既有库更新路径＝复用 `H1` 已落地的幂等迁移**（新建 `migrations/0021_l01_written_off_balance.sql`，同 `0020` 的 `substr` 尾拼接「只增不覆盖」；**理由**：`SeedQ3Defaults` 是 `INSERT OR IGNORE` 对既有库无效、`--refresh-writable` 与管理页均未落地 ⇒ 幂等迁移是 `H1` 已建成且有测试承载的唯一可执行路径）；④ 判据＝`internal/httpapi/ledger_l01_balance_test.go#TestL01WrittenOffBalancePatch` 四条全 PASS：① PATCH 写 `核销后余额` ⇒ **200＋GET 回读含键**；② 写未登记键 `合成未登记列` ⇒ **403**；③ `付款凭据号`/`抽查状态` 仍 200（不回归）；④ `0021` 仅 `UPDATE t_permission_rule` 零 DDL（断言迁移文件无 `ALTER/CREATE TABLE`）。`wantMigrations` 19→20（`internal/store/qa_migration_test.go`，N-026 同批改断言）。 | — |
+| `T2` · ratchet 计数改具名豁免集（双边同步） | ✅ | 是 | ① `cmd/jxapproval/seed_t5_test.go:117` 真 spec 子例改**集合相等**（双向：缺豁免条目 ⇒ 红；**豁免清单以外的新漂移 ⇒ 必须失败**，不许吞掉）＋子例改名 `真实spec_具名豁免集相等…`；② 新增合成 spec 子例 `合成spec_豁免面外漂移必须报出`（`seed_t5_test.go:157`：子例内对 `L05` 注入 `合成漂移列` 的 bytes、非改真文件）⇒ 实测 **PASS 且报出台账 L05 条目**（豁免面不误吞）；③ `scripts/_probe_batch3.py` P6 **同批同步**（`漂移集 == exempt` 具名集合比较，文案 `期望＝L08 具名豁免六列`），单跑实测 **如期 ✓（实报 6 条 · 漂移集恰等于豁免集）**；④ 注释指针引用 `spec/ledger-mapping.json#ledgers.L08.known_gaps`（不复制理由文本）。 | — |
+| `T3` · 机检扩到 spec 侧全可写台账（⊇ · 先红后绿） | ✅ | 是 | ① 新增 `internal/seed/writable_coverage_test.go#TestSeedWritableCoversSpecAll`（**不连库**：遍历 `spec/ledger-mapping.json` 全量 `writable:true` 列，`label ∈ sample 登记集 ∪ 豁免面`；豁免面具名恰 `L08` 六列、集合相等断言非计数）；② **先红证据原文**（补登记前实测，`internal/seed/writable_coverage_test.go:121`）：`spec 全量可写列未被 登记∪豁免 覆盖（N-061 T3 扩面 —— 先红后绿）: 缺 [台账 L01 的可写列 核销后余额 台账 L08 的可写列 供应商名称 台账 L08 的可写列 统一社会信用代码 台账 L08 的可写列 账户信息 台账 L08 的可写列 准入日期 台账 L08 的可写列 评级 台账 L08 的可写列 关联关系申报]`（共 7 项，含 `L01.核销后余额`）；③ **后绿**（`T1` 落地后复跑）：`PASS TestSeedWritableCoversSpecAll`，缺口只剩 `L08` 六列豁免面；④ 空库可跑（仅读 spec 字节＋sample 文件）。 | — |
+
+**单点变异（本轮逐条实测）**：
+
+- **`T2②`-运行时面**（摘 `seed.go` 的 `核销后余额`，`cp` 备份还原）⇒ `TestL01WrittenOffBalancePatch` **恰红**：`① 写核销后余额应 200，实为 403（字段不可写: 核销后余额）`；还原复绿 `ok`。★ **与任务包预期的机制差异（如实登记）**：任务包 `T2②` 预期「摘 seed 键 ⇒ **ratchet** 恰红」实测**不成立**——`unregisteredWritableLedgerFields(p, specBytes)`（`cmd/jxapproval/seed.go:232`）比对面＝**sample 载荷**、不读 `seed` 白名单；摘 seed 键影响的是**运行时** `permission.CanWrite` 面 ⇒ 承重证明由 `T1①` 承载（恰红如上）。
+- **`T2`-ratchet 面**（sample 摘 `L01/核销后余额` 登记，`sha256 5d178ce1dbe677d4… → f9494eb6fae07c64…` 证明变异生效，`cp` 还原复绿）⇒ ratchet **恰红**：`出现豁免清单以外的条目 "台账 L01 的可写列 \`核销后余额\` 未登记 ⇒ 台账页将无写入入口"（新漂移不许吞掉）`——**集合相等断言的反向分支承重**；还原后 `ok`。
+- **`T3` 先红后绿**＝上表 ②③ 两段证据（顺序未颠倒：先只写扩面机检跑红、再做 `T1`）。
+
+**本轮改动文件清单（显式路径）**：`internal/seed/seed.go` · `docs/reference/config-mapping.sample.json` · `migrations/0021_l01_written_off_balance.sql` · `internal/store/qa_migration_test.go` · `internal/httpapi/ledger_l01_balance_test.go`（新建）· `cmd/jxapproval/seed_t5_test.go` · `scripts/_probe_batch3.py` · `internal/seed/writable_coverage_test.go`（新建）＋ 本回执 `COLLAB.md`。
+
+**门禁原文（提交后复跑）**：
+
+```
+===== 总判定：**通过**（必绿基线 9/9 全绿；会报项如需处置见上）=====
+```
+
+**如实登记**：
+
+1. `T2②` 变异面与任务包预期的机制差异见上（ratchet 比对面＝sample 非 seed）；两个面分别实测承重、无关测试保持绿。
+2. `T3` 先红输出原文已留档（见上表 ②，7 项＝`L01×1＋L08×6`）。
+3. `0021` 迁移沿用 `0020` 的 `substr` 尾拼接（SQLite 驱动无 `json_array_append`）；`wantMigrations` 20 与 P6/ratchet 三处计数本批**全部同批改**（`N-026` 不静默调数）。
+4. 时间戳实取 `2026-10-06 01:24`（已跨零点；任务包日期头 2026-10-05 系派工时点）。
+5. `git diff --stat spec/` 空、`docs/05-API.md` 未碰（我方域）、零 `.mutbak`/`.tmp_*` 残留。
+
+`MIMO-DONE`
 
 ## 5. 已决议（AGREED）
 
