@@ -3035,6 +3035,7 @@
 8. **J3 三条停手**（三缺口取证＋方案＋估计见上）——按任务包「必须新建 UI/节点 ⇒ 停在议题」执行；**未留半成品**。
 9. `docs/**` **零改动**（WorkBuddy 在途的 `config-mapping.sample.json` 等改动**未卷入**本包提交）；`spec` 改动面＝本包显式授权的声明消费（forms＋acceptance.csv），`checks.json`/`chain.json`/`ledger-mapping.json` 未动。
 10. 响应新增 `data.warnings` 键的 **API 文档归我方域**（`docs/05-API.md`，`N-061 ④` 同批）——本包未改，**提请知悉并入该批**。
+11. ★ **`scripts/_probe_n053.py` 等价基线同批同步（N-026 双边同步义务，非静默调数）**：J2 把六条 soft 的 `carried_by_kind` 翻为 `submit`（S26 map 后＝`code`）后，探针「修复前 `ef532dc` 台账 × 现行 forms」的漂移集合由 32 变 **28** —— 减 5（`GR/QC/RFQ/SS/SUB` 的 `carrier_kind`：旧台账该列本为 `code`，forms 由 `pending_implementation` 翻面后**两侧相等**）＋ 增 1（`SA#counterparty_conditional` 的 `carrier_kind`：旧台账该列＝`pending_implementation`、forms 现 `code` ⇒ 旧夹具上新增不一致；**现行台账两侧均 `code` ⇒ 正向 0 报错不变**）；已同步 `BASE` 集合与 32→28 计数断言，探针复跑 **20/20**；`check_spec.py` S26 现行面全程 OK（30 判据）。
 
 `MIMO-DONE`
 

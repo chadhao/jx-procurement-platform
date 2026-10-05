@@ -10,8 +10,8 @@
 
   1. **正向**：用**真 `spec/checks.json#S26` 的 args**（从清单里读出来，不手抄）跑真台账 ⇒ **0 报错**。
   2. ★★ **等价性**：拿**修复前**的台账（`ef532dc` 版本，`git show` 取字节）跑 `S26` ⇒
-     **逐条报出 32 处**，且 (判据键, 列) 集合与**迁移前 `_ledger_vs_forms()` 在同一夹具上的实测基线
-     32 项逐项相同** ⇒ ★ 「把兜底升级为正式判据」**没有丢语义**（这是本条最重要的证据）。
+     **逐条报出 28 处**，且 (判据键, 列) 集合与**迁移前 `_ledger_vs_forms()` 在同一夹具上的实测基线逐项相同**
+     （★ N-062 J2 连带：forms 六条 soft `carried_by_kind` pending→submit ⇒ 旧 csv 夹具漂移集 −5＋1＝28；N-026 双边同步、非静默调数） ⇒ ★ 「把兜底升级为正式判据」**没有丢语义**（这是本条最重要的证据）。
   3. **鉴别力（真数据上）**：在**内存里**改真 `forms/BA.json` 一条 `severity` ⇒ **恰 1 条**、且点名该判据
      （★ 不落盘、零副作用）。
   4. ★★ **缺口存在性反证**：同一份合成夹具 —— **有 `S26` ⇒ 红**、**把 `S26` 从清单摘掉 ⇒ 静默放行**
@@ -98,7 +98,7 @@ def main():
     for p in probs[:5]:
         print("      · " + p)
 
-    # ── 2 等价性：修复前台账（ef532dc）⇒ 32 处，且与迁移前基线逐项相同 ──
+    # ── 2 等价性：修复前台账（ef532dc）⇒ 28 处，且与迁移前基线逐项相同 ──
     pre = os.path.join(TMPDIR, "prefix_acceptance.csv")
     with open(pre, "wb") as fh:
         fh.write(subprocess.run(["git", "show", "ef532dc:spec/acceptance.csv"],
@@ -114,21 +114,17 @@ def main():
         ("BA#safety_certificate", "severity"), ("BA#receipt_per_purchase", "severity"),
         ("BA#anti_split_before_disburse", "severity"), ("BA#no_purchaser_field", "severity"),
         ("BA#idempotency_key", "severity"),
-        ("GR#inspection_vs_conclusion_hint", "carrier_kind"),
         ("PR#amount_positive", "severity"), ("PR#completeness_l2", "severity"),
         ("PR#cross_dept_designation", "severity"), ("PR#safety_branch", "severity"),
         ("PR#safety_branch", "carrier_kind"), ("PR#device_tech_attachment", "severity"),
         ("PR#device_tech_attachment", "carrier_kind"), ("PR#idempotency_key", "severity"),
-        ("QC#no_duplicate_qc_for_same_batch", "carrier_kind"),
-        ("RFQ#response_shortfall_warning", "carrier_kind"),
         ("SA#amount_positive", "severity"), ("SA#completeness_l2", "severity"),
         ("SA#entertain_required", "severity"), ("SA#inspection_basis", "severity"),
-        ("SA#counterparty_conditional", "severity"), ("SA#cross_month_allocation", "severity"),
+        ("SA#counterparty_conditional", "severity"), ("SA#counterparty_conditional", "carrier_kind"), ("SA#cross_month_allocation", "severity"),
         ("SA#cross_month_allocation", "carrier_kind"), ("SA#actual_not_exceed", "severity"),
         ("SA#invoice_must_link", "severity"), ("SA#idempotency_key", "severity"),
-        ("SS#fixed_asset_conflict", "carrier_kind"), ("SUB#submit_deadline_warning", "carrier_kind"),
     }
-    case("等价性·修复前台账 ⇒ 32 处", len(cols) == 32, "逐列报出 %d 条（期望 32）" % len(cols))
+    case("等价性·修复前台账 ⇒ 28 处", len(cols) == 28, "逐列报出 %d 条（期望 28）" % len(cols))
     case("等价性·与迁移前基线逐项相同", got_keys == BASE,
          "差集 = %s" % (sorted(got_keys ^ BASE) or "（空）"))
     case("等价性·无越界报错（无未登记/列数）",
