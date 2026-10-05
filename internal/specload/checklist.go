@@ -167,20 +167,47 @@ func runOne(c checkDef, files map[string][]byte, decoded map[string]any) []strin
 		// N-021：可选 `split` 分隔符 —— 管道串（如 route_by_condition）先拆段再逐段校验。
 		// 未设 ⇒ 行为与原先**完全一致**（向后兼容，不影响既有判据）。
 		splitSep, hasSplit := argStringOpt(c.Args, "split")
+		// N-049 ② 第二半：可选 `target_filter` 派生白名单（规格正本＝
+		// checks.json#_pending_arg_note）—— 缺省 ⇒ 与原先逐字节一致。
+		filter, filterProblems := parseRefTargetFilter(c.Args, c.ID)
 		// target 键集合
 		targetKeys := map[string]bool{}
+		missingField := []string{}
 		for _, tn := range globKeys(files, targetFile) {
 			if root, ok := decoded[tn]; ok {
-				for k := range asMap(scopeNode(root, targetDict)) {
+				for k, v := range asMap(scopeNode(root, targetDict)) {
+					if filter.Has {
+						fv := dig(v, filter.Field) // 复用既有 dig（单键/点路径）
+						s, ok := scalarString(fv)  // 复用既有标量归一
+						if !ok {
+							// fail-closed ②：键不存在/路径中断/null/非标量 ⇒ 点名该键
+							missingField = append(missingField, k)
+							continue
+						}
+						if !filter.In[s] {
+							continue // 值不在 in ⇒ 不进白名单（＝与 none 同等）
+						}
+					}
 					targetKeys[k] = true
 				}
 			}
 		}
+		problems := append([]string{}, filterProblems...) // fail-closed ①（形态非法）
+		for _, k := range missingField {
+			problems = append(problems, fmt.Sprintf(
+				"[%s] target_dict 键 %q 缺字段 %q（取不到标量值 —— 未分类不许静默当成可入白名单）",
+				c.ID, k, filter.Field))
+		}
 		for _, e := range extra {
 			targetKeys[e] = true
 		}
+		// fail-closed ③：过滤后白名单为空（extra 并入后仍空 ⇒ 过滤写错不许静默掏空）
+		if filter.Has && len(targetKeys) == 0 {
+			problems = append(problems, fmt.Sprintf(
+				"[%s] target_filter 过滤后白名单为空（过滤写错不许静默掏空判据面）", c.ID))
+		}
 		hits := collectAcross(decoded, pat, collect)
-		problems := minHitsProblems(c.ID, collect, decoded, pat, minHits)
+		problems = append(problems, minHitsProblems(c.ID, collect, decoded, pat, minHits)...)
 		for _, s := range stringHits(hits) {
 			refs := []string{s}
 			if hasSplit {
@@ -979,6 +1006,59 @@ func argStringOpt(args map[string]json.RawMessage, key string) (string, bool) {
 		return "", false
 	}
 	return s, true
+}
+
+// refTargetFilter（N-049 ② 第二半）：按 target_dict 每条目的某字段取值收窄白名单。
+// 规格正本 ＝ spec/checks.json#_pending_arg_note。
+// 形态：{"field": "<点路径>", "in": [<标量>…]}；★ 缺省 ⇒ 行为与原先逐字节一致。
+type refTargetFilter struct {
+	Has   bool
+	Field string
+	In    map[string]bool // 已按 scalarString 归一
+}
+
+// parseRefTargetFilter 解析可选 target_filter。返回 (过滤器, 形态错误列表)：
+// 未设 ⇒ Has=false、无错（完全旁路）；形态非法（缺 field/in、field 非串或空、in 非数组）
+// ⇒ Has=false ＋ 一条点名判据 id 与参数名的错误（fail-closed ①：不静默忽略）。
+// ★ in 允许空数组 —— 不算形态非法，其后果由「过滤后白名单为空」（fail-closed ③）兜住。
+func parseRefTargetFilter(args map[string]json.RawMessage, checkID string) (refTargetFilter, []string) {
+	raw, ok := args["target_filter"]
+	if !ok {
+		return refTargetFilter{}, nil
+	}
+	var obj map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &obj); err != nil {
+		return refTargetFilter{}, []string{fmt.Sprintf(
+			"[%s] target_filter 形态非法：必须是对象 {\"field\":…,\"in\":[…]}（%v）", checkID, err)}
+	}
+	f, hasField := obj["field"]
+	var field string
+	if !hasField || json.Unmarshal(f, &field) != nil || strings.TrimSpace(field) == "" {
+		return refTargetFilter{}, []string{fmt.Sprintf(
+			"[%s] target_filter 形态非法：缺非空字符串字段 field", checkID)}
+	}
+	ir, hasIn := obj["in"]
+	if !hasIn {
+		return refTargetFilter{}, []string{fmt.Sprintf(
+			"[%s] target_filter 形态非法：缺数组字段 in", checkID)}
+	}
+	var inRaw []json.RawMessage
+	if err := json.Unmarshal(ir, &inRaw); err != nil {
+		return refTargetFilter{}, []string{fmt.Sprintf(
+			"[%s] target_filter 形态非法：in 必须是数组（%v）", checkID, err)}
+	}
+	inSet := map[string]bool{}
+	for _, m := range inRaw {
+		var v any
+		if err := json.Unmarshal(m, &v); err != nil {
+			return refTargetFilter{}, []string{fmt.Sprintf(
+				"[%s] target_filter 形态非法：in 成员解析失败（%v）", checkID, err)}
+		}
+		if s, ok := scalarString(v); ok {
+			inSet[s] = true
+		}
+	}
+	return refTargetFilter{Has: true, Field: field, In: inSet}, nil
 }
 
 // argScalarStrings 读标量数组（元素可为字符串或数字 —— JSON 数字解码为 float64；
