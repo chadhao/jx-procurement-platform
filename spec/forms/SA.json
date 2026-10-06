@@ -3,7 +3,7 @@
   "label": "费用事前申请单",
   "prefix": "SA",
   "number_format": "SA-YYMM-####",
-  "version": "1.6",
+  "version": "1.7",
   "date": "2026-10-06",
   "generated_by": "WorkBuddy",
   "sources": {
@@ -361,9 +361,9 @@
       "note": "用途分类表把 P08 写作「费用线（**对公直付**）」、M07 同 ⇒ **只能对公直付**；而 M01/M02/M03/M06 写作「费用线（**可**对公直付）」⇒ **可垫付可直付**。这是原文区分，勿合并"
     },
     {
-      "gap": "`settlement_backfill`（结算补录段）的**入口未建** ⇒ `SA#actual_not_exceed` / `SA#invoice_must_link` 两条 `hard` 判据的时点永不到来",
-      "status": "★★ **规格已齐（批 42）· 待实现**",
-      "note": "★ 原先的两个缺口：① **无「实际金额」输入字段** —— ✅ **已由批 42 补齐**（`actual_cents` 入库）；② **无补录入口** —— ⏳ 待实现。★ 入口最小契约已由批 42 写入 `spec/chain.json#conventions.checks_when`（第 ② 条）：`POST /api/approval/{biz_no}/backfill`，白名单 ＝ 该段 `source=user` 字段，落 `ext_json`，写后执行 `when=backfill(<section_id>)` 的判据。★★ **契约行（`docs/05-API.md`）必须与路由实现同批落** —— 否则当场造出「文档声明了、路由不存在」（`C9` / `S21`–`S23`）。★ **交办包（批 44 据实订正）**：`MIMO-NEXT-BATCH-27.md` —— ★ **原写 `MIMO-NEXT-BATCH-26.md`，系批 43「拆两包」前的旧指向**（`BA` 侧两条已随包 26 落地并过验收；★ 本段属 `SA` 侧，须与新路由**同批**落）；★ 该旧指向属**账实不符**，本节据实修正。"
+      "gap": "`settlement_backfill`（结算补录段）的**入口** —— ★★ **已闭环（`N-062` 族 `J3` `SA` 侧落地段 · 批 45 · 2026-10-06）**，本节**保留作历史对照**（★ 与同文件 `known_gaps[2]` 同处置：**不删条目、据实翻面**）。★ **历史提法（原文照录，已不成立）**：「…的**入口未建** ⇒ `SA#actual_not_exceed` / `SA#invoice_must_link` 两条 `hard` 判据的时点永不到来」",
+      "status": "✅ **已闭环（`N-062` 族 `J3` `SA` 侧落地段 · 批 45 · 2026-10-06）** —— 入口与执行体**双双落码并经我方独立验收** ⇒ 两条 `hard` 判据的**时点已可达**（`when=backfill(settlement_backfill)`）＋ **执行体已注册** ⇒ ★★ **本项不再是缺口、不再是待实现项**。★★ **原状态「★★ 规格已齐（批 42）· 待实现」已过期**，本行**据实翻面**（★ 与同文件 `known_gaps[2]` 同处置：保留条目作历史对照）",
+      "note": "★ 原先的两个缺口：① **无「实际金额」输入字段** —— ✅ **已由批 42 补齐**（`actual_cents` 入库）；② **无补录入口** —— ⏳ 待实现。★ 入口最小契约已由批 42 写入 `spec/chain.json#conventions.checks_when`（第 ② 条）：`POST /api/approval/{biz_no}/backfill`，白名单 ＝ 该段 `source=user` 字段，落 `ext_json`，写后执行 `when=backfill(<section_id>)` 的判据。★★ **契约行（`docs/05-API.md`）必须与路由实现同批落** —— 否则当场造出「文档声明了、路由不存在」（`C9` / `S21`–`S23`）。★ **交办包（批 44 据实订正）**：`MIMO-NEXT-BATCH-27.md` —— ★ **原写 `MIMO-NEXT-BATCH-26.md`，系批 43「拆两包」前的旧指向**（`BA` 侧两条已随包 26 落地并过验收；★ 本段属 `SA` 侧，须与新路由**同批**落）；★ 该旧指向属**账实不符**，本节据实修正。★★ **据实订正（`N-071` · 批 52 · 2026-10-06）＝ 本项已闭环** —— 上段 ② 的「⏳ 待实现」与本节 `status` 原写的「待实现」**均已过期**：① **入口已落** ＝ `POST /api/approval/{biz_no}/backfill`（路由 `internal/httpapi/router.go` 的 `api` 组 · 鉴权 `requireSession`；handler ＝ `internal/httpapi/handlers_approval_backfill.go#handleApprovalBackfill`）；② **执行体已注册** ＝ 同文件 `backfillCheckFns`（`checkBackfillActualNotExceed` / `checkBackfillInvoiceMustLink`），**写后对合并终态求值、不过则可见拒绝且零写入**；③ **契约行已在位** ＝ `docs/05-API.md` **V2.22** 的 `#### POST /api/approval/{biz_no}/backfill` 小节 ＋ 全路径表行（★ 本节原文要求的「契约行必须与路由实现**同批落**」**已达成**，未造出 `C9` / `S21`–`S23` 那类红线）；④ ★★ **两条判据的 `carried_by_kind` 已由 `pending_wiring` 翻入 `code`** —— 本文件 `checks[]` 的 `carried_by` 字段逐条写明「★★ **已闭环（`N-062` 族 `J3` `SA` 侧落地段 · 批 45 · 2026-10-06）**」；⑤ ★ **交办包指向已由包 27 消费完毕**（批 45 交办 → 批 46 独立验收通过）。★ **本条目此后不得再被读作「待实现」**。"
     }
   ]
 }

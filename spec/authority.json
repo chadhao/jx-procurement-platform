@@ -1,5 +1,5 @@
 {
-  "version": "1.1",
+  "version": "1.2",
   "generated_by": "WorkBuddy",
   "date": "2026-09-30",
 
@@ -149,21 +149,21 @@
     {
       "id": "transfer_rollback_by_agent",
       "what": "★ **代理人可以转交 / 回退**（正向契约；见 `01a §4.1 表二`：代理人**可转交 + 可回退；不可加签、不可撤回**；且**仅限其所代理的那个节点**）",
-      "status": "⏳ **未实现** —— 属 `M9`（转交 / 加签 / 回退 / 撤回）批次",
+      "status": "✅ **已实现（`N-060` `F4` · 批 28 落地 → 我方独立验收；据实订正见 `N-071` · 批 52 · 2026-10-06）** —— ★★ **原写「⏳ 未实现 —— 属 `M9`（转交 / 加签 / 回退 / 撤回）批次」已过期**：`M9` 四操作**已全部落码** —— 路由 `internal/httpapi/router.go` 的 `/approval/:biz_no/{transfer,addsign,rollback,cancel}`（4 条）· handler `internal/httpapi/handlers_approval.go`（4 个）· 实现 `internal/flow/ops.go#Transfer` / `#AddSign` / `#Rollback` 与 `internal/flow/service.go#Cancel`。★★ **代理人正向消费门已装配并生效**：`cmd/jxapproval/bootstrap.go` 调 `flowSvc.SetAgentAuthorizer(httpapi.NewTaskAgentAuthorizer(specBundle, db))`，由 `internal/flow/ops.go` 的 `Transfer`（行 96）与 `Rollback`（行 342）**两处消费**。★★ **边界逐条对上本契约**：① **可转交 / 可回退** ✓；② **不可加签** ✓（`AddSign` **刻意不经过此门** —— `internal/httpapi/agent_authorizer.go` 头注与 `ops.go` 注释均已写明「加签不开放代理人」）；③ **不可撤回** ✓（`Cancel` 仍**仅发起人本人**，`internal/flow/ops_test.go#TestCancelRequiresApplicant`）；④ ★★ **仅限其所代理的那个节点** ✓ —— 正向门**三重判定、缺一即 false（fail-closed）**：节点→角色可判（`chain.FindRoleOfNode`）⇒ 该角色有 `active` 代理且其 `agent_open_id` ＝ actor（`store.FindActiveRoleAgent`）⇒ `chain.NodeAllowsAgent` 放行；★ **越节点操作 ⇒ 第 1/3 重直接拒**；⑤ **备付金按节点排除** ✓（`NodeAllowsAgent` 覆盖 `approve_petty_cash` / `disburse`）。★★ **两类用例在位**：`internal/flow/ops_test.go#TestTransferAgentAuthorization`（**代理放行** / **代理拒绝** / **`nil` 门＝仅本人** / **`AddSign` 不走代理门** 四个子用例）＋ `#TestTransferNegatives` / `#TestRollbackNegatives` / `#TestRollbackRequiresCurrentAssignee`。★ 审计语义 ＝ `OpLog.ActorOpenID` **恒为真实操作人（代理人本人）**，不伪装 assignee。★ **本项此后不得再被读作「未实现」**",
       "test": "★ 随 `M9` 落地：`assignee = me` **或**「我是**本节点**审批人的在册代理人」；★ 越节点操作必须被拒（`UC-22` 异常流 A2）。"
     },
     {
       "id": "transfer_notify_approved",
       "what": "★ 代理人转交 / 回退时**必须通知该单内已审批通过的全部人**（`FR-M9-14`）",
-      "status": "⏳ **未实现**（随 `M9`）",
+      "status": "✅ **已实现（随 `N-060` `F4` · 批 28 落地；据实订正见 `N-071` · 批 52 · 2026-10-06）** —— ★★ **原写「⏳ 未实现（随 `M9`）」已过期**：`Transfer`（`internal/flow/ops.go` 行 110）· `Rollback`（同文件 行 355）· `Cancel`（`internal/flow/service.go` 行 437）**三条路径均已在流事件上携带 `NotifyTargets`**（`internal/flow/event.go` 的 `FlowEvent.NotifyTargets` 字段），取值 ＝ `ExpectedNotifyTargets(preTasks, actorOpenID)`（`internal/flow/notify.go`，★ **纯函数、顺序稳定**）。★★ **「漏发必须可检出」这一条也已具备机制、不是「发了就完事」**：`internal/flow/notify.go` 走**两阶段** —— `EnsureNotifyExpected`（先落 `t_notify_log` 的 `EXPECTED` 行）→ 发送 → `UpdateNotifyStatus(SENT/FAILED)` ⇒ ★ **任一收件人无 `SENT` 行即可被查出**（`store.ListUnsentNotify` / `store.HasNotifyLog`；`internal/store/models.go` 的 `NotifyLog` 头注即写「漏发可检出」）。★ **收件人口径** ＝ `docs/01a §4.7` 的「该单内**已审批通过**的全部人」；★★ **与「新待办产生」的 `ActivatedNotifyTargets` 收件人集合完全不同、两者不得混用**（`notify.go` 头注已明示）。★ **本项此后不得再被读作「未实现」**",
       "test": "★ 漏发**必须可检出**（查 `t_notify_log` + Bot 回执）。"
     }
   ],
 
   "enable_guard": {
-    "rule": "★★ **在 `M9` 落地前，本配置不产生任何权限** —— `/admin` 页签须**显式标注「代理人功能未启用」**；服务端**不得**因为存在代理人记录而放行任何操作。",
-    "why": "★ 依据 `README` 定案 **#24**（**每个配置键必须有消费端**，否则就是「假配置」）。本配置当前的消费端**只有负向的那个**（`resolve_ignores_agent`）—— 它保证「配了不会被误用」，但**尚不保证「配了会被用」**。⇒ 与其让运维误以为配了就生效，不如**明白标注未启用**。",
-    "lifting": "★ 解除条件：`M9` 的「转交 / 回退按代理人判定」落地并通过其**应拦 / 应放行**两类用例。"
+    "rule": "★★ **据实订正（`N-071` · 批 52 · 2026-10-06）—— 前提已不成立，且守栏只解除了一半**：★ 原文写「**在 `M9` 落地前**，本配置不产生任何权限」，而 **`M9` 已落地** ⇒ ★★ **「服务端不得因为存在代理人记录而放行任何操作」那半已失效**（★ **服务端那半已失效**）：`M9` 四操作落码 ＋ 代理人正向消费门已装配（`cmd/jxapproval/bootstrap.go` 调 `SetAgentAuthorizer`）⇒ **服务端确实会因存在代理人记录而放行转交 / 回退**（★ 仅限**本节点**、且 **fail-closed**，详见 `consumers[transfer_rollback_by_agent]`）。★★ **但守栏的另一半仍在（具名残留，不得含糊）**：`/admin` 侧的「**未启用**」告示**尚未撤除**，三处仍在同步说「未启用」—— ① `internal/httpapi/handlers_admin_role_agents.go` 的 `const roleAgentFeatureEnabled = false`（响应 `feature_enabled:false` ＋ `feature_note` 写「代理人功能未启用…待 `M9` 落地后生效」）；② `web/src/views/Admin.vue` 的页签告示（`v-if` 判 `!agentFeature`）；③ `docs/05-API.md §3.9` 的「★ 启用状态」行（写「属 `M9`、**未实现**」）。⇒ ★★ **现状定性 ＝「服务端已放行 / 告示说未启用」——这是一处账实不符**，**不是**「守栏仍在生效」。★ **处置** ＝ 开 `N-071` 的**交办段**（任务包 `MIMO-NEXT-BATCH-30.md`）由 mimo 同批撤销；★★ **代码 ＋ 前端 ＋ 契约行 ＋ 断言 `false` 的测试（`internal/httpapi/role_agents_n028_test.go`）必须同批落** —— 只改一处会当场造出「文档说已启用、响应仍 `false`」的**新**账实不符。",
+    "why": "★ 依据 `README` 定案 **#24**（**每个配置键必须有消费端**，否则就是「假配置」）。本配置当前的消费端**只有负向的那个**（`resolve_ignores_agent`）—— 它保证「配了不会被误用」，但**尚不保证「配了会被用」**。⇒ 与其让运维误以为配了就生效，不如**明白标注未启用**。★★ **据实订正（`N-071` · 批 52 · 2026-10-06）**：★ 上句「消费端**只有**负向的那个」**已过期** —— 现**正负各一**：负向 ＝ `resolve_ignores_agent`（配了不会被误用）；★★ **正向 ＝ `consumers[transfer_rollback_by_agent]` ＋ `consumers[transfer_notify_approved]` 两条，均已落码并经我方独立验收**。⇒ ★ 「与其让运维误以为配了就生效」的**理由已消失**（★ 现在**配了确实会用**，且用错了会 fail-closed）；**残留的只是告示未撤**（具名三处见上行 `rule`，由 `N-071` 交办段同批撤销）。",
+    "lifting": "★ 解除条件：`M9` 的「转交 / 回退按代理人判定」落地并通过其**应拦 / 应放行**两类用例。★★ **达成判定（`N-071` · 批 52 · 2026-10-06 · 我方独立取证，非推断）**：① **「落地」✓** —— `internal/flow/ops.go#Transfer`（行 96）与 `#Rollback`（行 342）**已在判权条件里消费 `agentAuthorizer`**；② ★★ **「应拦 / 应放行两类用例」✓** —— `internal/flow/ops_test.go#TestTransferAgentAuthorization` 的四个子用例恰为**代理放行**（应放行）· **代理拒绝**（应拦）· **`nil` 门＝仅本人** · **`AddSign` 不走代理门**，另有三条越权方向用例；③ **装配 ✓** —— `cmd/jxapproval/bootstrap.go` 注入 `SetAgentAuthorizer`。⇒ ★★ **本 `lifting` 条件已满足**。★★ **但「条件满足」≠「守栏已撤」** —— **撤销动作尚未执行**，残留与处置见上行 `rule`（★ **两者必须分清**：本行是「应当解除」，`rule` 是「当前实际状态」）。"
   },
 
   "open_items": [
@@ -196,6 +196,7 @@
 
   "change_log": [
     { "date": "2026-09-30", "version": "1.0", "who": "WorkBuddy", "what": "首版建立：把用户 2026-09-30 的四条定案落成机读规格 —— 代理人**后台可定义**（点选镜像用户）· **不需要替补**（落地为可测的负向守卫）· 两条制度约束（两级不得同人代理 / 备付金不得代理）落成 `checks`；并确立第四类配置「授权配置」，与 `constants.json#three_way_split` 对齐。" },
-    { "date": "2026-09-30", "version": "1.1", "who": "WorkBuddy", "what": "★ **用户补答「代理人由需求提出人所在部门主管指定」** ⇒ ① 新增顶层 **`designator`**（**术语归一**为 `chain.json#roles.supervisor`「**主管领导**」，并给出**平行印证**：制度第十条「经办人由主管领导…指定」；② 明确 ★★ **系统不校验指定人**（后台只记登记人）＋ **说明为什么不做**；③ 明示一处**残留歧义**（部门经理 vs 主管领导 ⇒ 只影响制度措辞））；④ `open_items` 的「由谁指定」一项 **→ 已定**；⑤ ★ **制度正本第十二条已同步重生成**（32 条 / 7 表 / 5,542 字，语言门禁通过）。" }
+    { "date": "2026-09-30", "version": "1.1", "who": "WorkBuddy", "what": "★ **用户补答「代理人由需求提出人所在部门主管指定」** ⇒ ① 新增顶层 **`designator`**（**术语归一**为 `chain.json#roles.supervisor`「**主管领导**」，并给出**平行印证**：制度第十条「经办人由主管领导…指定」；② 明确 ★★ **系统不校验指定人**（后台只记登记人）＋ **说明为什么不做**；③ 明示一处**残留歧义**（部门经理 vs 主管领导 ⇒ 只影响制度措辞））；④ `open_items` 的「由谁指定」一项 **→ 已定**；⑤ ★ **制度正本第十二条已同步重生成**（32 条 / 7 表 / 5,542 字，语言门禁通过）。" },
+    { "date": "2026-10-06", "version": "1.2", "who": "WorkBuddy", "what": "★★ **据实订正四笔 ＋ 一处守栏据实登记（`N-071` · 批 52 · B 档 · 我方先行规格 · **未派工**）** —— ★★ **本版只改本文件的状态与守栏表述：不动任何判据、不动任何原语、不动任何引擎、不动任何路由、不动任何代码**（⇒ 判据仍 **30** / 原语仍 **12** / 必绿基线仍 **9**，门禁判定值**零波动**）。① `consumers[transfer_rollback_by_agent]` 与 ② `consumers[transfer_notify_approved]` 两条 `status` 由「⏳ 未实现（随 `M9`）」**据实翻面为「已实现」**（`M9` 四操作已落码 ＋ 代理人正向消费门已由 `cmd/jxapproval/bootstrap.go` 装配生效 ＋ 通知目标集与 `t_notify_log` 留痕均在位 ＋ `internal/flow/ops_test.go#TestTransferAgentAuthorization` 覆盖应拦/应放行两向）；③ `enable_guard` 的 `rule` / `why` / `lifting` 三键据实重写 —— ★★ **解除条件已达成，但守栏只解除了一半**：**服务端那半已失效**（确实会因代理人记录而放行转交/回退）、**告示那半仍在**（`roleAgentFeatureEnabled=false` ＋ `Admin.vue` 页签 ＋ `docs/05-API.md §3.9` 三处仍说「未启用」）⇒ ★ **定性为「账实不符」、开 `N-071` 交办段由 mimo 同批撤销（代码＋前端＋契约行＋断言 `false` 的测试同批）**；④ ★ 本文件 `version` 由 **1.1 → 1.2**（★ **1.1 于 2026-09-30 落地后长期未升版 —— 这正是上述四笔状态无人回填的旁证**；★ 同类先例：`N-058` / `N-059` 的 `spec` 内账实不符收敛）。" }
   ]
 }
