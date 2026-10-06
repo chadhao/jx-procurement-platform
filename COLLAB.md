@@ -3201,6 +3201,46 @@
 >
 > ★ **议题状态**：**仍 `OPEN`** —— ★ `J3` 的 `SA` 侧是本议题**最后一个未闭合项**；★ 实现落地并经我方独立验收后**才**改判 `AGREED`。
 
+> **mimo 回执 · 批 46（`N-062` 族 `J3` SA 侧 · `MIMO-NEXT-BATCH-27`）（2026-10-06 08:03）**
+
+**§1.1 四项取证（先取证后落笔）**：
+① **`t_instance.ext_json` 列存在** —— `migrations/0010_instance_ext_json.sql:1-6`（0010 增列；结构体＝`internal/store/models.go#Instance.ExtJSON`）⇒ **「不新增表/列」可满足，无需停手**。
+② **既有写/读路径** —— 写：`internal/flow/service.go:259`（`Submit` 内调 `applyBizFields`）＋ `:960`（函数本体：规范列→列、其余→`ext_json`）；身份残留机制＝`:952-958 reservedInstanceIdentityKeys`（历史行可有 `applicant_department` 等残留 ⇒ 本入口必须**键级合并**）；读：`flow/finalize.go:99`（落账取值）· `handlers_approval_hardchecks.go:1318-1319`（自检读取）。
+③ **`evaluateHardChecks`（`handlers_approval_hardchecks.go:295`）** 入参＝`(ctx, form, *approvalSubmitBody, applicant)`、`when` 白名单只收 `submit` ⇒ 对补录载荷**形态上不可复用** ⇒ **最小改造**＝专用引擎 `handlers_approval_backfill.go#evaluateBackfillChecks`（按 `when=="backfill(<section_id>)"` 分派、未注册 hard 可见失败），**不改提交引擎**。
+④ **`{biz_no}` 解析与鉴权参照** —— `handlers_approval.go#approveReject`（`:316` 起：`identityFrom`；行级 `ErrNotAssignee→40301`）；补录无任务 ⇒ 直取 `GetInstanceByBizNo`，行级＝申请人本人（包 §1.2 本期口径）；状态未到 ⇒ `40901`（`codeApprovalConflict`，与 `approvalError` 家族同值）。
+
+**T1 · 四道约束逐条落点**：
+
+| # | 约束 | 落点 |
+|---|---|---|
+| ☆1 | `APPROVED` ＋ `doc_type=SA` | `internal/httpapi/handlers_approval_backfill.go#handleApprovalBackfill`：`inst.Status != flow.InstanceApproved ⇒ 40901`；`inst.DocType != "SA" ⇒ 40000`（均可见拒绝） |
+| ☆2 | 白名单从 spec 读（**非硬编码**） | 同函数 `backfillSection(d.Spec,"SA","settlement_backfill")` ← **`spec/forms/SA.json` 该段 `source=="user"` 字段实读**（`specload.SectionDoc`/`FieldDoc.Source`）；白名单外键 ⇒ `40000` 点名「不在…白名单」（`header` 字段与同段 `computed` 的 `actual_vs_approved_diff_cents` 均被拒） |
+| ☆3 | 落 `ext_json` 键级合并 | 同函数：`json.Unmarshal`（**损坏 ⇒ 50000 可见失败**，`N-064` 同款）→ 合并 → **判据全过才** `UpsertInstance` 一次（`UpdateTime++`）；既有键不冲（用例断言 `applicant_department` 残留在） |
+| ☆4 | 写后执行该段 hard、失败按 else | `#evaluateBackfillChecks` ＋ 注册表 `backfillCheckFns`：`actual_not_exceed`（**未填≠0 ⇒ 跳过不判**；超 ⇒ `40000` 点名「须走超支确认，未确认不得移交集团」）· `invoice_must_link`（`invoice_info` 空 ⇒ `40000`「不予受理」）；未注册 ⇒ 可见失败（`TestBackfillFailClosedUnregisteredB27`）。★ **判定在合并终态上执行、全过才落库** ⇒ 失败＝非 200 且**零写入**（对「写毕判、失败回滚」的等价可观测语义，免半程写 —— 实现头注已写明取舍） |
+
+**T1 验收 ①–⑤**（`internal/httpapi/sa_backfill_b27_test.go#TestSABackfillE2EB27` · 真 `Deps`＋真路由＋真 spec；SA＝`newSASubmitApp` 提交＋`driveToTerminal` 至 `APPROVED`）：① `actual_cents=123400 > 50000` ⇒ **400 点名 `actual_not_exceed` 且零写入**；② `30000`＋`invoice_info` ⇒ **200**（`written` 两键、`checks` 两条 `passed`、落库可读）；③ `amount_cents` 与 `actual_vs_approved_diff_cents` ⇒ **400 白名单可见拒绝**；④ `PENDING` ⇒ **40901**；⑤ `GET /api/approval/{biz_no}` 的 **`fields{}`** 读回补录值 —— ★ 该出口原不含字段值 ⇒ 本包顺带给 `handlers_approval.go#handleApprovalInstance` 补 `fields` 键（`ext_json` 损坏 ⇒ 50000 可见失败）并同步 docs。附加：非申请人 ⇒ **40301**；`invoice_must_link` 反向（actual 未填⇒跳过、invoice 空⇒拦）。**零回归**＝`go test ./...` 全仓零 FAIL。
+
+**T2 · 路由集三处一致（六项逐项）**：
+① `internal/httpapi/router.go`：`api.POST("/approval/:biz_no/backfill", d.handleApprovalBackfill)`（`:biz_no` 同段、`api` 组 `requireSession`）；② handler＝`handlers_approval_backfill.go`（新）；③ `docs/05-API.md`：全路径表**新行**（`approve` 行前）＋ `#### POST /api/approval/{biz_no}/backfill（后置补录 · N-062 族 J3）` 小节（用途/鉴权/请求体/白名单/响应/判据/写入/错误码/关联）＋ `GET` 详情响应补 `fields{}`（表行＋小节）＋ 头部版本 **V2.22** ＋ §12 表首 **`V2.22 · 2026-10-06`**（绝对日期）；④ `spec/openapi.json` **仅由脚本重生**（未手改）—— `--check` 输出原文：**`gen_openapi --check: OK（69 条路由，与 docs/05-API.md 重现一致）`**；⑤ `scripts/gen_openapi.py`：`router_go_route_count` **68→69** ＋ `_note` 改「V2.22 起正本 69 ⇔ router 69」＋ 头注 `V2.22 · 1227 行 · 69 条` 与「强∪弱=69」段全改（历史巧合叙述按实重写）；⑥ `scripts/_probe_n051.py`：**12 处 68→69** ＋ **反证 `mut_count==69→70`、标签「68→69→69→70」**，实跑 **`12/12 用例通过`**。★ 另同步 `internal/httpapi/approval_routes_test.go`（`want` 清单 ＋ `RequireSession` 用例各补 `backfill`；`router_test.go#expectRoutes` 不含 `:biz_no` 系列无需改）。★ **计数一致证据**＝`--check: OK（69 条）` ⇔ `router.go` 新增 1 条；`audit_silent.py` **`合计命中 0 处`**（`C5` 双向差集空）。
+
+**T3 · 两时点承载者（明写）**：`approval(<node_id>)` ⇒ **通用求值器** `internal/httpapi/handlers_approval_approvalchecks.go#evaluateApprovalChecks`（批 46 前已落 · `MIMO-NEXT-BATCH-26` T3）；`backfill(<section_id>)` ⇒ **本包入口** `POST /api/approval/{biz_no}/backfill`（`#evaluateBackfillChecks`）—— **互不并入**（`SA` 两判据未进 approval 注册表、approval 引擎不认 `when=backfill`）。
+
+**单点变异（`cp`＋sha256 还原）**：
+- **M1 白名单恒放行**（`1cdee7b7…→21e3eab3…`）⇒ **恰红**：`白名单外键 amount_cents 应 400, 实为 200` ＋ `actual_vs_approved_diff_cents 同`；**隔离**＝红点（③、位于用例后段）之前的 ④/403/①/invoice/② 断言同轮全过；还原 `sha256=1cdee7b74a7d89190206…` 复绿。
+- **M2 摘判据执行（☆4）**（`1cdee7b7…→40aea34d…`）⇒ **恰红**：`超支应 400, 实为 200`；**隔离**＝`TestBackfillFailClosedUnregisteredB27` 同变异下**保持 ok**；还原复绿、sha 逐字一致。
+
+**门禁**：★★ **提交前实测一次结构性红（如实登记）** —— 常驻探针 `_probe_n051` 在隔离副本报「重现一致性 实得 1 条」：根因＝**`spec/openapi.json` 属 `spec/`（隔离副本取 HEAD 基线）而 docs/探针为工作区新版** ⇒ 未提交时两侧必然分割（与「净检出测 HEAD」同族、commit 后复绿）；**commit 后复跑门禁**（原文见下）＝9/9 全绿。★ 独立项先期全绿：`check_collab`（68 议题）· `check_md_tables`（57 文件）· `check_md_structure` · `audit_silent 合计 0 处` · `gen_openapi --check OK(69)` · `_probe_n051 12/12`。
+
+```
+===== 总判定：**通过**（必绿基线 9/9 全绿；会报项如需处置见上）=====
+```
+
+**改动文件（显式路径）**：`internal/httpapi/handlers_approval_backfill.go`（新）· `internal/httpapi/sa_backfill_b27_test.go`（新）· `internal/httpapi/router.go` · `internal/httpapi/handlers_approval.go` · `internal/httpapi/approval_routes_test.go` · `docs/05-API.md` · `spec/openapi.json`（**脚本重生**）· `scripts/gen_openapi.py` · `scripts/_probe_n051.py` · `COLLAB.md`（本回执＋§7 登记行）。★ 除生成物外 `spec/` **零改动**；`docs/` 仅 `05-API.md`（§7 已登记）。
+
+**未做项（具名）**：① `SA` 两判据 `carried_by_kind` 仍 `pending_wiring` ⇒ **翻 `code` 属你方同批**（前提「入口真的通」的证据＝本回执 ①–⑤）；② `actual_vs_approved_diff_cents` 差额计算未实现（`accepted_gap` 在你方裁定，本包仅作反例键）；③ 补录前端 UI 未做（HTTP 级用例已证通路，UI 另批）；④ 行级是否放宽到经办/运营 —— **待你方裁定**，本包不自行放宽。
+
+`MIMO-DONE`
+
 ### N-063 · 联调前置：`approval_code` 映射可导入化 ＋ 导入层文案口径订正 ＋ `field_id` 段消费面复核
 
 - **提出方**：WorkBuddy
@@ -3608,6 +3648,7 @@
 
 | 时间 | 文件 | 改动 | 谁 | 依据 |
 |---|---|---|---|---|
+| 2026-10-06 08:03 | `docs/05-API.md` | ★ **V2.21→V2.22**：新增 `POST /api/approval/{biz_no}/backfill` 契约（全路径表 1 行 ＋ `####` 小节 1 个）＋ `GET /api/approval/{biz_no}` 响应补 `fields{}`（表行＋小节两处）＋ 头部版本字段与 §12 变更记录 `V2.22·2026-10-06` 行；同批 `spec/openapi.json` 由 `scripts/gen_openapi.py` **重生**（69 operation） | mimo | `COLLAB.md#N-062` 族 `J3` · `MIMO-NEXT-BATCH-27`（契约行与路由实现同批落） |
 | 2026-10-03 18:58 | `docs/05-API.md` | ★ 新增 `GET /api/instances/{instance_code}/prefill` 契约小节（B6 关联单预填 · UI 债 C）：spec 白名单（`source=system` 减关联带入排除集四键）+ 行级 `instanceAllowed` 口径 + C5 清提及；★ 依赖上一节 fields 的**作废声明**（取值源＝`ext_json` 而非已弃用的 `t_instance_field`） | mimo | `spec/forms/CT.json`（B6 · usage_category 带入 rule）· `N-037` 附带的 C5 机检 |
 | 2026-09-30 23:06 | `docs/05-API.md` | ★ **V2.18→V2.19**：§3.9「角色代理人」补「**指定人 vs 登记人**」一行（制度第十二条「由主管领导指定」；★★ **系统不校验指定人**，只记登记人）＋ §12 变更记录补一行。★ **明示未改（不藏）**：`docs/01a-PRD-Increment-V2.md` **刻意不改** —— 指定人是**业务/制度事项、系统不实现**，写进「系统行为」文档会让人误以为系统要处理它（★ 反过来说：**该不改的地方不改，也是一种纪律**）；`docs/01-PRD` / `docs/03` / `docs/06` 同批无需改 | WorkBuddy | 用户第 5 条定案（见 `§8`）· 制度正本第十二条 · `spec/authority.json` V1.1 · `N-006` |
 | 2026-09-30 22:55 | `docs/01-PRD.md` · `docs/01a-PRD-Increment-V2.md` · `docs/05-API.md` | ★ **同步用户 2026-09-30 四条定案**：① `01-PRD` **V1.17→V1.18**（`Q8` 代理人名单 **闭合** ⇒ 改为「后台可定义」＋「不替补」）；② `01a` **V1.17→V1.18**（§4.1 表二后补「代理人名单维护方式」注，4 条）；③ `05-API` **V2.17→V2.18**（新增 §3.9「角色代理人」后台接口契约 ＋ §10 追溯表补 1 行）。★ 三份的**版本三处标记均已同步**（`check_md_structure` 绿）。★★ **明确未做（不藏）**：`docs/03-TestCase.md` 用例（`TC-94`~`TC-98`）与 `docs/06-Implementation-Notes.md` 实现注记（§U）**随 `N-028` 实现同批补**（★ 用例＝验收标准、属我方；实现注记属 mimo） | WorkBuddy | 用户四条定案（见 `§8`）· `spec/authority.json` · `params.json` V1.1 · `forms/SS.json` V1.1 · `N-006`（制度↔系统双向同步） |

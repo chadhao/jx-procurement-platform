@@ -161,6 +161,7 @@ func NewRouter(d Deps) *echo.Echo {
 	// 提交：生成编号 + 建实例 + 首推飞书（薄壳，语义在 flow.Submit；docs/05-API §3.13）。
 	api.POST("/approval/submit", d.handleApprovalSubmit)
 	api.POST("/approval/:biz_no/approve", d.handleApprovalApprove)
+	api.POST("/approval/:biz_no/backfill", d.handleApprovalBackfill) // N-062 J3 SA 侧 · 后置补录（MIMO-NEXT-BATCH-27）
 	api.POST("/approval/:biz_no/reject", d.handleApprovalReject)
 	// 四操作（转交 / 加签 / 回退 / 撤回）；★ 加签另带 timing ∈ {AFTER, BEFORE}（缺省 AFTER）。
 	api.POST("/approval/:biz_no/transfer", d.handleApprovalTransfer)

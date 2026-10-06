@@ -48,6 +48,7 @@ func TestApprovalRoutesRegistered(t *testing.T) {
 		"POST /approval/external/callback", // ★ 独立入站面（root 组）
 		"POST /api/approval/submit",        // ★ 我方提交
 		"POST /api/approval/:biz_no/approve",
+		"POST /api/approval/:biz_no/backfill", // ★ SA 后置补录（N-062 J3 · MIMO-NEXT-BATCH-27）
 		"POST /api/approval/:biz_no/reject",
 		"POST /api/approval/:biz_no/transfer",
 		"POST /api/approval/:biz_no/addsign",
@@ -70,6 +71,7 @@ func TestApprovalApiRoutesRequireSession(t *testing.T) {
 	e, _, _, _ := newAdminTestApp(t)
 	cases := []struct{ method, path string }{
 		{http.MethodPost, "/api/approval/PR-1/approve"},
+		{http.MethodPost, "/api/approval/PR-1/backfill"},
 		{http.MethodPost, "/api/approval/PR-1/reject"},
 		{http.MethodPost, "/api/approval/PR-1/transfer"},
 		{http.MethodPost, "/api/approval/PR-1/addsign"},

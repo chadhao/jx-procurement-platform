@@ -955,6 +955,15 @@ func (d Deps) handleApprovalInstance(c echo.Context) error {
 	// ★ 解绿框（用户实测反馈 2026-09-28）：任务列表补 `assignee_name` / `assignee_department`
 	//   （数据源 t_user_role，**一次批量 IN 查询**防 N+1；查不到 ⇒ 留空，绝不塞 open_id）。
 	roleMap := d.assigneeRoleViews(ctx, tasks)
+	// ★ N-062 J3（MIMO-NEXT-BATCH-27 ⑤）：补录/表单值读回 —— 实例 ext_json 以 `fields`
+	//   出口暴露（此前详情不含任何字段值，补录写入无 HTTP 读回面）；损坏 ⇒ 可见失败（500）。
+	fields := map[string]any{}
+	if strings.TrimSpace(inst.ExtJSON) != "" {
+		if err := json.Unmarshal([]byte(inst.ExtJSON), &fields); err != nil {
+			return fail(c, http.StatusInternalServerError, codeInternal,
+				"实例 ext_json 损坏（无法读回字段值）: "+err.Error())
+		}
+	}
 	return ok(c, map[string]any{
 		"biz_no":        inst.BizNo,
 		"instance_code": inst.InstanceCode,
@@ -965,6 +974,7 @@ func (d Deps) handleApprovalInstance(c echo.Context) error {
 		"amount_cents":  inst.AmountCents,
 		"created_at":    inst.CreatedAt,
 		"updated_at":    inst.UpdatedAt,
+		"fields":        fields,
 		"tasks":         approvalTaskViews(tasks, roleMap),
 		"ops":           approvalOpViews(ops),
 	})
