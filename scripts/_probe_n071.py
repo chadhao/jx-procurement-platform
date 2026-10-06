@@ -80,6 +80,8 @@ P_BOOT = os.path.join(ROOT, 'cmd', 'jxapproval', 'bootstrap.go')
 P_OPSTEST = os.path.join(ROOT, 'internal', 'flow', 'ops_test.go')
 P_BACKFILL = os.path.join(ROOT, 'internal', 'httpapi', 'handlers_approval_backfill.go')
 P_AGENTH = os.path.join(ROOT, 'internal', 'httpapi', 'handlers_admin_role_agents.go')
+P_ADMIN = os.path.join(ROOT, 'web', 'src', 'views', 'Admin.vue')
+P_DOC05 = os.path.join(ROOT, 'docs', '05-API.md')
 
 # ★ 修复前的旧文（逐字取自历史版本，仅作**反证素材**，不写回仓库）
 OLD_NAK_MARK = u'当前状态（诚实划界，不声称已覆盖）'
@@ -260,13 +262,17 @@ def a_external(ext):
         (u'用例：`TestTransferAgentAuthorization`', u'TestTransferAgentAuthorization' in ext['opstest']),
         (u'执行体：`backfillCheckFns`', u'backfillCheckFns' in ext['backfill']
          and u'checkBackfillActualNotExceed' in ext['backfill']),
-        (u'★★ 残留仍「未撤」：`roleAgentFeatureEnabled = false` 仍在',
-         u'roleAgentFeatureEnabled = false' in ext['agenth']),
+        (u'★★ 撤销已执行：常量＝true ＋ note 已启用（N-072 同批）',
+         u'const roleAgentFeatureEnabled = true' in ext['agenth']
+         and u'已启用' in ext['agenth']),
+        (u'★ 告示面零残留：Admin.vue 与 docs/05 均无「代理人功能未启用」',
+         u'代理人功能未启用' not in ext['adm']
+         and u'代理人功能未启用' not in ext['doc05']),
     ]
     bad = [n for n, c in checks if not c]
     if bad:
         return False, u'外部证据缺失：%s' % u' / '.join(bad)
-    return True, u'七项外部证据齐（★ 含「残留仍为 false」⇒ 本探针未把「应解除」写成「已解除」）'
+    return True, u'八项外部证据齐（★ 含「常量已翻 true ＋ 两告示面零残留」＝ N-072 四件同批撤销的实现守卫）'
 
 
 def a_scope(chain, sa, cj, forms_n, sa_ids_now):
@@ -300,9 +306,11 @@ def main():
         'opstest': text(P_OPSTEST),
         'backfill': text(P_BACKFILL),
         'agenth': text(P_AGENTH),
+        'adm': text(P_ADMIN),
+        'doc05': text(P_DOC05),
     }
     cond, det = a_external(ext)
-    ok(u'0 外部证据七项齐（★ 含「残留仍 false」）', cond, det)
+    ok(u'0 外部证据八项齐（★ 含「常量已 true ＋ 告示零残留」）', cond, det)
 
     chain = load(P_CHAIN)
     sa = load(P_SA)

@@ -3962,6 +3962,9 @@
 
 `MIMO-DONE`
 
+- **门禁补录（2026-10-06，追加式）**：上条回执引用的 9/9 为**提交前实测**（代码面全绿）；回执与代码提交（`002118f`、`1572676`）后 **commit 后复跑 9/9 首轮实红 1 项** —— `scripts/_probe_n071.py` 第 0 条断言「`feature_enabled=false` 裸常量 ＋ 外部证据必须仍显示未撤」（**修前状态的旧期望**）在修复落盘后必然反噬（与该探针 `a_external` 既有「违反即返 0」同族的预期陈旧）。处置 ＝ **探针同批翻转**（`.tmp_p71.py`；`scripts/` 归 mimo 域）：第 0 条改钉「四出口已据实翻面 ＋ `roleAgentFeatureEnabled=false` 全仓 0 ＋ `feature_note` 不含『未启用』（可鉴别词在）」、补 `P_ADMIN`/`P_DOC` 路径、头注/自检结论同步 `feature_enabled=true`；翻转后 **`python scripts/_probe_n071.py` ⇒ `25/25, external=5/5, OK`**，`bash scripts/check_all.sh` 复跑 ⇒ **9/9 全绿（会报零命中）**（两次实测原文均在此）。无路由/spec/常量值改动；变异 M1/M2 结论不受影响。
+
+-- 状态：MIMO-DONE（门禁补录毕）
 ## 5. 已决议（AGREED）
 
 > ★ **追加式，永不删除** —— 保留决议理由，这是"为什么会变成这样"的唯一记录。
