@@ -3,7 +3,7 @@
   "label": "费用事前申请单",
   "prefix": "SA",
   "number_format": "SA-YYMM-####",
-  "version": "1.5",
+  "version": "1.6",
   "date": "2026-10-06",
   "generated_by": "WorkBuddy",
   "sources": {
@@ -307,8 +307,8 @@
     {
       "id": "actual_not_exceed",
       "severity": "hard",
-      "carried_by_kind": "pending_wiring",
-      "carried_by": "★ **通路未接**（`N-047` 批 12 定性；`when` 于 `N-052` 批 13 归一）：`when=backfill(settlement_backfill)` 指向 `sections[id=settlement_backfill]`（后置补录段）—— ★ 该段的**补录入口尚未接线** ⇒ 引擎跳过、暂不执行（如实保留 `pending_wiring`）；★ 非提交时点 ⇒ 引擎**不会** fail-closed",
+      "carried_by_kind": "code",
+      "carried_by": "★★ **已闭环（`N-062` 族 `J3` `SA` 侧落地段 · 批 45 · 2026-10-06）**：时点已可达 ＋ 执行体已注册 —— ① **入口** ＝ `POST /api/approval/{biz_no}/backfill`（`internal/httpapi/handlers_approval_backfill.go#handleApprovalBackfill`，路由 `router.go` 的 `api` 组 · `requireSession`）；② **判据执行体** ＝ 同文件 `evaluateBackfillChecks` ＋ 注册表 `backfillCheckFns[\"actual_not_exceed\"]`（`checkBackfillActualNotExceed`），**写后对合并终态求值、不过则可见拒绝且零写入**；③ **契约正本** ＝ `chain.json#conventions.checks_when` 第 ② 条（四道约束）＋ `docs/05-API.md` **V2.22** 的 `#### POST /api/approval/{biz_no}/backfill` 小节（路由集三方同批：正本 ↔ `spec/openapi.json` **59 path / 69 operation** ↔ `router.go` **69**）；④ **独立验收** ＝ 门禁 **9/9 ＋ 会报零命中** · 端到端走真 `Deps`＋真路由＋真 spec（超支拦／合规放／非白名单键拒／非 `APPROVED` 拒／写后可读）· ★★ **两处单点变异我方自做**（白名单恒放行 ⇒ 恰红「非白名单键被拒」；判据恒不执行 ⇒ 恰红「超支被拦」＋「未注册可见失败」）· `cp` ＋ `sha256sum -c` 还原。★ **未填 ≠ 0**：本次与历史都未给 `actual_cents` ⇒ **跳过不判**（`ran=false`），不把「未发生」静默判成「未超支」",
       "when": "backfill(settlement_backfill)",
       "assert": "actual_cents <= approved_cents",
       "else": "须走**超支确认**；未确认不得移交集团",
@@ -318,8 +318,8 @@
     {
       "id": "invoice_must_link",
       "severity": "hard",
-      "carried_by_kind": "pending_wiring",
-      "carried_by": "★ **通路未接**（`N-047` 批 12 定性；`when` 于 `N-052` 批 13 归一）：同上（`backfill(settlement_backfill)`）；★ **`SA#invoice_info.required_conditional` 的不可解析形态已于本批修形**（改 `required: true`，时点由段 `filled_at` 承载）",
+      "carried_by_kind": "code",
+      "carried_by": "★★ **已闭环（`N-062` 族 `J3` `SA` 侧落地段 · 批 45 · 2026-10-06）**：同 `SA#actual_not_exceed` 的入口与执行体（`handlers_approval_backfill.go#checkBackfillInvoiceMustLink`，注册于 `backfillCheckFns`）；机判形态 ＝ `invoice_info` 非空（「已批准」由入口 ☆1 的 `APPROVED` 门保证；关联载体 ＝ `invoice_info` 的票据引用，该字段 `required: true`）。★ **判据不过 ⇒ 非 200 且零写入**（全过才落库一次）。★ 历史沿革：`SA#invoice_info.required_conditional` 的不可解析形态已于 `N-052` 批 13 修形（改 `required: true`，时点由段 `filled_at` 承载）",
       "when": "backfill(settlement_backfill)",
       "assert": "票据关联到已批准的事前申请单",
       "else": "**不予受理**",
