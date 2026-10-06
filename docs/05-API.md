@@ -710,7 +710,7 @@ sequenceDiagram
 |---|---|
 | 用途 | ★ **我方页面两键**（补 `docs/11 R11`）；★ **与回调走同一状态机出口**（`flow`），**不得两套语义** |
 | 鉴权 | 免登会话；**须 `assignee=me` 且任务 `PENDING`**（`04a §5.1`） |
-| 请求体 | `task_id` · `opinion`（可选）· `attachments`（可选）· ★ `attachment_ids?`（N-069 · **审批时点附件**：先经 `POST /api/approval/attachments` 暂存取 `file_id` ⇒ 随本字段在 approve **事务内**绑定；任一不可绑定 ⇒ 整体回滚 ＋ `40000` 点名 `file_id`；**可选**，缺省行为与既往逐字一致） |
+| 请求体 | `task_id` · `opinion`（可选）· ★ `attachment_ids?`（N-069 · **审批时点附件**：先经 `POST /api/approval/attachments` 暂存取 `file_id` ⇒ 随本字段在 approve **事务内**绑定；任一不可绑定 ⇒ 整体回滚 ＋ `40000` 点名 `file_id`；**可选**，缺省行为与既往逐字一致） |
 | 响应 | `{ biz_no, node_id, status }` |
 | 幂等 | `t_flow_op_log`（`biz_no`,`task_id`,`op_type`,**`round`**）唯一；重复 → `INSERT OR IGNORE` + 200 no-op（`04a §4.3`） |
 | 错误码 | 40100、40301、40400、**40901**（非本人任务 / 非 `PENDING`） |
@@ -752,8 +752,8 @@ sequenceDiagram
 | POST | `/api/approval/attachments` | multipart `file` | `file_id`·`file_name`·`size_bytes`（M6） |
 | GET | `/api/approval/attachments/{file_id}` | —（会话 + owner-only 未绑定） | 附件字节（M6） |
 | POST | `/api/approval/{biz_no}/backfill` | `fields{}`（★ 仅 `settlement_backfill` 段 `source=user` 字段） | `biz_no`·`section_id`·`written[]`·`checks[]` |
-| POST | `/api/approval/{biz_no}/approve` | `task_id`·`opinion?`·`attachments?`·`attachment_ids?`（N-069） | `biz_no`·`node_id`·`status` |
-| POST | `/api/approval/{biz_no}/reject` | `task_id`·`opinion?`·`attachments?` | `biz_no`·`node_id`·`status` |
+| POST | `/api/approval/{biz_no}/approve` | `task_id`·`opinion?`·`attachment_ids?`（N-069） | `biz_no`·`node_id`·`status` |
+| POST | `/api/approval/{biz_no}/reject` | `task_id`·`opinion?` | `biz_no`·`node_id`·`status` |
 | POST | `/api/approval/{biz_no}/transfer` | `task_id`·`assignee`·`reason?` | `biz_no`·`node_id`·`status` |
 | POST | `/api/approval/{biz_no}/addsign` | `task_id`·`assignee`·**`timing`**∈{`AFTER`,`BEFORE`}·`reason?` | `biz_no`·`node_id`·`status` |
 | POST | `/api/approval/{biz_no}/rollback` | `task_id`·`reason?` | `biz_no`·`node_id`·`status` |
