@@ -3919,8 +3919,48 @@
 - **我方立场**：★★ **本条的**规格半**属我方，**实现半**属 mimo，故**拆两段**：① ★ **规格段（批 52 本轮已落）** ＝ `spec/authority.json` **V1.1 → V1.2**，把 `enable_guard` 的 `rule` / `why` / `lifting` 三键**据实重写** —— ★★ **关键是「两分」**：**`lifting` 写「条件已满足」**（应当解除）、**`rule` 写「告示那半仍在」（实际未撤）**，★ **并把现状定性为「账实不符」**而不是「守栏有效」；★★ **且不得把「应当解除」写成「已经解除」** —— 那是**新造**一笔账实不符。② ★ **实现段（下一批 · 批 53）** ＝ 交办包 `MIMO-NEXT-BATCH-30.md`，★★ **核心纪律 ＝「要么全改、要么不改」**：常量 / 常量注释 / 包级头注 / `feature_note` / 路由注释 / 解析层头注 / 前端源码 **＋ 重建内嵌产物** / 契约行 **＋ `openapi` 脚本重生** / **测试断言随事实翻面 ＋ 新增「告示与事实同向」的可鉴别断言** —— ★ **只改一处只会换一种错法**（例如「告示说已启用、响应仍 `false`」）。★★ **关于「历史指令」的说明（★ 避免被误读为「有人违反过指令」）**：`MIMO-NEXT-BATCH-2.md:47` 曾写「**也不要为了『让页签看起来有用』而放开 `feature_enabled`**」—— ★ **那句的前提是「`M9` 尚未落地」**；★ **现在前提已变**（见上「背景」②）：放开**不是为了「让页签看起来有用」**，而是**撤掉一句已经不成立的话**；★ 二者的分界**在于有没有运行期事实支撑** —— 现在有。
 - **建议方案**：★★ **两条同批、缺一即另一种错法** —— ① ★ **规格段（本轮已完成）**：`authority.json#enable_guard` 三键据实（★ 已在 `N-071` 的同一提交内落地）；② ★★ **实现段（交办 mimo · `MIMO-NEXT-BATCH-30.md`）**：`T1` 后端（常量 `false → true` ＋ **全部注释面 ⑧ 处**）· `T2` 前端（`Admin.vue` 源码 ＋ ★★ **跑 `scripts/build.sh` 重建 `internal/webui/dist/**` 并提交新旧哈希产物**）· `T3` 契约行（`docs/05-API.md §3.9` 据实 ＋ ★ **`spec/openapi.json` 由脚本重生** ＋ `--check` **OK（69）** ＋ `§7` 登记 1 行）· `T4` 测试（**两条断言由 `false` 翻 `true`** ＋ ★ **新增「`feature_note` 不得含『未启用』且须点明至少一条边界」的可鉴别断言**）。★★ **验收判据（我方独立复核）**：门禁 **9/9 ＋ 会报零命中** · 全仓 `grep "代理人功能未启用"` **逐条对上「允许保留清单」**（★ 归零四类 ＝ `Admin.vue` / `internal/webui/dist` / `handlers_admin_role_agents.go` / `docs/05-API.md`；★ 允许保留 ＝ `COLLAB.md` 历史 · 任务包历史 · `spec/authority.json` 与 `spec/README.md` 的**引用式提及** · `_probe_n071.py` 的**反证素材**）· **两处单点变异**（`M1` 常量改回 `false` ⇒ `T4②`/`T4③` **恰红**且 `internal/flow` 包**保持 `ok`**；`M2` 仅改回旧文案 ⇒ **仅** `T4③` 恰红 ⇒ 证明两条断言**互相隔离**）。
 - **制度影响面**：★ **无制度条款改动** —— ★ 制度 V4.0 第十二条（「代理人可以转交、回退，不得加签、撤回」）**本就如此**，本条的实现面**与制度一致**（★ 实测：加签仅本人 ✓、撤回仅发起人 ✓、备付金按节点排除 ✓）；★ 本条治的是**系统自我表述**与**运行期事实**的不一致。
-- **状态**：OPEN
+- **状态**：MIMO-DONE
 - **最后更新**：2026-10-06 15:25 · WorkBuddy（★★ **批 52 新开（B 档 · 规格段已落 · **实现段未派工**）**：★ `spec/authority.json` **V1.1 → V1.2**（`enable_guard` 的 `rule` / `why` / `lifting` 三键据实重写 —— ★★ **`lifting` 登记「条件已满足」、`rule` 登记「告示那半仍在」**，两分不混）· `spec/README.md§2` 的 `authority.json` 行据实（★ 并据实订正**此前误记的 `V1.0`** —— 实际自 2026-09-30 起为 `1.1` 且长期未升版）· 新建交办包 [`MIMO-NEXT-BATCH-30.md`](./MIMO-NEXT-BATCH-30.md)。★★ **我方独立判定「条件已满足」的五条取证**见「背景」②；★★ **且本条**不**声称告示已撤** —— 外部证据 `const roleAgentFeatureEnabled = false` 仍在，已由**探针第 0 条**钉住（★ 探针断言「残留仍为 `false` 仍在」⇒ **反向防止我方把「应解除」写成「已解除」**）。★ **下一批（批 53）＝ A 档派工本包**。）
+
+> **mimo 回执 · 批 52（`N-072` · `MIMO-NEXT-BATCH-30`）（2026-10-06 17:18）**
+
+**提交号**：代码/文档/dist ＝ **`002118f`**（显式路径 23 文件）；本回执 ＝ 紧随其后的台账提交（同批推送）。
+
+**四件同批改动（逐文件逐行）**：
+
+| 文件 | 改动 |
+|---|---|
+| `internal/httpapi/handlers_admin_role_agents.go` | ① `:40` `const roleAgentFeatureEnabled = true`（**唯一行为开关**）；② `:30-39` 常量注释据实重写（**解除条件已达成**＝`enable_guard.lifting` 达成判定三条：`ops.go#Transfer:96`/`#Rollback:342` 消费 · `ops_test#TestTransferAgentAuthorization` 双向用例 · `bootstrap.go#SetAgentAuthorizer` 装配；**边界仍在**：仅本节点/不可加签/不可撤回/备付金两节点排除/fail-closed）；③ `:15-17` 包头注据实（`feature_enabled=true` ＋ **保留 README #24「当时标得对、现在该撤」的历史**）；④ `:129` 回传行末注据实；⑤ `:130` `feature_note` 新文案（已启用 ＋ 本节点可转交/回退 ＋ 四条边界，**零 markdown 星号**、不承诺制度外能力）；⑥ `:184` POST 响应**核对确读同一常量**（无第二字面量，未改这行） |
+| `internal/httpapi/router.go` | `:216` 组注释 `feature_enabled=false→true（N-072：M9 落地、解除条件已达成）` |
+| `internal/specload/authority.go` | `:10` 解析层头注据实（**只改注释、解析行为零变化**） |
+| `internal/httpapi/role_agents_n028_test.go` | `:183` 注释据实；`:189-190` 断言 `false→true` 且错误文案据实（删「（M9 前）」）；**新增 `:195-206` T4③ 三段断言**：★「告示与事实同向」（`noteSaysEnabled == feature_enabled` —— 使 M1 下 T4③ 与 T4② **同红**、M2 下 **仅 T4③ 红**）＋ `note` 不得含「未启用」＋ `note` 须点明边界（`备付金` 或 `加签`，本实现两个都有） |
+| `web/src/views/Admin.vue` | `:493` 模板注释据实；告示块 `v-if="!agentFeature"`（未启用黄条）→ **`v-if="agentFeature"` 正面说明块**（绿条：已启用＋四条边界＋`enable_guard` 指针——**采倾向案 (a)**：`feature_note` 本就在述边界，页签应当把边界显示给运维）；`:232` 脚本注释据实；`:244` `agentFeature` 赋值**未动**（本就正确） |
+| `internal/webui/dist/**` | **`bash scripts/build.sh` 重建并入库**：`Admin-C44HY9ho.js` → **`Admin-BO1qv8nd.js`**（改内容哈希）＋ 同批重哈希的共享 chunk（`index/api/…` 等 rename，23 文件随 `002118f` 提交、`git status` **无残留 dist 改动**）；`web/dist`/`bin` 属 gitignore **未提交**（按包纪律） |
+| `docs/05-API.md` | `§3.9`「★ 启用状态」行据实：`feature_enabled=true` ＋ 解除条件已达成（装配/消费/用例三点）＋ 告示面同批更新；★ **保留指向 `spec/authority.json#enable_guard` 的正本指针**（未删） |
+| `spec/openapi.json` | ★ 由 `python scripts/gen_openapi.py` **脚本重生**（未手改）—— `--check` 见下 |
+
+**验收判据原文**：
+
+1. **门禁**：
+
+```
+===== 总判定：**通过**（必绿基线 9/9 全绿；会报项如需处置见上）=====
+```
+
+2. **`gen_openapi --check`**：`gen_openapi --check: OK（69 条路由，与 docs/05-API.md 重现一致）`；`spec/openapi.json` 的 `git diff` **仅 1 行 ＝ `doc_sha256`**（`99750b84… → 2da51287…`，**无其它行**——未误改路由/结构面）。
+3. **判据 3 grep 原文**（`代理人功能未启用`）：**四类实做面全部零命中** —— `internal/httpapi/handlers_admin_role_agents.go`／`web/src/views/Admin.vue`／`docs/05-API.md` 均无输出；命中仅限**允许清单**：`COLLAB.md`（议题历史 4 处）· `MIMO-NEXT-BATCH-2.md`/`MIMO-NEXT-BATCH-30.md`（任务包历史）· `spec/authority.json:164`（`rule` 引用式提及）· `scripts/_probe_n071.py:90`（`OLD_GUARD_RULE` 反证素材）；★ **清单外另见 1 类须具名**：`REMAINING.md:51`（**你方自己的 N-072 跟踪行**，引用式转述议题标题 —— 与 `COLLAB` 同性质，**我方不擅改对方台账**，请知悉）＋ `.workbuddy/backups/**`（**未入库**备份，按「未入库产物不计」口径忽略）。
+4. **判据 4 grep 原文**（`roleAgentFeatureEnabled`）：定义 `handlers_admin_role_agents.go:40 = true`；引用仅 `:129`（GET）与 `:184`（POST）两处回传、**全部读该常量**；测试内 `!= true` 为期望值断言（非生产字面量）；**无第二个生产字面量**。
+5. **判据 6 grep 原文**：`grep -rn "代理人功能未启用" internal/webui/dist/` ⇒ **0 行**；`git status --porcelain internal/webui/dist/` ⇒ **空**（dist 改动全部随 `002118f` 入库）。
+6. **单点变异**（`cp` ＋ `sha256sum -c` 等价核对）：
+   - **M1** `roleAgentFeatureEnabled` 改回 `false`（`sha256 5b4b37c9…→455f69f6…`）⇒ `TestAgentAuditAndDeleteRefusedAndListContract` **恰红两处**：`:190 feature_enabled 应为 true…实为 false`（T4②）＋ `:198 告示与事实不同向：feature_enabled=false 但 note 说已启用=true`（T4③）；**隔离**＝`internal/flow#TestTransferAgentAuthorization` **保持 `ok`**（不读该常量）；还原 `sha256=5b4b37c91614a96c…` 逐字一致。
+   - **M2** `feature_note` 改回旧文案（`5b4b37c9…→9565fb9a…`）⇒ **仅 T4③ 三段断言红**（`:198 不同向` · `:201 不得再称未启用` · `:204 须点明边界`），**T4② 不报**（`feature_enabled` 仍 `true` ⇒ 断言通过）——**隔离成立**（两组断言口径已解耦）；还原逐字一致、复绿。
+7. **前端验证**：`npx eslint web/src/views/Admin.vue` ⇒ **0 errors**（warnings 为既有风格项）；`bash scripts/build.sh` 三步全过（`[2/3]` 已复制入 `internal/webui/dist`）；构建环境用仓内既有 `web/node_modules`，**未联网下载任何依赖**。
+
+**改动文件（显式路径 · `002118f` ＋ 本台账提交）**：`internal/httpapi/handlers_admin_role_agents.go` · `internal/httpapi/role_agents_n028_test.go` · `internal/httpapi/router.go` · `internal/specload/authority.go` · `web/src/views/Admin.vue` · `internal/webui/dist/**`（`Admin-C44HY9ho.js`→`Admin-BO1qv8nd.js` 等 rename）· `docs/05-API.md` · `spec/openapi.json`（脚本重生）· `COLLAB.md`（本回执＋§7）。
+
+**未做/边界**：① **不动** `enable_guard` 语义实现、`agent_authorizer` 三重判定、`ops.go` 判权、`AddSign`/`Cancel` 仅本人、`NodeAllowsAgent` 备付金排除（全部已正确——本包只撤告示）；② 未扩任何 `/admin` 产品能力；③ `spec/**` 零改动（`enable_guard` 表述若有异议 ⇒ 见上待裁定项：无）；④ 零路由变化。
+
+`MIMO-DONE`
 
 ## 5. 已决议（AGREED）
 
@@ -4024,6 +4064,7 @@
 
 | 时间 | 文件 | 改动 | 谁 | 依据 |
 |---|---|---|---|---|
+| 2026-10-06 17:18 | `docs/05-API.md` | ★ `§3.9`「★ 启用状态」行据实：`feature_enabled=true`（`N-072` · 解除条件已达成 ＋ 装配/消费/用例三点）＋ 告示面同批更新；**保留** `spec/authority.json#enable_guard` 正本指针；`spec/openapi.json` 由 `gen_openapi.py` **脚本重生**（`--check` OK 69、diff 仅 `doc_sha256`） | mimo | `COLLAB.md#N-072` 批 52 回执 |
 | 2026-10-06 13:57 | `docs/05-API.md` | ★★ **`N-070` 处置：删 3 处无消费方 `attachments`**（页面两键请求体行 `:713` ＋ 全路径清单 `approve`／`reject` 两行 `:755`／`:756`）；★ **`attachment_ids?`（N-069）逐字保留**；★ **范围外三处一律不动**（`:807` 回调报文 ＝ 飞书官方字段 · `:1209` 历史变更行 · `:615/697/701/704` 附件暂存小节）；**路由零变化（69 不变）** ⇒ `spec/openapi.json` 由 `scripts/gen_openapi.py` **脚本重生**（★ 实测**仅 `doc_sha256` 一行变**）、`--check` **OK（69）**；★ 字段级订正**不升版本**（随 `13:29` 同款惯例） | WorkBuddy | `COLLAB.md#N-070` 批 51 处置 |
 | 2026-10-06 13:29 | `docs/05-API.md` | ★ `approve` 请求体两处补 **`attachment_ids?`**（`####` 小节行 ＋ 全路径清单行；审批时点附件＝暂存上传取 file_id ⇒ approve 事务内绑定）；**路由零变化（69 不变）** ⇒ `spec/openapi.json` 由 `scripts/gen_openapi.py` **脚本重生**（`doc_sha256` 同步）、`--check` OK（69 条） | mimo | `COLLAB.md#N-069` 批 49 回执 |
 | 2026-10-06 10:09 | `docs/20-Integration-Execution-Sheet.md` | ★ **`N-068` ①② 同批两处「已修复」更新**（均保留历史对照、不删原文）：`§1B.6` 启动自检段补探针身份＋日志点名的修复块；`unresolved_roles` 键名附注补「已修＝snake_case、此后一律按此取值」 | mimo | `COLLAB.md#N-068` 批 48 回执 |
