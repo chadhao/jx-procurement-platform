@@ -44,8 +44,9 @@ const (
 
 // 常见错误（handler 映射为 40000 + 中文明细；错误码枚举归 WorkBuddy，N-018）。
 var (
-	// ErrUnsupportedDoc 批 1 之外的单据类型。
-	ErrUnsupportedDoc = errors.New("chain: 暂不支持该单据类型（批 1 仅 BA/PR/SA）")
+	// ErrUnsupportedDoc 该 doc_type 无审批链路由（N-068 ③ 据实文案：不写批次号 ——
+	// 批次号会过期；SUB 是最常见命中场景，指路其独立提交通道）。
+	ErrUnsupportedDoc = errors.New("chain: 该单据类型无审批链路由（SUB 走独立提交通道 POST /api/submission；未登记类型请核对 chain.json 的 routes/doc_chains）")
 	// ErrAmountMissing 分档需要金额但未提供。
 	ErrAmountMissing = errors.New("chain: 分档需要金额（amount_cents）")
 	// ErrTierOutOfDoc 金额档位与单据类型不匹配（N-012 过渡：PR<1000 拒收引导走 BA）。

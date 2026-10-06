@@ -29,11 +29,13 @@ type RoleSource interface {
 }
 
 // UnresolvedRole 算不到人的节点（FR-M9-02：提交时阻断，preview 时可见）。
+// ★ json tag（N-068 ①）：输出键名对齐 docs/05 §3.13 契约 {node_id,node_name,role,reason}
+// （全仓同类结构均 snake_case —— 此处原为唯一漏网的大写驼峰，会让前端/脚本取值落空）。
 type UnresolvedRole struct {
-	NodeID   string
-	NodeName string
-	Role     string
-	Reason   string
+	NodeID   string `json:"node_id"`
+	NodeName string `json:"node_name"`
+	Role     string `json:"role"`
+	Reason   string `json:"reason"`
 }
 
 // roleLabelOverride chain roles.label 与 t_user_role.role（seed.Roles）的个别差异。

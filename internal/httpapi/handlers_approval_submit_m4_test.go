@@ -37,10 +37,18 @@ func newSubmitM4App(t *testing.T, withRoles bool) (*echo.Echo, *store.DB, *acces
 
 func newSubmitM4AppV(t *testing.T, withRoles bool, verifier OrgVerifier) (*echo.Echo, *store.DB, *access.Authenticator) {
 	t.Helper()
-	return newSubmitM4AppObj(t, withRoles, verifier, nil)
+	return newSubmitM4AppObj(t, withRoles, verifier, nil, nil)
 }
 
-func newSubmitM4AppObj(t *testing.T, withRoles bool, verifier OrgVerifier, objects objectstore.Store) (*echo.Echo, *store.DB, *access.Authenticator) {
+// newSubmitM4AppMutate 同 newSubmitM4App 但允许合成 spec（内存副本、不落盘）——
+// N-067 ① 合成用例（真实 spec 上钩子零行为变化 ⇒ 鉴别力须由合成用例承担）。
+func newSubmitM4AppMutate(t *testing.T, withRoles bool, mutate func(*specload.Bundle)) (*echo.Echo, *store.DB, *access.Authenticator) {
+	t.Helper()
+	return newSubmitM4AppObj(t, withRoles, nil, nil, mutate)
+}
+
+func newSubmitM4AppObj(t *testing.T, withRoles bool, verifier OrgVerifier, objects objectstore.Store,
+	mutate func(*specload.Bundle)) (*echo.Echo, *store.DB, *access.Authenticator) {
 	t.Helper()
 	ctx := context.Background()
 	db := storetest.NewDB(t)
@@ -91,6 +99,9 @@ func newSubmitM4AppObj(t *testing.T, withRoles bool, verifier OrgVerifier, objec
 	bundle, err := specload.Load(specfs.FS)
 	if err != nil {
 		t.Fatal(err)
+	}
+	if mutate != nil {
+		mutate(bundle)
 	}
 	metrics := observ.NewMetrics()
 	env := &config.Env{DevMode: true, InternalToken: testInternalToken, RunEnv: "test"}

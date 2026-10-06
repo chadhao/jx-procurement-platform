@@ -71,7 +71,7 @@ func uploadFile(t *testing.T, e *echo.Echo, cookie, fileName string, content []b
 
 func TestAttachmentUploadBindDownload(t *testing.T) {
 	objects := newMemObjectStore()
-	e, db, auth := newSubmitM4AppObj(t, true, nil, objects)
+	e, db, auth := newSubmitM4AppObj(t, true, nil, objects, nil)
 	cookie := auth.Establish("ou_app")
 
 	// ① 上传暂存
@@ -131,7 +131,7 @@ func TestAttachmentUploadBindDownload(t *testing.T) {
 
 func TestAttachmentUploadOwnerBoundary(t *testing.T) {
 	objects := newMemObjectStore()
-	e, _, auth := newSubmitM4AppObj(t, true, nil, objects)
+	e, _, auth := newSubmitM4AppObj(t, true, nil, objects, nil)
 	cookieApp := auth.Establish("ou_app")
 	cookieOps := auth.Establish("ou_ops")
 
@@ -154,7 +154,7 @@ func TestAttachmentUploadOwnerBoundary(t *testing.T) {
 
 func TestAttachmentBindForeignIDRejected(t *testing.T) {
 	objects := newMemObjectStore()
-	e, _, auth := newSubmitM4AppObj(t, true, nil, objects)
+	e, _, auth := newSubmitM4AppObj(t, true, nil, objects, nil)
 	cookie := auth.Establish("ou_app")
 
 	// 他人（或不存在）的暂存 id ⇒ 提交整体失败 400（不静默丢附件）

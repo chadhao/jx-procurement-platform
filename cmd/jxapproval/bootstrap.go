@@ -185,14 +185,15 @@ func run(version string) error {
 	// 启动自检（R-g 数据准备度）：合成事实跑一次采一链 —— 只 Warn 不拒启
 	//（角色数据可在管理页后配；缺人须在日志可见，不许静默）。
 	{
-		probeAmt := int64(99999)
-		if rc, err := chainSvc.Compute(ctx, chain.Facts{
-			DocType: chain.DocBA, AmountCents: &probeAmt, UsageCategoryL1: "P01",
-		}); err != nil {
+		if rc, err := chainSvc.Compute(ctx, chainSmokeFacts()); err != nil {
 			logger.Warn("启动自检：分档/链计算烟测失败（不影响启动，提交侧将可见失败）", "error", err.Error())
 		} else if len(rc.Unresolved) > 0 {
 			logger.Warn("★ 启动自检：采一链存在算不到人的角色（请在权限管理页补齐 t_user_role）",
-				"unresolved", len(rc.Unresolved), "spec_version", rc.SpecVersion)
+				"unresolved", len(rc.Unresolved), "probe_open_id", chainSmokeProbeOpenID,
+				"spec_version", rc.SpecVersion)
+			// N-068②：数字必须配明细（节点名＋角色＋原因）—— 否则运维照日志去权限管理页
+			// 找不到对应关系（docs/20 §1B.6 的指引无从落地）。
+			logChainSmokeUnresolved(logger, rc.Unresolved)
 		} else {
 			logger.Info("启动自检：分档/链计算烟测通过", "approval_nodes", len(rc.Spec),
 				"spec_version", rc.SpecVersion)
@@ -538,6 +539,31 @@ func s3ConfigOrNil(endpoint, bucket, region, ak, sk string, pathStyle bool) *obj
 //
 //	标注卡片 —— message_id 为空时反馈器拦截（无卡可更新，不发同步请求）；
 //	卡片更新失败只记日志、不回滚业务（与「落盘即 200」纪律一致）。
+//
+// chainSmokeProbeOpenID 启动自检的**具名探针身份**（N-068②）。
+// ★ 为什么必须带：`generates_task` 显式的 applicant 节点（如 return_receipt）办理人＝
+// 申请人本人、不查角色表 —— Facts 不带身份 ⇒ 该节点恒记 unresolved ⇒ 与 preview
+// （带会话身份 ⇒ 0）口径互相矛盾，且**与配置无关**（运维照日志找不到要补的角色）。
+const chainSmokeProbeOpenID = "smoke-probe"
+
+// chainSmokeFacts 启动自检的合成事实（采一链 · 与提交侧同构、仅多探针身份）。
+func chainSmokeFacts() chain.Facts {
+	probeAmt := int64(99999)
+	return chain.Facts{
+		DocType: chain.DocBA, AmountCents: &probeAmt, UsageCategoryL1: "P01",
+		ApplicantOpenID: chainSmokeProbeOpenID, ApplicantName: "启动自检探针",
+	}
+}
+
+// logChainSmokeUnresolved 逐条点名算不到人的节点（N-068②：日志必须能落到
+// 「节点名＋角色＋原因」，数字本身不可执行）。
+func logChainSmokeUnresolved(log *slog.Logger, unresolved []chain.UnresolvedRole) {
+	for _, u := range unresolved {
+		log.Warn("启动自检：算不到人的角色明细",
+			"node", u.NodeName, "node_id", u.NodeID, "role", u.Role, "reason", u.Reason)
+	}
+}
+
 func approvalRepairLoop(ctx context.Context, svc *flow.Service, feedback *feishu.RepairCardFeedback, log *slog.Logger) {
 	runOnce := func() {
 		rep, err := svc.RepairPendingApprovals(ctx)

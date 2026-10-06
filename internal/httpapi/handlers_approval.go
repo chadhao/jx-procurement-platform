@@ -340,6 +340,18 @@ func (d Deps) approveReject(c echo.Context, op string) error {
 		if verr := d.evaluateApprovalChecks(ctx, body.TaskID, idn.OpenID, fields); verr != nil {
 			return fail(c, http.StatusBadRequest, codeBadRequest, verr.Error())
 		}
+		// ★ N-067①：跨过**无待办节点**的 approval(<node_id>) 判据（checks_when 第三处
+		// 承载口径）—— 同样拦在 Flow.Approve 之前（事务外）。
+		if d.Spec == nil || d.Chain == nil {
+			return fail(c, http.StatusServiceUnavailable, codeNotReady,
+				"机读规格/链计算未装配（approval 跨节点判据无法求值）")
+		}
+		if verr := d.evaluateCrossedNodeChecks(ctx, bizNo, body.TaskID, idn.OpenID, fields); verr != nil {
+			if errors.Is(verr, errCrossedNodeCheck) || isChainInputError(verr) {
+				return fail(c, http.StatusBadRequest, codeBadRequest, verr.Error())
+			}
+			return fail(c, http.StatusInternalServerError, codeInternal, verr.Error())
+		}
 		err = d.Flow.Approve(ctx, bizNo, body.TaskID, idn.OpenID, reason, fields)
 	} else {
 		err = d.Flow.Reject(ctx, bizNo, body.TaskID, idn.OpenID, reason)

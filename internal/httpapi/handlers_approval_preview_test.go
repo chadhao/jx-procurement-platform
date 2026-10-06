@@ -82,6 +82,43 @@ func TestPreviewUnresolvedVisible(t *testing.T) {
 	}
 }
 
+// TestPreviewUnresolvedRoleKeysN068 N-068 ①：unresolved_roles 元素键名须与契约
+// {node_id,node_name,role,reason} 逐字一致（docs/05 §3.13 / preview 契约注释）。
+// ★ 先红后绿：补 json tag 前实测键名为大写驼峰 ⇒ 本用例必红。
+func TestPreviewUnresolvedRoleKeysN068(t *testing.T) {
+	e, _, auth := newSubmitM4App(t, false) // 无角色 ⇒ 必有 unresolved
+	cookie := auth.Establish("ou_app")
+	code, env := postPreview(t, e, cookie,
+		`{"doc_type":"BA","amount_cents":50000,"usage_category_l1":"P01"}`)
+	if code != http.StatusOK {
+		t.Fatalf("preview 应成功: %d %s", code, env.Message)
+	}
+	d, _ := env.Data.(map[string]any)
+	ur, _ := d["unresolved_roles"].([]any)
+	if len(ur) == 0 {
+		t.Fatal("缺人时 unresolved_roles 应非空")
+	}
+	first, _ := ur[0].(map[string]any)
+	for _, k := range []string{"node_id", "node_name", "role", "reason"} {
+		if _, ok := first[k]; !ok {
+			t.Errorf("契约键 %q 缺失（实测键: %v）—— 大写驼峰＝契约漂移", k, keysOf(first))
+		}
+	}
+	for _, bad := range []string{"NodeID", "NodeName", "Role", "Reason"} {
+		if _, ok := first[bad]; ok {
+			t.Errorf("出现旧大写驼峰键 %q（与 docs/05 契约不一致）", bad)
+		}
+	}
+}
+
+func keysOf(m map[string]any) []string {
+	out := make([]string, 0, len(m))
+	for k := range m {
+		out = append(out, k)
+	}
+	return out
+}
+
 func TestPreviewBadInput(t *testing.T) {
 	e, _, auth := newSubmitM4App(t, true)
 	cookie := auth.Establish("ou_app")

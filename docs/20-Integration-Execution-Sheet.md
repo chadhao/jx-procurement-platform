@@ -232,11 +232,15 @@ sqlite3 data/jxapproval.db "select doc_type||' '||approval_code||' '||feishu_cod
 | `POST /api/approval/preview`（携带会话身份） | 2（`综合运营主管`×2 节点） | ★ **0** |
 
 ⇒ ★★ **判断「到底缺哪个角色」一律用 `POST /api/approval/preview`**（它给 `unresolved_roles` 明细：节点名 ＋ 角色 ＋ 原因），**不要照启动日志的数字去权限管理页找** —— 找不到对应关系。
-★ 已登记 `COLLAB.md#N-068` 要求把该计数与 `preview` 口径对齐。
+★ **已修复（`N-068` ② · 2026-10-06）**：启动自检现带**具名探针身份**（`smoke-probe`，`cmd/jxapproval/bootstrap.go#chainSmokeFacts`）使 applicant 类节点可解析 ⇒ **计数与 preview 口径对齐**；且日志**逐条点名**（节点名 ＋ 角色 ＋ 原因，`#logChainSmokeUnresolved`）并随计数给出本次探针身份 —— 「配置缺失」与「探针身份」两件事在日志里可区分。★ 上方实测对照表为**修复前历史形态**（保留不失真）；判据＝`cmd/jxapproval#TestChainSmokeFactsResolveApplicantN068`（含反面对照：不带身份时 applicant 恒 unresolved）。
 
-> ★ 附：`unresolved_roles` 目前的**响应键名是 `NodeID/NodeName/Role/Reason`**（大写驼峰），
+> ★ 附：`unresolved_roles` 此前的响应键名曾是 **`NodeID/NodeName/Role/Reason`**（大写驼峰），
 > 与 `docs/05` 契约声明的 `node_id/node_name/role/reason` **不一致**（`chain/assign.go` 漏 `json tag`）
 > ⇒ ★ 脚本取值时**两种都试**，以实测为准；已登记 `N-068` 修复。
+> ★ **已修复（`N-068` ① · 2026-10-06）**：四个字段补 `json` tag ⇒ 响应键名＝**`node_id/node_name/role/reason`**
+> （与契约逐字一致；前端 `Submit.vue` 本就按 snake_case 取值 ⇒ 此前该处展示实为 undefined 串，
+> 修复后与前端依赖对齐）。判据＝`internal/httpapi#TestPreviewUnresolvedRoleKeysN068`（先红后绿）。
+> ★ 上段为**修复前历史对照**（保留）。**此后取值一律用 snake_case**。
 
 ---
 

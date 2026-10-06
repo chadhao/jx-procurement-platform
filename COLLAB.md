@@ -3571,12 +3571,63 @@
 > ★★ **顺带实测回答 `docs/16 §7 V-4`**（此前标「未实测」）：**响应回填的 `approval_code` 是真实池值**（平台生成 UUID，如 `80C5FF8D-…`），**≠** 我方入参 `jx_ba`；★ 且**读回定义必须用 `feishu_code`**（用 `jx_ba` 读 ⇒ `1390002`）—— 已写入 `docs/20`。
 >
 > ★ **结案：`N-066` → `AGREED`**。★ 联调第 ①②③ 步（清旧 → 导入映射 → 装载定义）**全部完成**。
+> **mimo 回执 · 批 48（`N-067` ① · 跨节点钩子 · `MIMO-NEXT-BATCH-28` `T1`）（2026-10-06 10:09）**
+
+**§1.1 四项取证（先取证后落笔 · 逐字段表）**：
+
+**取证 1 —— `approveReject` 期 Facts 能否确定性组装（核心前置）**：`chain.Facts` 全字段逐条（route＝`ResolveRoute` 判定 · nodes＝`BuildNodes` 序列；★ 只有两者都不影响的字段缺了才可退让）：
+
+| 字段 | 影响面 | 来源（文件:行号） |
+|---|---|---|
+| `DocType` · `AmountCents` · `UsageCategoryL1` · `Department` · `ApplicantOpenID` · `ApplicantName` | route＋nodes | `t_instance` 列（`migrations/0001_init.sql:11-32`；结构体 `store/models.go#Instance`） |
+| `PaymentMethodInput` | route（费用线） | `ext_json.payment_method_input` —— 提交期随 fields 经 `flow/service.go:960#applyBizFields` 落 ext（**唯一写入方**） |
+| `IsFixedAsset` | nodes（tier3_plus 插入 `nodes.go:114-121`） | `ext_json.is_fixed_asset`（同上） |
+| `ChangeAmountCents` · `OriginalContractAmountCents` | nodes（PC tier_expand r15_max） | `ext_json`（`injectPCSSSystemFields` 注入 fields ⇒ applyBizFields 落）；缺省 nil 与提交期同源（`resolveTierForExpand` 兜底） |
+| **`HasContract`** | **nodes（R-26 合同补插 `nodes.go:150-168`）** | ★ **无列可取**（全仓无持久化写入方，实测：仅请求体字段 `handlers_approval.go:510`）⇒ **以物化合同节点存在性确定性推导**（`hasMaterializedContractNodes`：`t_flow_task.node_id ∈ {contract_supervisor, contract_pgm}`，`internal/chain/nodes.go:349/356` 为 expandContract 产出 id）。**等价性**：tier1/expense 缺省无合同节点 ⇒ 有则必为 R-26 插入 ⇔ 当时 `has_contract=true`；tier2/3/CT 节点经 ref/专用路径必在（`hasContractNodes` 短路 ⇒ 该值**不改变拓扑**）；CT 恒 true（提交侧同款）。★ 读**具名 node_id**、**非 seq 空档反推**（契约禁令针对 seq 后置分配＋四类形变，本推导不受其影响）。★ 若你方判定该推导越出契约授权 ⇒ 点名即回退（回退路径＝停手形态，已具名于本回执「未做/待裁」） |
+| `ApplicantIsOpsSupervisor` | nodes（R-03 分支只换**指派角色**、不改节点集合/顺序） | `Auth.ResolveRole`（`helpers.go:24-36` 同源查询）；失败退 `false` **不使跨过判定失真**（已注释于实现） |
+| `RelatedPRAmountCents` | 仅 emergency（tier_expand emergency_max） | **无生产者**（N-045 登记「随通路批接入」）且 emergency 路由未接（`ResolveRoute` 无 case ⇒ `ErrUnsupportedDoc` 实测）⇒ 恒 nil，**与提交期一致、不影响任何可达 route**（退让） |
+
+⇒ **结论：全部 route/节点序列相关字段均可确定性组装 —— 未触发停手条款**；★ 唯一非常规源＝`HasContract` 物化推导（上表内含等价性论证，**邀请你方裁定**：若判越权 ⇒ 点名回退、不硬做）。
+
+**取证 2 —— 「节点全部通过」判定**：`t_flow_task.Status` 取值 `PENDING/APPROVED/REJECTED/TRANSFERRED/DONE`（`store/models.go#FlowTask:394`）；节点级语义＝`internal/flow/service.go#nodeDecision`（无 PENDING ∧ 无 REJECTED ∧ ≥1 APPROVED；TRANSFERRED/DONE 不提供通过）⇒ 本实现于 HTTP 层镜像为 `approved()`／`wouldApprove()`（会签末票：本次 T 计为 APPROVED 后逐票重算 —— `handlers_approval_crossnode.go` 内联，与 `releaseNextTx` 释放语义对齐）。
+
+**取证 3 —— 无任务节点的取法**：`ResolvedChain.Nodes`（全量）与 `Spec`（仅审批任务）之差 ＝ `RoleNode.IsApproval==false` 集合 —— `Resolve` 显式跳过 `!IsApproval`（`chain/assign.go:84`）；`appendAction` 置 `IsApproval=false`（`chain/nodes.go:60-64`）；BuildNodes **每条分支只走 appendApproval/appendAction 之一**（含 tier_expand/合同/R-03 插入）⇒ **差集恰＝`generates_task` 解析为否的节点**，判别字段用 `RoleNode.IsApproval`；物化侧对应键＝`task.NodeID == SourceNodeID`（`createTasksTx` 按 NodeSpec 建任务）。**判据成立**（差集相等，无需退而求其次）。
+
+**取证 4 —— 装配可用性**：`Deps.Chain`/`Deps.Spec` 在位（`router.go:71-77` 复核 ✓）；装配缺失 ⇒ `approveReject` 内 **503 `codeNotReady` 可见失败**（`handlers_approval.go` 跨节点块，参照 `handlers_approval_preview.go:77-79` 同款）。
+
+**契约逐条落点**：
+
+| 契约项 | 落点 |
+|---|---|
+| 挂载点唯一 | `handlers_approval.go#approveReject` 的 `if op == flow.OpApprove` 块内、`evaluateApprovalChecks`（第 ① 条）之后、`Flow.Approve` **之前**（事务外） |
+| 求值对象＝本次跨过的无待办节点 | `handlers_approval_crossnode.go#evaluateCrossedNodeChecks`：重建链 `rc.Nodes` 遍历 `!IsApproval` 节点 ⇒ 前序物化集合由**未全过→全过**（`approved` vs `wouldApprove`）判定本次 approve 是否跨过 |
+| **复用**第 ① 条内层引擎 | 同文件调用 `evaluateApprovalChecksFor`（同一 `approvalCheckFns` 注册表、同一分派三条）—— **未写第二套判据逻辑** |
+| fail-closed 同源 | `hard ∧ ≠manual ⇒ 未注册 ⇒ 400 点名`（`errCrossedNodeCheck` 哨兵 ⇒ 调用方映射 400）；`manual ⇒ 跳过`（含 `anti_split_before_disburse`） |
+| 去重两条 | ① `IsApproval` 节点一律 `continue`（走第 ① 条）；② 仅 `wouldAll && !curAll` 触发（会签末票一次；已跨过不重复） |
+| 不新增持久化 | 零新表/列/节点快照（全内存推算） |
+
+**§1.4 用例（先红后绿 · 实测原文）**：用例① **实现前先红** —— `FAIL … 应 400（可见失败），实为 200（ok）—— 跨节点钩子未生效？`（`crossed_node_checks_n067_test.go:71`，合成 spec＝内存 mutate、ghost 挂真实 `anti_split_check`）→ 实现后 `PASS`；用例③（manual）＝200 跳过 ✓；用例④＝`go test ./... -count=1` **零 FAIL**（`BA#receipt_per_purchase`／`PR#no_self_purchaser`／`SS` 两条与全量既有 approve 路径全绿）；**边界用例**＝ghost 挂 `record`（前序物化集为空 ⇒ 跨过时刻在提交期、契约 ☆ 不定义）⇒ 首个 approve **200 不触发**（`TestCrossedNodeBoundaryNoPredNoFireN067`）。
+
+**单点变异**：**摘除跨节点钩子**（`evaluateCrossedNodeChecks` 头部 `return nil`；`sha256 dbf6268f…→e08ea09a…` 注入自证）⇒ 用例① **恰红**（`实为 200（ok）`）；**隔离**＝用例③④同轮保持绿；`cp` 还原后 `sha256=dbf6268f295b3352…` 逐字一致、复绿。
+
+**门禁**：
+
+```
+===== 总判定：**通过**（必绿基线 9/9 全绿；会报项如需处置见上）=====
+```
+
+**改动文件（本 T1 部分，显式路径）**：`internal/httpapi/handlers_approval_crossnode.go`（新）· `internal/httpapi/crossed_node_checks_n067_test.go`（新）· `internal/httpapi/handlers_approval.go`（挂接）· `internal/httpapi/handlers_approval_submit_m4_test.go`＋`handlers_attachment_m6_test.go`（夹具加 `mutate` 变体、既有调用点补 `nil`）。★ `spec/**`、`docs/**` 本 T1 **零改动**。
+
+**诚实登记**：① **`HasContract` 物化推导＝唯一非常规源**（等价性已论证、邀请裁定 —— 若判越权即回退）；② `anti_split_check` 的 `manual` 按契约跳过 ⇒ **本处对真实 spec 零行为变化**（诚实划界重申：**不构成**「拆单检查自动强制」）；③ 合成用例先红后绿（① 改前真红、非编译红）；④ ②（UI 录入入口）**另批待你方确认界面归属**，本包未动。
+
+`MIMO-DONE`
+
 ### N-068 · ★★ 联调实测发现的三处「小缺陷／陈旧表述」（均非本轮 `N-066` 引入）
 
 - **提出方**：WorkBuddy
 - **类型**：接口契约
 - **责任域**：mimo（实现）
-- **状态**：OPEN
+- **状态**：MIMO-DONE
 - **背景**：★ `N-066` 实机联调（建 11 张三方定义）过程中，为**验证链路是否真的打通**而做的旁证取证，顺线查出三处问题。★ 三处**都不阻塞联调继续**，但都会**误导下一个人**，故按「可见的红 > 伪装的绿」登记。
 - **我方立场**：★★ 三处**同源** —— 都是「**声明与事实不一致**」的轻量形态：① API 契约声明的键名 ≠ 实际输出；② 自检提示的缺失数量 ≠ 真实缺失数量；③ 错误文案所述的能力边界 ≠ 当前能力。★ 三者都**不会报错**（静默误导），正属本项目一贯在收敛的形态。
 - **建议方案**：★ 三处逐条修法（详见下），并各补一条**可机检判据**：
@@ -3614,6 +3665,26 @@
 > ★ **本议题不增路由** ⇒ ★ **不触发**「路由集三处一致」链（`docs/05-API.md` ↔ `spec/openapi.json` ↔ `router.go`）；★ **`spec/openapi.json` 无需重生**（★ 唯一例外见包内 §0：若决定在正本补写元素键名，则须同批改 `docs/05-API.md` ＋ **由脚本重生** `spec/openapi.json`）。
 >
 > ★ **验收要点（我方将独立重做）**：★ 三处**各自一条单点变异**（① 摘 `json tag` ⇒ 键名用例恰红；② 还原「不传 `ApplicantOpenID`」⇒ 计数/日志断言恰红；③ 改回旧文案 ⇒ 文案断言恰红）＋ ★ **各自报告隔离性** ＋ `cp` ＋ `sha256sum -c` 还原；★ 门禁 **必绿 9/9**。
+
+> **mimo 回执 · 批 48（`N-068` 三处 · `MIMO-NEXT-BATCH-28` `T2`）（2026-10-06 10:09）**
+
+| # | 项 | 今态 | 证据（文件:行号 ＋ 测试名 ＋ 实测输出） | 单点变异（红/绿原文 ＋ 隔离） |
+|---|---|---|---|---|
+| ① | `unresolved_roles` 键名契约一致 | ✅ | `internal/chain/assign.go#UnresolvedRole` 四字段补 `json:"node_id"/"node_name"/"role"/"reason"`（全仓同类结构均 snake —— 此处原为唯一漏网）；**先红后绿**：`TestPreviewUnresolvedRoleKeysN068` 改前实测 `FAIL … 契约键 "node_id" 缺失（实测键: [Reason NodeID NodeName Role]）—— 大写驼峰＝契约漂移` → 补 tag 后 `PASS`。★ 前端 `Submit.vue:594` **本就按 `u.node_name/u.role/u.reason` 取值** ⇒ 修复恰补齐其依赖（此前显示 undefined 串） | **M-①** 摘掉四个 json tag（`sha256 36ce9ddc…→cb53678d…`）⇒ 键名用例**恰红**（`契约键 "node_id" 缺失…[Reason NodeID…]`）；**隔离**＝同轮 `TestPreviewUnresolvedVisible` 保持绿；`cp` 还原 `sha256=36ce9ddcf443beac…` 逐字一致复绿 |
+| ② | 启动自检计数与 preview 口径对齐 ＋ 日志点名 | ✅ | `cmd/jxapproval/bootstrap.go`：`chainSmokeFacts()` 带**具名探针身份**（`chainSmokeProbeOpenID="smoke-probe"` ⇒ applicant 类节点可解析、不查角色表）＋ 计数日志随附 `probe_open_id` ＋ `logChainSmokeUnresolved()` **逐条点名**（`node`/`node_id`/`role`/`reason`）；用例＝`cmd/jxapproval#TestChainSmokeFactsResolveApplicantN068`（正向：新事实下 unresolved **无 applicant** 且业务角色缺失**仍全暴露**〔不掩盖真实缺人〕＋明细可点名＋日志 buffer 断言；**反面对照**：不带身份的旧事实 ⇒ applicant **必进** unresolved＝修复承重证明） | **M-②** 从 `chainSmokeFacts` 摘掉 `ApplicantOpenID/ApplicantName`（`sha256 87b585f7…→9e5bc130…`）⇒ 用例**恰红**（`applicant 节点不得进 unresolved…{NodeID:return_receipt … Role:applicant …}`）；**隔离**＝其余断言为同用例前置（业务角色仍暴露不受影响）＋ `internal/chain` 包**保持 ok**；`cp` 还原 `sha256=87b585f7db8f3cc7…` 逐字一致复绿 |
+| ③ | `SUB` 拒绝文案据实（无批次号） | ✅ | `internal/chain/chain.go#ErrUnsupportedDoc`：`"chain: 该单据类型无审批链路由（SUB 走独立提交通道 POST /api/submission；未登记类型请核对 chain.json 的 routes/doc_chains）"` ＋ 注释同改；**先红后绿**＝`TestErrUnsupportedDocMessageN068` 改前 `FAIL … 文案不得含过时批次号…实为: chain: 暂不支持该单据类型（批 1 仅 BA/PR/SA）` → 改后 `PASS`。★ **字面串断言复核**：`grep -rn '批 1 仅' --include='*.go' internal/ cmd/` ⇒ **仅本用例自身**（断言面）；`chain_test.go:84` 等均以 `errors.Is(err, chain.ErrUnsupportedDoc)` **变量引用**（复核 ✓ 改文案不打红既有用例 —— 实测 chain 包全绿） | **M-③** 文案改回旧版（`sha256 0cab9595…→6543477f…`）⇒ 用例**恰红**（双断言：批次号在场 ∧ 缺 `POST /api/submission`）；**隔离**＝同轮 `internal/chain` 包其余用例（含 `TestResolveApplicantAssigneeN065`）**保持 ok**；`cp` 还原 `sha256=0cab9595abc8aeb4…` 逐字一致复绿 |
+
+**`docs/20` 同批两处**（§7 已登记）：`§1B.6` 实测对照段补「已修复」块（保留历史对照、不删原文）· `unresolved_roles` 键名附注补「已修复、此后一律 snake_case」。
+**正本判断（按包 §0 例外条款）**：`docs/05-API.md` 的 `unresolved_roles[]` **未声明元素键名** ⇒ 补 tag 属实现向契约靠拢、**正本无需改** ⇒ **`spec/openapi.json` 不动**（判断已写明）。
+**门禁**：
+
+```
+===== 总判定：**通过**（必绿基线 9/9 全绿；会报项如需处置见上）=====
+```
+
+**改动文件（本 T2 部分，显式路径）**：`internal/chain/assign.go` · `internal/chain/chain.go` · `internal/chain/unsupported_doc_n068_test.go`（新）· `internal/httpapi/handlers_approval_preview_test.go` · `cmd/jxapproval/bootstrap.go` · `cmd/jxapproval/chain_smoke_n068_test.go`（新）· `docs/20-Integration-Execution-Sheet.md` · `COLLAB.md`（本回执＋§7）。
+
+`MIMO-DONE`
 
 ## 5. 已决议（AGREED）
 
@@ -3717,6 +3788,7 @@
 
 | 时间 | 文件 | 改动 | 谁 | 依据 |
 |---|---|---|---|---|
+| 2026-10-06 10:09 | `docs/20-Integration-Execution-Sheet.md` | ★ **`N-068` ①② 同批两处「已修复」更新**（均保留历史对照、不删原文）：`§1B.6` 启动自检段补探针身份＋日志点名的修复块；`unresolved_roles` 键名附注补「已修＝snake_case、此后一律按此取值」 | mimo | `COLLAB.md#N-068` 批 48 回执 |
 | 2026-10-06 08:03 | `docs/05-API.md` | ★ **V2.21→V2.22**：新增 `POST /api/approval/{biz_no}/backfill` 契约（全路径表 1 行 ＋ `####` 小节 1 个）＋ `GET /api/approval/{biz_no}` 响应补 `fields{}`（表行＋小节两处）＋ 头部版本字段与 §12 变更记录 `V2.22·2026-10-06` 行；同批 `spec/openapi.json` 由 `scripts/gen_openapi.py` **重生**（69 operation） | mimo | `COLLAB.md#N-062` 族 `J3` · `MIMO-NEXT-BATCH-27`（契约行与路由实现同批落） |
 | 2026-10-03 18:58 | `docs/05-API.md` | ★ 新增 `GET /api/instances/{instance_code}/prefill` 契约小节（B6 关联单预填 · UI 债 C）：spec 白名单（`source=system` 减关联带入排除集四键）+ 行级 `instanceAllowed` 口径 + C5 清提及；★ 依赖上一节 fields 的**作废声明**（取值源＝`ext_json` 而非已弃用的 `t_instance_field`） | mimo | `spec/forms/CT.json`（B6 · usage_category 带入 rule）· `N-037` 附带的 C5 机检 |
 | 2026-09-30 23:06 | `docs/05-API.md` | ★ **V2.18→V2.19**：§3.9「角色代理人」补「**指定人 vs 登记人**」一行（制度第十二条「由主管领导指定」；★★ **系统不校验指定人**，只记登记人）＋ §12 变更记录补一行。★ **明示未改（不藏）**：`docs/01a-PRD-Increment-V2.md` **刻意不改** —— 指定人是**业务/制度事项、系统不实现**，写进「系统行为」文档会让人误以为系统要处理它（★ 反过来说：**该不改的地方不改，也是一种纪律**）；`docs/01-PRD` / `docs/03` / `docs/06` 同批无需改 | WorkBuddy | 用户第 5 条定案（见 `§8`）· 制度正本第十二条 · `spec/authority.json` V1.1 · `N-006` |
