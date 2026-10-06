@@ -12,7 +12,9 @@ package httpapi
 //   ⑤ 每次成功变更写审计（role_agent_create / role_agent_update，条目前后值）；DELETE 永远 40900
 // ★ 生效范围：备付金节点（approve_petty_cash/disburse）不接受代理人 —— 按**节点**排除
 //   （chain.NodeAllowsAgent，M9 消费；此处 GET 响应回传 denied_node_ids 供前端标注）。
-// ★ feature_enabled=false：正向消费端属 M9；页签须显式标注「代理人功能未启用」（README #24）。
+// ★ feature_enabled=true（N-072 · 2026-10-06）：正向消费端（代理人转交/回退）已随 M9 落地
+//   并装配生效 —— 页签告示同步撤下「未启用」（README #24 的历史口径「当时标得对」：
+//   无消费端＝假配置；**现在有消费端了**，见 spec/authority.json#enable_guard.lifting 达成判定）。
 
 import (
 	"context"
@@ -25,10 +27,17 @@ import (
 	"github.com/chadhao/jx-procurement-platform/internal/store"
 )
 
-// roleAgentFeatureEnabled 正向消费端（代理人可转交/回退）随 M9 落地才置 true。
-// 解除条件见 spec/authority.json#enable_guard.lifting —— 未解除前，任何操作
-// **不得**因存在代理人记录而放行（服务端本就不读本表参与解析，见链侧负向守卫）。
-const roleAgentFeatureEnabled = false
+// roleAgentFeatureEnabled 正向消费端开关（N-072 撤销告示后据实为 true）。
+// ★ 解除条件已达成（spec/authority.json#enable_guard.lifting 的「达成判定」三条）：
+//
+//	落地＝internal/flow/ops.go#Transfer（:96）与 #Rollback（:342）已消费 agentAuthorizer；
+//	用例＝internal/flow/ops_test.go#TestTransferAgentAuthorization（应拦/应放行双向）；
+//	装配＝cmd/jxapproval/bootstrap.go#SetAgentAuthorizer。
+//
+// ★ **边界仍在（未随开关变化）**：仅限本节点 · 不可加签（AddSign 不走代理门）·
+//
+//	不可撤回（Cancel 仅发起人）· 备付金两节点按节点排除（NodeAllowsAgent）· fail-closed。
+const roleAgentFeatureEnabled = true
 
 // adjacentAgentPair 合同链相邻两级（checks#no_shared_agent_across_two_levels 点名）。
 var adjacentAgentPair = [2]string{"supervisor", "project_general_manager"}
@@ -117,8 +126,8 @@ func (d Deps) handleAdminRoleAgentsList(c echo.Context) error {
 	return ok(c, map[string]any{
 		"items":           items,
 		"eligible_roles":  d.eligibleRoleKeys(),
-		"feature_enabled": roleAgentFeatureEnabled, // false：M9 前正向消费端未实现（README #24）
-		"feature_note":    "代理人功能未启用：本页仅登记配置；转交/回退按代理人待 M9 落地后生效",
+		"feature_enabled": roleAgentFeatureEnabled, // N-072：true —— 解除条件已达成（enable_guard.lifting）
+		"feature_note":    "代理人功能已启用：已登记的代理人在其被代理角色的本节点上可执行「转交 / 回退」；仅限本节点、不可加签、不可撤回；备付金两节点（approve_petty_cash/disburse）不接受代理人",
 		"denied_node_ids": denied,
 		"adjacent_pair":   []string{adjacentAgentPair[0], adjacentAgentPair[1]},
 	})

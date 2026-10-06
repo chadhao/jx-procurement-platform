@@ -229,7 +229,7 @@ async function switchConstTable(k) {
   await loadConstants()
 }
 
-// ---- ④ 角色代理人（N-028 · 授权配置；feature_enabled=false ⇒ 页签显式标注未启用）----
+// ---- ④ 角色代理人（N-028 · 授权配置；feature_enabled=true —— N-072：M9 落地、告示撤下「未启用」）----
 const agents = ref([])
 const agentFeature = ref(false)
 const eligibleRoles = ref([])
@@ -490,12 +490,13 @@ onMounted(loadAll)
         </table>
       </div>
 
-      <!-- ④ 角色代理人（N-028 · 授权配置；feature_enabled=false ⇒ 显式标注未启用 —— README #24） -->
+      <!-- ④ 角色代理人（N-028 · 授权配置；N-072：feature_enabled=true ⇒ 正面说明块，告知边界 ≠ 堆说明） -->
       <div v-if="activeTab === 'agents'" class="panel">
         <h2>角色代理人（授权配置 —— 决定「谁能审」，区别于运营性常量）</h2>
-        <div v-if="!agentFeature" class="tag" style="background: #fffbe6; border-color: #ffe58f">
-          ★ 代理人功能未启用（feature_enabled=false）：正向消费端（代理人转交 / 回退）随 M9
-          落地后开启 —— 依据 README 定案 #24「无消费端＝假配置」。本页当前仅作登记与查看。
+        <div v-if="agentFeature" class="tag" style="background: #e8f7ee; border-color: #b7e1cd">
+          ★ 代理人功能已启用：已登记的代理人在其被代理角色的本节点上可执行「转交 / 回退」；
+          仅限本节点、不可加签、不可撤回；备付金两节点（approve_petty_cash / disburse）不接受代理人
+          —— 完整口径见 spec/authority.json#enable_guard。
         </div>
         <div class="toolbar">
           <select v-model="newAgent.role_key">

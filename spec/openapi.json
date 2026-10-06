@@ -4872,7 +4872,7 @@
     "human_readable_authority": "docs/05-API.md",
     "doc_version": "?",
     "doc_lines": 1228,
-    "doc_sha256": "99750b84aaa5c893abd5fa4a43116072257ad31b91043a4304f11bb36bbccaad",
+    "doc_sha256": "2da5128799ef58f7271031226933f774d78f36c29bb3a219d5fbbece41de710d",
     "generator": "scripts/gen_openapi.py",
     "route_count": 69,
     "router_go_route_count": 69,

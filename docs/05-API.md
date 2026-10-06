@@ -543,7 +543,7 @@ sequenceDiagram
 | 请求 / 响应字段 | `role_key`·`agent_open_id`·`note`·**`state`**（`active` 或 `retired` —— ★ **筛选参数、请求体、响应体三者统一为 `state`**；★ **已于 2026-10-03 收敛**：原筛选参数写作 `status`、与字段名不一致，经 `N-037` 统一为 `state`，口径以 `spec/authority.json` 为准）；`GET` 响应含 `{items[], eligible_roles[], feature_enabled}` |
 | ★★ 生效范围 | ★ **备付金节点不适用** —— 制度「备付金审批不得代理」⇒ `chain.json#routes.purchase_tier1.nodes` 的 `approve_petty_cash` / `disburse` **两节点不接受代理人**；★ **按节点排除，不按角色排除**（`ops_supervisor` 在其它节点仍可代理，否则误伤初审环节） |
 | ★★ 不作为替补 | ★ **代理人记录不得参与审批人解析**：签批人不可用 ⇒ **只阻断**（`40010`），**不回退到代理人、不上抬一级、不改派**（用户 2026-09-30「不需要替补」） |
-| ★ 启用状态 | ★ 正向消费端（**转交 / 回退由代理人操作**）属 `M9`、**未实现** ⇒ **`feature_enabled=false`**，页签须**显式标注「代理人功能未启用」**；★ 解除条件见 `spec/authority.json#enable_guard`（依据 `README` 定案 #24：无消费端＝假配置） |
+| ★ 启用状态 | ★ **`feature_enabled=true`（N-072 · 2026-10-06 据实）** —— 正向消费端（**转交 / 回退由代理人操作**）已随 `M9` 落地：解除条件**已达成**（`bootstrap.go#SetAgentAuthorizer` 装配 ＋ `ops.go#Transfer`/`#Rollback` 消费 ＋ `ops_test.go#TestTransferAgentAuthorization` 应拦/应放行双向用例）⇒ **守栏在服务端判权面已失效、告示面随本包一并更新**（`feature_note` 边界：仅本节点 · 不可加签 · 不可撤回 · 备付金两节点不接受代理人）；★ **解除条件的正本指针见 `spec/authority.json#enable_guard`**（依据 `README` 定案 #24：无消费端＝假配置 —— 该口径**当时正确、现随消费端落地而解除**） |
 | 错误码 | 40000（`role_key` 不在白名单 / 相邻两级同人 / 空值）、40300、40400（`open_id` 不存在于镜像 / 记录不存在）、40900（同角色已有生效代理人 / 删除被拒） |
 | 关联 | `spec/authority.json`（新建）· 制度 V4.0 第十二条 · `01-PRD Q8`（**已闭合**）· `01a §4.1` · 本文件 §3.13（解析层「不得当替补」） |
 

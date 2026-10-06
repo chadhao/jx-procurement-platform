@@ -7,7 +7,8 @@ package specload
 // 消费点：
 //   - /api/admin/role-agents CRUD 白名单（agent_eligible_roles.eligible）
 //   - chain.NodeAllowsAgent（备付金按节点排除 —— 从 tier1 节点 id 动态读）
-//   - feature_enabled 标注（enable_guard：M9 前正向消费端未实现）
+//   - feature_enabled 标注（enable_guard：解除条件已达成 ⇒ true，N-072 撤销告示；
+//     本文件只解析 enable_guard 的规则文本，不改解析行为）
 
 import (
 	"encoding/json"

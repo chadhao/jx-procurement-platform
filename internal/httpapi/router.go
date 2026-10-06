@@ -213,7 +213,7 @@ func NewRouter(d Deps) *echo.Echo {
 	admin.POST("/constants", d.handleAdminConstantsCreate)
 	admin.PUT("/constants/:id", d.handleAdminConstantsUpdate)
 	admin.DELETE("/constants/:id", d.handleAdminConstantsDeleteRefused)
-	// ---- 角色代理人（N-028 · 授权配置，docs/05-API §3.9）：只停用不删 + feature_enabled=false ----
+	// ---- 角色代理人（N-028 · 授权配置，docs/05-API §3.9）：只停用不删 + feature_enabled=true（N-072：M9 落地、解除条件已达成）----
 	admin.GET("/role-agents", d.handleAdminRoleAgentsList)
 	admin.POST("/role-agents", d.handleAdminRoleAgentsCreate)
 	admin.PUT("/role-agents/:id", d.handleAdminRoleAgentsUpdate)

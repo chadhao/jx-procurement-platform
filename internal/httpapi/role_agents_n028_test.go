@@ -180,18 +180,28 @@ func TestAgentAuditAndDeleteRefusedAndListContract(t *testing.T) {
 			t.Errorf("审计缺 %s", action)
 		}
 	}
-	// GET 契约：eligible_roles 非空 / feature_enabled=false / denied 含两个备付金节点
+	// GET 契约：eligible_roles 非空 / feature_enabled=true（N-072：M9 落地、解除条件已达成）/ denied 含两个备付金节点
 	rec2, env2 := doRequest(e, http.MethodGet, "/api/admin/role-agents", admin, "")
 	if rec2.Code != http.StatusOK {
 		t.Fatalf("GET 失败 %d", rec2.Code)
 	}
 	data, _ := env2.Data.(map[string]any)
-	if data["feature_enabled"] != false {
-		t.Errorf("feature_enabled 应为 false（M9 前），实为 %v", data["feature_enabled"])
+	if data["feature_enabled"] != true {
+		t.Errorf("feature_enabled 应为 true（enable_guard.lifting 解除条件已达成 · N-072），实为 %v", data["feature_enabled"])
 	}
+	// ★ T4③ 告示与事实同向（N-072）：note 的「已启用」表述必须与 feature_enabled 一致 ——
+	// 改常量（false）⇒ 本组断言恰红；只改 note 回旧文案 ⇒ 同组恰红（与上一条断言口径隔离）。
 	note, _ := data["feature_note"].(string)
-	if !strings.Contains(note, "未启用") {
-		t.Errorf("feature_note 应显式标注未启用：%q", note)
+	enabled, _ := data["feature_enabled"].(bool)
+	noteSaysEnabled := strings.Contains(note, "已启用")
+	if noteSaysEnabled != enabled {
+		t.Errorf("告示与事实不同向：feature_enabled=%v 但 note 说已启用=%v，note=%q", enabled, noteSaysEnabled, note)
+	}
+	if strings.Contains(note, "未启用") {
+		t.Errorf("feature_note 不得再称「未启用」（账实不符 · N-072），实为 %q", note)
+	}
+	if !strings.Contains(note, "备付金") && !strings.Contains(note, "加签") {
+		t.Errorf("feature_note 须点明至少一条边界（备付金 / 加签），实为 %q", note)
 	}
 	if roles, _ := data["eligible_roles"].([]any); len(roles) == 0 {
 		t.Error("eligible_roles 不应为空")
