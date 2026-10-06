@@ -3,7 +3,7 @@
   "label": "采购报备单",
   "prefix": "BA",
   "number_format": "BA-YYMM-####",
-  "version": "1.2",
+  "version": "1.3",
   "date": "2026-10-04",
   "generated_by": "WorkBuddy",
   "sources": {
@@ -309,7 +309,7 @@
           "origin": "institution",
           "origin_ref": "第十八条第 290 行「购买后回交付款凭据并补录付款凭据号」",
           "naming": "R-20#5：统一名 `付款凭据号`；★ 凭据**附件**另挂（见 `payment_receipt_file`）",
-          "ledger_writer": "L01：付款凭据号由**综合运营主管**在付款完成后补录（Q14 登记责任人）"
+          "ledger_writer": "L01：付款凭据号由**综合运营主管**在付款完成后补录（Q14 登记责任人）★★ **2026-10-06 批 49 分界具名（`R-36`）**：本键只写「**台账列（`ops`）的登记责任人**」那一半 —— `L01.付款凭据号` 走 `t_ledger_ops.ops_json`、`writer = 综合运营主管`（**Q14 定案不变**，依据 `docs/01-PRD.md:464` 与 `internal/config/bizfields.go:101-111`）。★ 另有一半是「**节点留存**」：`return_receipt` 节点上由**申请人**录入并落**实例 `ext_json`**（见 `chain.json#conventions.node_record_fields` 与 `R-36` 裁定 4）。⇒ ★★ **两者是两个动作**（原始凭据留存／台账列登记与更正），**不是同一值的两份真相**；★ 据此 `docs/01-PRD.md:376` 的「（综合运营主管补录）」**只写了登记那一半**，**待据实订正**为「申请人回交（节点留存）；综合运营主管登记（台账列）」。"
         },
         {
           "name": "payment_receipt_file",
@@ -437,7 +437,7 @@
       "id": "receipt_per_purchase",
       "severity": "hard",
       "carried_by_kind": "code",
-      "carried_by": "★★ **通路已接 ＝ `code`**（2026-10-06 批 44 · `N-062` 族 `J3` 落地段，经我方**独立验收**）：① **时点已可达** —— 节点 `return_receipt` 由 `chain.json#routes.purchase_tier1.nodes[5].generates_task = true` **显式生成待办**（`conventions.node_task_generation`），办理人＝**申请人本人**（`internal/chain/assign.go`）。② **执行体** ＝ `internal/httpapi/handlers_approval_approvalchecks.go#checkReceiptPerPurchase`（经注册表 `approvalCheckFns` 分派；★ **拦在 `Flow.Approve` 之前**，由 `handlers_approval.go#approveReject` 调用）；★ 断言＝`payment_receipt_no` 与 `payment_receipt_file` 均非空，否则 `400` 且**点名本判据**。★★ **我方独立验收（不采信自报）**：门禁 **9/9 ＋ 会报零命中** · 逐行走查 · ★★ **单点变异自做**（求值器改恒不匹配 ⇒ 恰红 `TestBAN065ReturnReceiptTaskAndJudgeE2E`「空凭据应拦：实为 200」＋ `TestApprovalChecksFailClosedUnregisteredN065`；SS/PC 三个既有用例**保持绿**）· `cp` ＋ `sha256sum -c` 还原 OK。★★★ **⚠ 具名缺口（不静默）**：本判据所需两字段**前端无录入入口**（`ApprovalConsole.vue` 全文无 `fields`）⇒ ★ **经 UI 无法提交 ⇒ BA 流程在 UI 上会停在本节点**（后端通路已验通）⇒ 见 `COLLAB.md#N-067`。",
+      "carried_by": "★★ **通路已接 ＝ `code`**（2026-10-06 批 44 · `N-062` 族 `J3` 落地段，经我方**独立验收**）：① **时点已可达** —— 节点 `return_receipt` 由 `chain.json#routes.purchase_tier1.nodes[5].generates_task = true` **显式生成待办**（`conventions.node_task_generation`），办理人＝**申请人本人**（`internal/chain/assign.go`）。② **执行体** ＝ `internal/httpapi/handlers_approval_approvalchecks.go#checkReceiptPerPurchase`（经注册表 `approvalCheckFns` 分派；★ **拦在 `Flow.Approve` 之前**，由 `handlers_approval.go#approveReject` 调用）；★ 断言＝`payment_receipt_no` 与 `payment_receipt_file` 均非空，否则 `400` 且**点名本判据**。★★ **我方独立验收（不采信自报）**：门禁 **9/9 ＋ 会报零命中** · 逐行走查 · ★★ **单点变异自做**（求值器改恒不匹配 ⇒ 恰红 `TestBAN065ReturnReceiptTaskAndJudgeE2E`「空凭据应拦：实为 200」＋ `TestApprovalChecksFailClosedUnregisteredN065`；SS/PC 三个既有用例**保持绿**）· `cp` ＋ `sha256sum -c` 还原 OK。★★★ **⚠ 具名缺口（不静默）**：本判据所需两字段**前端无录入入口**（`ApprovalConsole.vue` 全文无 `fields`）⇒ ★ **经 UI 无法提交 ⇒ BA 流程在 UI 上会停在本节点**（后端通路已验通）⇒ 见 `COLLAB.md#N-067`。★★ **2026-10-06 批 49 补（`R-36` · `N-067` ②③）**：★★ **界面归属已裁定 ＝ 复用审批操作台**（`web/src/views/ApprovalConsole.vue`，**不新建申请人专用录入页**）；★ **录入控件的数据源 ＝ 本节点 `record_fields`**（☆ 已同批**机读化**：「审批人／付款凭据号」→「payment_receipt_no／payment_receipt_file」—— ★★ 原值含 `审批人`（`source=system`、属 `approval_node` 段）**且漏 `payment_receipt_file`**，**恰与本判据的 `assert` 相悖** ⇒ **照原值实现 UI 则本判据永不可能通过**）。★★★ **并查出本判据的第二处缺口（落库 · 见 `COLLAB.md#N-069`）**：`internal/flow#act` 对 approve 时点的 `fields` 只用 `applyDesignationTx`（仅 PR）与 `applySSNodeFieldsTx`（仅 SS／PC，经表驱动 `nodeFieldSpecFor`）⇒ ★ `nodeFieldSpecFor` 对「BA × return_receipt」返回 `nil` ⇒ **本判据所需两字段被校验后即被丢弃（验后即弃）**；★ 现有端到端用例 `TestBAN065ReturnReceiptTaskAndJudgeE2E` **只断言任务释放与终态、不断言落库** ⇒ **门禁全绿也看不见**。⇒ ★ **据实说明（不降级 `carried_by_kind`）**：本判据 `carried_by_kind` **仍为 `code`**（执行体确已注册、拦截确已成立并经验收），★ 但「**校验通过的数据没有落地**」与「**审批时点无附件绑定通道**」两处**须与 UI 同批修复**；★★ **不得**据 `code` 认为本判据已形成**可用的证据链**。",
       "when": "approval(return_receipt)",
       "assert": "payment_receipt_no 与 payment_receipt_file 均非空",
       "else": "不得闭合",
