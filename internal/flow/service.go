@@ -396,13 +396,14 @@ func (s *Service) Submit(ctx context.Context, in SubmitInput) (string, error) {
 //   - 非 nil（我方页面两键通道，handler 恒传）⇒ supervisor_approval 的 PR 同意**必填**
 //     designated_purchaser + designation_basis（缺 ⇒ ErrInvalidDesignation）；
 //   - nil（飞书回调 / repair 重放等非结构化通道）⇒ 豁免必填、不写入（见 designation.go）。
-func (s *Service) Approve(ctx context.Context, bizNo, taskID, actorOpenID, reason string, fields map[string]any) error {
-	return s.act(ctx, bizNo, taskID, actorOpenID, OpApprove, reason, fields)
+func (s *Service) Approve(ctx context.Context, bizNo, taskID, actorOpenID, reason string,
+	fields map[string]any, attachmentIDs ...string) error {
+	return s.act(ctx, bizNo, taskID, actorOpenID, OpApprove, reason, fields, attachmentIDs)
 }
 
 // Reject 拒绝某任务（节点驳回 → 实例驳回；reject 一律不带指定填报 —— N-015 裁定④）。
 func (s *Service) Reject(ctx context.Context, bizNo, taskID, actorOpenID, reason string) error {
-	return s.act(ctx, bizNo, taskID, actorOpenID, OpReject, reason, nil)
+	return s.act(ctx, bizNo, taskID, actorOpenID, OpReject, reason, nil, nil)
 }
 
 // Cancel 撤回（仅发起人；未终结前可撤）→ 实例 CANCELED、在途任务 DONE。
@@ -467,7 +468,8 @@ func (s *Service) Cancel(ctx context.Context, bizNo, actorOpenID, reason string)
 }
 
 // act 是同意/拒绝的共用实现。
-func (s *Service) act(ctx context.Context, bizNo, taskID, actor, opType, reason string, fields map[string]any) error {
+func (s *Service) act(ctx context.Context, bizNo, taskID, actor, opType, reason string,
+	fields map[string]any, attachmentIDs []string) error {
 	at := time.Now()
 	var events []FlowEvent
 	err := s.db.WithTx(ctx, func(tx *sql.Tx) error {
@@ -544,6 +546,17 @@ func (s *Service) act(ctx context.Context, bizNo, taskID, actor, opType, reason 
 			// ⑦ SS 节点时点字段（N-036 缺口 5/6）：tech_opinion / pgm_final 非空强制。
 			if err := s.applySSNodeFieldsTx(ctx, tx, inst, task, fields, actor, at); err != nil {
 				return err
+			}
+			// ⑧ ★ N-069 T1-b：审批时点附件绑定（与提交路径 service.go 同款语义 ——
+			//    事务内逐个绑定、任一不可绑定 ⇒ 整体回滚；owner＝办理人本人（上传者）；
+			//    空列表（回调/repair/老调用方）⇒ 零行为变化）。
+			for _, fid := range attachmentIDs {
+				if strings.TrimSpace(fid) == "" {
+					continue
+				}
+				if _, err := s.db.BindStagingTx(ctx, tx, fid, actor, inst.InstanceCode, bizNo); err != nil {
+					return err
+				}
 			}
 		}
 

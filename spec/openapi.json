@@ -4872,7 +4872,7 @@
     "human_readable_authority": "docs/05-API.md",
     "doc_version": "?",
     "doc_lines": 1228,
-    "doc_sha256": "63ea2672ae3e4c92d7fea8b29351c784369940480a44e88e3dd7d174075c7346",
+    "doc_sha256": "1f007575988cc11d577285c397592cc315b5fd3fd72f535a0aa8ce8dbbc09100",
     "generator": "scripts/gen_openapi.py",
     "route_count": 69,
     "router_go_route_count": 69,
@@ -4923,7 +4923,7 @@
       "POST /api/submission/{id}/group (line 294)",
       "POST /api/submission/{id}/reject (line 294)"
     ],
-    "prose_mentions_of_known_routes": 73,
+    "prose_mentions_of_known_routes": 74,
     "ambiguous_declarations": [
       {
         "route": "POST approval/submit",

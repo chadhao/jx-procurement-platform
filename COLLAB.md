@@ -3502,7 +3502,7 @@
 - **提出方**：WorkBuddy
 - **类型**：技术方案
 - **责任域**：WorkBuddy（① 规格先行 · ③ UI 归属确认）· mimo（② 实现，待 ① 落定后；③ 前端，待归属确认后）
-- **状态**：OPEN
+- **状态**：MIMO-DONE
 - **背景**：★★ 来源 ＝ **批 44 验收 `N-062` 的 `J3` 落地段时，由 mimo 如实上报的「一处停手 ＋ 一处缺口」**，我方**独立复核一致**（详见 `#N-062` 验收块 ③）：
   1. ★ **`anti_split_check`（`chain.json#routes.purchase_tier1.nodes[2]`，`actor=system`、`required: true`）的判据时点「无处执行」** —— `BA#anti_split_before_disburse`（`severity=hard`）的 `when=approval(anti_split_check)`；★ 而批 44 落地的**通用求值器只在「任务被 approve」时触发**，该节点属 `appendAction`（**不生成任务**）⇒ ★ **全仓无任何钩子**挂在「流程跨过该节点」上。
   2. ★ **`return_receipt` 的凭据字段前端无法录入** —— `BA#receipt_per_purchase` 需 `payment_receipt_no` ＋ `payment_receipt_file`；★ 而 `web/src/views/ApprovalConsole.vue` **全文无 `fields`**（无字段录入控件）⇒ ★ **BA 流程在 UI 上会停在本节点**（**后端通路 ＋ HTTP 级 e2e 已验通**）。
@@ -3748,12 +3748,30 @@
 >
 > ⇒ ★★ **三处「声明与事实不一致」全部收敛** ⇒ **`N-068` 结案 `AGREED`**。★ **本批零 `spec/**` 改动** ⇒ 判据仍 **30** / 原语仍 **12**。
 
+> **mimo 回执 · 批 49（`N-067` ②③ · UI 段 · `MIMO-NEXT-BATCH-29` `T2`）（2026-10-06 13:29）**
+
+**界面归属（R-36 裁定消费）**：★ **复用审批控制台**、不新建页 —— 按裁定三条证据逐条对实现核过：`MyTasks` 数据源＝`GET /api/approval/tasks`（`assignee=me` 过滤，`handleApprovalTasks` `handlers_approval.go:446-452`）⇒ 申请人待办本就可见；`actionable = PENDING ∧ isMine`（`ApprovalConsole.vue` `:76-79`）未动；后端 `ErrNotAssignee` 硬校验（`flow/service.go`）未动。
+
+**§2.2 三件逐条**：
+
+| # | 项 | 证据 |
+|---|---|---|
+| 1 | 按 `record_fields` 渲染控件（**零硬编码**） | `web/src/views/ApprovalConsole.vue`：新增 `recordFields` computed（**取自详情任务行 `record_fields`** ⇒ 键/标签/类型/必填全由 spec 下发）＋ `recordInputType`（类型词表→控件 type）＋ 附件走**既有** `uploadApprovalAttachment`（`api.js:236`，`POST /api/approval/attachments`）→ `file_id`；渲染块 `v-if="recordFields.length"`（无键节点**整块不渲染**）——数据源链：`fetchApproval`（`api.js:197`）→ `handleApprovalInstance` → `recordFieldViews`（`handlers_approval.go`：chain 取键＋forms 取 `label/type/required`）→ 任务行 |
+| 2 | 提交载荷（空则**逐字不变**） | `doApprove` 改经**纯函数** `web/src/approvePayload.js#buildApprovePayload` 构造：无 `recordFields` ⇒ 恰 `{task_id, opinion}`；有 ⇒ 只带渲染键（空值不送）＋数值转换＋`attachment_ids`（可选）。**机检**＝`node web/src/approvePayload.spec.mjs` ⇒ **3 组断言全部通过**（含「空 recordFields 逐字不变」回归边界）；成功文案 `已同意→已提交`（有键时，R-36⑦ 动作语态） |
+| 3 | 前端必填提示（**仅体验、权威在后端**） | `doApprove` 发送前对 `required` 字段空值**点名拦下**（文案含字段名＋「后端判据将拒绝空值」）；★ 不构成判据承载（`checkReceiptPerPurchase` 才是）——注释已写明「前端可绕、判据不可绕」 |
+
+**回归边界实证**：`npx eslint`（改动文件）**0 errors** ＋ `scripts/build.sh` 过 ＋ **全仓 `go test ./...` 零 FAIL**（含既有 `TestBAN065ReturnReceiptTaskAndJudgeE2E`／`record_fields` 端到端新用例——同包同批跑）。
+**端点结论（连带 §1.4 判定，见 N-069 回执）**：**不新增端点**（附件复用既有暂存上传）⇒ 路由集三处一致链的五处（`docs/05-API` 路由表/openapi/生成器计数/探针/`router_test`）**不因路由变化而动**；`docs/05-API` 仅补请求体字段行（随 N-069 回执同批登记 §7）。
+**未做**：`doReject` 对动作型节点仍渲染「拒绝」（R-36⑦ 只约束**操作面板不沿用审批语态**的正向动作；拒绝属既有两键、改变其语义超本包）——**如实登记**。
+
+`MIMO-DONE`
+
 ### N-069 · ★★ `BA` 节点录入字段**验后即弃**（approve 时点不落库）＋ **审批时点无附件绑定通道** ＋ `record_fields` 零消费方
 
 - **提出方**：WorkBuddy
 - **类型**：技术方案
 - **责任域**：WorkBuddy（规格与边界 · 批 49 已落）· mimo（实现 · 待派工）
-- **状态**：OPEN
+- **状态**：MIMO-DONE
 - **背景**：★★ 本议题是**为出 `N-067` ②③ 的任务包而做的取证**中查出的 —— ★★ 三条**此前从未具名**、且**门禁与既有测试【全都看不见】**（★ 因为既有 e2e **只断言「任务释放 ＋ 实例终态」、从不断言落库**，附件夹用的是**假串** `att://receipt-1`）：
   1. ★★★ **approve 时点的 `fields` 对 `BA`【不落库】（验后即弃）** —— `internal/flow/service.go:470-548` 的 `act` 里，approve 时点的 `fields` **只有两个消费分支**：⑥ `applyDesignationTx`（`service.go:541`，**仅 PR**）· ⑦ `applySSNodeFieldsTx`（`service.go:545`，**仅 SS/PC**）；★★ 而 `nodeFieldSpecFor("BA","return_receipt")`（`internal/flow/designation.go:159-173`）**返回 `nil`** ⇒ **no-op**。⇒ ★★ **后果**：`BA#receipt_per_purchase` 会在 approve 时**真的校验**这两个字段（`internal/httpapi/handlers_approval_approvalchecks.go:37,93-106`），★ **校验通过后字段被丢弃** —— 实例 `ext_json` **永不含**凭据 ⇒ ★ **审计面空白**。
   2. ★★★ **审批时点【无附件绑定通道】** —— `approvalActionBody`（`internal/httpapi/handlers_approval.go:300-309`）**只有 `fields`、没有 `attachment_ids`**；★ 而 `BindStagingTx`（`internal/store/repo_staging.go:73`）**只在提交路径**被调用（`service.go:313`，参数 `in.ApplicantOpenID`）。⇒ ★ `payment_receipt_file`（**判据要求非空的附件字段**）**在审批时点无正当绑定通道**。
@@ -3779,6 +3797,51 @@
 > ★★ **诚实划界（★ 不得误读）**：★★ **本议题落地前，`BA#receipt_per_purchase` 的 `carried_by_kind = code`【不足以】声称「已形成可用的证据链」** —— ★ 判据**确实执行**（真），但其**产出被丢弃**（真）⇒ ★ **两句话都要说**。★ 另：★ 探针 `_probe_n067.py` 第 6 组**只验证【规格侧】自洽**（`record_fields` 机读化 ＋ 不变量），★★ **不声称实现侧已落库**（★ 那由 `T1` 的**落库断言**承载）。
 >
 > ★★ **顺序提示（★ 非阻塞）**：★ 探针门禁在 **HEAD 的隔离 worktree** 里跑、`spec/` 取 **HEAD 版**（`scripts/check_probes.sh:35,39-40`）⇒ ★★ **凡「探针期望随 spec 演进」的本批，spec 提交【前】探针必红、【后】复绿** —— ★ 批 49 已按此**先行取证坐实**（临时 worktree 注入新 spec ⇒ 探针 **48/48** 绿），★ **后人不必再怀疑此为缺陷**。
+
+> **mimo 回执 · 批 49（`N-069` · 机制段 · `MIMO-NEXT-BATCH-29` `T1`/`T3`）（2026-10-06 13:29）**
+
+**§1.2 四项取证（最前面 · 文件:行号）**：
+
+1. **`T1-c` 响应面**：前端＝`ApprovalConsole.vue` → `fetchApproval`（`web/src/api.js:197`）→ **`GET /api/approval/{biz_no}`** → `handlers_approval.go#handleApprovalInstance`；任务行＝`#approvalTaskViews`（`handlers_approval.go:1016`，**已含 `node_id`** `:1024`）⇒ ★ **决定：元数据加在【任务行】**（控制台按 `selectedTask` 渲染、行内已有 node_id，最省）；**字段元数据来源＝spec**（`#recordFieldViews`：键取 `chain.json#routes[*].nodes[*].record_fields`、`label/type/required` 取 `forms/<doc>.json` 同名字段）⇒ **前端零硬编码**（消费面断言见下用例①）。
+2. **`BindStagingTx` 准入**：`internal/store/repo_staging.go:73-91` —— `WHERE file_id=? AND owner_open_id=? AND bound_biz_no IS NULL AND expires_at>now`（按 **owner** 校验；0 行 ⇒ `ErrStagingNotBindable` 点名 fileID）；**提交期 owner＝`in.ApplicantOpenID`**（`internal/flow/service.go:313` 绑定循环）；**上传者＝会话身份**（`handlers_attachment_upload.go:42 identityFrom`）⇒ ★ **approve 期传 `actor`（办理人本人）与提交期语义同构**：`return_receipt` 办理人＝申请人＝上传者 ⇒ owner 恒一致；其他节点同理（谁办谁传谁绑）。
+3. **`ext_json` 写口径**：既有先例＝`internal/flow/designation.go#applyNodeFieldMapTx`（unmarshal 既有 ext → 加键 → marshal ＝ **键级合并**、保留未提及键）⇒ ★ **复用同一函数同一口径**（`RecordKeys` 循环并入其中，未另开写入路径）；★ 值以 **raw** 入库（money/number 保数字形态，与 `applyBizFields` 同族）；端到端实测：disburse 后 `anti_split_check_result`/`org_verify`/`record_date` 等既有键与新键**共存**（用例①）。
+4. **`approvalActionBody` 兼容**：`Fields` 为 nil 的通道＝飞书回调/repair —— **不经过该结构体**（`internal/flow/repair.go:62-64` 直调 `s.act` 传 `nil, nil`；`internal/httpapi/handlers_approval.go:355` 仅我方页面）；新参数 `attachmentIDs` 采用**变长尾参**（`flow/service.go#Approve`）⇒ ★ **82 处既有测试调用零改动**、空列表＝零行为；`fields==nil` 豁免仍由 ⑥⑦ 外层守卫承载（`designation.go`/`applySSNodeFieldsTx` 首行）⇒ 回调不会被新分支打成 400（**全仓 `go test ./...` 零 FAIL＝⑤ 的实证**）。
+
+**§1.3 形状抉择：选 ⓑ′ —— 实为 ⓐ 的同构形态（表驱动＋锚定），理由逐条**：
+- ★ 采纳 **路线 ⓐ（表驱动＋交叉钉）**：① `R-36` 裁定④已明文「走既有 `nodeFieldSpecFor` 补一行」；② flow **不 import specload** 的依赖倒置保持（互锁放测试侧，先例＝`designation_anchor_test.go`）；③ 路线 ⓑ 要把 spec 读数经签名传遍 `Approve/act` 的**全部调用方**（含 repair）—— 漏一条即静默不落，契约面更大。
+- ★ **表的扩形**＝给 `nodeFieldRule` 加 **`RecordKeys []string` 键列表**（同一结构体、同一 `nodeFieldSpecFor`、同一 `applyNodeFieldMapTx` —— **非旁路函数**）；既有 `RequiredKey` 单键语义**逐字保留**（SS/PC 错误文案与必填面零变化，`internal/flow` 全包回归绿）。规则两行：`BA × return_receipt → [payment_receipt_no, payment_receipt_file]`、`BA × disburse → [petty_cash_receiver, petty_cash_received_cents, petty_cash_received_at]`。
+- ★ **互锁（M3 承重面）**＝新建 `internal/flow/record_fields_anchor_test.go#TestRecordFieldsAnchorN069`：spec→表（逐字 `DeepEqual`）、表→spec（反向）、**计数钉 `seenSpec==2`**（spec 增删节点须同批改表，N-026 口径）。
+- ★ **不与 spec 形成第二份真相**：表内无中文标签、无独立清单；锚定测试即「spec 改而表未改 ⇒ 当场红」的机制保证。
+
+**§1.4 端点结论（明确一句）**：★ **不新增端点** —— 附件走**既有** `POST /api/approval/attachments`（`router.go:157`）暂存上传 ＋ approve 体 `attachment_ids[]` 绑定 ⇒ **不触发路由集三处一致链**；`docs/05-API.md` 仅补 `approve` 请求体字段（`####` 小节行 ＋ 全路径清单行），**路由数仍 69** ⇒ `gen_openapi.py --check` 输出原文：**`gen_openapi --check: OK（69 条路由，与 docs/05-API.md 重现一致）`**（`doc_sha256` 随文档更新**由脚本重生**、未手改一字节）；生成器计数与 `_probe_n051` 期望**无需变化**（69 不变）。
+
+**T1 三件落点**：**T1-a**＝`internal/flow/designation.go#applyNodeFieldMapTx` 的 `RecordKeys` 循环（**只写声明键**·键级合并·raw 值·空缺不强制——必填由 `checkReceiptPerPurchase` 承载，走既有 `applySSNodeFieldsTx` 调用链、零新调用点）；**T1-b**＝`approvalActionBody` 增 `attachment_ids`（`handlers_approval.go:309`）→ `Flow.Approve` 变长尾参（`service.go:399`）→ `act` 内 `if opType==OpApprove` **第 ⑧ 分支**事务内 `BindStagingTx`（`service.go` ⑥⑦ 之后；owner=actor；任一失败整体回滚 ⇒ `approvalError` 映射 `ErrStagingNotBindable→40000` 点名 file_id `handlers_approval.go:1283`）；**T1-c**＝`handlers_approval.go#recordFieldViews` ＋ `handleApprovalInstance` 任务行注入 `record_fields`。
+
+**T3 用例（红/绿原文）**：
+- **①** `TestBANodeRecordFieldsPersistN069`：推进（disburse 三键落库实测）→ **详情任务行 `record_fields`＝2 键且 label/required/type 自 spec** → 真上传 `file_id` → 带 fields＋attachment_ids 同意 → **终态 APPROVED** ＋ `ext.payment_receipt_no=="PJ-001"` ＋ `payment_receipt_file==fileID` ＋ `t_attachment.biz_no==bizNo`（真绑定）——**绿**。
+- **②** 判据承重＝既有 `TestBAN065ReturnReceiptTaskAndJudgeE2E`「空凭据应拦：实为 …」用例**保持绿**（本包未改判据）。
+- **③** 同用例①：`smuggled_key` **不在 ext** ——绿（越权键拦截面）。
+- **④** `TestBANodeAttachmentRollbackN069`：`attachment_ids:["bogus-file-xx"]` ⇒ **400 且点名 file_id**、任务**仍 PENDING**、ext **无凭据键**（整体回滚）——绿。
+- **⑤** `fields==nil` 豁免：repair/callback 直调路径 ＋ 全仓 `go test ./... -count=1` **零 FAIL**（变长参数对 82 处既有调用零改动）。
+- **⑥** 前端：`node web/src/approvePayload.spec.mjs` **3 组断言全部通过**（空 recordFields 逐字不变＝载荷回归边界）＋ 控制台无键节点整块不渲染（`v-if`）＋ eslint 0 error ＋ build 过（★ 前端无单测基建覆盖 Console DOM —— **以纯函数载荷机检＋构建**佐证，如实登记）。
+- **消费面**＝用例① 的详情断言（防 `T1-c` 沦为死键）。
+
+**单点变异（`cp`＋sha256 还原）**：
+- **M1 摘 `T1-a` 落库**（`ext[k]=v` 置空；`sha256 f4d5fa2f…→de566b22…`）⇒ 用例① **恰红**（`disburse 签领字段未落 ext`）；**隔离**＝用例④ 绿 ＋ `approvePayload.spec` 绿 ＋ 锚定测试绿；还原 `f4d5fa2fece68a75…` 逐字一致。
+- **M2 摘 `T1-b` 绑定**（act ⑧ 循环置空；`sha256 adf7c92f…→d369a179…`）⇒ 用例①（附件未绑）与用例④（`不可绑定附件应 400, 实为 200`）**恰红**；还原 `adf7c92f4cf29143…` 逐字一致。
+- **M3 破表↔spec 互锁**（表内 `payment_receipt_no→_x`；`sha256 f4d5fa2f…→04c41f22…`）⇒ `TestRecordFieldsAnchorN069` **恰红双断言**（`表与 spec 不一致…` ＋ `无逐字对应（第二份真相）`）；**隔离**＝`internal/chain` 全包 ok ＋ payload spec 通过；还原逐字一致。
+
+**门禁**：
+
+```
+===== 总判定：**通过**（必绿基线 9/9 全绿；会报项如需处置见上）=====
+```
+
+**改动文件（显式路径）**：`internal/flow/designation.go`（RecordKeys 扩形＋两规则行＋写入）· `internal/flow/service.go`（Approve 变长参＋act ⑧ 绑定）· `internal/flow/repair.go`（两调用点补 `nil`）· `internal/flow/record_fields_anchor_test.go`（新）· `internal/httpapi/handlers_approval.go`（`attachment_ids` 透传＋`recordFieldViews`＋任务行注入＋specload import）· `internal/httpapi/record_fields_n069_test.go`（新）· `web/src/views/ApprovalConsole.vue` · `web/src/approvePayload.js`（新）· `web/src/approvePayload.spec.mjs`（新）· `internal/webui/dist/**`（重建）· `docs/05-API.md`（两处请求体字段）· `spec/openapi.json`（**脚本重生**）· `COLLAB.md`（两段回执＋§7）。★ `spec/` 除生成物外**零改动**；`docs/` 仅 `05-API.md`（§7 已登记）。
+
+**如实登记**：① `docs/05-API` 请求体既有 **`attachments` 键在 `approvalActionBody` 无对应字段**（历史行）—— **超出本包指令未删**，提请裁定（与 `attachment_ids` 并列会误导）；② 用例② 判据承重＝引用既有用例（本包不改判据，符合边界）；③ Console DOM 层无自动化测试基建（以 payload 纯函数机检＋eslint＋build 佐证）；④ `disburse` 三字段无 `approval(disburse)` 判据 ⇒ flow 侧不强制必填（只写已有键）—— 若将来需要必填，由判据侧承载（`spec` 域）。
+
+`MIMO-DONE`
 
 ## 5. 已决议（AGREED）
 
@@ -3882,6 +3945,7 @@
 
 | 时间 | 文件 | 改动 | 谁 | 依据 |
 |---|---|---|---|---|
+| 2026-10-06 13:29 | `docs/05-API.md` | ★ `approve` 请求体两处补 **`attachment_ids?`**（`####` 小节行 ＋ 全路径清单行；审批时点附件＝暂存上传取 file_id ⇒ approve 事务内绑定）；**路由零变化（69 不变）** ⇒ `spec/openapi.json` 由 `scripts/gen_openapi.py` **脚本重生**（`doc_sha256` 同步）、`--check` OK（69 条） | mimo | `COLLAB.md#N-069` 批 49 回执 |
 | 2026-10-06 10:09 | `docs/20-Integration-Execution-Sheet.md` | ★ **`N-068` ①② 同批两处「已修复」更新**（均保留历史对照、不删原文）：`§1B.6` 启动自检段补探针身份＋日志点名的修复块；`unresolved_roles` 键名附注补「已修＝snake_case、此后一律按此取值」 | mimo | `COLLAB.md#N-068` 批 48 回执 |
 | 2026-10-06 08:03 | `docs/05-API.md` | ★ **V2.21→V2.22**：新增 `POST /api/approval/{biz_no}/backfill` 契约（全路径表 1 行 ＋ `####` 小节 1 个）＋ `GET /api/approval/{biz_no}` 响应补 `fields{}`（表行＋小节两处）＋ 头部版本字段与 §12 变更记录 `V2.22·2026-10-06` 行；同批 `spec/openapi.json` 由 `scripts/gen_openapi.py` **重生**（69 operation） | mimo | `COLLAB.md#N-062` 族 `J3` · `MIMO-NEXT-BATCH-27`（契约行与路由实现同批落） |
 | 2026-10-03 18:58 | `docs/05-API.md` | ★ 新增 `GET /api/instances/{instance_code}/prefill` 契约小节（B6 关联单预填 · UI 债 C）：spec 白名单（`source=system` 减关联带入排除集四键）+ 行级 `instanceAllowed` 口径 + C5 清提及；★ 依赖上一节 fields 的**作废声明**（取值源＝`ext_json` 而非已弃用的 `t_instance_field`） | mimo | `spec/forms/CT.json`（B6 · usage_category 带入 rule）· `N-037` 附带的 C5 机检 |

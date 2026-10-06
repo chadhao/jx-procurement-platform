@@ -145,6 +145,12 @@ type nodeFieldRule struct {
 	WriteKey    string // 落 ext 的键（默认 = RequiredKey）
 	ByKey       string // 系统带入「人」的键（空 = 不带）
 	AtKey       string // 系统带入「时刻」的键
+	// RecordKeys ★ N-069（spec chain.json#conventions.node_record_fields）：
+	// 该节点由「人」当场录入、须落 ext 的**键列表**（原 RequiredKey 形态的泛化 ——
+	// 同一张表、同一函数，不另开旁路）。★ 语义差异（刻意）：**只写 fields 中已有的键**
+	// （空缺不在此强制 —— 必填性由 `approval(<node>)` 判据承载，两处不重复执法；
+	//   飞书回调 nil 通道由外层豁免，与 ⑥⑦ 同款）。
+	RecordKeys []string
 }
 
 // nodeFieldSpecFor 按（单据, 节点）取规则 —— **表驱动**，新增节点字段只加一行。
@@ -156,6 +162,9 @@ type nodeFieldRule struct {
 //	★ PC 的 section filled_at="node3_approval_and_node4_ledger" 含两节点 ——
 //	  本规则按 **rule 的登记人** 落在 node4；node3 是否也需填报**请 spec 澄清**
 //	  （回执已提，未澄清前不在 node3 加拦 —— 不抢跑）。
+//	BA×return_receipt → payment_receipt_no / payment_receipt_file 落库（N-069 T1-a；
+//	                      必填由 checkReceiptPerPurchase 判据承载）
+//	BA×disburse       → 签领三键落库（N-069；spec record_fields 同批机读化）
 func nodeFieldSpecFor(docType, nodeID string) *nodeFieldRule {
 	if docType == "SS" {
 		switch nodeID {
@@ -169,20 +178,40 @@ func nodeFieldSpecFor(docType, nodeID string) *nodeFieldRule {
 	if docType == "PC" && nodeID == pcLedgerSubmitNodeID {
 		return &nodeFieldRule{RequiredKey: "resubmitted_to_group_at"}
 	}
+	if docType == "BA" {
+		switch nodeID {
+		case baReturnReceiptNodeID:
+			return &nodeFieldRule{RecordKeys: []string{"payment_receipt_no", "payment_receipt_file"}}
+		case baDisburseNodeID:
+			return &nodeFieldRule{RecordKeys: []string{
+				"petty_cash_receiver", "petty_cash_received_cents", "petty_cash_received_at"}}
+		}
+		return nil
+	}
 	return nil
 }
 
 const pcLedgerSubmitNodeID = "ledger_submit"
 
+// N-069：BA 节点待录字段（与 spec chain.json#routes.purchase_tier1 的 record_fields 锚定）。
+const (
+	baReturnReceiptNodeID = "return_receipt"
+	baDisburseNodeID      = "disburse"
+)
+
 func (s *Service) applyNodeFieldMapTx(ctx context.Context, tx *sql.Tx, inst *store.Instance,
 	task *store.FlowTask, fields map[string]any, actor string, at time.Time, rule *nodeFieldRule) error {
-	if rule == nil || rule.RequiredKey == "" {
+	if rule == nil || (rule.RequiredKey == "" && len(rule.RecordKeys) == 0) {
 		return nil
 	}
-	val := strings.TrimSpace(designationStr(fields, rule.RequiredKey))
-	if val == "" {
-		return fmt.Errorf("%w: %s 单据节点 %s 同意时必须填写 %s（spec 该节点时点必填 · N-036）",
-			ErrInvalidNodeField, inst.DocType, task.NodeID, rule.RequiredKey)
+	// 必填面（RequiredKey 单字段形态 —— SS/PC 既有语义原样保留，错误文案逐字不变）。
+	val := ""
+	if rule.RequiredKey != "" {
+		val = strings.TrimSpace(designationStr(fields, rule.RequiredKey))
+		if val == "" {
+			return fmt.Errorf("%w: %s 单据节点 %s 同意时必须填写 %s（spec 该节点时点必填 · N-036）",
+				ErrInvalidNodeField, inst.DocType, task.NodeID, rule.RequiredKey)
+		}
 	}
 	ext := map[string]any{}
 	if strings.TrimSpace(inst.ExtJSON) != "" {
@@ -190,11 +219,26 @@ func (s *Service) applyNodeFieldMapTx(ctx context.Context, tx *sql.Tx, inst *sto
 			return fmt.Errorf("%w: 实例 ext_json 损坏: %w", ErrInvalidNodeField, err)
 		}
 	}
-	writeKey := rule.WriteKey
-	if writeKey == "" {
-		writeKey = rule.RequiredKey
+	if rule.RequiredKey != "" {
+		writeKey := rule.WriteKey
+		if writeKey == "" {
+			writeKey = rule.RequiredKey
+		}
+		ext[writeKey] = val
 	}
-	ext[writeKey] = val
+	// ★ N-069 RecordKeys：只写 fields 中**已有**的键（键级合并 —— 既有键原样保留；
+	// raw 值入库保类型：money/number 不字符串化；空串不写）。必填性由 approval(node)
+	// 判据承载（本处不重复执法、不改变任何既有必填面）。
+	for _, k := range rule.RecordKeys {
+		v, ok := fields[k]
+		if !ok {
+			continue
+		}
+		if s, isStr := v.(string); isStr && strings.TrimSpace(s) == "" {
+			continue
+		}
+		ext[k] = v
+	}
 	if rule.ByKey != "" {
 		ext[rule.ByKey] = actor
 		ext[rule.AtKey] = at.Format(time.RFC3339)

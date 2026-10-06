@@ -59,9 +59,9 @@ func (s *Service) RepairPendingApprovals(ctx context.Context) (RepairReport, err
 		var derr error
 		switch op.OpType {
 		case OpApprove:
-			derr = s.act(ctx, op.BizNo, op.TaskID, op.ActorOpenID, OpApprove, repairReason, nil)
+			derr = s.act(ctx, op.BizNo, op.TaskID, op.ActorOpenID, OpApprove, repairReason, nil, nil)
 		case OpReject:
-			derr = s.act(ctx, op.BizNo, op.TaskID, op.ActorOpenID, OpReject, repairReason, nil)
+			derr = s.act(ctx, op.BizNo, op.TaskID, op.ActorOpenID, OpReject, repairReason, nil, nil)
 		default:
 			continue // 查询已限 APPROVE/REJECT；防御性跳过其余 op。
 		}

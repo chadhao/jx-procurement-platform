@@ -18,7 +18,9 @@ import {
   cancelInstance,
   fetchOrgUsers,
   fetchOrgDepartments,
+  uploadApprovalAttachment,
 } from '../api'
+import { buildApprovePayload } from '../approvePayload'
 import { session } from '../store'
 import { statusClass, statusLabel, fmtTime, opTypeLabel } from '../utils'
 
@@ -33,6 +35,45 @@ const busy = ref(false)
 
 // 两键的意见
 const opinion = ref('')
+
+// ★ N-067②③ / N-069 T2：本环节「记录字段」录入区（数据驱动 —— 键/标签/类型/必填
+//   全部来自详情接口任务行的 `record_fields`（spec 读出），**前端零硬编码字段名**）。
+//   仅当选中任务带 record_fields 时渲染；附件走既有暂存上传通道拿 file_id。
+const recordValues = reactive({})
+const recordFiles = ref([]) // [{file_id, file_name}]（当前渲染字段的附件槽）
+const recordUploading = ref(false)
+
+const recordFields = computed(() => (selectedTask.value && selectedTask.value.record_fields) || [])
+
+function resetRecordInput() {
+  for (const k of Object.keys(recordValues)) delete recordValues[k]
+  recordFiles.value = []
+}
+
+// 字段类型 → 控件类型（类型词表属 schema 级、非字段名 —— 不违反「不硬编码字段名」）。
+function recordInputType(f) {
+  if (f.type === 'number' || f.type === 'money_cents') return 'number'
+  if (f.type === 'date') return 'date'
+  return 'text'
+}
+
+// 附件类字段：经既有暂存通道上传（POST /api/approval/attachments）→ file_id。
+async function uploadRecordFile(ev, f) {
+  const file = ev.target.files && ev.target.files[0]
+  if (!file) return
+  recordUploading.value = true
+  err.value = ''
+  try {
+    const res = await uploadApprovalAttachment(file)
+    // 单字段单槽位：新上传覆盖旧选择（staging 未绑定者由服务端惰性清理）。
+    recordFiles.value = [{ file_id: res.file_id, file_name: res.file_name || file.name, field: f.name }]
+  } catch (e) {
+    err.value = e.message || String(e)
+  } finally {
+    recordUploading.value = false
+    ev.target.value = ''
+  }
+}
 
 // 四操作表单（op.type 为空＝不展开）
 const op = reactive({
@@ -54,6 +95,11 @@ const ops = computed(() => (detail.value && detail.value.ops) || [])
 const meOpenId = computed(() => (session.me && session.me.open_id) || '')
 
 const selectedTask = computed(() => tasks.value.find((t) => String(t.task_id) === String(selectedTaskId.value)) || null)
+
+// 切换任务 ⇒ 清空上一任务的记录字段草稿/附件选择（防串写）。
+watch(selectedTaskId, () => {
+  resetRecordInput()
+})
 
 // ---- 办理人展示（解绿框）----
 // ★ 后端已补 `assignee_name` / `assignee_department`（数据源 t_user_role）。
@@ -196,6 +242,7 @@ async function run(fn, okText) {
     notice.value = okText
     resetOp()
     opinion.value = ''
+    resetRecordInput()
     await load()
   } catch (e) {
     err.value = e.message || String(e)
@@ -206,7 +253,32 @@ async function run(fn, okText) {
 
 function doApprove() {
   if (!requireTask()) return
-  run(() => approveTask(bizNo, { task_id: selectedTaskId.value, opinion: opinion.value }), '已同意')
+  // ★ 前端必填提示（**仅体验**）：权威拦截在后端（checkReceiptPerPurchase 等判据）——
+  //   前端可绕、判据不可绕，此处缺项即拦下请求并点名字段。
+  for (const f of recordFields.value) {
+    const v = recordValues[f.name]
+    const hasVal = v !== undefined && v !== null && String(v).trim() !== ''
+    if (f.type === 'attachment') {
+      if (f.required && !recordFiles.value.length) {
+        err.value = `请上传「${f.label || f.name}」（后端判据将拒绝空值）`
+        return
+      }
+    } else if (f.required && !hasVal) {
+      err.value = `请填写「${f.label || f.name}」（后端判据将拒绝空值）`
+      return
+    }
+  }
+  // ★ 载荷经纯函数构造（approvePayload.js · spec.mjs 机检）：无 record_fields ⇒ 逐字不变。
+  const body = buildApprovePayload({
+    taskId: selectedTaskId.value,
+    opinion: opinion.value,
+    recordValues,
+    recordFields: recordFields.value,
+    attachmentIds: recordFiles.value.map((x) => x.file_id),
+  })
+  const isRecordNode = recordFields.value.length > 0
+  // ★ R-36⑦：动作型待办不沿用审批语态 —— 有记录字段时按钮/成功文案改「提交」。
+  run(() => approveTask(bizNo, body), isRecordNode ? '已提交' : '已同意')
 }
 
 function doReject() {
@@ -326,9 +398,36 @@ onMounted(load)
 
       <div class="toolbar">
         <input v-model="opinion" placeholder="意见（可选）" @keyup.enter="doApprove" />
-        <button class="primary" :disabled="busy || !actionable" @click="doApprove">同意</button>
+        <button class="primary" :disabled="busy || !actionable || recordUploading" @click="doApprove">
+          {{ recordFields.length ? '提交' : '同意' }}
+        </button>
         <button class="danger" :disabled="busy || !actionable" @click="doReject">拒绝</button>
       </div>
+
+      <!-- ★ N-067②③/N-069 T2：本环节记录字段（record_fields 驱动 · 仅动作型待办出现；
+           无 record_fields 的节点本区块不渲染、载荷逐字不变（回归边界） -->
+      <template v-if="recordFields.length">
+        <h3 style="margin: 12px 0 4px">本环节记录字段</h3>
+        <div v-for="f in recordFields" :key="f.name" class="inline-form">
+          <label>
+            {{ f.label || f.name }}<span v-if="f.required" style="color: var(--danger, #c00)">*</span>
+          </label>
+          <template v-if="f.type === 'attachment'">
+            <input type="file" :disabled="recordUploading || busy" @change="(ev) => uploadRecordFile(ev, f)" />
+            <span v-if="recordFiles.length" class="tag ok" style="display: inline-block">
+              已选 {{ recordFiles.map((x) => x.file_name).join('、') }}
+            </span>
+            <span v-else class="muted">未上传</span>
+          </template>
+          <input
+            v-else
+            :type="recordInputType(f)"
+            v-model="recordValues[f.name]"
+            :placeholder="f.type === 'money_cents' ? '单位：分' : ''"
+            :disabled="busy"
+          />
+        </div>
+      </template>
       <p v-if="!actionable" class="muted">「同意 / 拒绝」须选中一个「审批中」的、且指派给你的任务。</p>
 
       <hr style="border: none; border-top: 1px solid var(--border); margin: 16px 0" />

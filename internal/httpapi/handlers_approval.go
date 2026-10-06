@@ -18,6 +18,7 @@ import (
 	"github.com/chadhao/jx-procurement-platform/internal/config"
 	"github.com/chadhao/jx-procurement-platform/internal/flow"
 	"github.com/chadhao/jx-procurement-platform/internal/permission"
+	"github.com/chadhao/jx-procurement-platform/internal/specload"
 	"github.com/chadhao/jx-procurement-platform/internal/store"
 )
 
@@ -306,6 +307,10 @@ type approvalActionBody struct {
 	TargetNode string         `json:"target_node"` // 回退目标 node_id
 	Timing     string         `json:"timing"`      // 加签时机 AFTER / BEFORE（默认 AFTER）
 	Fields     map[string]any `json:"fields"`      // 审批时点结构化填报（N-015：supervisor_approval 指定经办）
+	// AttachmentIDs ★ N-069 T1-b（可选）：审批时点附件 —— 先经既有暂存上传
+	// （POST /api/approval/attachments）拿 file_id，再随本字段在 approve 事务内绑定；
+	// 任一不可绑定 ⇒ 整体回滚（与提交路径同款）。缺省空 ⇒ 行为与既往逐字一致。
+	AttachmentIDs []string `json:"attachment_ids"`
 }
 
 // handleApprovalApprove 我方页面「同意」（与回调同一状态机出口）。
@@ -352,7 +357,7 @@ func (d Deps) approveReject(c echo.Context, op string) error {
 			}
 			return fail(c, http.StatusInternalServerError, codeInternal, verr.Error())
 		}
-		err = d.Flow.Approve(ctx, bizNo, body.TaskID, idn.OpenID, reason, fields)
+		err = d.Flow.Approve(ctx, bizNo, body.TaskID, idn.OpenID, reason, fields, body.AttachmentIDs...)
 	} else {
 		err = d.Flow.Reject(ctx, bizNo, body.TaskID, idn.OpenID, reason)
 	}
@@ -976,6 +981,16 @@ func (d Deps) handleApprovalInstance(c echo.Context) error {
 				"实例 ext_json 损坏（无法读回字段值）: "+err.Error())
 		}
 	}
+	// ★ N-069 T1-c：任务行附 `record_fields` 元数据（name/label/type/required，**自 spec 读**
+	//   —— 前端按此渲染录入控件、不得硬编码字段名；控制台渲染消费面＝fetchApproval 详情）。
+	taskViews := approvalTaskViews(tasks, roleMap)
+	rfByNode := d.recordFieldViews(inst.DocType)
+	for _, tv := range taskViews {
+		nodeID, _ := tv["node_id"].(string)
+		if m, ok := rfByNode[nodeID]; ok {
+			tv["record_fields"] = m
+		}
+	}
 	return ok(c, map[string]any{
 		"biz_no":        inst.BizNo,
 		"instance_code": inst.InstanceCode,
@@ -987,9 +1002,54 @@ func (d Deps) handleApprovalInstance(c echo.Context) error {
 		"created_at":    inst.CreatedAt,
 		"updated_at":    inst.UpdatedAt,
 		"fields":        fields,
-		"tasks":         approvalTaskViews(tasks, roleMap),
+		"tasks":         taskViews,
 		"ops":           approvalOpViews(ops),
 	})
+}
+
+// recordFieldViews N-069 T1-c：node_id → 该节点 `record_fields` 的字段元数据
+// （键清单来自 chain.json#routes[*].nodes[*].record_fields；label/type/required 来自
+// spec/forms 同名字段 —— 两侧都是 spec，零硬编码）。
+func (d Deps) recordFieldViews(docType string) map[string][]map[string]any {
+	out := map[string][]map[string]any{}
+	if d.Spec == nil {
+		return out
+	}
+	keysByNode := map[string][]string{}
+	for _, r := range d.Spec.Chain.Routes {
+		for _, n := range r.Nodes {
+			if len(n.RecordFields) > 0 {
+				keysByNode[n.ID] = n.RecordFields
+			}
+		}
+	}
+	if len(keysByNode) == 0 {
+		return out
+	}
+	form, ok := d.Spec.Forms[docType]
+	if !ok {
+		return out
+	}
+	meta := map[string]specload.FieldDoc{}
+	for _, sec := range form.Sections {
+		for _, f := range sec.Fields {
+			meta[f.Name] = f
+		}
+	}
+	for id, keys := range keysByNode {
+		rows := make([]map[string]any, 0, len(keys))
+		for _, k := range keys {
+			row := map[string]any{"name": k}
+			if f, ok := meta[k]; ok {
+				row["label"] = f.Label
+				row["type"] = f.Type
+				row["required"] = f.Required
+			}
+			rows = append(rows, row)
+		}
+		out[id] = rows
+	}
+	return out
 }
 
 // approvalVisibleTo 行级可见性：申请人本人 / 该实例任一任务审批人 / 系统管理员 → 可见。
