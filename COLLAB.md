@@ -4091,6 +4091,15 @@
   ```
   ⇒ ★★ **发起机制（`create_link_*`）早已配好且指向我方发起页**，**但 `viewers=NONE` ⇒ 定义在飞书侧不对任何可见 ⇒ 用户找不到它、也就无从点「发起」**。★ 这是「**建成了但没人看得见**」——**比没建更隐蔽**。
 - **我方立场**：★★ 与 `N-073`（`cc_list` 形状）**同族** —— 都属「**我方对外报文与平台契约不符**」；★ 但成因不同：`N-073` 是**形状错**（传了但形态不对），本条是**缺省未显式**（`VisibleScopeJSON` 为空 ⇒ 不下发 ⇒ 平台取默认 `NONE`）。⇒ ★ **两者共同印证：对「upsert 型」外部接口，凡「缺省即重置」的字段都必须显式下发**（该项目此前已有同类教训：`external_approvals` 的开关字段未传会被平台重置为 `false`，见 `handlers_approval.go` 注释）。
+- ★★★ **补一处（2026-10-07 追加 · 对照实验确证）：键名本身也是错的** —— `internal/platform/feishu/external.go:110` 写的是 **`body["visible_scope"]`**，而**飞书实际字段名是顶层 `viewers`**。
+  ★★ **对照实验**（同一张定义、一次只变一处）：
+  | 步 | 请求 | 读回 `viewers` |
+  |---|---|---|
+  | ① | 先置 `viewers=[{"viewer_type":"NONE"}]` | `NONE`（建立基线） |
+  | ② | **只传 `visible_scope`（我方现状的键名）** | ★ **仍 `NONE`** ⇒ **被平台静默忽略** |
+  | ③ | 改传 `viewers`（正确键名） | ★ **`TENANT`** ✓ |
+  ⇒ ★★★ **这是「静默失败」的典型**：`code=0` **不报错**、但**毫无效果** ⇒ ★ **只知道「没下发」不够，还要查「下发的键名对不对」**。
+  ⇒ ★ **本议题须同时修两点**：① `VisibleScopeJSON` 缺省为空（不下发）；② **键名 `visible_scope` → `viewers`**（含 `ExternalApprovalDef.VisibleScopeJSON` 的语义与注释、`repo_approval_def` 的列名可保留但须注明映射）。
 - **建议方案**：★ 已用探针实测确定取值（**不必再猜**）：
   - ★ **`viewer_type` 的合法枚举＝ `[TENANT, DEPARTMENT, USER, NONE]`**（实测 `ALL` / `OPEN_ID` 均报 `viewers[*].viewer_type is optional, options: [TENANT,DEPARTMENT,USER,NONE]`）；
   - ★ **`viewers=[{"viewer_type":"TENANT"}]`（全租户可见）⇒ `code=0` 通过**，读回一致。
