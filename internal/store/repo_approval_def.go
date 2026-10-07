@@ -29,6 +29,12 @@ func (d *DB) UpsertApprovalDefTx(ctx context.Context, tx *sql.Tx, def *ApprovalD
 //	**incoming 非空即覆盖、空则保留旧值** —— 因此「存量 create_link 错值」的修正通道
 //	就是**重跑 defs/sync 传入新值**（handler 侧已改为 /submit/{doc_type}），
 //	无需改 upsert、也无需数据迁移；此处保留 COALESCE 只为防「空值误清」。
+//
+// ★ N-074 映射注记：列名 `visible_scope_json` **保留**（免迁移），存的是飞书
+//
+//	**顶层 `viewers`** 键的原样 JSON 片段（如 {"viewers":[{"viewer_type":"TENANT"}]}）——
+//	下发时经 feishu.externalApprovalBody 写入 body["viewers"]（曾误写 visible_scope
+//	⇒ 平台静默忽略）。
 func upsertApprovalDef(ctx context.Context, q execer, def *ApprovalDef) error {
 	if def == nil || def.ApprovalCode == "" || def.DocType == "" {
 		return fmt.Errorf("store: 写入审批定义失败: approval_code/doc_type 不能为空")

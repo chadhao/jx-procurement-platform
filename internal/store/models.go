@@ -436,7 +436,7 @@ type ApprovalDef struct {
 	DocType          string // 我方单据类型（11 类；唯一）
 	Name             string
 	GroupName        string
-	VisibleScopeJSON string
+	VisibleScopeJSON string // 可见范围：顶层对象原样片段（N-074，如 {"viewers":[…]}）——列名 visible_scope_json 保留（免迁移），与飞书顶层 viewers 的映射见 repo_approval_def
 	CreateLinkPC     string
 	CreateLinkMobile string
 	CallbackURL      string

@@ -10,6 +10,14 @@ import (
 	"time"
 )
 
+// DefaultApprovalVisibleScope 三方审批定义可见范围缺省（N-074）。
+// ★ 形态＝顶层 viewers 原样 JSON 片段；viewer_type 合法枚举 [TENANT,DEPARTMENT,USER,NONE]
+//
+//	（实测 ALL/OPEN_ID 报 options 不匹配）；TENANT＝全租户可见（实测 code=0）。
+//
+// ★ 缺省必须能让业务真正跑起来：空值 ⇒ 不下发 ⇒ 平台取默认 NONE ⇒ 无人可见。
+const DefaultApprovalVisibleScope = `{"viewers":[{"viewer_type":"TENANT"}]}`
+
 // Env 承载全部运行期环境变量（对应架构 §6.4 清单）。
 type Env struct {
 	AppID     string // JX_APP_ID（敏感）
@@ -63,6 +71,13 @@ type Env struct {
 	//   「Group code cannot be empty」⇒ 全部定义建不出来）；测试环境＝JXQA-GROUP-1。
 	//   未配置 ⇒ sync 端点**第五道门可见拒绝**（不让它去平台撞一次再失败）。
 	ApprovalGroupCode string // JX_APPROVAL_GROUP_CODE
+	// ApprovalVisibleScope 三方审批定义可见范围（N-074）：顶层 viewers 的原样 JSON 片段。
+	// ★ 与 JX_APPROVAL_GROUP_CODE 同款「可配 + 缺省可用」：未配置 ⇒ 缺省
+	//   DefaultApprovalVisibleScope（TENANT 全租户可见）；覆盖例＝
+	//   {"viewers":[{"viewer_type":"DEPARTMENT"}]} 等（枚举 [TENANT,DEPARTMENT,USER,NONE]）。
+	//   ★ 注意本字段为空也可用 —— 装载通道（handlers_approval DefInput 装配）以缺省兜底，
+	//   防「空 ⇒ 不下发 ⇒ 平台默认 NONE ⇒ 无人可见」（N-074 根因）。
+	ApprovalVisibleScope string // JX_APPROVAL_VISIBLE_SCOPE
 
 	RunEnv            string // JX_ENV: prod / test
 	DevMode           bool   // DEV_MODE
@@ -132,6 +147,7 @@ func LoadEnv() (*Env, error) {
 		OAuthRedirectURI:          getenv("JX_OAUTH_REDIRECT_URI", ""),
 		ActionCallbackToken:       getenv("JX_ACTION_CALLBACK_TOKEN", ""),
 		ApprovalGroupCode:         getenv("JX_APPROVAL_GROUP_CODE", ""),
+		ApprovalVisibleScope:      getenv("JX_APPROVAL_VISIBLE_SCOPE", DefaultApprovalVisibleScope),
 		LockPath:                  lockPath,
 		S3Endpoint:                getenv("JX_S3_ENDPOINT", ""),
 		S3Bucket:                  getenv("JX_S3_BUCKET", ""),

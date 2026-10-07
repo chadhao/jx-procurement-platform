@@ -281,3 +281,53 @@ func TestAdminApprovalDefsSyncOK(t *testing.T) {
 		t.Fatalf("create_link_pc/mobile = %q / %q, 期望 %s", extDef.CreateLinkPC, extDef.CreateLinkMobile, defsSyncDomain+"/submit/BA")
 	}
 }
+
+// TestAdminApprovalDefsSyncVisibleScopeDefaultN074 N-074 缺省下发面：
+// 装配 DefInput 必须**显式**给 VisibleScopeJSON 可用缺省（{"viewers":[{"viewer_type":"TENANT"}]}）——
+// 缺省为空 ⇒ externalApprovalBody 不下发 ⇒ 平台取默认 NONE ⇒ 定义无人可见
+// （用户在飞书找不到发起入口）。★ 改前即红：fake 读回空串。
+func TestAdminApprovalDefsSyncVisibleScopeDefaultN074(t *testing.T) {
+	e, db, auth, fake := newDefsSyncTestApp(t, true)
+	seedDefaultUsers(t, db, store.UserRole{OpenID: "ou_admin", Role: roleSysAdmin, Active: true})
+	seedApprovalCodeRow(t, db, "ac-ba-001", "BA", "①采购报备单")
+	adminCookie := auth.Establish("ou_admin")
+
+	rec, _ := doRequest(e, http.MethodPost, "/api/admin/approval/defs/sync", adminCookie, "")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("装载状态码 = %d, body=%s", rec.Code, rec.Body.String())
+	}
+	extDef, err := fake.GetExternalApproval(context.Background(), "ac-ba-001")
+	if err != nil {
+		t.Fatalf("读飞书侧定义失败: %v", err)
+	}
+	want := `{"viewers":[{"viewer_type":"TENANT"}]}`
+	if extDef.VisibleScopeJSON != want {
+		t.Fatalf("下发 VisibleScopeJSON = %q, 期望缺省 %q（空 ⇒ 不下发 ⇒ 平台默认 NONE 无人可见）",
+			extDef.VisibleScopeJSON, want)
+	}
+}
+
+// TestAdminApprovalDefsSyncVisibleScopeOverrideN074 可配面：JX_APPROVAL_VISIBLE_SCOPE
+// 覆写 ⇒ 原样透传（与 JX_APPROVAL_GROUP_CODE 同款「可配 + 缺省可用」形态），
+// 不被装配处缺省覆盖。★ 实现后新增（该 Env 字段改前不存在 ⇒ 无「改前红」可得，
+// 隔离性由 M2 变异展示：缺省用例红、本用例保持绿）。
+func TestAdminApprovalDefsSyncVisibleScopeOverrideN074(t *testing.T) {
+	e2, db2, auth2, fake2 := newDefsSyncTestAppEnv(t, true, func(env *config.Env) {
+		env.ApprovalVisibleScope = `{"viewers":[{"viewer_type":"DEPARTMENT"}]}`
+	})
+	seedDefaultUsers(t, db2, store.UserRole{OpenID: "ou_admin", Role: roleSysAdmin, Active: true})
+	seedApprovalCodeRow(t, db2, "ac-ba-002", "BA", "①采购报备单")
+	rec2, _ := doRequest(e2, http.MethodPost, "/api/admin/approval/defs/sync", auth2.Establish("ou_admin"), "")
+	if rec2.Code != http.StatusOK {
+		t.Fatalf("覆写装载状态码 = %d, body=%s", rec2.Code, rec2.Body.String())
+	}
+	ext2, err := fake2.GetExternalApproval(context.Background(), "ac-ba-002")
+	if err != nil {
+		t.Fatalf("读覆写侧定义失败: %v", err)
+	}
+	wantOverride := `{"viewers":[{"viewer_type":"DEPARTMENT"}]}`
+	if ext2.VisibleScopeJSON != wantOverride {
+		t.Errorf("覆写下发 VisibleScopeJSON = %q, 期望 %q（env 值应原样透传、不被缺省覆盖）",
+			ext2.VisibleScopeJSON, wantOverride)
+	}
+}

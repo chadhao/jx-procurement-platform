@@ -36,7 +36,7 @@ type ExternalApprovalDef struct {
 	Name             string // approval_name
 	GroupName        string // group_name（★ 本侧 sync 不传 —— 传中文名会撞既有分组名 ⇒ 1390001，N-066 探针实测）
 	GroupCode        string // group_code（★ 飞书 create 必填；仅非空时送 —— N-066）
-	VisibleScopeJSON string // visible_scope（原样 JSON 片段；空则不下发）
+	VisibleScopeJSON string // 可见范围：**顶层对象原样片段**（N-074，如 {"viewers":[{"viewer_type":"TENANT"}]}，按键合并进 body；空则不下发）
 	CreateLinkPC     string // external.create_link_pc（指向我方发起页）
 	CreateLinkMobile string // external.create_link_mobile
 	SupportPC        bool   // external.support_pc
@@ -106,8 +106,19 @@ func externalApprovalBody(def ExternalApprovalDef) ([]byte, error) {
 		body["group_name"] = def.GroupName
 	}
 	if strings.TrimSpace(def.VisibleScopeJSON) != "" {
-		// 可见范围原样透传（结构由调用方按平台要求提供），避免在此臆造 schema。
-		body["visible_scope"] = json.RawMessage(def.VisibleScopeJSON)
+		// ★ N-074：VisibleScopeJSON ＝ **顶层对象原样片段**（缺省
+		//   {"viewers":[{"viewer_type":"TENANT"}]}），按键合并进请求体 ——
+		//   顶层键名＝viewers（曾误写 body["visible_scope"] ⇒ code=0 但被平台
+		//   **静默忽略**、读回仍 NONE；对照实验：改传 viewers ⇒ 读回 TENANT ✓）。
+		//   键名回漂由 TestExternalApprovalBodyViewersShapeN074 守；非对象片段 ⇒
+		//   解析即报错（可见失败，不静默发错形状）。
+		var frag map[string]json.RawMessage
+		if err := json.Unmarshal([]byte(def.VisibleScopeJSON), &frag); err != nil {
+			return nil, fmt.Errorf("feishu: 可见范围 JSON 须为顶层对象片段（N-074 viewers）: %w", err)
+		}
+		for k, v := range frag {
+			body[k] = v
+		}
 	}
 	return json.Marshal(body)
 }

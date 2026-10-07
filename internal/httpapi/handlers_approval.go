@@ -1245,6 +1245,11 @@ func (d Deps) handleAdminApprovalDefsSync(c echo.Context) error {
 			CallbackURL:        callbackURL,
 			CallbackToken:      d.Env.ActionCallbackToken,
 			GroupCode:          strings.TrimSpace(d.Env.ApprovalGroupCode), // N-066：飞书 create 必填
+			// ★ N-074：可见范围**显式下发**、缺省可用 —— 空 ⇒ 不下发 ⇒ 平台取默认
+			//   NONE ⇒ 定义无人可见（用户在飞书找不到发起入口）。env 未配置（或直构 Env
+			//   未赋值）时以 config 缺省兜底（TENANT 全租户可见，实测 code=0）。
+			VisibleScopeJSON: firstNonEmptyStr(strings.TrimSpace(d.Env.ApprovalVisibleScope),
+				config.DefaultApprovalVisibleScope),
 		})
 	}
 

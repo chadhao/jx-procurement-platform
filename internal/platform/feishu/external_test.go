@@ -190,3 +190,45 @@ func TestExternalApprovalBodyGroupCodeN066(t *testing.T) {
 		t.Errorf("GroupCode 为空时不应下发 group_code 键, 实测: %v", body2["group_code"])
 	}
 }
+
+// TestExternalApprovalBodyViewersShapeN074 N-074 报文形状断言（核心验收）：
+// 可见范围的顶层键必须是 `viewers`（对象数组）—— 实测传 `visible_scope` ⇒ code=0
+// 但被平台**静默忽略**、读回仍 NONE（对照实验：改传 viewers ⇒ 读回 TENANT ✓）。
+// 断言：① 含顶层 viewers 且 [0].viewer_type=="TENANT"；② **不含 visible_scope 键**（防键名回漂）。
+// （改前 body 写的是 visible_scope ⇒ 本用例先红。）
+func TestExternalApprovalBodyViewersShapeN074(t *testing.T) {
+	raw, err := externalApprovalBody(ExternalApprovalDef{
+		ApprovalCode: "jx_ba",
+		Name:         "①采购报备单",
+		// 探针实测形态：顶层 viewers + 合法枚举 [TENANT,DEPARTMENT,USER,NONE]。
+		VisibleScopeJSON: `{"viewers":[{"viewer_type":"TENANT"}]}`,
+	})
+	if err != nil {
+		t.Fatalf("组装失败: %v", err)
+	}
+	var body map[string]any
+	if err := json.Unmarshal(raw, &body); err != nil {
+		t.Fatalf("解析 body 失败: %v", err)
+	}
+	// ① 顶层 viewers 键存在且形态为对象数组。
+	rawViewers, has := body["viewers"]
+	if !has {
+		var keys []string
+		for k := range body {
+			keys = append(keys, k)
+		}
+		t.Fatalf("缺顶层 viewers 键（N-074：visible_scope 被飞书静默忽略），body keys: %v", keys)
+	}
+	viewers, ok := rawViewers.([]any)
+	if !ok || len(viewers) != 1 {
+		t.Fatalf("viewers 应为恰 1 元素的对象数组, 实为 %T: %v", rawViewers, rawViewers)
+	}
+	node, _ := viewers[0].(map[string]any)
+	if node["viewer_type"] != "TENANT" {
+		t.Errorf("viewers[0].viewer_type = %v, 期望 TENANT（实测 code=0 的取值）", node["viewer_type"])
+	}
+	// ② 不含 visible_scope 键（错键名回漂即红 —— 平台收 code=0 但毫无效果）。
+	if v, has := body["visible_scope"]; has {
+		t.Errorf("不得下发 visible_scope 键（平台静默忽略的错键），实下发: %v", v)
+	}
+}

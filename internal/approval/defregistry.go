@@ -30,7 +30,7 @@ type DefInput struct {
 	Name               string // 审批名称（飞书侧展示）
 	GroupName          string // 分组（显示名；本侧 sync 不传，见 N-066）
 	GroupCode          string // 分组 code（★ 飞书 create 必填 —— N-066；JX_APPROVAL_GROUP_CODE）
-	VisibleScopeJSON   string // 可见范围（原样 JSON）
+	VisibleScopeJSON   string // 可见范围：顶层对象原样片段（N-074，如 {"viewers":[…]}；空则适配层不下发）
 	CreateLinkPC       string // 发起页 PC（指向我方页面）
 	CreateLinkMobile   string // 发起页 Mobile
 	SupportPC          bool
