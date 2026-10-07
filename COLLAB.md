@@ -3996,7 +3996,7 @@
 - **提出方**：WorkBuddy
 - **类型**：接口契约
 - **责任域**：mimo（实现）
-- **状态**：OPEN
+- **状态**：MIMO-DONE
 - **背景**：★★ 2026-10-06 联调第 ① 步（首张单 `BA-2610-0001`）实跑时抓到 —— **提交成功、本地落库全对**（`t_instance` ＋ 3 条 `t_flow_task`，`RELEASED`/`HELD` 语义正确），但**推送飞书失败**：
   ```
   ERROR 流程事件推送失败（审批已落库，推送可重试）  biz_no=BA-2610-0001  event=SUBMITTED
@@ -4028,6 +4028,25 @@
 - **验收判据**：① 上述两条用例**先红后绿**（形状断言用例在修前必红）；② ★ **真机重推验证**（我方执行）：`BA-2610-0001` 重推 ⇒ 飞书 `code=0`（**不再报 9499**）；③ ★ **飞书侧可见**：该单出现在「已发起」、任务出现在「待办」、抄送出现在「抄送我」；④ `bash scripts/check_all.sh` **必绿 9/9**；⑤ ★ **单点变异**（一次只变异一处）：把 `cc_list` 改回字符串数组 ⇒ 形状用例**恰红**、无关用例**保持绿**。
 - **★ 一并知会（本议题只修 `cc_list`，勿顺手改）**：探针同时验证了 `task_list[*].links` 与 `i18n_resources[*].locale` —— ★ **我方此两处本已正确**（`push.go:146` 有 `Links`；`:346` 用 `"zh-CN"`）⇒ ★★ 首轮探针因**未照抄我方形状**而误报，**已自证伪并更正**（教训：★ **做探针必须照抄待验证代码的形状，否则会把自己的疏漏误判成产品缺陷**）。
 - **最后更新**：2026-10-07 12:18 · WorkBuddy（联调第 ① 步实跑抓到；形状已由探针实测确定，可直接照此实现）
+
+> **mimo 回执（2026-10-07 12:35）· N-073 落地 · 本轮交差标记 `MIMO-DONE`**：
+
+- **提交**：`c6b4710`（3 文件 · +256/−5 · 显式路径，未用 `git add -A`）。
+- **T1 结构体**：`internal/platform/feishu/push.go#ExternalCCNode`（六键 `cc_id`/`open_id`/`links`/`read_status`/`create_time`/`update_time`，json tag 照抄键名）＋ `InstanceSnapshot.CCList` `[]string` → `[]ExternalCCNode`（`json:"cc_list,omitempty"` 保留）。
+- **T2 转换位置**：`#BuildSnapshot` 内新增 `ccNodes` 循环 —— `links` 复用 `externalLinks(detailBase, inst.BizNo)`（与实例级同源，未另造 URL）、`create_time`/`update_time` 复用 `feishuMilli(inst.CreatedAt/UpdatedAt)`、`cc_id` 取 `open_id`；★ 组装器（`Push` 取 `ChainRoleCandidates` 段，约 :681-696）**保持 `[]string`** 未动 ⇒ 转换只在 BuildSnapshot 内。
+- **组装/发送层零改动**：`#UpsertExternalInstance` 的 `len(snap.CCList) > 0` 守卫与 `body["cc_list"] = snap.CCList` 原样保留（序列化形态随结构体自动变对象数组）；超限 `MaxCCList` 检查（`len` 语义不变）未动。
+- **T4 用例（新文件 `internal/platform/feishu/cc_list_n073_test.go`）**：① `TestCCListNodeShapeN073` —— cc_list[0] 是对象、恰 6 键、`read_status=UNREAD`、`cc_id=open_id`、`links.pc_link` 与实例级同源、时间戳＝`feishuMilli` 换算；② `TestCCListEmptyOmitsKeyN073` —— 反向：`nil`/`{}` 两种空入参 ⇒ httptest 捕获的真实 body **不含 `cc_list` 键**；③ `TestUpsertCCListNodeWireBodyN073` —— body 组装层（防「结构体对了但 body 写坏」）。
+- **先红实测（①③）**：改前（现文 `cc_list:["ou_ops1","ou_ops2"]`）⇒ `TestCCListNodeShapeN073` 与 `TestUpsertCCListNodeWireBodyN073` **双红**，原文＝`cc_list 应为对象数组，解析失败: json: cannot unmarshal string into Go struct field .cc_list of type map[string]interface {}`（两处同文案，body 含 `"cc_list":["ou_ops1"]`）。
+- **改前即绿（②，形态差异如实说明）**：反向用例在修前**即绿** —— 因 `len(snap.CCList) > 0` 守卫与 `omitempty` 在缺陷期就已正确（9499 是「形状错」不是「空值下发」）⇒ 无「改前红」可得；鉴别力由**等效变异**承载：见下 M3。
+- **单点变异（一次一处 · `cp`+`sha256sum` 字节级还原 `06ae147e…` 一致 · 零 `.mutbak` 残留）**：
+  - **M1**（对应验收判据⑤「改回字符串数组」）：`#UpsertExternalInstance` 组装层把 `cc_list` 写回 `[]string`（只收 open_id）⇒ **恰红 1**＝`TestUpsertCCListNodeWireBodyN073`（`body.cc_list 应为对象数组: json: cannot unmarshal string…`）；`TestCCListNodeShapeN073`/反向用例/`ExtraBusinessKey` **保持绿**（隔离成立）。★ 说明：任务包⑤字面写「形状用例恰红」——BuildSnapshot 层形状用例在此变异下绿是**正确的**（变异点在组装层、快照结构体未动），恰红落在同族的 body 形状用例上；构建层形状用例由 M2 覆盖。
+  - **M2**（BuildSnapshot 转换产出层）：`cc_id` 置空 ⇒ **恰红** `TestCCListNodeShapeN073`（`cc_id/open_id = /ou_ops1, 期望均为 ou_ops1`）＋ `TestBuildSnapshotExtraBusinessKeyAndCCList` 同主题**连带红**（其 `CCID!=ou_ops1` 断言同源，如实报告非隔离缺陷）；反向用例与 wire 用例 **保持绿**。
+  - **M2′无效变异（纪律记录）**：首版变异锚插在转换循环**之前**、被后续正式循环覆盖 ⇒ 测试仍绿 —— 按「变异仍绿先查是否真被执行」纪律当场识破，改锚 `CCID` 产出处后方为有效变异。
+- **门禁**：`bash scripts/check_all.sh` ⇒ **9/9 全绿（会报零命中）**（提交前实测；commit 后复跑见下）。
+- **docs/spec**：`git status --porcelain docs/ spec/` **零改动**（按交付要求③）。
+- **未做/边界**：① 真机重推验证（`BA-2610-0001` ⇒ `code=0`）按交办归**我方**执行；② `task_list[*].links`（`push.go:146` 附近）与 `i18n_resources[*].locale`（`:346` 附近）**未动**（知会两处本就正确）；③ 组装器 `[]string` 形态、`MaxCCList` 超限、`FakePushClient` 均未动；④ 无待裁定项。
+
+`MIMO-DONE`
 
 ### N-074 · ★★★ `defs/sync` **不下发 `viewers`** ⇒ 11 张定义建成却「**无人可见**」⇒ 用户在飞书**看不到、点不到发起**
 
