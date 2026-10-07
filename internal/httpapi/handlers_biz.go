@@ -144,11 +144,27 @@ func (d Deps) handleMe(c echo.Context) error {
 		return fail(c, http.StatusUnauthorized, codeRoleMapped, "未映射角色或会话失效")
 	}
 	ctx := c.Request().Context()
+	// ★ N-076：sys_roles（t_sys_role）供前端可见性判定（App.vue / Admin.vue 同源判据）。
+	//   空 ⇒ []（不返回 null，前端免判空）；恒取 idn（Identity 含系统角色）——
+	//   ur 是审批角色行，且**仅系统角色者 ur==nil**（identityFrom 对 t_user_role 无行
+	//   返回 nil）⇒ 下列字段必须守卫，否则 /api/me（前端启动必调）500。
+	sysRoles := idn.SysRoles
+	if sysRoles == nil {
+		sysRoles = []string{}
+	}
+	matrixRole := ""
+	name := ""
+	departments := []string{}
+	if ur != nil {
+		matrixRole = ur.Role
+		name = ur.Name
+		departments = append([]string{ur.Department}, ur.ExtraDepts...)
+	}
 	rules, _ := d.DB.ListPermissionRules(ctx)
 	rowScopes := map[string]string{}
 	denied := map[string]bool{}
 	for _, r := range rules {
-		if !strings.EqualFold(r.Role, ur.Role) {
+		if !strings.EqualFold(r.Role, matrixRole) {
 			continue
 		}
 		rowScopes[r.Resource] = r.RowScope
@@ -160,11 +176,11 @@ func (d Deps) handleMe(c echo.Context) error {
 	for k := range denied {
 		denyList = append(denyList, k)
 	}
-	departments := append([]string{ur.Department}, ur.ExtraDepts...)
 	return ok(c, map[string]any{
 		"open_id":     idn.OpenID,
-		"name":        ur.Name,
-		"role":        ur.Role,
+		"name":        name,
+		"role":        matrixRole,
+		"sys_roles":   sysRoles,
 		"departments": departments,
 		"column_policy_summary": map[string]any{
 			"column_deny": denyList,

@@ -4,6 +4,7 @@ import { computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { session, refreshSession, clearSession } from './store'
 import { logout } from './api'
+import { isSysAdminOf } from './sysRole'
 
 const route = useRoute()
 const router = useRouter()
@@ -28,7 +29,8 @@ async function onLogout() {
   router.push('/login')
 }
 
-// 「系统管理」仅在角色为「系统管理员」时显示（前端隐藏不构成安全边界，服务端仍二次校验）。
+// 「系统管理」按 sysRole.js 统一判据（role 残留值 OR sys_roles 含系统管理员，N-076）显示
+//（前端隐藏不构成安全边界，服务端仍二次校验）。
 // 备付金 / 报送菜单按角色显示（同样仅作导航提示，真实拦截在服务端）。
 //
 // ★ 菜单可见性必须与服务端 allow-list 逐条对齐，否则会出现「点得进去、取数 40300」的假入口：
@@ -36,14 +38,24 @@ async function onLogout() {
 //	报送：综合运营主管 + 项目总经理（§3.5）
 //	★ 项目总经理是否应可见备付金余额——PRD 未列，暂按「不可见」实现并列入待确认，不擅自放宽。
 const navItems = computed(() => {
-  const items = [
-    { to: '/dashboard', label: '看板' },
-    { to: '/submit', label: '发起申请' },
-    { to: '/tasks', label: '我的待办' },
-    { to: '/instances', label: '审批实例' },
-    { to: '/ledger', label: '台账' },
-  ]
-  const role = session.me && session.me.role
+  const me = session.me
+  const role = me && me.role
+  // ★ N-076 统一判据（sysRole.js 同源）：审批角色残留值 OR sys_roles 含系统管理员。
+  const isSysAdmin = isSysAdminOf(me)
+  // ★ N-076 判据③：仅系统角色者（role 空 ⇒ t_user_role 无行）业务菜单全是假入口
+  //   （权限矩阵不认 SysRoles，点进去必 403 —— 上方「与服务端 allow-list 对齐」纪律）
+  //   ⇒ 基础业务项按有无审批角色显示；管理域入口由 isSysAdmin 决定、台账**不**因
+  //   sys_roles 放大可见性（Q2）。
+  const items = []
+  if (role) {
+    items.push(
+      { to: '/dashboard', label: '看板' },
+      { to: '/submit', label: '发起申请' },
+      { to: '/tasks', label: '我的待办' },
+      { to: '/instances', label: '审批实例' },
+      { to: '/ledger', label: '台账' },
+    )
+  }
   if (role === '综合运营主管' || role === '主管领导') {
     items.push({ to: '/petty-cash', label: '备付金' })
   }
@@ -51,11 +63,11 @@ const navItems = computed(() => {
     items.push({ to: '/submission', label: '报送' })
   }
   // 集团报销跟踪表（FR-M1-02）：写＝综合运营主管；读＝综合运营主管 / 主管领导 / 项目总经理 / 系统管理员。
-  if (role === '综合运营主管' || role === '主管领导' || role === '项目总经理' || role === '系统管理员') {
+  if (role === '综合运营主管' || role === '主管领导' || role === '项目总经理' || isSysAdmin) {
     items.push({ to: '/reimbursement', label: '集团报销跟踪' })
   }
   items.push({ to: '/audit', label: '审计日志' })
-  if (role === '系统管理员') {
+  if (isSysAdmin) {
     items.push({ to: '/admin', label: '系统管理' })
   }
   return items

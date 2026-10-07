@@ -18,6 +18,7 @@ import {
   fetchOrgUsers,
 } from '../api'
 import { session } from '../store'
+import { isSysAdminOf } from '../sysRole'
 import { fmtTime } from '../utils'
 
 const activeTab = ref('matrix')
@@ -30,7 +31,9 @@ const roles = ref([])
 const rowScopes = ref([])
 const rules = ref([])
 
-const isSysAdmin = computed(() => (session.me && session.me.role === '系统管理员') || false)
+// ★ N-076：与 App.vue 同源判据（sysRole.js）—— role 残留值 OR sys_roles 含系统管理员；
+//   仅 sys_roles 路径下 role 为空也判真（郝端双身份 / 仅系统角色者均可见管理页）。
+const isSysAdmin = computed(() => isSysAdminOf(session.me))
 
 function splitList(text) {
   return String(text || '')
