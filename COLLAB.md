@@ -4160,7 +4160,7 @@
 - **提出方**：★ **用户**（2026-10-07：「单独列一个系统角色的表，通过那个表来单独分配系统角色，这样和审批角色就不冲突了」）
 - **类型**：技术方案
 - **责任域**：WorkBuddy（规格，本条）· mimo（实现）
-- **状态**：OPEN
+- **状态**：MIMO-DONE
 - **背景**：★★ 联调收尾时暴露：`t_user_role.open_id` 为 **UNIQUE（一人一审批角色）**，而业务上**郝端既是「项目总经理」（审批角色）又是「系统管理员」（IT 运维角色）** ⇒ 二者**互斥**、无法共存。★ 直接后果：4 个业务角色只能绑**合成 `open_id`**（`ou_test_*`）⇒ **飞书待办推不到真人**，联调最后一段链路走不通。
 - **我方立场**：★★★ **用户方案正确，且指出的是建模错误而非实现缺陷** —— `permission.Roles`（`roles.go:13-16`）把 **10 个角色**并列在同一枚举、同一张表：
   ```
@@ -4205,6 +4205,35 @@
   ⑤ `bash scripts/check_all.sh` **必绿 9/9**；★ 每条改动附**单点变异**（一次只变异一处）。
 - **★ 交付后我方要做的**：★ **把 4 个业务角色绑到真实飞书用户**（郝端＝项目总经理 + 系统管理员）⇒ **打通「飞书待办推给真人」这最后一段链路**。
 - **最后更新**：2026-10-07 14:48 · WorkBuddy（用户提出；规格已含全部实测消费点与三处推荐待确认）
+
+> **mimo 回执（2026-10-07 15:27）· N-075 落地 · 本轮交差标记 `MIMO-DONE`**：
+
+- **提交**：`8aa1ac6`（23 文件 · +509/−62 · 显式路径，未用 `git add -A`）。**docs/spec 零改动**（交付要求③）。
+- **七点逐条**：
+  1. **新表**＝`migrations/0022_sys_role.sql` —— ★ **编号顺延 0021→0022**：规格原文写 `0021_sys_role.sql`，但 `0021_l01_written_off_balance.sql`（N-061 T1）已占用 ⇒ 按文件名升序取 0022（磁盘现状冲突，非口径分歧，特此说明）。`UNIQUE(open_id, role)` ＋ `idx_sys_role_openid` ＋ CREATE IF NOT EXISTS ＝幂等；规格 SQL 原样落地。
+  2. **枚举拆分**＝`permission/roles.go#Roles` 去「系统管理员」（9 审批角色）＋ 新增 `SysRoles = []string{"系统管理员"}`；`seed.Roles` 是同一切片引用（`seed_test` 双向钉自动跟随）。
+  3. **`permission.Identity` 增 `SysRoles []string`**（`dataset.go`，注释写明矩阵不读它）。
+  4. **入口唯一**＝`helpers.go#identityFrom`：先查 `store.GetSysRoles`（`repo_permission.go`：`active=1`、未映射⇒空集 nil 错、口径比照 `GetUserRole`）再 `ResolveRole`；★ **仅系统角色者**（t_user_role 无行、t_sys_role 有行）返回 `Role=""` 的 Identity 不报未映射；**两表皆空才维持 `ErrRoleNotMapped`**（deny by default 不变）。`UpsertSysRole` 供夹具/bootstrap 共用。
+     ★★ **超出四点清单的必要补充（取证＋理由）**：`handlers_biz.go#handleAuthCallback` 的**登录门**也直调 `ResolveRole` 且未映射即 401 ⇒ 若不改，**Q3 初始管理员（只种 t_sys_role）永远登录不进来 ⇒ 判据②在生产不可达**（测试用 `auth.Establish` 直签会话会掩盖此洞）⇒ 同批加「登录前查 t_sys_role、两者皆空才 401」；`TestSysRoleOnlyLoginAllowedN075` 钉双向（放行 302＋无角色仍 401）。
+  5. **四处判定**：① `handlers_admin.go#requireSysAdmin` ⇒ `hasSysRole(idn, roleSysAdmin)`（**不再看 Role**；`hasSysRole`＝TrimSpace+EqualFold 与旧口径同）；② `handlers_approval.go#approvalVisibleTo` ⇒ 同上（纯函数，另钉「陈旧 Role=系统管理员 字面不再放行」）；③ `handlers_reimbursement.go` 的读白名单 ⇒ 落在共用的 `handlers_pettycash.go#authorizeRole`：白名单含「系统管理员」槽位时由 SysRoles 满足（pettycash 白名单不含该槽 ⇒ 零波及）；④ `seed.go#auditRoles` ⇒ ★ **落地形态与字面差异（说明）**：`auditRoles` 只在播种期按 `Roles` 迭代被查（播种时无身份概念，无法读 SysRoles）⇒ 该 map 收敛为 `{"项目总经理": true}`（播种白名单半边），**SysRoles 半边落运行期** `handlers_biz.go#handleAuditLogs`：`矩阵非 deny ∪ hasSysRole(系统管理员)` —— 即「Role ∪ SysRoles」在**可运行位置**的实现；admin 域 10 处审计 `ActorRole: idn.Role` ⇒ `actorRoleOf(idn)`（Role 优先、空则回退系统角色，审计不留空角色）。
+  6. **权限矩阵不纳入（Q2，采纳）**：`Loader.Resolve` 只读 `id.Role` ⇒ SysRoles 零接入即成立（**零代码改动**，注释钉于 `Identity.SysRoles`）；`seed.go#specs` 的「系统管理员」死键同批清理（`Roles` 不再迭代它；既有库该角色规则行迁移后无 Role 可匹配 ⇒ 沉睡行、不删〔规格未要求，删动矩阵超范围〕）。
+  7. **迁移数据＋Q3**：`0022` 后半＝`INSERT OR IGNORE … SELECT … WHERE role='系统管理员'` ＋ `DELETE FROM t_user_role WHERE role='系统管理员'`（迁入＋删除，否则仍占 UNIQUE）；幂等（重复执行结果一致，判据④钉）；`seed.SeedBootstrapSysAdmin`（`JX_BOOTSTRAP_SYS_ADMIN_OPEN_ID`，`config/env.go` 缺省空⇒不种，`bootstrap.go` 在 Q3 播种后调用）。
+- **判据用例（新文件 `internal/httpapi/sys_role_n075_test.go`，8 用例全绿实测）**：① `DualIdentityCoexist`＝郝端双表共存（`GetUserRole`=项目总经理 ＋ `GetSysRoles`=[系统管理员]）＋ admin 200 ＋ 台账 200 ＋ 矩阵规则=项目总经理行（ALL、无列 deny）；② `OnlyAdminYesLedgerNo`＝仅系统角色 admin 200 ＋ `/api/ledger/L01` **403** ＋ `/api/dashboard/15` **403**；③ `ApprovalRoleOnlyAdminForbidden`＝项目总经理 admin **403**（文案「仅系统管理员」）；④ `Migration0022…Idempotent`＝0022 全文 `migrations.FS` 读出执行两遍、t_user_role 归零/t_sys_role=1、二次结果一致；次级四用例＝登录放行双向／审计 Role∪SysRoles 双向／报销白名单槽位／`approvalVisibleTo` 纯函数三断言。
+- **先红形态如实**：判据①–④ 为**实现后编写**（新行为，改前形态不存在 —— 如改前双身份第二次写入直接撞 `open_id UNIQUE`、`t_sys_role` 表都不存在，无法构成「改前跑同用例得红」的可比形态）⇒ **不伪造先红**；鉴别力由下列 7 处单点变异承载（等效变异纪律）。
+- **单点变异（一次一处 · `cp`＋`sha256sum` 字节级还原逐字一致 · 零 `.mutbak`/`.tmp` 残留）**：
+  - **M1** `requireSysAdmin` 回退 Role 判定 ⇒ **恰红 ①②**（`双身份进管理域: http=403…仅系统管理员` ＋ `仅系统角色进管理域: http=403`）；③④＋次级四用例绿（隔离成立）。
+  - **M2** `identityFrom` 置空 SysRoles 回填 ⇒ **恰红 ①②＋审计＋报销** 4 例；③④＋登录（自带查询）＋`approvalVisibleTo`（直构 Identity）4 例绿。
+  - **M3** `0022` 摘 `DELETE` ⇒ **恰红 ④**（`迁移后 t_user_role 系统管理员行 = 1, 期望 0`）。
+  - **M4** `approvalVisibleTo` 回退 Role ⇒ **恰红**（双断言：`SysRoles 判定未生效` ＋ `仍认 Role 字面`）。
+  - **M5** 登录门摘 sysrole 放行 ⇒ **恰红**（`仅系统角色者登录: http=401, 期望 302`），同用例「无角色仍 401」断言绿（函数内隔离）。
+  - **M6** 审计放行摘 SysRoles 半边 ⇒ **恰红**（`仅系统角色查审计: http=403`），申请人 403 断言绿。
+  - **M7** 报销白名单槽位摘 SysRoles ⇒ **恰红**（`仅系统角色读报销跟踪: http=403`）。★ 首版锚漏 ` {` 致编译红——按「变异仍绿/异常先查是否真执行」纪律当场识破、修锚重跑后方为有效（首版不采信）。
+- **随批改动的既有用例（非删测、随规格同步）**：(a) 夹具 15 处 `Role: roleSysAdmin` 的 t_user_role 行 ⇒ 新 helper `seedSysAdmin`（写 t_sys_role；枚举已去系统管理员，留旧行＝账实不符）；(b) `qa_independent_verify`／`dashboard_amount` 两处「系统管理员(ALL+禁金额)」persona **移除/换验收人** —— Q2 后该 persona 形态（可见行+禁金额列）在矩阵中已不存在（列裁剪语义由验收人 PARTICIPATED 承载，断言面不缩水）；(c) `store/qa_migration_test` 计数钉 21→22（新迁移合法增，附注 0022 一行）。
+- **门禁**：`bash scripts/check_all.sh` ⇒ **9/9 全绿（会报零命中）**（提交前实测；commit 后复跑见下）。
+- **提请复核（判据文字，不阻塞）**：判据① 括号「按项目总经理口径（**不含金额列**…）」与 `seed.go#specs` 现文冲突 —— specs：项目总经理＝`ALL` **无列 deny**（不禁金额，`dashboard_test` 注释同证），禁金额的是**旧系统管理员行**；断言以 specs 现文为准（`ColumnDeny` 为空），请 WB 确认判据括号是否笔误。
+- **未做/边界**：① `t_sys_role` **无管理端点/UI**（规格未要求 —— 现由迁移＋bootstrap＋`UpsertSysRole` 直写承载；若需 `/api/admin` 页签另批）；② 既有库 `t_permission_rule` 的系统管理员行**未删**（沉睡无消费方，规格未要求）；③ 真机链路（郝端真实 open_id 双绑＋飞书待办推真人）归**我方**；④ `approvalVisibleTo` 的系统角色放行（第 5 点明列）与 Q2「不参与业务可见性」表面张力 —— 按第 5 点字面落地（审批实例可见性 ≠ 权限矩阵），提请知悉；⑤ 无待裁定项（判据①括号除外，见上）。
+
+`MIMO-DONE`
 
 ## 5. 已决议（AGREED）
 
