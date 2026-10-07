@@ -4267,7 +4267,7 @@
 - **提出方**：★ **用户报障**（2026-10-07：「我以『郝端』的账户登录系统后台，为什么看不到用户管理这些项目了？」★ **附截图**：右上角「**郝端 · 项目总经理**」，左侧菜单**无「系统管理」**）
 - **类型**：接口契约
 - **责任域**：WorkBuddy（规格，本条）· mimo（实现）
-- **状态**：OPEN
+- **状态**：MIMO-DONE
 - **背景**：★★★ **这是 `N-075` 的漏覆盖，责任在我方规格** —— `N-075` 我方列了**后端 6 处消费点**并全部改造（`requireSysAdmin` / `approvalVisibleTo` / 报销读白名单 / `auditRoles` 等），**但没有查前端可见性**。实测：
   - 后端 ✅ **已放行**：郝端会话 `GET /api/admin/users` ⇒ **200**（`requireSysAdmin` 已改判 `SysRoles`）；
   - ★★ 后端 ❌ **`/api/me` 未返回 `sys_roles`**（`handlers_biz.go:164-172` 只给 `role`/`departments`/`column_policy_summary`）⇒ **前端无从知道**该用户有系统角色；
@@ -4298,6 +4298,26 @@
   ⑤ `bash scripts/check_all.sh` **必绿 9/9**；★ 每条附**单点变异**（一次只变异一处）。
 - **★ 交付后我方要做**：重新部署 ＋ **在浏览器实测**（★ **不再只 curl 后端** —— 这一条就是本议题的教训）。
 - **最后更新**：2026-10-07 16:23 · WorkBuddy（用户报障；根因与四处坐标已实测，规格含前端重建要求）
+
+> **mimo 回执（2026-10-07 16:39）· N-076 落地 · 本轮交差标记 `MIMO-DONE`**：
+
+- **提交**：`ce49dfe`（23 文件 · +256/−39 · 显式路径，未用 `git add -A`；含 `internal/webui/dist/**` 新旧哈希一并入库）。**docs/spec 零改动**。
+- **四处逐条**：
+  1. **后端 `handlers_biz.go#handleMe`**：`ok(c, map…)` 增 `"sys_roles": idn.SysRoles`（取 `idn` 非 `ur`；空 ⇒ `[]` 不返 null）。★★ **超出规格坐标的必要修复（先红坐实）**：原实现对 `ur`（审批角色行）**无守卫直解引用**，而 `N-075` 后**仅系统角色者 `ur==nil`** ⇒ `/api/me`（前端启动必调）**500** —— 改前实测原文见下「先红③」；同批加 `if ur != nil` 守卫（`name`/`role`/`departments`/矩阵行扫描全走守卫后变量），矩阵摘要对仅系统角色者为空（Q2 正确语义）。前端无需知悉该形态差异，契约层已兼容。
+  2. **`web/src/sysRole.js`（新建 · 统一判据模块）**：`sysRolesOf(me)`（缺失 ⇒ `[]`）＋ `isSysAdminOf(me)` ＝ `role === 系统管理员` **OR** `sys_roles.includes(系统管理员)` —— 规格给的内联片段升格为**同源模块**（App.vue 与 Admin.vue 各写一遍正是本议题根因，模块化＝单一判据源）；**保留 role 残留值分支**（兼容）。
+  3. **`App.vue`**：import 统一判据 —— `:58` 系统管理菜单 ＋ `:54` 报销读白名单两处均改 `isSysAdmin`；★ **另按判据③加基础业务菜单门**：`role` 空（仅系统角色者）⇒ 看板/发起/待办/实例/**台账**五项不显示 —— 依据＝本文件既有纪律「菜单可见性必须与服务端 allow-list 逐条对齐，否则点得进去取数 40300 的假入口」（仅系统角色者矩阵全 DENY，五项皆假入口）；审计（后端放行）与系统管理（isSysAdmin）照常显示。
+  4. **`Admin.vue:33`**：`isSysAdmin = computed(() => isSysAdminOf(session.me))`（与 App.vue **同源模块**）；`:296` 的 `v-if="!isSysAdmin"` 随之对郝端翻真（浏览器实测归我方）。
+  5. **dist 重建**：`bash scripts/build.sh`（eslint **0 error** ＋ 复制 `internal/webui/dist` ＋ Go 构建完成）；★ `grep -l sys_roles internal/webui/dist/assets/` 命中 `index-CqZo-e7y.js` ⇒ 新判据真进产物；提交含旧哈希删除与新哈希新增（23 文件中 17 个 dist 文件）。
+- **判据用例（新文件 `internal/httpapi/me_sysroles_n076_test.go` 4 例 ＋ `web/src/sysRole.spec.mjs` 6 断言，全绿实测）**：① `DualN076`＝郝端 `/api/me` `sys_roles` 含系统管理员＋`role` 仍为项目总经理；② `ApprovalOnlyN076`＝验收人 `sys_roles==[]`（键在、数组空）＋直达 `/admin` **403**；③ `OnlyN076`＝仅系统角色 200＋`sys_roles==[系统管理员]`＋`role==""`＋`/admin` 200（台账菜单为前端面：App.vue 基础菜单门按 `role` 空隐藏，由模块判据＋dist 产物承载）；④ `LegacyRoleN076`＝残留 `role=系统管理员` 原样回传＋`sys_roles==[]`（后端半边）；前端 `sysRole.spec.mjs` 钉双身份/仅系统角色判真、仅审批角色判假、**role 分支与 sys_roles 分支等价**、null 免判空。
+- **先红实测（改前原文，未伪造）**：① `GET /api/me 缺 sys_roles 数组键（N-076 契约）: keys=[column_policy_summary departments name open_id role]`（①②④三例同文案）；③ `仅系统角色 /api/me: http=500 code=50000`（nil-ur panic 被 `middleware.Recover` 转 500 —— 规格未点名的隐藏缺陷由本用例逼出）；前端 `node web/src/sysRole.spec.mjs` ⇒ `ERR_MODULE_NOT_FOUND`（模块未建）。
+- **单点变异（一次一处 · `cp`＋`sha256sum` 字节级还原一致 · 零残留）**：
+  - **M1** 摘 `sys_roles` 契约键 ⇒ **四用例齐红**（同一契约键断言面，如实报告：非四独立缺陷）＋ `N075` 组**全绿**（隔离）。
+  - **M2** 模块判据摘 sys_roles 分支（只认 role 残留值）⇒ spec **恰红首断言**（`双身份（sys_roles 含系统管理员）必须判真 actual: false`；node assert 首错即停，同文件仅系统角色断言同源必然同红，不重复采信）。
+  - **M3** 摘 nil-ur 守卫（`if ur != nil` → `if true`）⇒ **恰红③**（`http=500` 复现）；①②④（ur 非空）**绿**（隔离成立）。
+- **门禁**：`bash scripts/check_all.sh` ⇒ **9/9 全绿（会报零命中）**（提交前实测；commit 后复跑见下）；全仓 `go test ./...` **零 FAIL**。
+- **未做/边界**：① 浏览器实测（郝端登录见菜单/直达 /admin）归**我方**（交付要求原文）；② 前端接线（App.vue/Admin.vue import 使用）无独立自动跑面 —— 由 eslint 0 error ＋ build 成功 ＋ dist `grep sys_roles` 命中承载，判据逻辑本体由 `sysRole.spec.mjs` 钉；③ **兼容分支的后端半边知悉项**：`role=系统管理员` 残留值（仅存在于绕过 `validRole` 的直写脏数据；0022 已迁存量）在前端见菜单、但后端 `requireSysAdmin` 按 `N-075` 只认 `SysRoles` ⇒ 会 403 —— 规格明文「保留 role 分支」＝前端可见性兼容，**不回退 N-075 后端判定**（回退即 N-075 M1 变异所证的错误方向），如需后端等价请另开裁定；④ 判据③「台账菜单不显示」的实现依据＝App.vue 既有「假入口对齐」纪律（基础菜单原为人人可见，仅系统角色者是首个 `role` 空的登录人群）—— 若 WB 期望的是「按矩阵逐项过滤所有人的基础菜单」则属另案，提请知悉；⑤ 无待裁定项（④ 知悉项除外）。
+
+`MIMO-DONE`
 
 ## 5. 已决议（AGREED）
 
