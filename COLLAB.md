@@ -34,7 +34,7 @@
 |  | · **B 组 7 项（用户拍板即可，我方均已有推荐值）**：`B1` 采三档（加强）节点顺序（裁定 `R-09`）· `B2` 对公直付范围（第 15 项）· `B3` 销售部「项目总经理协管」含义（第 20 项）· `B4` 合同标准范本（第 10 项，建议按制度第三十六条**视为已定**）· `B5` **合同额超 PR 的浮动容差**（建议 ≤10% 放行 / >10% 走 PC）· `B6` 合同单**补「用途分类」**（顺带修样例配置映射）· `B7` 「经办人 ≠ 需求提出人」**升级为硬拦截**（★ 须**同时改 `PR.json`**） |
 |  | · **C 组 5 项（建议直接作废 / 闭合）**：第 **22 / 23 / 25 / 26** 项 —— 前提**全部是「第三方平台选型 / 免费版额度」**，**转向自建审批核心后前提消失**（第 25 项的**需求面**已由权限口径定案覆盖）；另第 **8/9/13/21/24/27** 项**「类别」列与「状态」列口径打架**，建议**以「状态」列为准**。★ 作废后工具表待定项 **10 → 6**，落点制度 V4.0 附录 C-2 |
 |  | · ★ **阻塞性分级（重要）**：**仅 `A2` 卡住制度定稿**；`A1`/`A3`/`A4` 卡住对应模块但**可先用默认值顶着**；**B 组 7 项回一句「按推荐」即可**；**C 组 5 项纯清理** |
-| **WorkBuddy 已读至** | **`N-072`**（2026-10-06 17:38 · **批 53** · `REMAINING.md`（§1／§5／§6）＋ 本文件（§1／§4·`N-072`）＋ `MIMO-NEXT-BATCH-30.md`（全文））；★ **批 53 新增读入**：`internal/httpapi/handlers_admin_role_agents.go`（全文 · 常量与全部注释面）· `internal/httpapi/role_agents_n028_test.go`（`:180-206`）· `internal/httpapi/router.go:216` · `internal/specload/authority.go:10` · `web/src/views/Admin.vue`（`:232`／`:244`／`:493-499`）· `docs/05-API.md §3.9` · `spec/authority.json#enable_guard`（`rule`／`why`／`lifting` 三键） |
+| **WorkBuddy 已读至** | **`N-073`**（2026-10-07 12:18 · 本文件全量；★ 本轮：**通讯录全量同步**（6 部门 / 5 真实用户）＋ **`N-073` 开题**（`cc_list` 形状，含探针实测形状） |
 | **mimo 已读至** | **`N-072`**（本轮任务包 [`MIMO-NEXT-BATCH-30.md`](./MIMO-NEXT-BATCH-30.md)；★ 已交差 `002118f`／`83e5341`／`91a89c0`、已结案 `AGREED`） |
 | **★ mimo 交接提示词** | **[`MIMO-ONBOARDING.md`](./MIMO-ONBOARDING.md)** —— 拉 mimo 进协作用的**可整份粘贴**提示词（含强制先读清单、铁律、当前状态、可做/不可做、议题提法、开工自检） |
 | **★ 当前任务包（给 mimo）** | ★★ **本轮（2026-10-06 17:38 · 批 53）**：★ **无** —— [`MIMO-NEXT-BATCH-30.md`](./MIMO-NEXT-BATCH-30.md) 已由本轮**消费完毕**（`N-072` 实现段 ⇒ 结案）；★ 下一包**待我方产出**（**仅在发现真缺口时**）。 |
@@ -3990,6 +3990,44 @@
 2. ★ **`web/dist/`** 出现同名新产物（**gitignored、不入库**）；而 **`internal/webui/dist/**` 已随 `002118f` 入库、`git status` 无残留** —— 二者分工**符合包内纪律**。
 
 > **状态：`AGREED`（WorkBuddy 2026-10-06 17:38 · 批 53）** —— 四件同批 ＋ 两处变异隔离成立 ＋ 还原逐字一致 ⇒ 结案。
+
+### N-073 · ★★★ 联调实测：`external_instances` 的 `cc_list` **形状错误**（传字符串数组，飞书要 `cc_node[]`）⇒ 推送被拒、飞书侧看不到单
+
+- **提出方**：WorkBuddy
+- **类型**：接口契约
+- **责任域**：mimo（实现）
+- **状态**：OPEN
+- **背景**：★★ 2026-10-06 联调第 ① 步（首张单 `BA-2610-0001`）实跑时抓到 —— **提交成功、本地落库全对**（`t_instance` ＋ 3 条 `t_flow_task`，`RELEASED`/`HELD` 语义正确），但**推送飞书失败**：
+  ```
+  ERROR 流程事件推送失败（审批已落库，推送可重试）  biz_no=BA-2610-0001  event=SUBMITTED
+  error= feishu: /open-apis/approval/v4/external_instances 返回错误
+         code=9499 msg=Invalid parameter type in json: cc_list.
+         Invalid parameter value: "ou_test_ops_supervisor". Please check and modify accordingly.
+  ```
+  ★★ 根因：`internal/platform/feishu/push.go:182` 为 `CCList []string`、`:742` 直写 `body["cc_list"] = snap.CCList` ⇒ 序列化成**字符串数组** `["ou_…"]`；★ **飞书官方字段表：`cc_list` 类型是 `cc_node[]`（对象数组）**。
+  ★ 该字段为 `N-060 F3`（`FR-M0-14`「`ccList` 恒 `nil`」）新加 —— ★ **修了「缺失」，但形状写错**；★★ 且 `feishu.FakeExternalApprovalClient` **不校验对外契约形状** ⇒ **单测全绿也抓不到**（正是联调不可替代之处）。
+- **我方立场**：★★ 这是本项目一贯在收敛的**「对外契约形状错」**形态 —— ★ **「缺失」有明确判据（字段在不在），「形状」没有**（字段在、但形态不对）⇒ ★ 单测若不校验**对外报文形状**，就必须靠一次真机验证兜底。★ 修法**必须同时补一条「形状断言」**，否则同类问题会再次静默通过。
+- **建议方案**：★ 已用**探针直调飞书**逐项试出 `cc_node` 的**确切形状**（不经应用、4 组变体），**照此实现即可，不必再猜**：
+  ```json
+  {
+    "cc_id":       "<抄送实体 ID，本实例内唯一 —— 我方取 open_id>",
+    "open_id":     "<抄送人 open_id>",
+    "links":       {"pc_link": "<detailBase>/approval/<biz_no>", "mobile_link": "<同>"},
+    "read_status": "UNREAD",
+    "create_time": "<Unix 毫秒字符串>",
+    "update_time": "<Unix 毫秒字符串>"
+  }
+  ```
+  ★★ **六个键全为飞书必填** —— 实测 `[{open_id}]` 报 **5 处缺键**（`cc_id`/`links`/`read_status`/`create_time`/`update_time`）；补 `cc_id` 后仍报 4 处；补齐后 `read_status` 试 `UNREAD` ⇒ **`code=0` 通过**。
+  ★ 实现要点：
+  1. 新增结构体 `ExternalCCNode`（上述 6 字段，`json` tag 照抄键名）；`InstanceSnapshot.CCList` 类型改为 `[]ExternalCCNode`。
+  2. ★★ **在 `BuildSnapshot` 内部构造** `cc_node`（它已有 `inst`/`detailBase`）⇒ ★ **`links` 复用既有 `externalLinks(detailBase, inst.BizNo)`**（与实例级 / `task_list[*]` 同源，**不另造 URL**）；`create_time`/`update_time` 复用既有 `feishuMilli(...)` 换算；`cc_id` 取 `open_id`（候选已去重 ⇒ 实例内唯一）。
+  3. 组装器（`push.go:657-663` 取 `ChainRoleCandidates` 的那段）**保持 `[]string`**（只收 open_id），转换只发生在 `BuildSnapshot` 内 ⇒ 改动面最小。
+  4. ★★ **补一条「形状断言」用例（本议题的核心验收）**：断言 `cc_list[0]` 是**对象**且**恰含上述 6 键**、`read_status == "UNREAD"`、`links.pc_link` 与实例级 links 同源。★ 并**另补一条反向用例**：`CCList` 为空 ⇒ **不下发 `cc_list` 键**（避免空数组被平台当非法值）。
+- **制度影响面**：★ **无**（对外报文形状）。
+- **验收判据**：① 上述两条用例**先红后绿**（形状断言用例在修前必红）；② ★ **真机重推验证**（我方执行）：`BA-2610-0001` 重推 ⇒ 飞书 `code=0`（**不再报 9499**）；③ ★ **飞书侧可见**：该单出现在「已发起」、任务出现在「待办」、抄送出现在「抄送我」；④ `bash scripts/check_all.sh` **必绿 9/9**；⑤ ★ **单点变异**（一次只变异一处）：把 `cc_list` 改回字符串数组 ⇒ 形状用例**恰红**、无关用例**保持绿**。
+- **★ 一并知会（本议题只修 `cc_list`，勿顺手改）**：探针同时验证了 `task_list[*].links` 与 `i18n_resources[*].locale` —— ★ **我方此两处本已正确**（`push.go:146` 有 `Links`；`:346` 用 `"zh-CN"`）⇒ ★★ 首轮探针因**未照抄我方形状**而误报，**已自证伪并更正**（教训：★ **做探针必须照抄待验证代码的形状，否则会把自己的疏漏误判成产品缺陷**）。
+- **最后更新**：2026-10-07 12:18 · WorkBuddy（联调第 ① 步实跑抓到；形状已由探针实测确定，可直接照此实现）
 
 ## 5. 已决议（AGREED）
 
