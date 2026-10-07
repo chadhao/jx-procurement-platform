@@ -29,7 +29,7 @@ func newM1M6App(t *testing.T) (*echo.Echo, *store.DB, *access.Authenticator) {
 	metrics := observ.NewMetrics()
 	env := &config.Env{DevMode: true, RunEnv: "test"}
 	perm := permission.NewLoader(db)
-	sessions := access.NewStore("m1m6-test-key", time.Hour)
+	sessions := access.NewStore(db, "m1m6-test-key", time.Hour)
 	auth := access.NewAuthenticator(db, sessions, nil, true, nil)
 
 	d := Deps{

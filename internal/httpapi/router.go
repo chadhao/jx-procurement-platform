@@ -296,6 +296,12 @@ func (d Deps) requireSession(next echo.HandlerFunc) echo.HandlerFunc {
 		if !ok {
 			return fail(c, http.StatusUnauthorized, codeUnauthorized, "未登录或会话失效")
 		}
+		// ★ N-077 判据③：滑动续期与 cookie 同批 —— Store 续期写库（节流窗外）时
+		//   同步重发 Set-Cookie（Max-Age = SessionTTL），否则浏览器侧先过期、
+		//   服务端还以为有效 ⇒ 仍掉线。节流窗内 Renewed=false ⇒ 不重发。
+		if sess.Renewed {
+			setSessionCookie(c, ck.Value, d.Env, sessionTTLSeconds(d.Env))
+		}
 		c.Set(ctxKeySession, sess)
 		return next(c)
 	}

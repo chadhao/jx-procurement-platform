@@ -47,7 +47,6 @@ import (
 
 const (
 	workerPoolSize = 4
-	sessionTTL     = 8 * time.Hour
 
 	// approvalRepairInterval 派生式修复循环（#69 ②）的扫查间隔。
 	// ★ 依据：#69 ①「落盘即 200」后，推进失败**不再由 HTTP 重试驱动**（飞书收到 200 不再重试）
@@ -386,7 +385,9 @@ func run(version string) error {
 
 	// ---- ⑨ 权限 / 会话 / 免登 ----
 	permLoader := permission.NewLoader(db)
-	sessions := access.NewStore(env.SessionKey, sessionTTL)
+	// N-077：会话落库 + TTL 可配（JX_SESSION_TTL，缺省 12h；env.SessionTTL<=0 时
+	// NewStore 内部回落 access.DefaultTTL —— 缺省可用）。
+	sessions := access.NewStore(db, env.SessionKey, env.SessionTTL)
 	var oauth feishu.OAuthExchange
 	if env.AppID != "" && env.AppSecret != "" {
 		// ★ 免登凭据/回调地址从配置注入（官方 token 请求体必填 client_id / client_secret，

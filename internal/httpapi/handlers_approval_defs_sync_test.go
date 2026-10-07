@@ -65,7 +65,7 @@ func newDefsSyncTestAppEnv(t *testing.T, withCallbackConfig bool, tweak func(*co
 	wk := worker.NewWorker(db, client, ingestor, metrics, nil)
 	sub := fsync.NewSubscriber(db, client, maps, metrics, nil)
 	perm := permission.NewLoader(db)
-	sessions := access.NewStore("test-session-key", time.Hour)
+	sessions := access.NewStore(db, "test-session-key", time.Hour)
 	auth := access.NewAuthenticator(db, sessions, nil, true, nil)
 	fakeExt := feishu.NewFakeExternalApprovalClient()
 

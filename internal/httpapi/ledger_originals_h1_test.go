@@ -65,7 +65,7 @@ func newL06PatchApp(t *testing.T) (*echo.Echo, *store.DB, *access.Authenticator,
 		Env: &config.Env{DevMode: true, InternalToken: testInternalToken, RunEnv: "test"},
 		DB:  db, Log: observ.NewLogger("error", nil), Metrics: observ.NewMetrics(),
 		Perm: permission.NewLoader(db), Maps: &config.Maps{}, Spec: bundle,
-		Auth: access.NewAuthenticator(db, access.NewStore("test-session-key", time.Hour), nil, true, nil),
+		Auth: access.NewAuthenticator(db, access.NewStore(db, "test-session-key", time.Hour), nil, true, nil),
 	}
 	api := e.Group("/api", d.requireSession)
 	api.GET("/ledger/:table/:id", d.handleLedgerGet)

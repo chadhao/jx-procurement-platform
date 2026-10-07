@@ -82,14 +82,14 @@ func (d Deps) handleFeishuCallback(c echo.Context) error {
 			return fail(c, http.StatusUnauthorized, codeRoleMapped, "未配置角色，请联系系统管理员")
 		}
 		value := d.Auth.Establish(ident.OpenID)
-		setSessionCookie(c, value, d.Env, int((8 * time.Hour).Seconds()))
+		setSessionCookie(c, value, d.Env, sessionTTLSeconds(d.Env))
 		d.audit(ctx, &store.AuditLogRow{ActorOpenID: ident.OpenID, ActorRole: strings.Join(sysRoles, ","),
 			Action: "login", Resource: "auth", Result: "allow"})
 		return c.Redirect(http.StatusFound, d.postLoginTarget(c))
 	}
 
 	value := d.Auth.Establish(ident.OpenID)
-	setSessionCookie(c, value, d.Env, int((8 * time.Hour).Seconds()))
+	setSessionCookie(c, value, d.Env, sessionTTLSeconds(d.Env))
 	d.audit(ctx, &store.AuditLogRow{ActorOpenID: ident.OpenID, ActorRole: ur.Role, Action: "login", Resource: "auth", Result: "allow"})
 	return c.Redirect(http.StatusFound, d.postLoginTarget(c))
 }
@@ -705,6 +705,19 @@ func instanceRowMap(it store.Instance) map[string]any {
 		row["biz_no_parts"] = map[string]any{"prefix": it.BizNoPrefix, "yymm": it.BizNoYYMM, "seq": it.BizNoSeq}
 	}
 	return row
+}
+
+// sessionTTLSeconds 会话 cookie 的 Max-Age（秒）＝ JX_SESSION_TTL（N-077 可配；
+// env 未配置/直构 Env 为零值 ⇒ 回落 access.DefaultTTL 12h —— 缺省可用）。
+// ★ 与 access.NewStore 的续期窗**同源**（同一 Env.SessionTTL），否则浏览器侧
+//
+//	先过期、服务端还以为有效 ⇒ 仍掉线（判据③）。
+func sessionTTLSeconds(env *config.Env) int {
+	ttl := access.DefaultTTL
+	if env != nil && env.SessionTTL > 0 {
+		ttl = env.SessionTTL
+	}
+	return int(ttl.Seconds())
 }
 
 func setSessionCookie(c echo.Context, value string, env *config.Env, maxAge int) {

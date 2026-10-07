@@ -24,7 +24,7 @@ func newDashboardApp(t *testing.T) (*echo.Echo, *store.DB, *access.Authenticator
 	t.Helper()
 	db := storetest.NewDB(t)
 	perm := permission.NewLoader(db)
-	sessions := access.NewStore("test-session-key", time.Hour)
+	sessions := access.NewStore(db, "test-session-key", time.Hour)
 	auth := access.NewAuthenticator(db, sessions, nil, true, nil)
 
 	d := Deps{

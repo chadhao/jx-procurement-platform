@@ -79,7 +79,7 @@ func newPRSubmitApp(t *testing.T) (*echo.Echo, *store.DB, *access.Authenticator)
 	metrics := observ.NewMetrics()
 	env := &config.Env{DevMode: true, InternalToken: testInternalToken, RunEnv: "test"}
 	perm := permission.NewLoader(db)
-	sessions := access.NewStore("test-session-key", time.Hour)
+	sessions := access.NewStore(db, "test-session-key", time.Hour)
 	auth := access.NewAuthenticator(db, sessions, nil, true, nil)
 	flowSvc := flow.NewWithConfig(db, "app", maps, nil)
 	chainSvc := &chain.Service{B: bundle, Roles: chainRoleAdapterForTest{db: db}}

@@ -28,10 +28,15 @@ type Env struct {
 	// ★ 现状（B39）：先提供**本地落盘**作为可运行的最小实现；生产口径是**云侧 S3 主存 +
 	// RustFS 异地备份**（架构 §7.5 / ADR-08），待接入 S3 后只需替换 objectstore 实现。
 	// 置空＝**不缓存、直接转发**（降级可用，不是静默丢功能）。
-	AttachDir     string // JX_ATTACH_DIR
-	DBPath        string // JX_DB_PATH
-	ListenAddr    string // JX_LISTEN_ADDR
-	SessionKey    string // JX_SESSION_KEY（敏感）
+	AttachDir  string // JX_ATTACH_DIR
+	DBPath     string // JX_DB_PATH
+	ListenAddr string // JX_LISTEN_ADDR
+	SessionKey string // JX_SESSION_KEY（敏感）
+	// SessionTTL 会话 TTL（JX_SESSION_TTL · N-077，Go duration 串如 "12h"）。
+	// ★ 推荐缺省 12h（覆盖一个工作日）；解析失败/未配置 ⇒ 12h（缺省可用，
+	//   与 JX_APPROVAL_GROUP_CODE / JX_APPROVAL_VISIBLE_SCOPE 同款形态）。
+	//   消费面＝access.NewStore 的滑动续期窗 ＋ setSessionCookie 的 Max-Age（两侧同源）。
+	SessionTTL    time.Duration
 	InternalToken string // JX_INTERNAL_TOKEN（敏感）
 	LockPath      string // JX_LOCK_PATH
 
@@ -138,6 +143,13 @@ func LoadEnv() (*Env, error) {
 	if feishuMonthlyQuota <= 0 {
 		feishuMonthlyQuota = 10000
 	}
+	// N-077：会话 TTL（可配 + 缺省可用）—— 未配置/非法 ⇒ 12h（与 access.DefaultTTL 同值）。
+	sessionTTL := 12 * time.Hour
+	if raw := strings.TrimSpace(getenv("JX_SESSION_TTL", "")); raw != "" {
+		if d, err := time.ParseDuration(raw); err == nil && d > 0 {
+			sessionTTL = d
+		}
+	}
 
 	return &Env{
 		AppID:                     getenv("JX_APP_ID", ""),
@@ -147,6 +159,7 @@ func LoadEnv() (*Env, error) {
 		DBPath:                    dbPath,
 		ListenAddr:                getenv("JX_LISTEN_ADDR", "127.0.0.1:8080"),
 		SessionKey:                getenv("JX_SESSION_KEY", ""),
+		SessionTTL:                sessionTTL,
 		InternalToken:             getenv("JX_INTERNAL_TOKEN", ""),
 		CallbackDomain:            getenv("JX_CALLBACK_DOMAIN", ""),
 		OAuthRedirectURI:          getenv("JX_OAUTH_REDIRECT_URI", ""),

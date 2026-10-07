@@ -53,7 +53,7 @@ func qaNewAppWithMaps(t *testing.T, payload *config.ImportPayload, client *feish
 	wk := worker.NewWorker(db, client, ingestor, metrics, nil)
 	sub := fsync.NewSubscriber(db, client, maps, metrics, nil)
 	perm := permission.NewLoader(db)
-	sessions := access.NewStore("qa-verify-key", time.Hour)
+	sessions := access.NewStore(db, "qa-verify-key", time.Hour)
 	auth := access.NewAuthenticator(db, sessions, nil, true, nil)
 	e := NewRouter(Deps{
 		Env: env, DB: db, Log: observ.NewLogger("error", io.Discard),

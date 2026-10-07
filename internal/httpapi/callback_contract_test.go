@@ -35,7 +35,7 @@ func newCallbackProbeApp(t *testing.T, svc *flow.Service, db *store.DB) *echo.Ec
 		Metrics: observ.NewMetrics(),
 		Health:  observ.NewHealth("test"),
 		Flow:    svc,
-		Auth:    access.NewAuthenticator(db, access.NewStore("probe-key", time.Hour), nil, true, nil),
+		Auth:    access.NewAuthenticator(db, access.NewStore(db, "probe-key", time.Hour), nil, true, nil),
 		Maps:    &config.Maps{},
 	})
 }

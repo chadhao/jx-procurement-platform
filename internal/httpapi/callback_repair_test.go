@@ -42,7 +42,7 @@ func newRepairRouter(t *testing.T, db *store.DB, svc *flow.Service, contact feis
 		Health:  observ.NewHealth("test"),
 		Flow:    svc,
 		Contact: contact,
-		Auth:    access.NewAuthenticator(db, access.NewStore("probe-key", time.Hour), nil, true, nil),
+		Auth:    access.NewAuthenticator(db, access.NewStore(db, "probe-key", time.Hour), nil, true, nil),
 		Maps:    &config.Maps{},
 	})
 }

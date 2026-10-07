@@ -47,7 +47,7 @@ func newAuthTestApp(t *testing.T, env *config.Env, oauth feishu.OAuthExchange) (
 	wk := worker.NewWorker(db, client, ingestor, metrics, nil)
 	sub := fsync.NewSubscriber(db, client, maps, metrics, nil)
 	perm := permission.NewLoader(db)
-	sessions := access.NewStore("test-session-key", time.Hour)
+	sessions := access.NewStore(db, "test-session-key", time.Hour)
 	auth := access.NewAuthenticator(db, sessions, oauth, env.DevMode, nil)
 
 	e := NewRouter(Deps{
