@@ -4349,7 +4349,7 @@
 - **提出方**：★ **用户**（2026-10-07：「为什么每次我访问后台都需要飞书授权？**没有 refresh 机制吗**？」）
 - **类型**：技术方案
 - **责任域**：WorkBuddy（规格，本条）· mimo（实现）
-- **状态**：OPEN
+- **状态**：MIMO-DONE
 - **背景**：★★ 我方实测定性（**先排除误判**）：★ **cookie 本身没有问题** ——
   ```
   Set-Cookie: jx_session=…; Path=/; Max-Age=28800; HttpOnly; SameSite=Lax
@@ -4377,6 +4377,31 @@
   ⑥ `bash scripts/check_all.sh` **必绿 9/9**；★ 每条附**单点变异**（一次只变异一处）。
 - **★ 立即缓解（我方）**：★ **联调期我方将显著减少部署次数**（本议题落地前，每次部署仍会清空会话）—— ★ 如实告知用户这是**我方操作导致**。
 - **最后更新**：2026-10-07 17:39 · WorkBuddy（用户提出；三层根因与实测证据已给出，并明确「不需要飞书 refresh」）
+
+> **mimo 回执（2026-10-07 17:53）· N-077 落地 · 本轮交差标记 `MIMO-DONE`**：
+
+- **提交**：`bdab29a`（29 文件 · +573/−54 · 显式路径，未用 `git add -A`）。**docs/spec 零改动**（交付要求③）。
+- **三件逐条**：
+  1. **会话落库**＝`migrations/0023_session.sql`（编号顺延核过：`ls migrations/` 0022 已占 ⇒ **0023**；`t_session(id PK/open_id/issued_at/expires_at/updated_at)`＋`idx_session_expires`，IF NOT EXISTS 幂等）＋ `store/repo_session.go`（`InsertSession/GetSession〔ErrNotFound⇒deny〕/TouchSession/DeleteSession/PurgeExpiredSessions`，时间列 RFC3339 UTC 与 `t_user_role` 同形态）＋ **`access/session.go` 整体重写为库后端**：`NewStore(db, signingKey, ttl)` 签名加 `db` 首参，★ **Establish/Resolve/Destroy 对外语义与内存同构**（含 HMAC 签名、`verify` 逐字未动）；map/mutex 删除。★ **24 处调用方同批**（bootstrap ＋ 18 个 httpapi 测试文件机械加 `db` 首参 —— 测试与生产**同走 DB 后端**，不留「测试走内存、生产走库」的第二通路）。★ 过期清理＝Resolve 撞过期行即 `DeleteSession` ＋ Establish 顺带 `PurgeExpiredSessions`（表极小，废弃行不残留）。
+  2. **滑动续期**＝`Store.Resolve` 通过且 `now - updated_at ≥ 5min`（节流窗 `renewAfter` 常量）⇒ `TouchSession(expires=now+ttl)` 且 `Session.Renewed=true`；★ **cookie 同批**＝`router.go#requireSession` 对 `sess.Renewed` 调 `setSessionCookie(ck.Value, env, sessionTTLSeconds(env))`（Max-Age＝SessionTTL 全窗）—— 服务端写库与浏览器 Max-Age 同源同批（判据③）；节流窗内不写库、不重发（判据③ 第二断言钉）。
+  3. **TTL 可配**＝`config.Env.SessionTTL`（`JX_SESSION_TTL`，Go duration 串）—— `LoadEnv` 解析、**未配置/非法 ⇒ 12h**（缺省可用，与 N-066/N-074 同款形态）；`bootstrap.go` **删 `sessionTTL = 8h` 硬编码**（:50 常量移除、:389 改 `NewStore(db, env.SessionKey, env.SessionTTL)`）；cookie 半边＝新 helper `handlers_biz.go#sessionTTLSeconds(env)`（零值/nil ⇒ `access.DefaultTTL`=12h）替换登录两处硬编码 `8h`（:85/:92）。★ `access.DefaultTTL = 12h` 单源常量（NewStore 回落与 config 缺省同值）。
+- **判据用例（全绿实测）**：
+  - **① 重启存续**＝`access#TestSessionSurvivesRestartN077`（新 Store 实例同库 ⇒ 旧 cookie 有效）。★ **改前缺陷红实测原文**（scratch 用例、内存后端）：`重启后旧会话失效（缺陷重现 —— N-077 根因① 内存 map）`——落库后该形态转绿（scratch 已转正为本用例）。
+  - **② 滑动续期两侧**＝`access#TestSessionSlidingRenewalN077`：假时钟（`Store.now` 注入白盒）7h/9h/11h 访问不失效 ＋ **第 13h 断言＝续期真落库的鉴别点**（若 Touch 未写库，expires 仍 base+12h ⇒ 13h 必失效）＋ **停止访问至 25h+1min ⇒ 失效**（防永不过期）；`TestSessionRenewThrottleN077` 钉 5 分钟节流（窗内 `Renewed=false`、窗外 true）。
+  - **③ cookie 同批**＝`httpapi#TestSessionRenewalCookieBatchN077`：回拨 `t_session.updated_at=-6h` 触发续期 ⇒ 同响应 `Set-Cookie` 带 `Max-Age=43200`（12h 缺省）＋ `HttpOnly` ＋ `SameSite=Lax`；紧接第二次请求（节流窗内）**不重发** Set-Cookie。
+  - **④ TTL 可配**＝`config#TestSessionTTLDefaultAndOverrideN077`（缺省 12h／`2h30m` 覆盖／非法回缺省）＋ `access#TestSessionTTLConfigurableN077`（store 半边：ttl=2h ⇒ 落库 `ExpiresAt=now+2h`；ttl=0 ⇒ 12h）＋ `httpapi#TestSessionTTLSecondsHelperN077`（cookie 半边：2h⇒7200、零值/nil⇒43200）。
+  - **⑤ 安全边界**＝`httpapi#TestSessionCookieSecurityAttrsN077`（生产 `HttpOnly+Lax+Secure=true`、开发仅 `Secure=false`，其余不放松 —— `setSessionCookie` 本体未改）＋ `TestSessionLogoutInvalidatesN077`（登出 ⇒ 清 cookie ＋ **旧 cookie 立即 401**）＋ `access#TestSessionDestroyPersistentN077`（**登出后重启旧 cookie 不复活** —— Destroy 落库）。
+- **单点变异（一次一处 · `cp`＋`sha256sum` 字节级还原一致 · 零残留）**：
+  - **M1** 摘 `TouchSession` 写库 ⇒ **恰红**滑动续期（`第 13 小时失效 —— 续期未持久（Touch 未生效）`），其余 4 个 N077 用例绿（隔离）。
+  - **M2** middleware 摘回发分支 ⇒ **恰红判据③**（`续期响应缺 Set-Cookie（服务端续期与 cookie 未同批）: []`）。
+  - **M3** 摘过期检查 ⇒ **双红**（`过期 token 不应被接受` ＋ `停止访问超过 TTL 仍有效 —— 永不过期（判据② 负向不成立）`；两者同轴如实报告），重启/节流/销毁/TTL 四用例绿。
+  - **M4** `Destroy` 摘删除 ⇒ **恰红判据⑤ 持久半**（`登出后重启旧 cookie 复活 —— Destroy 未持久生效`）。
+  - **M5** config 缺省 12h→8h ⇒ **恰红判据④**（`缺省 SessionTTL = 8h0m0s, 期望 12h` ＋ 非法回落断言同红 —— 同一赋值轴）。
+- **门禁**：`bash scripts/check_all.sh` ⇒ **9/9 全绿（会报零命中）**（提交前实测；commit 后复跑见下）；全仓 `go test ./...` **零 FAIL**（迁移计数钉 22→23 同批：`qa_migration_test` 注释附 0023 一行）。
+- **与规格的一致/分歧**：★ 「不需要飞书 refresh」立场**照单采纳**（未触碰任何飞书侧代码）；★ TTL 缺省 12h、节流 5min 按建议值落地；★ 一处**签名级**调整（非语义）：`NewStore` 加 `db` 首参 —— 「对外语义不变」按三方法语义理解（`Establish/Resolve/Destroy` 行为同构），后端换库必然要注入 `db`，全部 24 调用方同批改毕；★ `Resolve` 返回错误也拒（`GetSession` 读错 ⇒ false，deny by default，不静默放行）。
+- **未做/边界**：① **真机验证**（重启后浏览器 cookie 仍有效、不再弹授权）归**我方**（交付要求原文）；② 联调期减少部署次数＝我方操作面（议题「立即缓解」条）；③ 登出路径 `handleLogout` 先 `ResolveSession`（可能触发一次续期写）再 `Destroy` —— 续期被销毁覆盖、无害，未特判（不加多余分支）；④ 无主动踢下线端点（`Destroy` 已持久、具备能力，**规格未要求**故不造端点）；⑤ 无待裁定项。
+
+`MIMO-DONE`
 
 ## 5. 已决议（AGREED）
 
