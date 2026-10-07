@@ -50,6 +50,22 @@ type ExternalInstanceLink struct {
 	MobileLink string `json:"mobile_link"`
 }
 
+// ExternalCCNode cc_list[] 抄送节点（N-073 · 联调实测 9499 定形）：
+// 飞书字段表 `cc_list` 类型＝cc_node[]，**六键全为必填** —— 实测 [{open_id}] 报 5 处
+// 缺键；补齐后 read_status=UNREAD ⇒ code=0。★ 形状由探针直调飞书试出，不要改猜。
+type ExternalCCNode struct {
+	// CCID 抄送实体 ID（本实例内唯一）——我方取 open_id（组装器已去重）。
+	CCID   string `json:"cc_id"`
+	OpenID string `json:"open_id"`
+	// Links 复用 externalLinks(detailBase, bizNo)（与实例级 / task_list[*] 同源，不另造 URL）。
+	Links ExternalInstanceLink `json:"links"`
+	// ReadStatus 实测定值 UNREAD（飞书侧「未读」初值）。
+	ReadStatus string `json:"read_status"`
+	// CreateTime / UpdateTime Unix 毫秒字符串（复用 feishuMilli 换算）。
+	CreateTime string `json:"create_time"`
+	UpdateTime string `json:"update_time"`
+}
+
 // ExternalI18nText i18n_resources[].texts[] 单项——★ **数组形态** `[{"key":…,"value":…}]`。
 //
 // ★★ 教训（docs/reference/README.md 实测台账，勿删）：同一平台不同接口的 texts 形态
@@ -179,7 +195,10 @@ type InstanceSnapshot struct {
 	OpenID   string               `json:"open_id,omitempty"`
 	Links    ExternalInstanceLink `json:"links"`
 	TaskList []ExternalTask       `json:"task_list"`
-	CCList   []string             `json:"cc_list,omitempty"`
+	// CCList 抄送节点（N-073）：飞书字段表 `cc_list` 类型＝**cc_node[] 对象数组**
+	//（联调实测 9499「Invalid parameter type」：传字符串数组被拒）。
+	// BuildSnapshot 内由组装器给的 open_id 列表转换（links/时间戳复用同一生成函数）。
+	CCList []ExternalCCNode `json:"cc_list,omitempty"`
 	// Extra 顶层扩展对象（N-060 F3 · FR-M0-14）：`extra.business_key = biz_no`
 	// —— 对账/读回锚点（04a §3.2；05-API §6「单据编号走顶层 extra.business_key」）。
 	Extra map[string]string `json:"extra,omitempty"`
@@ -448,6 +467,20 @@ func BuildSnapshot(inst *store.Instance, tasks []store.FlowTask, ccList []string
 	if err := validateFormSummary(formEntries); err != nil {
 		return InstanceSnapshot{}, err
 	}
+	// ★ N-073：cc_list 由 open_id 列表转换为 cc_node[] 对象数组（六键全必填）。
+	//   links 复用 externalLinks（与实例级同源）、时间复用 feishuMilli；转换只发生在
+	//   BuildSnapshot 内 —— 组装器（Push 取 ChainRoleCandidates 段）保持 []string。
+	ccNodes := make([]ExternalCCNode, 0, len(ccList))
+	for _, oid := range ccList {
+		ccNodes = append(ccNodes, ExternalCCNode{
+			CCID:       oid, // 实例内唯一（组装器已去重）⇒ 取 open_id
+			OpenID:     oid,
+			Links:      externalLinks(detailBase, inst.BizNo),
+			ReadStatus: "UNREAD",
+			CreateTime: feishuMilli(inst.CreatedAt),
+			UpdateTime: feishuMilli(inst.UpdatedAt),
+		})
+	}
 	snap := InstanceSnapshot{
 		ApprovalCode: inst.ApprovalCode,
 		InstanceID:   inst.InstanceCode,
@@ -460,7 +493,7 @@ func BuildSnapshot(inst *store.Instance, tasks []store.FlowTask, ccList []string
 		// ★ 实例级发起人 open_id（官方 open_id/user_id 二选一必传）。
 		OpenID: inst.ApplicantOpenID,
 		Links:  externalLinks(detailBase, inst.BizNo),
-		CCList: ccList,
+		CCList: ccNodes,
 		// ★ extra.business_key = biz_no（N-060 F3 · FR-M0-14）：对账/读回锚点
 		//（04a §3.2；05-API §6「单据编号走顶层 extra.business_key」）。
 		Extra: map[string]string{"business_key": inst.BizNo},

@@ -566,9 +566,9 @@ func TestBuildSnapshotExtraBusinessKeyAndCCList(t *testing.T) {
 	if snap.Extra["business_key"] != bizNo {
 		t.Errorf("extra.business_key = %q, 期望 %q", snap.Extra["business_key"], bizNo)
 	}
-	// ② cc_list 透传（综合运营主管镜像在职；≤200 不截断）。
-	if len(snap.CCList) != 2 || snap.CCList[0] != "ou_ops1" {
-		t.Errorf("cc_list = %v, 期望 [ou_ops1 ou_ops2]", snap.CCList)
+	// ② cc_list 透传（综合运营主管镜像在职；≤200 不截断）—— N-073 起为 cc_node[] 对象数组。
+	if len(snap.CCList) != 2 || snap.CCList[0].OpenID != "ou_ops1" || snap.CCList[0].CCID != "ou_ops1" {
+		t.Errorf("cc_list = %+v, 期望两个节点且首节点 open_id/cc_id = ou_ops1", snap.CCList)
 	}
 	// ③ 快照 JSON 形态含顶层 extra 对象（契约面：字段名与嵌套形态）。
 	raw, jerr := json.Marshal(snap)
