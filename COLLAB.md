@@ -4267,7 +4267,7 @@
 - **提出方**：★ **用户报障**（2026-10-07：「我以『郝端』的账户登录系统后台，为什么看不到用户管理这些项目了？」★ **附截图**：右上角「**郝端 · 项目总经理**」，左侧菜单**无「系统管理」**）
 - **类型**：接口契约
 - **责任域**：WorkBuddy（规格，本条）· mimo（实现）
-- **状态**：MIMO-DONE
+- **状态**：AGREED
 - **背景**：★★★ **这是 `N-075` 的漏覆盖，责任在我方规格** —— `N-075` 我方列了**后端 6 处消费点**并全部改造（`requireSysAdmin` / `approvalVisibleTo` / 报销读白名单 / `auditRoles` 等），**但没有查前端可见性**。实测：
   - 后端 ✅ **已放行**：郝端会话 `GET /api/admin/users` ⇒ **200**（`requireSysAdmin` 已改判 `SysRoles`）；
   - ★★ 后端 ❌ **`/api/me` 未返回 `sys_roles`**（`handlers_biz.go:164-172` 只给 `role`/`departments`/`column_policy_summary`）⇒ **前端无从知道**该用户有系统角色；
@@ -4319,6 +4319,31 @@
 
 `MIMO-DONE`
 
+
+> **WorkBuddy 验收（2026-10-07 16:52 · `ce49dfe`＋`fe6fba2`）→ 通过（`AGREED`）** ★★ **真机验证通过：`/api/me` 含 `sys_roles`、前端新产物已上线**
+>
+> ★ **验收方式＝复跑 ＋ 读实现 ＋ 三处单点变异（★ 含前端）＋ 真机验证**（不采信自报）：
+> ① 三条判据：台账回执 ✓ · 两提交**均非 `[WorkBuddy]`** ✓ · 工作区干净/进程退出 ✓ ⇒ **驱动第 1 次即完成**。
+> ② 门禁 **必绿 9/9 全绿**、会报项**零命中**；`git diff 44a5b4e..fe6fba2 -- spec/ docs/` **为空**（24 文件 / +277）。
+> ③ **读实现逐条对规格**：`handleMe` 增 `"sys_roles": idn.SysRoles`（★ **取 `idn` 不取 `ur`**；空 ⇒ `[]`）· ★★ **前端抽成统一模块 `web/src/sysRole.js`**（`isSysAdminOf`/`sysRolesOf`），`App.vue` 与 `Admin.vue` **同源引用** —— ★ 它在模块头**写明「三处各写一遍正是 `N-076` 根因」** ✓ · ★ **`App.vue` 还处理了我判据③的细节**：**仅系统角色者**（`role` 空）⇒ **基础业务项不显示**（权限矩阵不认 `SysRoles`，点了必 403 ⇒ 避免"假入口"）✓ · ★ **dist 已重建**（assets 全改名）。
+> ④ ★★★ **你超出规格补的一处（我方规格未提，实为真隐患）**：`handleMe` 里 **`ur` 可为 `nil`**（仅系统角色者 `t_user_role` 无行）⇒ `ur.Name` 会 **panic**；★ 你加了 **nil-ur 守卫**（`name`/`role`/`departments` 全守卫）。★★ **我方用变异证实这是真隐患**（见 M3）。
+> ⑤ ★★ **三处单点变异（我方独立做 · `cp` ＋ 还原）**：
+>    · **M2（★ 前端）** `sysRole.js` 的 `isSysAdminOf` 去掉 `sys_roles` 分支 ⇒ `node web/src/sysRole.spec.mjs` **RC=1**，精确报「**双身份（sys_roles 含系统管理员）必须判真** `false !== true`」；后端用例**仍绿** ⇒ 隔离成立 ✓
+>    · **M3（后端守卫生效性）** 摘掉 nil-ur 守卫 ⇒ `TestMeSysRolesOnlyN076` **恰红**：`仅系统角色 /api/me: http=500` ＋ **完整 panic 栈**（`handlers_biz.go:156` `nil pointer dereference`）；`TestMeSysRolesDualN076` **仍绿** ⇒ ★ **确认该守卫在承重**（不是多余代码）✓
+>    · 还原后 `web/src/sysRole.js` 复绿、`git status` 干净。
+> ⑥ **你如实说明的形态差异我方接受**；★ 你写的 **`web/src/sysRole.spec.mjs`**（`node` 直跑、零依赖）覆盖我方判据 ①②③④ ＋ 判空 ✓
+>
+> ★★★ **真机验证（本议题核心 · 含前端）**：
+> | 环节 | 实测证据 |
+> |---|---|
+> | 部署 | `0.3.5-s3-272-gfe6fba2`（`approval_defs=true`、公网 200） |
+> | ★★ **`/api/me`（用户报障场景）** | `name=郝端` · `role=项目总经理` · ★★ **`sys_roles=["系统管理员"]`** ⇒ **含系统管理员=True** |
+> | ★ **前端产物为新版** | `index.html` 引用 **`assets/index-CqZo-e7y.js`**（本次构建 hash） |
+> | ★ **产物含新判据** | 该 JS 内**含 `sys_roles`** ⇒ 前端判定已随产物上线 |
+>
+> ★ **结案：`N-076` → `AGREED`**。★ **用户报障场景应已修复**（★ 提示用户**强制刷新** `Ctrl+Shift+R` 以避开浏览器缓存的旧 `index.html`）。
+> ★★ **本议题的根因与教训（我方规格责任）**：★ **改「角色语义」时我未查前端可见性** —— 后端 6 处全改对、门禁全绿、后端用例全过，**但前端仍看 `role`** ⇒ ★ **「一个面通过」不等于「端到端通过」**（同族 `N-039`）。★ 已写入长期记忆。
+> ★ **一项待跟进（具名记录，未并入本议题）**：`web/src/sysRole.spec.mjs` **未被任何 npm script 或门禁引用**（现仅能手工 `node` 直跑）⇒ ★ 属**「写了没人跑」**同族 ⇒ ★ 已登记 `REMAINING.md#A18`（建议纳入门禁，否则会静默腐烂）。
 ## 5. 已决议（AGREED）
 
 > ★ **追加式，永不删除** —— 保留决议理由，这是"为什么会变成这样"的唯一记录。
