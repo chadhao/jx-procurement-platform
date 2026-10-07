@@ -4080,7 +4080,7 @@
 - **提出方**：WorkBuddy
 - **类型**：接口契约
 - **责任域**：mimo（实现）
-- **状态**：OPEN
+- **状态**：MIMO-DONE
 - **背景**：★★ 用户 2026-10-07 提出真实痛点：「**可以在飞书中发起审批申请吗？我不可能每次发起申请都还要在手机上打一串网址**」。★ 我方据此核查飞书侧定义，实测：
   ```
   GET /external_approvals/<feishu_code>
@@ -4112,6 +4112,25 @@
 - **验收判据**：① 上述形状断言用例**先红后绿**；② ★ **真机验证**（我方执行）：重跑 `defs/sync` 后逐张读回 `viewers` ⇒ **全为 `TENANT`**（不再回落 `NONE`）；③ `bash scripts/check_all.sh` **必绿 9/9**；④ ★ 单点变异：摘掉 `viewers` 下发 ⇒ 形状用例**恰红**、无关用例**保持绿**。
 - **★ 与 `N-073` 的次序**：★ **本议题须与 `N-073` 同批或紧随其后交付** —— 否则 `N-073` 修完后一重跑 `defs/sync`，定义又会「变回无人可见」，**联调的「飞书侧可见」判定无法完成**。
 - **最后更新**：2026-10-07 12:20 · WorkBuddy（用户提「能否从飞书发起」时核查发现；取值已由探针实测确定）
+
+> **mimo 回执（2026-10-07 13:11）· N-074 落地 · 本轮交差标记 `MIMO-DONE`**：
+
+- **提交**：`7ee8717`（8 文件 · +135/−5 · 显式路径，未用 `git add -A`）。
+- **修① 键名**：`internal/platform/feishu/external.go#externalApprovalBody` —— `body["visible_scope"]` 改为**按键合并**：`VisibleScopeJSON`（顶层对象原样片段，如 `{"viewers":[{"viewer_type":"TENANT"}]}`）经 `json.Unmarshal` 入 `map[string]json.RawMessage` 后逐键写入 `body` ⇒ 顶层键＝`viewers`；非对象片段 ⇒ 解析即**可见报错**（不静默发错形状）。★ 曾有一版把整对象塞进 `body["viewers"]` 造成嵌套 `{"viewers":{"viewers":[…]}}`，当轮被形状用例自身拦下、改为合并（实测记录）。字段注释 `:39` 同步订正。
+- **修② 缺省下发＋可配**：`internal/httpapi/handlers_approval.go#handleAdminApprovalDefsSync` 装配 `DefInput` 处 `VisibleScopeJSON: firstNonEmptyStr(trim(env), config.DefaultApprovalVisibleScope)`（兜底常量＝`internal/config/env.go#DefaultApprovalVisibleScope` = `{"viewers":[{"viewer_type":"TENANT"}]}`）；可配＝`JX_APPROVAL_VISIBLE_SCOPE`（`env.go` 字段 `ApprovalVisibleScope`，`getenv` 缺省亦为该常量）—— 与 `JX_APPROVAL_GROUP_CODE` 同款「可配 + 缺省可用」，且**装配处兜底**使直构 `Env`（测试/嵌入）亦得缺省。★ 兜底与 Load 双层引用**同一常量**（单源不漂）。
+- **注释面**：`defregistry.go#DefInput.VisibleScopeJSON`、`store/models.go#ApprovalDef.VisibleScopeJSON`（注明列名 `visible_scope_json` **保留免迁移**）、`store/repo_approval_def.go#upsertApprovalDef` 头注（N-074 映射注记：列 ↔ 顶层 `viewers`）—— 均已据实。
+- **T3 形状断言（核心验收 · 新用例）**：① `feishu.TestExternalApprovalBodyViewersShapeN074` —— 断言 body **含顶层 `viewers`** 且 `[0].viewer_type=="TENANT"`、**不含 `visible_scope` 键**（防键名回漂，与 N-073 `cc_list` 同款）；② `httpapi.TestAdminApprovalDefsSyncVisibleScopeDefaultN074` —— defs/sync 后 fake 读回 `VisibleScopeJSON` == 缺省 TENANT 片段；③ `httpapi.TestAdminApprovalDefsSyncVisibleScopeOverrideN074` —— env 覆写 `DEPARTMENT` ⇒ 原样透传。★ 分层说明：真实 HTTP 报文由 ① 承载（`externalApprovalBody` 即 `UpsertExternalApproval` 实发字节）；sync e2e 走 Fake 不经序列化 ⇒ ②③ 断装配下发面 —— 两层合围＝「装配对 ＋ 键名对」。
+- **先红实测**：① 改前红原文＝`缺顶层 viewers 键（N-074：visible_scope 被飞书静默忽略），body keys: [approval_code approval_name external visible_scope]`；② 改前红原文＝`下发 VisibleScopeJSON = "", 期望缺省 "{"viewers":[{"viewer_type":"TENANT"}]}"…`。★ ③ 覆写用例为**实现后新增**（改前 `Env.ApprovalVisibleScope` 字段不存在 ⇒ 无「改前红」可得，如实说明；隔离性由 M2 展示）。
+- **单点变异（一次一处 · `cp` 还原 · 字节级 `sha256sum` 前后一致 · 零 `.mutbak` 残留）**：
+  - **M1**（判据④「摘掉 viewers 下发」＝键名回漂）：merge 循环改回写 `body["visible_scope"]` ⇒ **恰红**形状用例（`缺顶层 viewers 键…body keys: […] visible_scope]`）；同包 4 个 `TestExternalApprovalBody*` 用例**全绿**（隔离成立）。
+  - **M2**（仅摘装配兜底 `firstNonEmptyStr`，保留 env 直通）⇒ **恰红** `…VisibleScopeDefaultN074`（`下发 VisibleScopeJSON = ""`）；`…VisibleScopeOverrideN074` **绿**（env 非空不受影响）＋ 既有 `TestAdminApprovalDefsSyncOK` **绿**（隔离双成立）。
+  - ★ M2 首版锚写成「整行置空」会连带打死覆写面，且两断言同函数 `Fatalf` 截断致隔离不可见 ⇒ 当轮拆为两个用例＋改锚「仅摘兜底」后重做（无效变异未采信）。
+  - ★ 伴生环境坑（已归一）：变异还原经 Python 写回把 LF 变 CRLF ⇒ `gofmt -l` 整文件红 ⇒ `gofmt -w` 归一后 `git diff --stat` 复核仅预期改动（19+/3−）、无 EOL 漂移。
+- **门禁**：`bash scripts/check_all.sh` ⇒ **9/9 全绿（会报零命中）**（提交前实测；commit 后复跑见下）。
+- **docs/spec**：`git status --porcelain docs/ spec/` **零改动**（交付要求③；本包无契约行/路由变化，openapi 无需重生）。
+- **未做/边界**：① 真机验证（重跑 defs/sync 后逐张读回 `viewers`＝TENANT）按交办归**我方**；② 11 张定义的既存本地行 `visible_scope_json` 为空 —— 重跑 defs/sync 即回填（upsert 非空 incoming 覆盖），无需迁移；③ `repo_approval_def` 列名保留（按议题允许）；④ 飞书侧枚举/取值零猜测（照议题实测值）；⑤ 无待裁定项。
+
+`MIMO-DONE`
 
 ## 5. 已决议（AGREED）
 
