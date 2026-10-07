@@ -117,7 +117,7 @@ func (d Deps) handleAdminConstantsCreate(c echo.Context) error {
 		return fail(c, http.StatusInternalServerError, codeInternal, err.Error())
 	}
 	d.audit(c.Request().Context(), &store.AuditLogRow{
-		ActorOpenID: idn.OpenID, ActorRole: idn.Role, Action: "constant_create",
+		ActorOpenID: idn.OpenID, ActorRole: actorRoleOf(idn), Action: "constant_create",
 		Resource: "table:" + req.Table, TargetID: row.Value, Result: "allow",
 		DetailJSON: `{"value":` + strconv.Quote(row.Value) + `,"status":"active"}`,
 	})
@@ -173,7 +173,7 @@ func (d Deps) handleAdminConstantsUpdate(c echo.Context) error {
 		return fail(c, http.StatusInternalServerError, codeInternal, err.Error())
 	}
 	d.audit(c.Request().Context(), &store.AuditLogRow{
-		ActorOpenID: idn.OpenID, ActorRole: idn.Role, Action: "constant_update",
+		ActorOpenID: idn.OpenID, ActorRole: actorRoleOf(idn), Action: "constant_update",
 		Resource: "table:" + row.TableKey, TargetID: row.Value, Result: "allow",
 		DetailJSON: `{"before":{"value":` + strconv.Quote(before.Value) +
 			`,"status":` + strconv.Quote(before.Status) +
@@ -191,7 +191,7 @@ func (d Deps) handleAdminConstantsDeleteRefused(c echo.Context) error {
 		return nil
 	}
 	d.audit(c.Request().Context(), &store.AuditLogRow{
-		ActorOpenID: idn.OpenID, ActorRole: idn.Role, Action: "constant_delete_refused",
+		ActorOpenID: idn.OpenID, ActorRole: actorRoleOf(idn), Action: "constant_delete_refused",
 		Resource: "table:constant", TargetID: c.Param("id"), Result: "deny",
 		DetailJSON: `{"reason":"retire_only（R-24 只停用不删）"}`,
 	})

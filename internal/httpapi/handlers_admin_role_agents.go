@@ -176,7 +176,7 @@ func (d Deps) handleAdminRoleAgentsCreate(c echo.Context) error {
 		return fail(c, http.StatusInternalServerError, codeInternal, err.Error())
 	}
 	d.audit(ctx, &store.AuditLogRow{
-		ActorOpenID: idn.OpenID, ActorRole: idn.Role, Action: "role_agent_create",
+		ActorOpenID: idn.OpenID, ActorRole: actorRoleOf(idn), Action: "role_agent_create",
 		Resource: "table:role_agent", TargetID: row.RoleKey, Result: "allow",
 		DetailJSON: `{"role_key":"` + row.RoleKey + `","agent_open_id":"` + row.AgentOpenID + `","state":"active"}`,
 	})
@@ -239,7 +239,7 @@ func (d Deps) handleAdminRoleAgentsUpdate(c echo.Context) error {
 		return fail(c, http.StatusInternalServerError, codeInternal, err.Error())
 	}
 	d.audit(ctx, &store.AuditLogRow{
-		ActorOpenID: idn.OpenID, ActorRole: idn.Role, Action: "role_agent_update",
+		ActorOpenID: idn.OpenID, ActorRole: actorRoleOf(idn), Action: "role_agent_update",
 		Resource: "table:role_agent", TargetID: row.RoleKey, Result: "allow",
 		DetailJSON: `{"before":{"agent_open_id":"` + before.AgentOpenID + `","state":"` + before.State +
 			`"},"after":{"agent_open_id":"` + row.AgentOpenID + `","state":"` + row.State + `"}}`,
@@ -256,7 +256,7 @@ func (d Deps) handleAdminRoleAgentsDelete(c echo.Context) error {
 		return nil
 	}
 	d.audit(c.Request().Context(), &store.AuditLogRow{
-		ActorOpenID: idn.OpenID, ActorRole: idn.Role, Action: "role_agent_delete_refused",
+		ActorOpenID: idn.OpenID, ActorRole: actorRoleOf(idn), Action: "role_agent_delete_refused",
 		Resource: "table:role_agent", TargetID: c.Param("id"), Result: "deny",
 		DetailJSON: `{"reason":"retire_only（authority.delete_policy）"}`,
 	})

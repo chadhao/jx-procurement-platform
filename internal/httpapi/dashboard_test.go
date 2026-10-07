@@ -375,8 +375,11 @@ func alertCount(t *testing.T, data map[string]any, key string) float64 {
 // 该用例是本轮补齐的**关键缺口**：导出接口（/export）最容易「绕过」列过滤，
 // 因为它是独立的序列化分支。此处用同一份数据做 A/B：
 //   - 项目总经理（ALL、无静态 deny）→ JSON 中**应出现** amount_cents（证明数据本身有金额）；
-//   - 系统管理员（ALL、deny=amount_cents/amount_display/formula_flags）→ JSON 与 **CSV 导出**中
+//   - 验收人（PARTICIPATED、deny=amount_cents/amount_display/formula_flags）→ JSON 与 **CSV 导出**中
 //     都**不得出现** amount_cents / amount_display。
+//     ★ N-075（Q2）：原「系统管理员(ALL+禁金额)」persona 已换为验收人 —— 系统角色不再进
+//     权限矩阵（仅系统角色者看板直接 403，负向由 sys_role_n075_test 判据②承载）；
+//     「可见行但禁金额列」这一列裁剪语义由验收人（行内 acceptors 命中 PARTICIPATED）承载。
 func TestDashboardAmountStrippedFromJSONAndExport(t *testing.T) {
 	e, db, auth := newDashboardApp(t)
 	ctx := context.Background()
@@ -384,11 +387,16 @@ func TestDashboardAmountStrippedFromJSONAndExport(t *testing.T) {
 		t.Fatalf("播种默认口径失败: %v", err)
 	}
 	seedRole(t, db, "ou_pm", "项目总经理", "")
-	seedRole(t, db, "ou_sys", "系统管理员", "")
+	seedRole(t, db, "ou_v", "验收人", "")
 
 	// L05 = 费用类台账（看板 15 的数据源），带金额。
 	seedArchive(t, db, "L05", "EX-2609-0001", "ou_a", "生产部", "供应商甲", "耗材", "办公用品", "2026-09-10", 480000)
 	seedArchive(t, db, "L05", "EX-2609-0002", "ou_b", "销售部", "供应商乙", "差旅", "市内交通", "2026-09-12", 120000)
+	// ★ 行级命中：验收人走 PARTICIPATED（读规范列 acceptors，N-042）—— 补写使 B 组真见行。
+	if _, err := db.ExecContext(ctx,
+		`UPDATE t_ledger_archive SET acceptors='["ou_v"]' WHERE ledger_type='L05'`); err != nil {
+		t.Fatal(err)
+	}
 
 	const url = "/api/dashboard/15?period=2026-09"
 
@@ -399,18 +407,18 @@ func TestDashboardAmountStrippedFromJSONAndExport(t *testing.T) {
 		t.Fatalf("对照组失效：项目总经理的响应里没有 amount_cents，无法证明投影真的裁剪了（数据可能为空）")
 	}
 
-	// B：系统管理员（ALL，deny 金额）→ JSON 中不得有金额键。
-	_, envSys := doRequest(e, http.MethodGet, url, auth.Establish("ou_sys"), "")
+	// B：验收人（PARTICIPATED 命中行，deny 金额）→ JSON 中不得有金额键。
+	_, envSys := doRequest(e, http.MethodGet, url, auth.Establish("ou_v"), "")
 	dataSys := mustData(t, envSys)
 	for _, k := range []string{"amount_cents", "amount_display", "formula_flags"} {
 		if deepHasKey(dataSys, k) {
-			t.Errorf("JSON 响应泄漏受限列 %s（角色：系统管理员，deny 金额）", k)
+			t.Errorf("JSON 响应泄漏受限列 %s（角色：验收人，deny 金额）", k)
 		}
 	}
 
 	// C：CSV 导出同样不得出现金额列（防「改走导出绕过列过滤」）。
 	recExp, _ := doRequest(e, http.MethodGet,
-		"/api/dashboard/15/export?period=2026-09&format=csv", auth.Establish("ou_sys"), "")
+		"/api/dashboard/15/export?period=2026-09&format=csv", auth.Establish("ou_v"), "")
 	if recExp.Code != http.StatusOK {
 		t.Fatalf("导出: http=%d body=%s", recExp.Code, recExp.Body.String())
 	}

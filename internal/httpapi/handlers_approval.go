@@ -1053,8 +1053,9 @@ func (d Deps) recordFieldViews(docType string) map[string][]map[string]any {
 }
 
 // approvalVisibleTo 行级可见性：申请人本人 / 该实例任一任务审批人 / 系统管理员 → 可见。
+// ★ N-075：「系统管理员」半边改判 **SysRoles**（不再看 Role —— t_user_role 已无该值）。
 func approvalVisibleTo(idn permission.Identity, inst *store.Instance, tasks []store.FlowTask) bool {
-	if strings.EqualFold(strings.TrimSpace(idn.Role), roleSysAdmin) {
+	if hasSysRole(idn, roleSysAdmin) {
 		return true
 	}
 	if strings.TrimSpace(inst.ApplicantOpenID) == idn.OpenID {

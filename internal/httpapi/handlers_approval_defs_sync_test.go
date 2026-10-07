@@ -93,9 +93,9 @@ func seedApprovalCodeRow(t *testing.T, db *store.DB, code, docType, remark strin
 func TestAdminApprovalDefsSyncAuthz(t *testing.T) {
 	e, db, auth, _ := newDefsSyncTestApp(t, true)
 	seedDefaultUsers(t, db,
-		store.UserRole{OpenID: "ou_admin", Role: roleSysAdmin, Active: true},
 		store.UserRole{OpenID: "ou_me", Role: "申请人", Department: "生产部", Active: true},
 	)
+	seedSysAdmin(t, db, "ou_admin")
 	adminCookie := auth.Establish("ou_admin")
 	meCookie := auth.Establish("ou_me")
 
@@ -124,7 +124,7 @@ func TestAdminApprovalDefsSyncAuthz(t *testing.T) {
 // TestAdminApprovalDefsSyncPlaceholderVisible 占位符未替换 ⇒ 可见错误（400），绝不静默成功。
 func TestAdminApprovalDefsSyncPlaceholderVisible(t *testing.T) {
 	e, db, auth, fake := newDefsSyncTestApp(t, true)
-	seedDefaultUsers(t, db, store.UserRole{OpenID: "ou_admin", Role: roleSysAdmin, Active: true})
+	seedSysAdmin(t, db, "ou_admin")
 	// 模拟样例文件被绕过导入层直写进配置表（REPLACE_ME_ 占位符未替换）。
 	seedApprovalCodeRow(t, db, "REPLACE_ME_approval_code_BA", "BA", "①采购报备单")
 	adminCookie := auth.Establish("ou_admin")
@@ -148,7 +148,7 @@ func TestAdminApprovalDefsSyncPlaceholderVisible(t *testing.T) {
 // 「我方自定义的 approval_code」且**不含**旧措辞「飞书审批后台」（双断言，缺一即只证一半）。
 func TestAdminApprovalDefsSyncPlaceholderMessageN065(t *testing.T) {
 	e, db, auth, _ := newDefsSyncTestApp(t, true)
-	seedDefaultUsers(t, db, store.UserRole{OpenID: "ou_admin", Role: roleSysAdmin, Active: true})
+	seedSysAdmin(t, db, "ou_admin")
 	seedApprovalCodeRow(t, db, "REPLACE_ME_approval_code_BA", "BA", "①采购报备单")
 	adminCookie := auth.Establish("ou_admin")
 
@@ -171,7 +171,7 @@ func TestAdminApprovalDefsSyncMissingGroupCode503N066(t *testing.T) {
 	e, db, auth, fake := newDefsSyncTestAppEnv(t, true, func(env *config.Env) {
 		env.ApprovalGroupCode = "" // token/域名保留 ⇒ 只抽掉分组 code
 	})
-	seedDefaultUsers(t, db, store.UserRole{OpenID: "ou_admin", Role: roleSysAdmin, Active: true})
+	seedSysAdmin(t, db, "ou_admin")
 	seedApprovalCodeRow(t, db, "jx_ba", "BA", "①采购报备单")
 	adminCookie := auth.Establish("ou_admin")
 
@@ -191,7 +191,7 @@ func TestAdminApprovalDefsSyncMissingGroupCode503N066(t *testing.T) {
 // TestAdminApprovalDefsSyncMissingCallbackConfig 回调 token / 域名未配置 ⇒ 可见错误（503）。
 func TestAdminApprovalDefsSyncMissingCallbackConfig(t *testing.T) {
 	e, db, auth, fake := newDefsSyncTestApp(t, false)
-	seedDefaultUsers(t, db, store.UserRole{OpenID: "ou_admin", Role: roleSysAdmin, Active: true})
+	seedSysAdmin(t, db, "ou_admin")
 	seedApprovalCodeRow(t, db, "ac-ba-001", "BA", "①采购报备单")
 	adminCookie := auth.Establish("ou_admin")
 
@@ -210,7 +210,7 @@ func TestAdminApprovalDefsSyncMissingCallbackConfig(t *testing.T) {
 // TestAdminApprovalDefsSyncOK 正常装载：计数可核对、幂等、token/URL 两侧一致。
 func TestAdminApprovalDefsSyncOK(t *testing.T) {
 	e, db, auth, fake := newDefsSyncTestApp(t, true)
-	seedDefaultUsers(t, db, store.UserRole{OpenID: "ou_admin", Role: roleSysAdmin, Active: true})
+	seedSysAdmin(t, db, "ou_admin")
 	seedApprovalCodeRow(t, db, "ac-ba-001", "BA", "①采购报备单")
 	seedApprovalCodeRow(t, db, "ac-pr-001", "PR", "②物资采购申请单")
 	adminCookie := auth.Establish("ou_admin")
@@ -288,7 +288,7 @@ func TestAdminApprovalDefsSyncOK(t *testing.T) {
 // （用户在飞书找不到发起入口）。★ 改前即红：fake 读回空串。
 func TestAdminApprovalDefsSyncVisibleScopeDefaultN074(t *testing.T) {
 	e, db, auth, fake := newDefsSyncTestApp(t, true)
-	seedDefaultUsers(t, db, store.UserRole{OpenID: "ou_admin", Role: roleSysAdmin, Active: true})
+	seedSysAdmin(t, db, "ou_admin")
 	seedApprovalCodeRow(t, db, "ac-ba-001", "BA", "①采购报备单")
 	adminCookie := auth.Establish("ou_admin")
 
@@ -315,7 +315,7 @@ func TestAdminApprovalDefsSyncVisibleScopeOverrideN074(t *testing.T) {
 	e2, db2, auth2, fake2 := newDefsSyncTestAppEnv(t, true, func(env *config.Env) {
 		env.ApprovalVisibleScope = `{"viewers":[{"viewer_type":"DEPARTMENT"}]}`
 	})
-	seedDefaultUsers(t, db2, store.UserRole{OpenID: "ou_admin", Role: roleSysAdmin, Active: true})
+	seedSysAdmin(t, db2, "ou_admin")
 	seedApprovalCodeRow(t, db2, "ac-ba-002", "BA", "①采购报备单")
 	rec2, _ := doRequest(e2, http.MethodPost, "/api/admin/approval/defs/sync", auth2.Establish("ou_admin"), "")
 	if rec2.Code != http.StatusOK {

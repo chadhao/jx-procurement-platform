@@ -78,6 +78,11 @@ type Env struct {
 	//   ★ 注意本字段为空也可用 —— 装载通道（handlers_approval DefInput 装配）以缺省兜底，
 	//   防「空 ⇒ 不下发 ⇒ 平台默认 NONE ⇒ 无人可见」（N-074 根因）。
 	ApprovalVisibleScope string // JX_APPROVAL_VISIBLE_SCOPE
+	// BootstrapSysAdminOpenID 初始系统管理员 open_id（N-075 Q3②）：
+	// ★ 启动时经 seed.SeedBootstrapSysAdmin 种入 **t_sys_role**（只写系统角色表，
+	//   不占 t_user_role 的 open_id UNIQUE）；**缺省空 ⇒ 不种**（全新库迁移后无人
+	//   可进管理域时由运维显式配置后重启补种）。
+	BootstrapSysAdminOpenID string // JX_BOOTSTRAP_SYS_ADMIN_OPEN_ID
 
 	RunEnv            string // JX_ENV: prod / test
 	DevMode           bool   // DEV_MODE
@@ -148,6 +153,7 @@ func LoadEnv() (*Env, error) {
 		ActionCallbackToken:       getenv("JX_ACTION_CALLBACK_TOKEN", ""),
 		ApprovalGroupCode:         getenv("JX_APPROVAL_GROUP_CODE", ""),
 		ApprovalVisibleScope:      getenv("JX_APPROVAL_VISIBLE_SCOPE", DefaultApprovalVisibleScope),
+		BootstrapSysAdminOpenID:   getenv("JX_BOOTSTRAP_SYS_ADMIN_OPEN_ID", ""),
 		LockPath:                  lockPath,
 		S3Endpoint:                getenv("JX_S3_ENDPOINT", ""),
 		S3Bucket:                  getenv("JX_S3_BUCKET", ""),

@@ -38,6 +38,11 @@ func (d Deps) authorizeRole(c echo.Context, resource string, allowed ...string) 
 		if strings.EqualFold(strings.TrimSpace(idn.Role), strings.TrimSpace(r)) {
 			return idn, true
 		}
+		// ★ N-075：白名单中的「系统管理员」槽位由**系统角色**满足（如报销读白名单
+		//   含系统管理员）——审批角色与系统角色解耦后，Role 里不再有该值。
+		if strings.EqualFold(strings.TrimSpace(r), roleSysAdmin) && hasSysRole(idn, roleSysAdmin) {
+			return idn, true
+		}
 	}
 	d.audit(c.Request().Context(), &store.AuditLogRow{
 		ActorOpenID: idn.OpenID, ActorRole: idn.Role, Action: "denied",

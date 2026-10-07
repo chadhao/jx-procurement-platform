@@ -124,6 +124,14 @@ func run(version string) error {
 		logger.Info("Q3 默认权限口径已播种", "inserted", n)
 	}
 
+	// ---- ②″′ 播种初始系统管理员（N-075 Q3②）：JX_BOOTSTRAP_SYS_ADMIN_OPEN_ID ----
+	// ★ 缺省空 ⇒ 不种（幂等，只写 t_sys_role；系统角色与审批角色解耦、不占 t_user_role UNIQUE）。
+	if seeded, err := seed.SeedBootstrapSysAdmin(ctx, db, env.BootstrapSysAdminOpenID); err != nil {
+		return err
+	} else if seeded {
+		logger.Info("初始系统管理员已播种", "open_id", env.BootstrapSysAdminOpenID)
+	}
+
 	// ---- ②″ 播种运营性常量（T2 / R-24）：spec/constants.json#tables[].seed → t_constant ----
 	// ★ 幂等（ON CONFLICT DO NOTHING）；seed **只是可用起点，不是权威清单** ——
 	//   管理员已在后台增删的行不会被播种覆盖（冲突即跳过）。

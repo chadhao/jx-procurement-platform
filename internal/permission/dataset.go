@@ -27,9 +27,13 @@ const (
 // Identity 会话身份（角色每请求实时解析，不缓存决策，TC-11）。
 type Identity struct {
 	OpenID     string
-	Role       string
+	Role       string // 审批角色（t_user_role；可为空 —— 仅系统角色者无审批角色）
 	Department string
 	ExtraDepts []string
+	// SysRoles 系统角色（t_sys_role，N-075）：与 Role **并列保留**、互不挤占。
+	// ★ 权限矩阵（CanRead/CanWrite / Loader.Resolve）**不读本字段** —— 系统角色只管
+	//   管理域（requireSysAdmin 等四处判定），不参与业务可见性（deny by default 不变）。
+	SysRoles []string
 }
 
 // Condition 行级过滤条件（SQL 片段 + 参数），供仓储拼装 WHERE。

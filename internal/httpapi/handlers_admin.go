@@ -43,15 +43,19 @@ var resourceOptions = []map[string]string{
 // ---------- 角色守卫 ----------
 
 // requireSysAdmin 解析会话并校验「系统管理员」；非管理员 → 40300 并留痕（API §3.9）。
+// ★ N-075：判定改看 **Identity.SysRoles**（t_sys_role）——**不再看 Role**：
+//
+//	系统角色与审批角色解耦后，t_user_role 里不再有「系统管理员」；仅审批角色者
+//	（如项目总经理）即使 Role 合法也必须 403。
 func (d Deps) requireSysAdmin(c echo.Context) (permission.Identity, bool) {
 	idn, _, err := d.identityFrom(c)
 	if err != nil {
 		_ = fail(c, http.StatusUnauthorized, codeRoleMapped, "未映射角色或会话失效")
 		return permission.Identity{}, false
 	}
-	if !strings.EqualFold(strings.TrimSpace(idn.Role), roleSysAdmin) {
+	if !hasSysRole(idn, roleSysAdmin) {
 		d.audit(c.Request().Context(), &store.AuditLogRow{
-			ActorOpenID: idn.OpenID, ActorRole: idn.Role, Action: "denied",
+			ActorOpenID: idn.OpenID, ActorRole: actorRoleOf(idn), Action: "denied",
 			Resource: "admin", TargetID: c.Request().Method + " " + c.Request().URL.Path,
 			Result: "deny", DetailJSON: `{"reason":"not_sys_admin"}`,
 		})
@@ -154,7 +158,7 @@ func (d Deps) handleAdminPermissionRulesPut(c echo.Context) error {
 	d.Perm.Invalidate()
 
 	d.audit(ctx, &store.AuditLogRow{
-		ActorOpenID: idn.OpenID, ActorRole: idn.Role, Action: "permission_update",
+		ActorOpenID: idn.OpenID, ActorRole: actorRoleOf(idn), Action: "permission_update",
 		Resource: "permission_rule", TargetID: "permission-rules", Result: "allow",
 		DetailJSON: diffRules(before, newRules),
 	})
@@ -222,7 +226,7 @@ func (d Deps) handleAdminUsersPost(c echo.Context) error {
 		return fail(c, http.StatusInternalServerError, codeInternal, err.Error())
 	}
 	d.audit(ctx, &store.AuditLogRow{
-		ActorOpenID: idn.OpenID, ActorRole: idn.Role, Action: "permission_update",
+		ActorOpenID: idn.OpenID, ActorRole: actorRoleOf(idn), Action: "permission_update",
 		Resource: "user_role", TargetID: openID, Result: "allow",
 		DetailJSON: diffUserRole(nil, row),
 	})
@@ -279,7 +283,7 @@ func (d Deps) handleAdminUsersPatch(c echo.Context) error {
 		return fail(c, http.StatusInternalServerError, codeInternal, err.Error())
 	}
 	d.audit(ctx, &store.AuditLogRow{
-		ActorOpenID: idn.OpenID, ActorRole: idn.Role, Action: "permission_update",
+		ActorOpenID: idn.OpenID, ActorRole: actorRoleOf(idn), Action: "permission_update",
 		Resource: "user_role", TargetID: openID, Result: "allow",
 		DetailJSON: diffUserRole(before, row),
 	})

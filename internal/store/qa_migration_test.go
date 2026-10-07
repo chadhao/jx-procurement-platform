@@ -155,7 +155,8 @@ func TestQAMigrationFreshAndIdempotent(t *testing.T) {
 	//   0019 权限位点 t_instance/t_ledger_archive 补 designated_open_id/acceptors（N-042，照 0003）。
 	// N-060 H1②：0020_ops_writable_refresh（综合运营主管可写白名单幂等刷新 —— 只增不覆盖）。
 	// N-061 T1：0021_l01_written_off_balance（L01.核销后余额 幂等追加 —— 只 UPDATE 规则行，零 DDL）。
-	const wantMigrations = 21
+	// N-075：0022_sys_role（系统角色独立成表 t_sys_role ＋ t_user_role 系统管理员行迁入/删除，幂等）。
+	const wantMigrations = 22
 	if total != wantMigrations {
 		t.Errorf("迁移版本总数 = %d, 期望 %d（重复执行不得重复登记）", total, wantMigrations)
 	}

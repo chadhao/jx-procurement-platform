@@ -11,6 +11,7 @@ package seed
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/chadhao/jx-procurement-platform/internal/permission"
 	"github.com/chadhao/jx-procurement-platform/internal/store"
@@ -85,11 +86,17 @@ var specs = map[string]roleSpec{
 	"验收人":    {rowScope: scopeParticipated, deny: amountDeny, writable: opsAcceptor},
 	"集团财务":   {rowScope: scopeDeny},
 	"集团（审批）": {rowScope: scopeDeny},
-	"系统管理员":  {rowScope: scopeAll, deny: amountDeny}, // 全量只读、不含金额列（定案）
+	// ★ N-075：原「系统管理员 {scopeAll, deny: amountDeny}」条目已移除 —— 系统角色
+	//   **不进权限矩阵**（Q2：只管管理域、不参与业务可见性）。既有库中该角色的规则行
+	//   迁移 0022 后无任何 Role 可匹配（t_user_role 已无该值）⇒ 沉睡行、无消费方。
 }
 
-// auditRoles 允许查询审计日志的角色（API §3.7：系统管理员；项目总经理只读）。
-var auditRoles = map[string]bool{"系统管理员": true, "项目总经理": true}
+// auditRoles 播种期允许查询审计日志的**审批角色**白名单（API §3.7：项目总经理只读）。
+// ★ N-075：原「系统管理员」键已移出 —— 它不再是审批角色（Roles 无此值，本 map 只在
+//
+//	DefaultRules 按 Roles 迭代时被查）；系统角色的审计查询放行在**运行期**做
+//	（httpapi.handleAuditLogs：矩阵非 deny ∪ SysRoles 含系统管理员 —— Role ∪ SysRoles）。
+var auditRoles = map[string]bool{"项目总经理": true}
 
 // DefaultRules 返回默认权限矩阵（角色 × 资源）的全部规则行。
 func DefaultRules() []store.PermissionRule {
@@ -133,6 +140,23 @@ func SeedQ3Defaults(ctx context.Context, db *store.DB) (int, error) {
 		}
 	}
 	return inserted, nil
+}
+
+// SeedBootstrapSysAdmin 初始系统管理员（N-075 Q3 推荐②）：openID 取自
+// JX_BOOTSTRAP_SYS_ADMIN_OPEN_ID，**缺省（空）不种** —— 否则全新库无人可进管理域
+// ⇒「装完不能管」。只写 t_sys_role（系统角色独立成表，不占 t_user_role 的
+// open_id UNIQUE）；幂等（ON CONFLICT 冲突即更新，重复执行结果一致）。
+func SeedBootstrapSysAdmin(ctx context.Context, db *store.DB, openID string) (bool, error) {
+	openID = strings.TrimSpace(openID)
+	if openID == "" {
+		return false, nil
+	}
+	if err := db.UpsertSysRole(ctx, store.SysRole{
+		OpenID: openID, Role: permission.SysRoles[0], Active: true,
+	}); err != nil {
+		return false, fmt.Errorf("seed: 播种初始系统管理员失败: %w", err)
+	}
+	return true, nil
 }
 
 func cloneStrings(in []string) []string {

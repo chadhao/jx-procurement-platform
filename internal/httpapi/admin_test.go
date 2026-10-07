@@ -95,6 +95,19 @@ func seedDefaultUsers(t *testing.T, db *store.DB, rows ...store.UserRole) {
 	}
 }
 
+// seedSysAdmin 授予系统管理员（N-075：系统角色独立成表 —— 夹具写 t_sys_role，
+// **不再**往 t_user_role 塞「系统管理员」行；Role 半边由 t_user_role 正常审批角色承担）。
+func seedSysAdmin(t *testing.T, db *store.DB, openIDs ...string) {
+	t.Helper()
+	for _, oid := range openIDs {
+		if err := db.UpsertSysRole(context.Background(), store.SysRole{
+			OpenID: oid, Role: roleSysAdmin, Active: true,
+		}); err != nil {
+			t.Fatalf("写入系统角色失败: %v", err)
+		}
+	}
+}
+
 func seedInstance(t *testing.T, db *store.DB, code, applicant, dept string) {
 	t.Helper()
 	now := time.Now().UTC()
@@ -117,9 +130,9 @@ func TestAdminPermissionRuleChangeImmediate(t *testing.T) {
 		t.Fatalf("播种默认口径失败: %v", err)
 	}
 	seedDefaultUsers(t, db,
-		store.UserRole{OpenID: "ou_admin", Role: roleSysAdmin, Active: true},
 		store.UserRole{OpenID: "ou_me", Role: "申请人", Department: "生产部", Active: true},
 	)
+	seedSysAdmin(t, db, "ou_admin")
 	seedInstance(t, db, "I-ME", "ou_me", "生产部")
 	seedInstance(t, db, "I-OTHER", "ou_other", "销售部")
 
@@ -191,9 +204,9 @@ func TestAdminUserDeactivateImmediate(t *testing.T) {
 		t.Fatalf("播种默认口径失败: %v", err)
 	}
 	seedDefaultUsers(t, db,
-		store.UserRole{OpenID: "ou_admin", Role: roleSysAdmin, Active: true},
 		store.UserRole{OpenID: "ou_b", Role: "主管领导", Department: "生产部", Active: true},
 	)
+	seedSysAdmin(t, db, "ou_admin")
 	adminCookie := auth.Establish("ou_admin")
 	bCookie := auth.Establish("ou_b")
 
@@ -227,9 +240,9 @@ func TestAdminPermissionChangeAuditDiff(t *testing.T) {
 		t.Fatalf("播种默认口径失败: %v", err)
 	}
 	seedDefaultUsers(t, db,
-		store.UserRole{OpenID: "ou_admin", Role: roleSysAdmin, Active: true},
 		store.UserRole{OpenID: "ou_c", Role: "验收人", Active: true},
 	)
+	seedSysAdmin(t, db, "ou_admin")
 	adminCookie := auth.Establish("ou_admin")
 
 	// 变更一：改规则表（验收人 × ledger:* → ALL）。
@@ -294,7 +307,7 @@ func TestAdminNonAdminForbidden(t *testing.T) {
 		t.Errorf("非管理员越权调用未留痕（denied 记录数=%d）", n)
 	}
 	// 非法 row_scope（条件表达式）必须被拒且不改表。
-	seedDefaultUsers(t, db, store.UserRole{OpenID: "ou_admin", Role: roleSysAdmin, Active: true})
+	seedSysAdmin(t, db, "ou_admin")
 	adminCookie := auth.Establish("ou_admin")
 	badRec, badEnv := doRequest(e, http.MethodPut, "/api/admin/permission-rules", adminCookie,
 		`{"rules":[{"resource":"ledger:*","role":"申请人","row_scope":"department = 'x'","column_deny":[]}]}`)

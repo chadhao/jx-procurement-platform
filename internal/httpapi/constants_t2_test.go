@@ -20,9 +20,7 @@ import (
 
 func TestConstantLifecycleAndGuardrails(t *testing.T) {
 	e, db, auth, _ := newAdminTestApp(t)
-	seedDefaultUsers(t, db,
-		store.UserRole{OpenID: "ou_admin", Role: roleSysAdmin, Active: true},
-	)
+	seedSysAdmin(t, db, "ou_admin")
 	admin := auth.Establish("ou_admin")
 
 	// ① 新增（unit 表）

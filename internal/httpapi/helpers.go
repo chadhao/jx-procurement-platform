@@ -3,6 +3,7 @@ package httpapi
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"sort"
 	"strconv"
@@ -21,13 +22,31 @@ const defaultPageSize = 50
 const maxPageSize = 200
 
 // identityFrom 从会话实时解析身份与角色（不缓存决策，TC-11 / TC-32）。
+//
+// ★ N-075：除审批角色（t_user_role）外**同时解析系统角色**（t_sys_role）填入
+//
+//	Identity.SysRoles —— 本函数是身份解析的**唯一入口**，四处系统角色判定
+//	（requireSysAdmin / approvalVisibleTo / 报销读白名单 / 审计）都只读这里的结果。
+//
+// ★ 仅系统角色者（t_user_role 无行、t_sys_role 有行）：不报「未映射」——返回
+//
+//	Role 为空的 Identity（权限矩阵按空 Role ⇒ DENY，deny by default 不变）；
+//	两者皆空才维持 ErrRoleNotMapped（deny by default 语义不变）。
 func (d Deps) identityFrom(c echo.Context) (permission.Identity, *store.UserRole, error) {
 	sess, ok := c.Get(ctxKeySession).(access.Session)
 	if !ok {
 		return permission.Identity{}, nil, errNoSession
 	}
-	ur, err := d.Auth.ResolveRole(c.Request().Context(), sess.OpenID)
+	ctx := c.Request().Context()
+	sysRoles, err := d.DB.GetSysRoles(ctx, sess.OpenID)
 	if err != nil {
+		return permission.Identity{}, nil, err
+	}
+	ur, err := d.Auth.ResolveRole(ctx, sess.OpenID)
+	if err != nil {
+		if errors.Is(err, access.ErrRoleNotMapped) && len(sysRoles) > 0 {
+			return permission.Identity{OpenID: sess.OpenID, SysRoles: sysRoles}, nil, nil
+		}
 		return permission.Identity{}, nil, err
 	}
 	return permission.Identity{
@@ -35,7 +54,28 @@ func (d Deps) identityFrom(c echo.Context) (permission.Identity, *store.UserRole
 		Role:       ur.Role,
 		Department: ur.Department,
 		ExtraDepts: ur.ExtraDepts,
+		SysRoles:   sysRoles,
 	}, ur, nil
+}
+
+// hasSysRole 判定身份是否持有指定系统角色（N-075 四处判定的公共谓词；
+// 口径与旧 Role 比对一致：TrimSpace + EqualFold）。
+func hasSysRole(idn permission.Identity, role string) bool {
+	for _, r := range idn.SysRoles {
+		if strings.EqualFold(strings.TrimSpace(r), strings.TrimSpace(role)) {
+			return true
+		}
+	}
+	return false
+}
+
+// actorRoleOf 审计留痕用操作者角色（N-075）：审批角色优先；仅系统角色者
+// （Role 为空）回退系统角色（逗号连接）—— 审计不留空角色、不丢身份信息。
+func actorRoleOf(idn permission.Identity) string {
+	if r := strings.TrimSpace(idn.Role); r != "" {
+		return r
+	}
+	return strings.Join(idn.SysRoles, ",")
 }
 
 var errNoSession = fmt.Errorf("httpapi: 无有效会话")

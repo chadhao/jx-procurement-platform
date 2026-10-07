@@ -66,9 +66,13 @@ func qaNewAppWithMaps(t *testing.T, payload *config.ImportPayload, client *feish
 
 // ---------------- B31：变更链金额同义键随 deny 裁剪 ----------------
 
-// TestQAB31AmountSynonymKeysHiddenFromDeniedRoles 用**三种禁金额角色**（采购经办人 / 验收人 / 系统管理员）
+// TestQAB31AmountSynonymKeysHiddenFromDeniedRoles 用**两种禁金额角色**（采购经办人 / 验收人）
 // 访问变更链，证明：顶层与 archive 内的金额同义键（change_cents / *_display / original_cents）在**任意层级**
 // 均不出现，而 archive.contract_no 必须仍在；同时项目总经理（不禁金额）必须仍能看到金额。
+// ★ N-075（Q2）：原第三名「系统管理员(ALL+禁金额)」persona 已移除 —— 系统角色不再进
+//
+//	权限矩阵、不参与业务可见性，仅系统角色者对变更链为**直接 403**（负向由
+//	sys_role_n075_test 判据②承载），不再有「可见行但禁金额列」形态。
 func TestQAB31AmountSynonymKeysHiddenFromDeniedRoles(t *testing.T) {
 	e, db, auth, _ := newAdminTestApp(t)
 	ctx := context.Background()
@@ -76,10 +80,9 @@ func TestQAB31AmountSynonymKeysHiddenFromDeniedRoles(t *testing.T) {
 		t.Fatalf("播种默认口径失败: %v", err)
 	}
 	seedDefaultUsers(t, db,
-		store.UserRole{OpenID: "ou_h", Role: "采购经办人", Active: true},          // ASSIGNED + 禁金额
-		store.UserRole{OpenID: "ou_v", Role: "验收人", Active: true},            // PARTICIPATED + 禁金额
-		store.UserRole{OpenID: "ou_admin", Role: roleSysAdmin, Active: true}, // ALL + 禁金额
-		store.UserRole{OpenID: "ou_gm", Role: roleProjectGM, Active: true},   // ALL + 不禁金额
+		store.UserRole{OpenID: "ou_h", Role: "采购经办人", Active: true},        // ASSIGNED + 禁金额
+		store.UserRole{OpenID: "ou_v", Role: "验收人", Active: true},          // PARTICIPATED + 禁金额
+		store.UserRole{OpenID: "ou_gm", Role: roleProjectGM, Active: true}, // ALL + 不禁金额
 	)
 	// 变更单：行内 identity 键同时命中 ASSIGNED(ou_h) 与 PARTICIPATED(ou_v)。
 	seedArchiveExt(t, db, "L09", "CH-QA-B31-1", "ou_a", "生产部", 100000,
@@ -99,7 +102,6 @@ func TestQAB31AmountSynonymKeysHiddenFromDeniedRoles(t *testing.T) {
 	}{
 		{"采购经办人(ASSIGNED)", auth.Establish("ou_h")},
 		{"验收人(PARTICIPATED)", auth.Establish("ou_v")},
-		{"系统管理员(ALL)", auth.Establish("ou_admin")},
 	}
 	for _, d := range denied {
 		rec, env := doRequest(e, http.MethodGet, "/api/contract/CT-QA-B31/changes", d.cookie, "")

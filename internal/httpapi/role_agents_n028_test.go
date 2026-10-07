@@ -32,9 +32,7 @@ func seedAgentOrgUsers(t *testing.T, db *store.DB) {
 func agentApp(t *testing.T) (*store.DB, func(string) string) {
 	e, db, auth, _ := newAdminTestApp(t)
 	_ = e
-	seedDefaultUsers(t, db,
-		store.UserRole{OpenID: "ou_admin", Role: roleSysAdmin, Active: true},
-	)
+	seedSysAdmin(t, db, "ou_admin")
 	seedAgentOrgUsers(t, db)
 	return db, auth.Establish
 }
@@ -42,7 +40,7 @@ func agentApp(t *testing.T) (*store.DB, func(string) string) {
 // ① value_must_be_existing_user
 func TestAgentValueMustBeExistingUser(t *testing.T) {
 	e, db, auth, _ := newAdminTestApp(t)
-	seedDefaultUsers(t, db, store.UserRole{OpenID: "ou_admin", Role: roleSysAdmin, Active: true})
+	seedSysAdmin(t, db, "ou_admin")
 	seedAgentOrgUsers(t, db)
 	admin := auth.Establish("ou_admin")
 
@@ -69,7 +67,7 @@ func TestAgentValueMustBeExistingUser(t *testing.T) {
 // ② single_active_agent_per_role
 func TestAgentSingleActivePerRole(t *testing.T) {
 	e, db, auth, _ := newAdminTestApp(t)
-	seedDefaultUsers(t, db, store.UserRole{OpenID: "ou_admin", Role: roleSysAdmin, Active: true})
+	seedSysAdmin(t, db, "ou_admin")
 	seedAgentOrgUsers(t, db)
 	admin := auth.Establish("ou_admin")
 
@@ -101,7 +99,7 @@ func TestAgentSingleActivePerRole(t *testing.T) {
 // ③ no_shared_agent_across_two_levels（合同链相邻两级）
 func TestAgentAdjacentLevelsDistinct(t *testing.T) {
 	e, db, auth, _ := newAdminTestApp(t)
-	seedDefaultUsers(t, db, store.UserRole{OpenID: "ou_admin", Role: roleSysAdmin, Active: true})
+	seedSysAdmin(t, db, "ou_admin")
 	seedAgentOrgUsers(t, db)
 	admin := auth.Establish("ou_admin")
 
@@ -130,7 +128,7 @@ func TestAgentAdjacentLevelsDistinct(t *testing.T) {
 // ④ 白名单（4 个排除角色不可配）
 func TestAgentEligibleWhitelist(t *testing.T) {
 	e, db, auth, _ := newAdminTestApp(t)
-	seedDefaultUsers(t, db, store.UserRole{OpenID: "ou_admin", Role: roleSysAdmin, Active: true})
+	seedSysAdmin(t, db, "ou_admin")
 	seedAgentOrgUsers(t, db)
 	admin := auth.Establish("ou_admin")
 
@@ -151,7 +149,7 @@ func TestAgentEligibleWhitelist(t *testing.T) {
 // ⑤ 审计 + DELETE 永远 409 + GET 契约字段
 func TestAgentAuditAndDeleteRefusedAndListContract(t *testing.T) {
 	e, db, auth, _ := newAdminTestApp(t)
-	seedDefaultUsers(t, db, store.UserRole{OpenID: "ou_admin", Role: roleSysAdmin, Active: true})
+	seedSysAdmin(t, db, "ou_admin")
 	seedAgentOrgUsers(t, db)
 	admin := auth.Establish("ou_admin")
 
@@ -238,10 +236,10 @@ func TestAgentAuditAndDeleteRefusedAndListContract(t *testing.T) {
 func TestAgentNeverSubstitutesInResolve(t *testing.T) {
 	e, db, auth, _ := newAdminTestApp(t)
 	seedDefaultUsers(t, db,
-		store.UserRole{OpenID: "ou_admin", Role: roleSysAdmin, Active: true},
 		store.UserRole{OpenID: "ou_app", Role: "申请人", Department: "仓储部", Active: true},
 		// ★ 关键：不配任何「主管领导」—— 本人不可用
 	)
+	seedSysAdmin(t, db, "ou_admin")
 	seedAgentOrgUsers(t, db)
 	admin := auth.Establish("ou_admin")
 	// 为 supervisor 配生效代理人（配置存在，但绝不参与解析）

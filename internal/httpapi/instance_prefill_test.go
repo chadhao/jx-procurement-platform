@@ -22,9 +22,9 @@ func TestInstancePrefillUsageCategories(t *testing.T) {
 		t.Fatalf("播种默认口径失败: %v", err)
 	}
 	seedDefaultUsers(t, db,
-		store.UserRole{OpenID: "ou_admin", Role: roleSysAdmin, Active: true},
 		store.UserRole{OpenID: "ou_gm", Role: roleProjectGM, Active: true},
 	)
+	seedSysAdmin(t, db, "ou_admin")
 	now := time.Now().UTC()
 	if err := db.UpsertInstance(context.Background(), &store.Instance{
 		InstanceCode: "I-PF-1", ApprovalCode: "code-ct", DocType: "CT", BizNo: "CT-2609-0001",

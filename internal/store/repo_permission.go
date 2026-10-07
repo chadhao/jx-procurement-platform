@@ -68,6 +68,55 @@ ON CONFLICT(open_id) DO UPDATE SET
 	return nil
 }
 
+// SysRole 系统角色行（t_sys_role，N-075）：与审批角色（t_user_role）解耦 ——
+// 系统角色可叠加、可与任一审批角色共存（UNIQUE(open_id, role)）。
+type SysRole struct {
+	OpenID string
+	Role   string
+	Active bool
+}
+
+// UpsertSysRole 写入/更新系统角色映射（幂等；bootstrap 初始管理员与测试夹具共用）。
+func (d *DB) UpsertSysRole(ctx context.Context, r SysRole) error {
+	active := 0
+	if r.Active {
+		active = 1
+	}
+	_, err := d.ExecContext(ctx, `
+INSERT INTO t_sys_role (open_id, role, active, updated_at)
+VALUES (?,?,?,?)
+ON CONFLICT(open_id, role) DO UPDATE SET
+  active = excluded.active, updated_at = excluded.updated_at`,
+		r.OpenID, r.Role, active, fmtTime(timeNow().UTC()))
+	if err != nil {
+		return fmt.Errorf("store: 写入系统角色失败: %w", err)
+	}
+	return nil
+}
+
+// GetSysRoles 读取某 open_id 的**启用中**系统角色（口径比照 GetUserRole：active=1）。
+// ★ 未映射 ⇒ 空集、nil 错误（deny by default 不变 —— 调用方按「有无系统角色」自行判定）。
+func (d *DB) GetSysRoles(ctx context.Context, openID string) ([]string, error) {
+	rows, err := d.QueryContext(ctx, `
+SELECT role FROM t_sys_role WHERE open_id = ? AND active = 1 ORDER BY role`, openID)
+	if err != nil {
+		return nil, fmt.Errorf("store: 读取系统角色失败: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	out := []string{}
+	for rows.Next() {
+		var role string
+		if err := rows.Scan(&role); err != nil {
+			return nil, fmt.Errorf("store: 读取系统角色失败: %w", err)
+		}
+		out = append(out, role)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("store: 读取系统角色失败: %w", err)
+	}
+	return out, nil
+}
+
 // ListUserRoles 列出全部用户角色。
 func (d *DB) ListUserRoles(ctx context.Context) ([]UserRole, error) {
 	rows, err := d.QueryContext(ctx, `

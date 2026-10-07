@@ -71,10 +71,21 @@ func (d Deps) handleFeishuCallback(c echo.Context) error {
 
 	ur, err := d.Auth.ResolveRole(ctx, ident.OpenID)
 	if err != nil {
-		// ★ 默认拒绝：未映射角色不得进入业务页。
-		d.audit(ctx, &store.AuditLogRow{ActorOpenID: ident.OpenID, Action: "login",
-			Resource: "auth", Result: "deny", DetailJSON: `{"reason":"role_not_mapped"}`})
-		return fail(c, http.StatusUnauthorized, codeRoleMapped, "未配置角色，请联系系统管理员")
+		// ★ N-075：未映射审批角色 ≠ 必拒 —— 先查系统角色（t_sys_role）：
+		//   仅系统角色者（Q3 初始管理员只种 t_sys_role）也须能登录进管理域；
+		//   两者皆无 ⇒ 维持默认拒绝（deny by default 不变）。
+		sysRoles, serr := d.DB.GetSysRoles(ctx, ident.OpenID)
+		if serr != nil || len(sysRoles) == 0 {
+			// ★ 默认拒绝：未映射角色不得进入业务页。
+			d.audit(ctx, &store.AuditLogRow{ActorOpenID: ident.OpenID, Action: "login",
+				Resource: "auth", Result: "deny", DetailJSON: `{"reason":"role_not_mapped"}`})
+			return fail(c, http.StatusUnauthorized, codeRoleMapped, "未配置角色，请联系系统管理员")
+		}
+		value := d.Auth.Establish(ident.OpenID)
+		setSessionCookie(c, value, d.Env, int((8 * time.Hour).Seconds()))
+		d.audit(ctx, &store.AuditLogRow{ActorOpenID: ident.OpenID, ActorRole: strings.Join(sysRoles, ","),
+			Action: "login", Resource: "auth", Result: "allow"})
+		return c.Redirect(http.StatusFound, d.postLoginTarget(c))
 	}
 
 	value := d.Auth.Establish(ident.OpenID)
@@ -541,7 +552,10 @@ func (d Deps) handleAuditLogs(c echo.Context) error {
 	}
 	ctx := c.Request().Context()
 	rule, _ := d.Perm.Resolve(ctx, "api:audit", idn)
-	if permission.IsDenyAll(rule) {
+	// ★ N-075（第 5 点 auditRoles ⇒ Role ∪ SysRoles 的运行期落点）：审计查询 =
+	//   权限矩阵 api:audit 行（审批角色半边，如项目总经理）∪ 系统角色半边
+	//   （SysRoles 含系统管理员 —— 系统角色不进矩阵，只能在此放行，见 Q2）。
+	if permission.IsDenyAll(rule) && !hasSysRole(idn, roleSysAdmin) {
 		return fail(c, http.StatusForbidden, codeForbidden, "无权限查询审计日志")
 	}
 	_, size, offset := pageParams(c)
