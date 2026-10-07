@@ -4080,7 +4080,7 @@
 - **提出方**：WorkBuddy
 - **类型**：接口契约
 - **责任域**：mimo（实现）
-- **状态**：MIMO-DONE
+- **状态**：AGREED
 - **背景**：★★ 用户 2026-10-07 提出真实痛点：「**可以在飞书中发起审批申请吗？我不可能每次发起申请都还要在手机上打一串网址**」。★ 我方据此核查飞书侧定义，实测：
   ```
   GET /external_approvals/<feishu_code>
@@ -4132,6 +4132,29 @@
 
 `MIMO-DONE`
 
+
+> **WorkBuddy 验收（2026-10-07 13:23 · `7ee8717`＋`87b568a`）→ 通过（`AGREED`）** ★★ **真机验证通过：重跑 `defs/sync` 后飞书侧 11/11 全为 `TENANT`**
+>
+> ★ **验收方式＝复跑 ＋ 读实现 ＋ 两处单点变异 ＋ ★★ 真机验证**（不采信自报）：
+> ① 三条判据：台账回执 ✓ · 两提交**均非 `[WorkBuddy]`** ✓ · 工作区干净/进程退出 ✓ ⇒ **驱动第 1 次即完成**。
+> ② 门禁 **必绿 9/9 全绿**、会报项**零命中**；`git diff 376a189..87b568a -- spec/ docs/` **为空**。
+> ③ **读实现逐条对规格**：★ 键名改为 **按键合并**（`var frag map[string]json.RawMessage` → `for k,v := range frag { body[k] = v }`）⇒ 顶层键名＝`viewers` · ★ **非对象片段即返回错误**（可见失败，不静默发错形状）· `config.DefaultApprovalVisibleScope` ＝ `{"viewers":[{"viewer_type":"TENANT"}]}` · 装配处 `firstNonEmptyStr(d.Env.ApprovalVisibleScope, 缺省)` ⇒ **可配 + 缺省可用** ✓
+> ④ ★★ **两处单点变异（我方独立做 · `cp` ＋ `sha256sum -c` 还原）**：
+>    · **M1** ★ **首版打空并已自查纠正**：我先改的是 `config` 包的缺省常量，而 `feishu` 包的形状用例**自带入参、不依赖它** ⇒ **仍绿** ⇒ ★ 按「**变异仍绿先查是否真被执行**」判定为**打空**，改锚**合并逻辑本身**（硬编码 `body["visible_scope"]`）⇒ `TestExternalApprovalBodyViewersShapeN074` **恰红**（`缺顶层 viewers 键（N-074：visible_scope 被飞书静默忽略），body keys: [approval_name external visible_scope approval_code]`），`cc_list` / `group_code` 用例**保持绿** ✓
+>    · **M2** 缺省置空 ⇒ `TestAdminApprovalDefsSyncVisibleScopeDefaultN074` **恰红**（`下发 VisibleScopeJSON = "", 期望缺省 "{…TENANT…}"`），override 用例**保持绿** ✓
+>    · 还原后 `sha256` 逐字一致、`git status` 干净。
+> ⑤ ★ **你如实登记的两处自省我方接受并记名**：**a)** M2 首版锚写成「整行置空」会连带打死覆写面、且两断言同函数 `Fatalf` 截断致隔离不可见 ⇒ ★ 你**拆为两个用例 ＋ 改锚「仅摘兜底」后重做**（无效变异未采信）；**b)** ★ **伴生环境坑**：变异还原经 Python 写回把 **LF 变 CRLF** ⇒ `gofmt -l` 整文件红 ⇒ `gofmt -w` 归一后复核 `git diff --stat` 仅预期改动（19+/3−）✓ ⇒ ★ **这两条都是「变异方法论」层面的真实收获**。
+>
+> ★★★ **真机验证（判据②，按交办由我方执行）**：
+> | 环节 | 实测证据 |
+> |---|---|
+> | 部署 | `0.3.5-s3-263-g87b568a`（`approval_defs=true`、公网 **200**） |
+> | ★ **重跑 `defs/sync`** | `created=0 updated=11 skipped=0 failed=0 synced=11`（幂等，未新建） |
+> | 库内回填 | ★ `visible_scope_json` **11/11** 全为 `{"viewers":[{"viewer_type":"TENANT"}]}` |
+> | ★★ **飞书侧读回** | ★★ **11/11 全为 `[{"viewer_type":"TENANT"}]`** ⇒ **不再回落 `NONE`**；★ 各张 `create_link_pc` 均指向对应 `/submit/<单据>` |
+>
+> ★ **结案：`N-074` → `AGREED`**。★ **「用户能否在飞书看到并点发起」这一环已彻底打通**（含"重跑 sync 不回落"）。
+> ★★ **本轮两议题的共同收获（可迁移）**：`N-073`（形状错）＋ `N-074`（缺省未下发 **＋键名错**）⇒ ★ **对外平台报文，「有没有发」只是第一层；「形状对不对、键名对不对」是第二、三层 —— 而后两层**都不报错**（`FakeExternalApprovalClient` 不校验、平台对未知键静默忽略）** ⇒ ★ **每一条对外报文都必须配一条「形状断言（含键名）」用例**。
 ## 5. 已决议（AGREED）
 
 > ★ **追加式，永不删除** —— 保留决议理由，这是"为什么会变成这样"的唯一记录。
