@@ -59,7 +59,7 @@ func seedBAInstance(t *testing.T, db *store.DB, code, bizNo, dept, supplier, l2,
 
 // TestBASystemFieldsInjected 端到端：提交即注入 4 个 system 字段。
 // 覆盖：备案日期=提交日 · 重点抽查区间 TC-19 可达三点（79900 否 / 80000 是 / 99900 是；
-// 1000 元点被采一档档位门禁先行拦截、结构不可达 —— 如实登记）· 空库首单 1/15 未超限 ·
+// 1000 元点被采一档档位门禁先行拦截、结构不可达 —— 如实登记）· 空库首单 1/10 未超限 ·
 // 拆单累计触发（seed 同供应商先于本单 70000 ＋本单 50000 ≥ 100000）与部门超限 20/15。
 func TestBASystemFieldsInjected(t *testing.T) {
 	e, db, auth := newSubmitM4App(t, true)
@@ -68,7 +68,7 @@ func TestBASystemFieldsInjected(t *testing.T) {
 	today := time.Now().Format("2006-01-02")
 	yymm := time.Now().Format("0601")
 
-	// ---- S1：左端点 800 元（TC-19 → 是）；空库首单 1/15 未超限、未触发 ----
+	// ---- S1：左端点 800 元（TC-19 → 是）；空库首单 1/10 未超限、未触发 ----
 	code1, env1 := postSubmit(t, e, cookie, baBodyFor(80000, "边界家"), "")
 	if code1 != http.StatusOK {
 		t.Fatalf("S1 提交应 200, 实为 %d（%s）", code1, env1.Message)
@@ -86,8 +86,8 @@ func TestBASystemFieldsInjected(t *testing.T) {
 		t.Errorf("rollover(80000 首单) = %v, 期望 false（80000 < 100000）", ext1["is_monthly_supplier_rollover_warned"])
 	}
 	res1, _ := ext1["anti_split_check_result"].(string)
-	if !strings.Contains(res1, "未触发") || !strings.Contains(res1, "1/15") || !strings.Contains(res1, "未超限") {
-		t.Errorf("anti_split S1 = %q, 期望含 未触发 / 1/15 / 未超限", res1)
+	if !strings.Contains(res1, "未触发") || !strings.Contains(res1, "1/10") || !strings.Contains(res1, "未超限") {
+		t.Errorf("anti_split S1 = %q, 期望含 未触发 / 1/10 / 未超限", res1)
 	}
 	// S1 实例的部门 = 会话部门（后续种子对齐用）
 	inst1, err := db.GetInstanceByBizNo(ctx, biz1)
@@ -153,8 +153,8 @@ func TestBASystemFieldsInjected(t *testing.T) {
 	if !strings.Contains(res3, "超限") || strings.Contains(res3, "未超限") {
 		t.Errorf("anti_split S3 = %q, 期望部门超限（20/15）", res3)
 	}
-	if !strings.Contains(res3, "19/15") {
-		t.Errorf("anti_split S3 = %q, 期望含 19/15（S1+S2 三真单 + 15 种子 + 本单）", res3)
+	if !strings.Contains(res3, "19/10") {
+		t.Errorf("anti_split S3 = %q, 期望含 19/10（S1+S2 三真单 + 15 种子 + 本单；★ 2026-10-09 阈值 15→10）", res3)
 	}
 }
 

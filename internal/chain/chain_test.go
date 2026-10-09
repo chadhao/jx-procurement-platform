@@ -5,6 +5,7 @@ package chain
 
 import (
 	"errors"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -209,7 +210,7 @@ func TestBuildNodes(t *testing.T) {
 
 	t.Run("PR_采三_加强插入", func(t *testing.T) {
 		nodes, err := BuildNodes(b, "purchase_tier3",
-			Facts{DocType: DocPR, AmountCents: i64(20000001), Department: "生产部"})
+			Facts{DocType: DocPR, AmountCents: i64(50000001), Department: "生产部"}) // ★ 2026-10-09 阈值 20万→50万
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -258,8 +259,11 @@ func TestBuildNodes(t *testing.T) {
 func TestTier3PlusAnchor(t *testing.T) {
 	b := loadBundle(t)
 	br := b.Chain.Routes["purchase_tier3"].Branches["tier3_plus"]
-	if !strings.Contains(br.When, "20000000") {
-		t.Errorf("tier3_plus.when 缺金额阈值 20000000（实际 %q）——请同步 tier3PlusAmountCents", br.When)
+	// ★ 2026-10-09：原写死 "20000000" ⇒ 本守卫**自己成了第二份真相**（改常量后仍红）。
+	//   改为**引用常量** ⇒ 以后只要 spec 与常量一致即绿，不再需要同步第二处字面量。
+	want := strconv.FormatInt(tier3PlusAmountCents, 10)
+	if !strings.Contains(br.When, want) {
+		t.Errorf("tier3_plus.when 缺金额阈值 %s（实际 %q）——请同步 tier3PlusAmountCents", want, br.When)
 	}
 	if br.InsertBefore != "rfq" {
 		t.Errorf("tier3_plus.insert_before = %q，应为 rfq", br.InsertBefore)

@@ -174,18 +174,18 @@ func TestSoftSACounterparty(t *testing.T) {
 	}
 }
 
-// TestSoftSSFixedAssetConflict 固定资产 ∧ >20 万 同时成立才提示（严格按 assert）。
+// TestSoftSSFixedAssetConflict 固定资产 ∧ >50 万 同时成立才提示（严格按 assert）。
 func TestSoftSSFixedAssetConflict(t *testing.T) {
 	d := Deps{Spec: metaTestBundle(t)}
 	form := d.Spec.Forms["SS"]
 	ctx := context.Background()
-	big := int64(20000001)
-	small := int64(19999999)
+	big := int64(50000001)
+	small := int64(49999999)
 
 	hit := &approvalSubmitBody{DocType: "SS", AmountCents: &big,
 		Fields: map[string]any{"is_fixed_asset": true}}
 	if !hasWarn(d.evaluateSoftChecks(ctx, form, hit), "fixed_asset_conflict") {
-		t.Error("固定资产且 >20 万 ⇒ 应提示")
+		t.Error("固定资产且 >50 万 ⇒ 应提示")
 	}
 	noFixed := &approvalSubmitBody{DocType: "SS", AmountCents: &big,
 		Fields: map[string]any{"is_fixed_asset": false}}
@@ -195,7 +195,7 @@ func TestSoftSSFixedAssetConflict(t *testing.T) {
 	low := &approvalSubmitBody{DocType: "SS", AmountCents: &small,
 		Fields: map[string]any{"is_fixed_asset": true}}
 	if hasWarn(d.evaluateSoftChecks(ctx, form, low), "fixed_asset_conflict") {
-		t.Error("≤20 万不应提示（assert 是 AND）")
+		t.Error("≤50 万不应提示（assert 是 AND）")
 	}
 }
 

@@ -453,7 +453,7 @@
     ],
     "rule": "单一来源须附理由书；**不得事后补写**",
     "resolution": "R-20#14：★ 工具表 R32 只列「直采 / 询比价 / 招标 / 单一来源」，**漏了「竞争性谈判」**；制度第 309 行明确有（\"升级为招标或竞争性谈判\"）⇒ **取并集 5 值**",
-    "note": "★ 「招标 / 竞争性谈判」对应采三档（加强）：>200,000 元 或固定资产类（见 spec/chain.json routes.purchase_tier3.branches.tier3_plus，★ 该分支节点顺序待用户确认）"
+    "note": "★ 「招标 / 竞争性谈判」对应采三档（加强）：>500,000 元 或固定资产类（见 spec/chain.json routes.purchase_tier3.branches.tier3_plus，★ 该分支节点顺序待用户确认）"
   },
   "three_way_match": {
     "_source": "工具表 表单字段清单 R43（SUB「三单匹配结论」）",

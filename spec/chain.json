@@ -303,7 +303,7 @@
           "required": true,
           "params": {
             "same_supplier_same_category_monthly_cents": 100000,
-            "dept_monthly_max_count": 15,
+            "dept_monthly_max_count": 10,
             "self_check_ratio": 0.2,
             "key_sample_ratio": 0.5
           },
@@ -484,7 +484,7 @@
       "branches": {
         "tier3_plus": {
           "label": "采三档（加强）",
-          "when": "amount_cents > 20000000 || is_fixed_asset == true",
+          "when": "amount_cents > 50000000 || is_fixed_asset == true",
           "effect": "采购方式升级为**招标 / 竞争性谈判**",
           "insert_before": "rfq",
           "inserted_nodes": [

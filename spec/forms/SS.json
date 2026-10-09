@@ -187,7 +187,7 @@
           "origin": "resolution",
           "origin_ref": "N-013 裁定（同 PR）",
           "rule": "★ 从关联 PR 带入",
-          "note": "★ 用途：`>200,000 元或固定资产类` 时采购方式应升级为招标／竞谈（第十六条）；★★ **二者同时成立时**：系统**提示但不阻断**（用户 2026-09-30 定案「独立例外提示不阻断」）—— 提示「应走招标／竞谈」，**但不得拦下本单**。★ 见 `checks#fixed_asset_conflict` 与 `known_gaps`。"
+          "note": "★ 用途：`>500,000 元或固定资产类` 时采购方式应升级为招标／竞谈（第十六条）；★★ **二者同时成立时**：系统**提示但不阻断**（用户 2026-09-30 定案「独立例外提示不阻断」）—— 提示「应走招标／竞谈」，**但不得拦下本单**。★ 见 `checks#fixed_asset_conflict` 与 `known_gaps`。"
         },
         {
           "name": "planned_supplier",
@@ -485,9 +485,9 @@
     {
       "id": "fixed_asset_conflict",
       "carried_by_kind": "submit",
-      "carried_by": "★ N-062 J2 提示通道已建：soft 统一执行体＝internal/httpapi/handlers_approval_softchecks.go#evaluateSoftChecks（不阻断、随 data.warnings 返回）；本条求值器＝softSSFixedAssetConflict（严格按 assert＝is_fixed_asset ∧ amount>20000000 两条件同时成立才提示，单条件不触发）；判据＝TestSoftSSFixedAssetConflict（正反三例）",
+      "carried_by": "★ N-062 J2 提示通道已建：soft 统一执行体＝internal/httpapi/handlers_approval_softchecks.go#evaluateSoftChecks（不阻断、随 data.warnings 返回）；本条求值器＝softSSFixedAssetConflict（严格按 assert＝is_fixed_asset ∧ amount>50000000 两条件同时成立才提示，单条件不触发）；判据＝TestSoftSSFixedAssetConflict（正反三例）",
       "when": "submit",
-      "assert": "NOT (is_fixed_asset == true AND amount_cents > 20000000)",
+      "assert": "NOT (is_fixed_asset == true AND amount_cents > 50000000)",
       "else": "★ **不静默通过**：提示「超 20 万元或固定资产类应走招标／竞谈，不应使用单一来源」",
       "origin": "institution",
       "origin_ref": "第二十条 ＋ 第十六条（加强采购）",

@@ -199,8 +199,8 @@ func softSACounterpartyConditional(_ context.Context, _ Deps, body *approvalSubm
 }
 
 // softSSFixedAssetConflict SS#fixed_asset_conflict：
-// assert ＝ NOT(is_fixed_asset ∧ amount_cents>20000000) ⇒ 两条件同时成立才提示
-// （金额 20000000 分 = 20 万元；单条件不触发 —— 严格按 assert，不按 else 文案的口语）。
+// assert ＝ NOT(is_fixed_asset ∧ amount_cents>50000000) ⇒ 两条件同时成立才提示
+// （金额 50000000 分 = 50 万元；单条件不触发 —— 严格按 assert，不按 else 文案的口语）。
 func softSSFixedAssetConflict(_ context.Context, _ Deps, body *approvalSubmitBody) (string, bool) {
 	if body.DocType != "SS" {
 		return "", false
@@ -214,7 +214,7 @@ func softSSFixedAssetConflict(_ context.Context, _ Deps, body *approvalSubmitBod
 	} else if v, ok := toFloat64(body.Fields["amount_cents"]); ok {
 		amt = int64(v)
 	}
-	if amt <= 20000000 {
+	if amt <= 50000000 {
 		return "", false
 	}
 	return "超 20 万元或固定资产类应走招标／竞谈，不应使用单一来源", true
