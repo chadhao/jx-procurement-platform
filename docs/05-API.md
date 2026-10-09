@@ -638,7 +638,7 @@ sequenceDiagram
 
 | 项 | 内容 |
 |---|---|
-| 用途 | 按**合同号**回溯历次变更：**次数 / 累计变更金额 / 所取档位**（制度第五十二条） |
+| 用途 | 按**合同号**回溯历次变更：**次数 / 累计变更金额 / 所取档位**（制度第二十一条） |
 | 权限要求 | 沿用台账口径：以资源 `ledger:L09`（例外事项台账）解析行·列规则；无权限 → 40300 且留痕 |
 | 行级 / 列级 | 行级过滤在 **SQL 层**（`RowFilter`），列级投影在**序列化层**（`Project`）；越权行不返回、无权列连字段名都不出现 |
 | 响应字段 | `contract_no`、`count`、`cumulative_change_cents`+`cumulative_change_display`、`amount_hidden`、`items[]`：`biz_no`、`instance_code`、`department`、`biz_date`、`change_cents`+`change_display`、`original_cents`+`original_display`、`tier`、`archive` |

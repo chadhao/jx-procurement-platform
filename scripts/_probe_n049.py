@@ -24,9 +24,12 @@
      · ★ `E4` 只删索引里的一条**指针** ⇒ **恰 1 处**且为 `E4`；
      · ★ `E5` 只把 `unstable_count` +1 ⇒ **恰 1 处**且为 `E5`；
      · ★ `E6` 只往索引塞一条 **spec 已不引用的陈旧条款** ⇒ **恰 1 处**且为 `E6`。
-  5. ★★★ **`E4` 关掉的正是「`[:8]` 上限」那个洞（缺口存在性正证）**：把 `第三十五条` 的
-     **第 9 条**指针从索引里删掉 ⇒ **本版报 `E4`**；★★ 而该指针**在 V1.2 的口径下根本不在索引里**
-     （被 `[:8]` 丢掉）⇒ 旧口径**连可比对的对象都没有** ⇒ 这正是本批关闭的窗口。
+  5. ★★★ **`E4` 关掉的正是「`[:8]` 上限」那个洞（缺口存在性正证）**：把 `第二十条` 的
+     **尾部（旧 `[:8]` 之外）一条**指针从索引里删掉 ⇒ **本版报 `E4`**；★★ 而该指针**在旧口径下
+     根本不在索引里**（被 `[:8]` 丢掉）⇒ 旧口径**连可比对的对象都没有** ⇒ 这正是本批关闭的窗口。
+     ★ 2026-10-09 修：制度换版后该指针**所属条款由 `第三十五条` 变为 `第二十条`**（旧 35∪36 合并）、
+       **其在 `spec[]` 中的序号也随稳定引用集变化而位移**（8 → 11）⇒ 本处**不再钉死序号**，
+       改为「从当前索引实算其下标，断言其仍在旧 `[:8]` 之外」（承 §1 的「钉形态、不钉数字」原则）。
   6. ★★ **缺口存在性反证**：同一处 `E4` 失真 —— **有自审调用 ⇒ rc=1**；
      **把 `_institution_anchors_counts()` 调用摘掉 ⇒ rc=0（静默放行）**。
   7. **fail-closed**：索引**不可解析** ⇒ 报可见失败（**不许静默通过** —— 否则「检查不了」
@@ -164,7 +167,10 @@ def clause(doc, name):
 
 
 # ------------------------------------------------------------------ 1. 正向
-print("== 1. 正向（索引 V1.3）==")
+# ★ 2026-10-09 修：原硬编码「索引 V1.3」⇒ 制度换版后标签失真（只是人读标签、非断言）。
+#   改为**随索引实读版本**，标签不再随换版腐烂。
+_IDX_VERSION = json.loads(read(INDEX).decode("utf-8")).get("version")
+print("== 1. 正向（索引 V%s）==" % _IDX_VERSION)
 rc, out = run_gen_check()
 ok("指针面＋计数面重算与索引一致（gen --check rc=0）", rc == 0,
    out.strip().splitlines()[-1] if out.strip() else "")
@@ -228,8 +234,10 @@ except Exception as e:
 print("\n== 4. 鉴别力（六处单点变异 · 一次只动一处）==")
 
 # E1：只动 citation_count
-m = mutate_index_bytes(lambda d: clause(d, "第五十二条").__setitem__(
-    "citation_count", clause(d, "第五十二条")["citation_count"] + 1))
+# ★ 2026-10-09 修（制度换版重锚）：变异靶条款号随制度换版而变
+#   旧 `第五十二条` → 新 `第二十一条`（旧 42∪52 合并）。索引里不再有旧条款号 ⇒ 必须用新号。
+m = mutate_index_bytes(lambda d: clause(d, "第二十一条").__setitem__(
+    "citation_count", clause(d, "第二十一条")["citation_count"] + 1))
 rc, _, anchor = with_mutation(INDEX, m, run_check_spec)
 codes = drift_codes(anchor)
 ok("E1：`citation_count` +1 ⇒ **恰 1 处**违规且为 E1", rc == 1 and codes == ["E1"],
@@ -237,7 +245,7 @@ ok("E1：`citation_count` +1 ⇒ **恰 1 处**违规且为 E1", rc == 1 and code
 
 # E2：只动 citation_by_file（去掉一个文件；总计数不变 ⇒ E1 不报）
 def _e2(d):
-    cbf = clause(d, "第五十二条")["citation_by_file"]
+    cbf = clause(d, "第二十一条")["citation_by_file"]
     keys = sorted(cbf)
     assert len(keys) > 1, "该条款的 citation_by_file 至少两个文件才可做本变异"
     del cbf[keys[-1]]
@@ -259,16 +267,20 @@ codes = drift_codes(anchor)
 ok("E3：spec 侧新增「第七十二条」引用 ⇒ **恰 1 处**违规且为 E3（`S20` 抓不到的那一类）",
    rc == 1 and codes == ["E3"], "rc=%d codes=%s" % (rc, codes))
 
-# E4：只删索引里的一条指针（取 `第三十五条` 的第 9 条 —— ★ 正是旧 `[:8]` 丢掉的第一条）
+# E4：只删索引里的一条指针（取 `第二十条` 的尾指针 —— ★ 正是旧 `[:8]` 会丢掉的那一类）
+# ★ 2026-10-09 修（制度换版重锚）：条款号 `第三十五条` → `第二十条`；且因「旧 35∪36 合并」
+#   该指针的稳定引用集变化 ⇒ 其序号**由 8 位移到 11**。⇒ 不再钉死序号，**从当前索引实算**，
+#   只断言「它仍在旧口径 CAP_OLD 之外」（保持原命题：「旧 `[:8]` 会丢弃它」）。
 CAP_HOLE = "spec/forms/CT.json#sections[id=clauses].fields[name=breach_liability].origin_ref"
-c35 = [c for c in idx_cur["clauses"] if c["clause"] == "第三十五条"][0]
-ok("★ `第三十五条` 的第 9 条指针恰为「旧口径被 `[:8]` 丢掉的第一条」",
-   len(c35["spec"]) > CAP_OLD and c35["spec"][CAP_OLD]["at"] == CAP_HOLE,
-   "spec[%d].at=%s" % (CAP_OLD, c35["spec"][CAP_OLD]["at"] if len(c35["spec"]) > CAP_OLD else "—"))
+c20 = [c for c in idx_cur["clauses"] if c["clause"] == "第二十条"][0]
+CAP_IDX = next((i for i, s in enumerate(c20["spec"]) if s["at"] == CAP_HOLE), -1)
+ok("★ `第二十条` 的该指针位于旧口径 `[:%d]` 之外（⇒ 旧规则会丢弃它，本版由 `E4` 守住）" % CAP_OLD,
+   CAP_IDX >= CAP_OLD and len(c20["spec"]) > CAP_OLD,
+   "spec[%d].at=%s（共 %d 条）" % (CAP_IDX, CAP_HOLE, len(c20["spec"])))
 
 
 def _e4(d):
-    c = clause(d, "第三十五条")
+    c = clause(d, "第二十条")
     c["spec"] = [s for s in c["spec"] if s["at"] != CAP_HOLE]
 m_e4 = mutate_index_bytes(_e4)
 rc, _, anchor = with_mutation(INDEX, m_e4, run_check_spec)
@@ -277,8 +289,8 @@ ok("E4：删一条**指针** ⇒ **恰 1 处**违规且为 E4", rc == 1 and code
    "rc=%d codes=%s" % (rc, codes))
 
 # E5：只动 unstable_count
-m = mutate_index_bytes(lambda d: clause(d, "第三十五条").__setitem__(
-    "unstable_count", clause(d, "第三十五条")["unstable_count"] + 1))
+m = mutate_index_bytes(lambda d: clause(d, "第二十条").__setitem__(
+    "unstable_count", clause(d, "第二十条")["unstable_count"] + 1))
 rc, _, anchor = with_mutation(INDEX, m, run_check_spec)
 codes = drift_codes(anchor)
 ok("E5：`unstable_count` +1 ⇒ **恰 1 处**违规且为 E5", rc == 1 and codes == ["E5"],

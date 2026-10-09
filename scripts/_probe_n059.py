@@ -191,17 +191,24 @@ def a_core_keys_match(ct, pr):
 
 
 def a_anchor_invariant(anchors):
-    '''第 5 条（续）：制度锚点索引的逐条款不变式 —— `len(spec[]) + unstable_count == citation_count`。'''
+    '''第 5 条（续）：制度锚点索引的逐条款不变式 —— `len(spec[]) + unstable_count == citation_count`。
+
+    ★ 2026-10-09 修：原先把「条款数 == 29」写死在断言里 ⇒ 制度换版（`N-078` D10）后
+      `clauses` 由 **29 → 17**（旧 V4.0 条款号整体重锚、并条合并，**属设计内演进**）即误红。
+      ⇒ 按本探针既有的「守不变量、不守常数」纪律（见 `5j` 注释），**去掉写死的条款数**，
+        只守**逐条款不变式**本身 ＋「非空」。条款数是否完整由 `a_anchor_in_sync`（`audit()`）把关。
+    '''
     cls = anchors.get(u'clauses') or []
-    if len(cls) != 29:
-        return False, u'条款数 = %d（要求 29）' % len(cls)
+    if not cls:
+        return False, u'clauses 为空'
     bad = []
     for c in cls:
         if len(c.get(u'spec', [])) + c.get(u'unstable_count', 0) != c.get(u'citation_count', 0):
             bad.append(c.get(u'clause'))
     if bad:
         return False, u'%d 条不满足不变式：%s' % (len(bad), u','.join(bad[:3]))
-    return True, u'29 条款全部满足（spec[] 共 %d 条）' % sum(len(c.get(u'spec', [])) for c in cls)
+    return True, u'%d 条款全部满足（spec[] 共 %d 条）' % (
+        len(cls), sum(len(c.get(u'spec', [])) for c in cls))
 
 
 def a_anchor_in_sync():
@@ -221,25 +228,41 @@ def a_anchors_prose(anchors):
     ★ 动因（实测）：`gen_institution_anchors.py --rewrite` **只回填 `clauses[]` 的四项**，
       版本 / 散文 / `change_log` **一律原样保留** ⇒ ★ 回填之后散文会**静默失真**，
       且 `check_spec.py` 的 `[META]` 自审**只比 `clauses[]`、看不到散文** ⇒ 机械审计抓不住。
+
+    ★★ 守卫语义（**必须保住**）：`scope` 散文所声明的**计数**（指针条数 / `unstable_count`）与
+       `clauses[]` **实算**逐值一致；且 `version` ↔ `scope` 散文 ↔ `change_log` **三者同版**。
+    ★ 2026-10-09 修（对制度换版免疫，**不降低守卫强度**）：原实现把 `version == "1.4"`、
+      `change_log` 含 `"1.4"`、变异目标 `307/304/22` 三处**写死**（V1.4 时点常数）⇒ 换版即误红，
+      且反证因替换目标变成**空操作**而连带失败。⇒ 改为：
+        ① `scope` 计数串**从 `clauses[]` 实算后断言其出现**（本就动态，保留）；
+        ② `change_log` 须含**当前 `version`**（而非写死的 1.4）；
+        ③ `scope` 散文须**声明当前 `version`**（而非写死的 1.4）。
+      ★ 三处均**只把「V1.4 时点常数」换成「与 `clauses[]` 同源的动态值」**，不变式一个不少。
     '''
     cls = anchors.get(u'clauses') or []
     n_spec = sum(len(c.get(u'spec', [])) for c in cls)
     n_un = sum(c.get(u'unstable_count', 0) for c in cls)
     n_cit = sum(c.get(u'citation_count', 0) for c in cls)
     sc = anchors.get(u'scope') or u''
+    ver = anchors.get(u'version')
+    cl_versions = [e.get(u'version') for e in (anchors.get(u'change_log') or [])]
     bad = []
-    if anchors.get(u'version') != u'1.4':
-        bad.append(u'version=%s（要求 1.4）' % anchors.get(u'version'))
+    # ① `scope` 散文声明的计数必须与 `clauses[]` 实算一致（← 守卫核心）
     if (u'共 **%d 条**指针' % n_spec) not in sc:
         bad.append(u'`scope` 散文未见「共 **%d 条**指针」' % n_spec)
     if (u'现行 **%d 处**' % n_un) not in sc:
         bad.append(u'`scope` 散文未见「现行 **%d 处**」' % n_un)
-    if u'1.4' not in [e.get(u'version') for e in (anchors.get(u'change_log') or [])]:
-        bad.append(u'`change_log` 无 1.4 条目')
+    # ② `change_log` 必须含**当前 version** 的条目（不写死具体版本号）
+    if ver not in cl_versions:
+        bad.append(u'`change_log` 无当前版本 %s 条目（实有 %s）'
+                   % (ver, u'/'.join(str(v) for v in cl_versions)))
+    # ③ `scope` 散文必须**声明当前 version**（version ↔ scope 同版）
+    if (u'V%s' % ver) not in sc:
+        bad.append(u'`scope` 散文未声明当前版本 V%s' % ver)
     if bad:
         return False, u'; '.join(bad[:3])
-    return True, (u'版本 1.4 · `scope` 散文计数与数据一致（%d 条 / %d 处 / 引用 %d）· `change_log` 含 1.4'
-                  % (n_spec, n_un, n_cit))
+    return True, (u'版本 %s · `scope` 散文计数与数据一致（%d 条 / %d 处 / 引用 %d）· `change_log` 含 %s'
+                  % (ver, n_spec, n_un, n_cit, ver))
 
 
 def a_readme_version_sync(readme_text, checks_version):
@@ -382,11 +405,23 @@ def main():
     ok(u'5h ★ 第 4 笔：锚点索引的**版本 / `scope` 散文 / `change_log`** 三者与 `clauses[]` 数据同版'
        u'（★ `--rewrite` 只回填 `clauses[]` ⇒ 散文会静默失真、机械审计看不见）', cond, det)
     anch_bad = json.loads(json.dumps(anch))
-    anch_bad[u'scope'] = (anch_bad[u'scope'].replace(u'共 **307 条**指针', u'共 **304 条**指针')
-                                          .replace(u'现行 **21 处**', u'现行 **22 处**'))
+    # ★ 2026-10-09 修：变异目标由「写死旧计数 307 / 22」改为**从当前 `clauses[]` 动态推导** ⇒ 换版免疫；
+    #   并**同时**踩中「计数面（count）」与「版本面（version / change_log / scope）」两族守卫，
+    #   证明 5h 的两族断言**都不是恒真的空断言**（能数到非 0）。
+    #   ★★ 若散文根本没写该计数串 ⇒ `.replace` 成空操作 ⇒ 下方 `anch_bad[...] != anch[...]` 断言
+    #      随即**如实报红**（不假绿）——这正是上一版「写死目标 ⇒ 空操作 ⇒ 反证假红」的对症修法。
+    _ns = sum(len(c.get(u'spec', [])) for c in anch[u'clauses'])
+    _nu = sum(c.get(u'unstable_count', 0) for c in anch[u'clauses'])
+    anch_bad[u'scope'] = (anch_bad[u'scope']
+                          .replace(u'共 **%d 条**指针' % _ns, u'共 **%d 条**指针' % (_ns - 1))
+                          .replace(u'现行 **%d 处**' % _nu, u'现行 **%d 处**' % (_nu + 1)))
+    anch_bad[u'version'] = u'0.0'      # ⇒ 同时触发「`change_log` 无当前版本」＋「`scope` 未声明当前版本」
     cond2, _ = a_anchors_prose(anch_bad)
-    ok(u'5i ★ 反证（内存副本）：把 `scope` 散文改回旧计数（304 / 22）⇒ 5h 必须报红',
-       (not cond2) and anch_bad[u'scope'] != anch[u'scope'], u'变异后 cond=%s' % cond2)
+    ok(u'5i ★ 反证（内存副本）：把 `scope` 计数改错（%d→%d / %d→%d）＋ `version` 改写死假值'
+       u'（0.0）⇒ 5h 的**计数面与版本面**均须报红'
+       % (_ns, _ns - 1, _nu, _nu + 1),
+       (not cond2) and anch_bad[u'scope'] != anch[u'scope'] and anch_bad[u'version'] != anch[u'version'],
+       u'变异后 cond=%s' % cond2)
 
     rmd = text(P_README)
     cond, det = a_readme_version_sync(rmd, cj[u'version'])
