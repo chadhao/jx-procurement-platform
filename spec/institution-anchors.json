@@ -1,13 +1,13 @@
 {
-  "version": "1.4",
+  "version": "1.5",
   "generated_by": "WorkBuddy",
-  "date": "2026-10-05",
-  "scope": "★ `N-006` 三重机制的**第 2 重**：制度条款 ↔ 机读规格的**双向索引**（接入门禁）。★ 双向含义：① **条款 → 落点**（`clauses[].spec[]`，稳定指针）② **落点 → 条款**（同一张表反查；另有 `citation_by_file` 给出**全量**引用计数，覆盖 `spec[]` 未逐条收录的其余引用）。★★ 自 **V1.3**（`N-049` ① 第二段，2026-10-05）起：① 的 **`spec[]` 由「前 8 条」改为「全量」**（共 **307 条**指针）＋ 新增 **`unstable_count`**（元素无稳定键 ⇒ 只计数、不建指针的那部分，现行 **21 处**）⇒ ★ **不变式 `len(spec[]) + unstable_count == citation_count` 逐条款成立**，且由 `scripts/check_spec.py` 的 `[META]` 自审**机械把关**（见 `conventions.pointer_rule`）。★ **V1.4（`N-059`，2026-10-05）**：数据随 `forms/CT.json` 补入两处「制度第十一条」引用而**回填** —— `spec[]` **304 → 307 条** · `unstable_count` **22 → 21** · 引用总数 **326 → 328**；★★ **连带暴露的一条真实机制缺口**：`--rewrite` **只回填 `clauses[]`**（版本 / 散文 / `change_log` 原样保留）⇒ ★ 数据一变、**`scope` 散文就静默失真**，而**任何机械审计都看不见**（本批按「散文与索引拉到与真源同版」处置）。",
+  "date": "2026-10-09",
+  "scope": "★ `N-006` 三重机制的**第 2 重**：制度条款 ↔ 机读规格的**双向索引**（接入门禁）。★ 双向含义：① **条款 → 落点**（`clauses[].spec[]`，稳定指针）② **落点 → 条款**（同一张表反查；另有 `citation_by_file` 给出**全量**引用计数，覆盖 `spec[]` 未逐条收录的其余引用）。★★★ **V1.5（`N-078` D10「条款锚点全量重扫」· 2026-10-09）—— 制度换版，条款号整体重锚：**旧索引基于制度 **V4.0（71 条）**，spec 正文引用的条款号（第三十四/三十五/五十二/五十九…）与其一致；★★ 用户 2026-10-09 提供**修改后正本（28 条 + 附录一/二）**并裁定「以制度为准」⇒ 旧条款号在新版**根本不存在** ⇒ 本次把 `spec/**/*.json` 内**全部「第X条」引用（331 处）按《旧→新》映射一次性重锚**（映射表见 `change_log` V1.5），再**机械重生**本索引 ⇒ `clauses` 由 **29 条 → 17 条**（全部落在新版 1–28 条内）。★ 口径**唯一来源** ＝ `scripts/gen_institution_anchors.py`（本文件只声明）；回填 ＝ `--rewrite`。★ 不变式 **`len(spec[]) + unstable_count == citation_count`** 逐条款成立，由 `check_spec.py` 的 `[META]` 自审机械把关。",
   "institution_doc": {
-    "title": "湖南江熙新材料科技 采购与费用审批管理办法（试行）",
-    "version": "V4.0",
-    "location": "★ **非本仓库**（Word 正本，由我方在会话工作目录交付）",
-    "note": "★ 制度正本不入库 ⇒ 本索引以「条款号」为唯一对接键；★★ **条款标题一律不由我方臆造**（`topic` 字段故意不设）—— 能机械取到的引号短语收录在 `quoted_phrases`，供人读核对。"
+    "title": "湖南江熙新材料科技 采购与费用审批管理办法",
+    "version": "2026-10-09 修改后正本（原 V4.0）",
+    "location": "★ **非本仓库**（Word 正本）；★ 逐段提取稿（含附录一/二 · 表格已转 Markdown）落盘于 `C:/Users/haoduan/WorkBuddy/江熙新材/institution/采购及费用审批管理办法-2026-10-09正本提取.md`（`N-078` D10 对照基准）",
+    "note": "★ 制度正本不入库 ⇒ 本索引以「条款号」为唯一对接键；★★ **条款标题一律不由我方臆造**（`topic` 字段故意不设）—— 能机械取到的引号短语收录在 `quoted_phrases`，供人读核对。★★ **V1.5 换版**：条款号以 **2026-10-09 修改后正本（第一~二十八条 + 附录一/二）** 为唯一对接键。"
   },
   "conventions": {
     "clause_key": "制度条款号（中文数字，如「第三十五条」）—— 制度侧与系统侧的唯一对接键",
@@ -47,63 +47,25 @@
       "unstable_count": 0
     },
     {
-      "clause": "第十条",
-      "quoted_phrases": [
-        "经办人由主管领导…指定"
-      ],
+      "clause": "第五条",
+      "quoted_phrases": [],
       "spec": [
         {
-          "at": "spec/forms/GR.json#checks[id=no_approver_in_acceptance_group].origin_ref",
-          "kind": "checks"
-        },
-        {
-          "at": "spec/forms/BJ.json#sections[id=header].fields[name=applicant].critical_note",
-          "kind": "rule"
-        },
-        {
-          "at": "spec/forms/BJ.json#sections[id=header].fields[name=applicant].rule",
-          "kind": "rule"
-        },
-        {
-          "at": "spec/forms/RFQ.json#sections[id=header].fields[name=applicant].rule",
-          "kind": "rule"
-        },
-        {
-          "at": "spec/authority.json#change_log[version=1.1].what",
-          "kind": "prose"
-        },
-        {
-          "at": "spec/authority.json#designator.terminology",
-          "kind": "prose"
-        },
-        {
-          "at": "spec/forms/GR.json#routes.avoidance",
-          "kind": "prose"
-        },
-        {
-          "at": "spec/forms/GR.json#sources.institution",
-          "kind": "prose"
-        },
-        {
-          "at": "spec/forms/RFQ.json#sources.institution",
+          "at": "spec/chain.json#payment_route_rule.consequences.for_institution",
           "kind": "prose"
         }
       ],
-      "citation_count": 9,
+      "citation_count": 1,
       "citation_by_file": {
-        "spec/authority.json": 2,
-        "spec/forms/BJ.json": 2,
-        "spec/forms/GR.json": 3,
-        "spec/forms/RFQ.json": 2
+        "spec/chain.json": 1
       },
       "unstable_count": 0
     },
     {
-      "clause": "第十一条",
+      "clause": "第七条",
       "quoted_phrases": [
         "申请人",
-        "各部门全员",
-        "申请人 / 所属部门"
+        "各部门全员"
       ],
       "spec": [
         {
@@ -133,99 +95,37 @@
         {
           "at": "spec/forms/SA.json#sections[id=header].fields[name=applicant].note",
           "kind": "note"
+        },
+        {
+          "at": "spec/constants.json#sources.institution",
+          "kind": "prose"
+        },
+        {
+          "at": "spec/forms/BA.json#sources.institution",
+          "kind": "prose"
         }
       ],
-      "citation_count": 8,
+      "citation_count": 10,
       "citation_by_file": {
-        "spec/forms/BA.json": 1,
+        "spec/constants.json": 1,
+        "spec/forms/BA.json": 2,
         "spec/forms/CT.json": 3,
         "spec/forms/SA.json": 4
       },
       "unstable_count": 1
     },
     {
-      "clause": "第十二条",
+      "clause": "第九条",
       "quoted_phrases": [
-        "每个审批角色指定 1 名代理人",
-        "两级审批不得由同一人代理",
-        "备付金审批不得代理"
+        "经办人由主管领导…指定"
       ],
-      "spec": [
-        {
-          "at": "spec/authority.json#checks[id=no_agent_for_petty_cash].origin_ref",
-          "kind": "checks"
-        },
-        {
-          "at": "spec/authority.json#checks[id=no_shared_agent_across_two_levels].origin_ref",
-          "kind": "checks"
-        },
-        {
-          "at": "spec/authority.json#checks[id=single_active_agent_per_role].origin_ref",
-          "kind": "checks"
-        },
-        {
-          "at": "spec/authority.json#change_log[version=1.1].what",
-          "kind": "prose"
-        },
-        {
-          "at": "spec/authority.json#sources.institution",
-          "kind": "prose"
-        },
-        {
-          "at": "spec/chain.json#conventions.agent_allowed",
-          "kind": "prose"
-        },
-        {
-          "at": "spec/forms/CT.json#routes.then_by_supervisor",
-          "kind": "prose"
-        },
-        {
-          "at": "spec/forms/CT.json#sources.institution",
-          "kind": "prose"
-        }
-      ],
-      "citation_count": 9,
-      "citation_by_file": {
-        "spec/authority.json": 6,
-        "spec/chain.json": 1,
-        "spec/forms/CT.json": 2
-      },
-      "unstable_count": 1
-    },
-    {
-      "clause": "第十三条",
-      "quoted_phrases": [],
-      "spec": [
-        {
-          "at": "spec/forms/GR.json#checks[id=related_order_or_record_must_exist].origin_ref",
-          "kind": "checks"
-        },
-        {
-          "at": "spec/forms/GR.json#sections[id=header].fields[name=related_order_or_record_no].rule",
-          "kind": "rule"
-        },
-        {
-          "at": "spec/forms/GR.json#sources.institution",
-          "kind": "prose"
-        },
-        {
-          "at": "spec/forms/PR.json#sources.institution",
-          "kind": "prose"
-        }
-      ],
-      "citation_count": 4,
-      "citation_by_file": {
-        "spec/forms/GR.json": 3,
-        "spec/forms/PR.json": 1
-      },
-      "unstable_count": 0
-    },
-    {
-      "clause": "第十四条",
-      "quoted_phrases": [],
       "spec": [
         {
           "at": "spec/forms/CT.json#checks[id=no_self_purchaser].origin_ref",
+          "kind": "checks"
+        },
+        {
+          "at": "spec/forms/GR.json#checks[id=no_approver_in_acceptance_group].origin_ref",
           "kind": "checks"
         },
         {
@@ -245,11 +145,47 @@
           "kind": "checks"
         },
         {
+          "at": "spec/forms/BJ.json#sections[id=header].fields[name=applicant].critical_note",
+          "kind": "rule"
+        },
+        {
+          "at": "spec/forms/BJ.json#sections[id=header].fields[name=applicant].rule",
+          "kind": "rule"
+        },
+        {
           "at": "spec/forms/CT.json#sections[id=header].fields[name=purchaser].rule",
           "kind": "rule"
         },
         {
+          "at": "spec/forms/RFQ.json#sections[id=header].fields[name=applicant].rule",
+          "kind": "rule"
+        },
+        {
+          "at": "spec/authority.json#change_log[version=1.1].what",
+          "kind": "prose"
+        },
+        {
+          "at": "spec/authority.json#designator.terminology",
+          "kind": "prose"
+        },
+        {
+          "at": "spec/chain.json#sources.institution",
+          "kind": "prose"
+        },
+        {
+          "at": "spec/enums.json#sources.institution",
+          "kind": "prose"
+        },
+        {
           "at": "spec/forms/CT.json#sources.institution",
+          "kind": "prose"
+        },
+        {
+          "at": "spec/forms/GR.json#routes.avoidance",
+          "kind": "prose"
+        },
+        {
+          "at": "spec/forms/GR.json#sources.institution",
           "kind": "prose"
         },
         {
@@ -257,44 +193,44 @@
           "kind": "prose"
         },
         {
+          "at": "spec/forms/PR.json#sections[id=approval_node].fields[name=designation_basis].resolution_note",
+          "kind": "prose"
+        },
+        {
           "at": "spec/forms/PR.json#sources.institution",
+          "kind": "prose"
+        },
+        {
+          "at": "spec/forms/RFQ.json#sources.institution",
+          "kind": "prose"
+        },
+        {
+          "at": "spec/ledger-mapping.json#ledgers.L03.extra_note",
+          "kind": "prose"
+        },
+        {
+          "at": "spec/ledger-mapping.json#ledgers.L03.institution_ref",
           "kind": "prose"
         }
       ],
-      "citation_count": 9,
+      "citation_count": 23,
       "citation_by_file": {
+        "spec/authority.json": 2,
+        "spec/chain.json": 1,
+        "spec/enums.json": 1,
+        "spec/forms/BJ.json": 2,
         "spec/forms/CT.json": 3,
+        "spec/forms/GR.json": 3,
         "spec/forms/PC.json": 1,
-        "spec/forms/PR.json": 4,
-        "spec/forms/SS.json": 1
+        "spec/forms/PR.json": 5,
+        "spec/forms/RFQ.json": 2,
+        "spec/forms/SS.json": 1,
+        "spec/ledger-mapping.json": 2
       },
       "unstable_count": 0
     },
     {
-      "clause": "第十六条",
-      "quoted_phrases": [],
-      "spec": [
-        {
-          "at": "spec/forms/SS.json#checks[id=fixed_asset_conflict].note",
-          "kind": "checks"
-        },
-        {
-          "at": "spec/forms/SS.json#checks[id=fixed_asset_conflict].origin_ref",
-          "kind": "checks"
-        },
-        {
-          "at": "spec/forms/SS.json#sections[id=header].fields[name=is_fixed_asset].note",
-          "kind": "note"
-        }
-      ],
-      "citation_count": 4,
-      "citation_by_file": {
-        "spec/forms/SS.json": 4
-      },
-      "unstable_count": 1
-    },
-    {
-      "clause": "第十八条",
+      "clause": "第十条",
       "quoted_phrases": [],
       "spec": [
         {
@@ -315,6 +251,10 @@
         },
         {
           "at": "spec/forms/CT.json#checks[id=no_self_purchaser].note",
+          "kind": "checks"
+        },
+        {
+          "at": "spec/forms/GR.json#checks[id=related_order_or_record_must_exist].origin_ref",
           "kind": "checks"
         },
         {
@@ -394,6 +334,10 @@
           "kind": "rule"
         },
         {
+          "at": "spec/forms/GR.json#sections[id=header].fields[name=related_order_or_record_no].rule",
+          "kind": "rule"
+        },
+        {
           "at": "spec/forms/SUB.json#sections[id=docs_prereq].fields[name=contract_approved].rule",
           "kind": "rule"
         },
@@ -438,6 +382,10 @@
           "kind": "prose"
         },
         {
+          "at": "spec/forms/GR.json#sources.institution",
+          "kind": "prose"
+        },
+        {
           "at": "spec/forms/PC.json#routes._unreachable_branch.proof",
           "kind": "prose"
         },
@@ -450,13 +398,14 @@
           "kind": "prose"
         }
       ],
-      "citation_count": 40,
+      "citation_count": 43,
       "citation_by_file": {
         "spec/chain.json": 2,
         "spec/dashboard.json": 2,
         "spec/enums.json": 1,
         "spec/forms/BA.json": 28,
         "spec/forms/CT.json": 1,
+        "spec/forms/GR.json": 3,
         "spec/forms/PC.json": 2,
         "spec/forms/PR.json": 1,
         "spec/forms/SUB.json": 2,
@@ -465,13 +414,19 @@
       "unstable_count": 2
     },
     {
-      "clause": "第二十条",
-      "quoted_phrases": [
-        "报价单位之间不得存在关联关系"
-      ],
+      "clause": "第十二条",
+      "quoted_phrases": [],
       "spec": [
         {
           "at": "spec/forms/BJ.json#checks[id=min_three_valid_quotes].origin_ref",
+          "kind": "checks"
+        },
+        {
+          "at": "spec/forms/CT.json#checks[id=sole_source_link].origin_ref",
+          "kind": "checks"
+        },
+        {
+          "at": "spec/forms/CT.json#checks[id=tech_opinion_needed].origin_ref",
           "kind": "checks"
         },
         {
@@ -492,6 +447,22 @@
         },
         {
           "at": "spec/forms/CT.json#sections[id=evidence].fields[name=linked_bj_biz_no].origin_ref",
+          "kind": "rule"
+        },
+        {
+          "at": "spec/forms/CT.json#sections[id=evidence].fields[name=linked_ss_biz_no].origin_ref",
+          "kind": "rule"
+        },
+        {
+          "at": "spec/forms/CT.json#sections[id=evidence].fields[name=supplier_qualification].origin_ref",
+          "kind": "rule"
+        },
+        {
+          "at": "spec/forms/CT.json#sections[id=evidence].fields[name=tech_review_opinion].origin_ref",
+          "kind": "rule"
+        },
+        {
+          "at": "spec/forms/RFQ.json#sections[id=requirement].fields[name=tech_spec].origin_ref",
           "kind": "rule"
         },
         {
@@ -535,25 +506,52 @@
           "kind": "prose"
         },
         {
+          "at": "spec/forms/SS.json#sections[id=sole_source_reason].fields[name=uniqueness_basis].known_gap",
+          "kind": "prose"
+        },
+        {
           "at": "spec/forms/SS.json#sources.institution",
           "kind": "prose"
         }
       ],
-      "citation_count": 17,
+      "citation_count": 25,
       "citation_by_file": {
         "spec/chain.json": 2,
         "spec/enums.json": 1,
         "spec/forms/BJ.json": 3,
-        "spec/forms/CT.json": 3,
+        "spec/forms/CT.json": 8,
         "spec/forms/PR.json": 3,
-        "spec/forms/RFQ.json": 2,
-        "spec/forms/SS.json": 2,
+        "spec/forms/RFQ.json": 3,
+        "spec/forms/SS.json": 4,
         "spec/ledger-mapping.json": 1
       },
-      "unstable_count": 0
+      "unstable_count": 1
     },
     {
-      "clause": "第二十一条",
+      "clause": "第十三条",
+      "quoted_phrases": [],
+      "spec": [
+        {
+          "at": "spec/forms/SS.json#checks[id=fixed_asset_conflict].note",
+          "kind": "checks"
+        },
+        {
+          "at": "spec/forms/SS.json#checks[id=fixed_asset_conflict].origin_ref",
+          "kind": "checks"
+        },
+        {
+          "at": "spec/forms/SS.json#sections[id=header].fields[name=is_fixed_asset].note",
+          "kind": "note"
+        }
+      ],
+      "citation_count": 4,
+      "citation_by_file": {
+        "spec/forms/SS.json": 4
+      },
+      "unstable_count": 1
+    },
+    {
+      "clause": "第十四条",
       "quoted_phrases": [],
       "spec": [
         {
@@ -588,50 +586,261 @@
       "unstable_count": 0
     },
     {
-      "clause": "第二十二条",
+      "clause": "第十五条",
       "quoted_phrases": [],
       "spec": [
         {
-          "at": "spec/forms/CT.json#checks[id=tech_opinion_needed].origin_ref",
-          "kind": "checks"
+          "at": "spec/chain.json#sources.institution",
+          "kind": "prose"
         },
         {
-          "at": "spec/forms/CT.json#sections[id=evidence].fields[name=tech_review_opinion].origin_ref",
-          "kind": "rule"
+          "at": "spec/enums.json#sources.institution",
+          "kind": "prose"
         },
         {
-          "at": "spec/forms/CT.json#sources.institution",
+          "at": "spec/forms/SA.json#sources.institution",
+          "kind": "prose"
+        },
+        {
+          "at": "spec/ledger-mapping.json#sources.institution",
           "kind": "prose"
         }
       ],
-      "citation_count": 3,
+      "citation_count": 4,
       "citation_by_file": {
-        "spec/forms/CT.json": 3
+        "spec/chain.json": 1,
+        "spec/enums.json": 1,
+        "spec/forms/SA.json": 1,
+        "spec/ledger-mapping.json": 1
       },
       "unstable_count": 0
     },
     {
-      "clause": "第二十三条",
+      "clause": "第十七条",
       "quoted_phrases": [],
       "spec": [
         {
-          "at": "spec/forms/CT.json#checks[id=sole_source_link].origin_ref",
+          "at": "spec/params.json#params.[petty_cash.reimburse_deadline].critical_note",
+          "kind": "rule"
+        },
+        {
+          "at": "spec/params.json#params.[reporting.monthly_cutoff_day].critical_note",
+          "kind": "rule"
+        },
+        {
+          "at": "spec/params.json#params.[reporting.monthly_cutoff_day].reconfirmed_2026_10_04",
+          "kind": "prose"
+        },
+        {
+          "at": "spec/params.json#sources.institution",
+          "kind": "prose"
+        }
+      ],
+      "citation_count": 6,
+      "citation_by_file": {
+        "spec/chain.json": 1,
+        "spec/forms/CT.json": 1,
+        "spec/params.json": 4
+      },
+      "unstable_count": 2
+    },
+    {
+      "clause": "第二十条",
+      "quoted_phrases": [
+        "合同必备条款",
+        "缺任一项不得进入合同审批"
+      ],
+      "spec": [
+        {
+          "at": "spec/checks.json#checks[id=S13].desc",
           "kind": "checks"
         },
         {
-          "at": "spec/forms/CT.json#sections[id=evidence].fields[name=linked_ss_biz_no].origin_ref",
+          "at": "spec/forms/CT.json#checks[id=equipment_after_sales].origin_ref",
+          "kind": "checks"
+        },
+        {
+          "at": "spec/forms/CT.json#checks[id=mandatory_clauses_complete].else",
+          "kind": "checks"
+        },
+        {
+          "at": "spec/forms/CT.json#checks[id=mandatory_clauses_complete].origin_ref",
+          "kind": "checks"
+        },
+        {
+          "at": "spec/forms/CT.json#checks[id=non_template_reason].origin_ref",
+          "kind": "checks"
+        },
+        {
+          "at": "spec/forms/CT.json#checks[id=payee_name_matches_supplier].origin_ref",
+          "kind": "checks"
+        },
+        {
+          "at": "spec/forms/CT.json#checks[id=prepay_pair].origin_ref",
+          "kind": "checks"
+        },
+        {
+          "at": "spec/constants.json#tables[key=contract_template].critical_note",
           "kind": "rule"
         },
         {
-          "at": "spec/forms/CT.json#sections[id=evidence].fields[name=supplier_qualification].origin_ref",
+          "at": "spec/constants.json#tables[key=contract_template].origin_ref",
           "kind": "rule"
         },
         {
-          "at": "spec/forms/RFQ.json#sections[id=requirement].fields[name=tech_spec].origin_ref",
+          "at": "spec/constants.json#tables[key=unit].critical_note",
           "kind": "rule"
         },
         {
-          "at": "spec/forms/BJ.json#sources.institution",
+          "at": "spec/forms/CT.json#sections[id=clauses].fields[name=acceptance_standard].origin_ref",
+          "kind": "rule"
+        },
+        {
+          "at": "spec/forms/CT.json#sections[id=clauses].fields[name=breach_liability].origin_ref",
+          "kind": "rule"
+        },
+        {
+          "at": "spec/forms/CT.json#sections[id=clauses].fields[name=delivery_date].origin_ref",
+          "kind": "rule"
+        },
+        {
+          "at": "spec/forms/CT.json#sections[id=clauses].fields[name=delivery_place].origin_ref",
+          "kind": "rule"
+        },
+        {
+          "at": "spec/forms/CT.json#sections[id=clauses].fields[name=dispute_resolution].origin_ref",
+          "kind": "rule"
+        },
+        {
+          "at": "spec/forms/CT.json#sections[id=clauses].fields[name=nonconformity_handling].origin_ref",
+          "kind": "rule"
+        },
+        {
+          "at": "spec/forms/CT.json#sections[id=clauses].fields[name=payee_account].origin_ref",
+          "kind": "rule"
+        },
+        {
+          "at": "spec/forms/CT.json#sections[id=clauses].fields[name=payee_bank].origin_ref",
+          "kind": "rule"
+        },
+        {
+          "at": "spec/forms/CT.json#sections[id=clauses].fields[name=payee_name].origin_ref",
+          "kind": "rule"
+        },
+        {
+          "at": "spec/forms/CT.json#sections[id=clauses].fields[name=payment_terms].origin_ref",
+          "kind": "rule"
+        },
+        {
+          "at": "spec/forms/CT.json#sections[id=clauses].fields[name=prepay_guarantee_kind].origin_ref",
+          "kind": "rule"
+        },
+        {
+          "at": "spec/forms/CT.json#sections[id=clauses].fields[name=prepay_ratio].origin_ref",
+          "kind": "rule"
+        },
+        {
+          "at": "spec/forms/CT.json#sections[id=clauses].fields[name=price_is_tax_included].origin_ref",
+          "kind": "rule"
+        },
+        {
+          "at": "spec/forms/CT.json#sections[id=clauses].fields[name=price_is_tax_included].rule",
+          "kind": "rule"
+        },
+        {
+          "at": "spec/forms/CT.json#sections[id=clauses].fields[name=quantity].origin_ref",
+          "kind": "rule"
+        },
+        {
+          "at": "spec/forms/CT.json#sections[id=clauses].fields[name=response_time_hours].origin_ref",
+          "kind": "rule"
+        },
+        {
+          "at": "spec/forms/CT.json#sections[id=clauses].fields[name=shipping_duty].origin_ref",
+          "kind": "rule"
+        },
+        {
+          "at": "spec/forms/CT.json#sections[id=clauses].fields[name=spare_parts_commitment].origin_ref",
+          "kind": "rule"
+        },
+        {
+          "at": "spec/forms/CT.json#sections[id=clauses].fields[name=subject_spec].origin_ref",
+          "kind": "rule"
+        },
+        {
+          "at": "spec/forms/CT.json#sections[id=clauses].fields[name=tax_rate_percent].origin_ref",
+          "kind": "rule"
+        },
+        {
+          "at": "spec/forms/CT.json#sections[id=clauses].fields[name=unit].critical_note",
+          "kind": "rule"
+        },
+        {
+          "at": "spec/forms/CT.json#sections[id=clauses].fields[name=unit].origin_ref",
+          "kind": "rule"
+        },
+        {
+          "at": "spec/forms/CT.json#sections[id=clauses].fields[name=unit_price_cents].origin_ref",
+          "kind": "rule"
+        },
+        {
+          "at": "spec/forms/CT.json#sections[id=clauses].fields[name=warranty_period_months].origin_ref",
+          "kind": "rule"
+        },
+        {
+          "at": "spec/forms/CT.json#sections[id=header].fields[name=contract_name].origin_ref",
+          "kind": "rule"
+        },
+        {
+          "at": "spec/forms/CT.json#sections[id=header].fields[name=contract_type].critical_note",
+          "kind": "rule"
+        },
+        {
+          "at": "spec/forms/CT.json#sections[id=header].fields[name=contract_type].origin_ref",
+          "kind": "rule"
+        },
+        {
+          "at": "spec/forms/CT.json#sections[id=header].fields[name=is_standard_template].critical_note",
+          "kind": "rule"
+        },
+        {
+          "at": "spec/forms/CT.json#sections[id=header].fields[name=is_standard_template].origin_ref",
+          "kind": "rule"
+        },
+        {
+          "at": "spec/forms/CT.json#sections[id=header].fields[name=is_standard_template].rule",
+          "kind": "rule"
+        },
+        {
+          "at": "spec/forms/CT.json#sections[id=header].fields[name=non_template_reason].origin_ref",
+          "kind": "rule"
+        },
+        {
+          "at": "spec/checks.json#change_log[version=1.5].change",
+          "kind": "prose"
+        },
+        {
+          "at": "spec/constants.json#sources.institution",
+          "kind": "prose"
+        },
+        {
+          "at": "spec/forms/CT.json#sections[id=clauses]._note",
+          "kind": "prose"
+        },
+        {
+          "at": "spec/forms/CT.json#sections[id=clauses].fields[name=payment_terms].spec_bridge._why",
+          "kind": "prose"
+        },
+        {
+          "at": "spec/forms/CT.json#sections[id=clauses].hard_rule",
+          "kind": "prose"
+        },
+        {
+          "at": "spec/forms/CT.json#sections[id=clauses].institution_ref",
+          "kind": "prose"
+        },
+        {
+          "at": "spec/forms/CT.json#sections[id=clauses].label",
           "kind": "prose"
         },
         {
@@ -639,25 +848,355 @@
           "kind": "prose"
         },
         {
-          "at": "spec/forms/RFQ.json#sources.institution",
-          "kind": "prose"
-        },
-        {
-          "at": "spec/forms/SS.json#sections[id=sole_source_reason].fields[name=uniqueness_basis].known_gap",
+          "at": "spec/forms/GR.json#sources.institution",
           "kind": "prose"
         }
       ],
-      "citation_count": 9,
+      "citation_count": 53,
       "citation_by_file": {
-        "spec/forms/BJ.json": 1,
-        "spec/forms/CT.json": 4,
-        "spec/forms/RFQ.json": 2,
-        "spec/forms/SS.json": 2
+        "spec/checks.json": 2,
+        "spec/constants.json": 4,
+        "spec/forms/CT.json": 45,
+        "spec/forms/GR.json": 2
+      },
+      "unstable_count": 3
+    },
+    {
+      "clause": "第二十一条",
+      "quoted_phrases": [],
+      "spec": [
+        {
+          "at": "spec/forms/CT.json#checks[id=amount_vs_pr].note",
+          "kind": "checks"
+        },
+        {
+          "at": "spec/forms/CT.json#checks[id=amount_vs_pr].origin_ref",
+          "kind": "checks"
+        },
+        {
+          "at": "spec/forms/PC.json#checks[id=contract_no_required_and_exists].origin_ref",
+          "kind": "checks"
+        },
+        {
+          "at": "spec/forms/PC.json#checks[id=new_supplier_when_supplier_change].origin_ref",
+          "kind": "checks"
+        },
+        {
+          "at": "spec/forms/PC.json#checks[id=reset_as_new_purchase_block].origin_ref",
+          "kind": "checks"
+        },
+        {
+          "at": "spec/forms/PC.json#checks[id=resubmit_to_group].origin_ref",
+          "kind": "checks"
+        },
+        {
+          "at": "spec/forms/PC.json#checks[id=special_explanation_required].origin_ref",
+          "kind": "checks"
+        },
+        {
+          "at": "spec/forms/PC.json#checks[id=tech_opinion_for_engineering].origin_ref",
+          "kind": "checks"
+        },
+        {
+          "at": "spec/forms/PC.json#checks[id=tier_never_tier1].note",
+          "kind": "checks"
+        },
+        {
+          "at": "spec/forms/PC.json#sections[id=amount].fields[name=change_count_to_date].origin_ref",
+          "kind": "rule"
+        },
+        {
+          "at": "spec/forms/PC.json#sections[id=approval_and_filing].fields[name=resubmitted_to_group_at].origin_ref",
+          "kind": "rule"
+        },
+        {
+          "at": "spec/forms/PC.json#sections[id=approval_and_filing].fields[name=tier_approval_record].origin_ref",
+          "kind": "rule"
+        },
+        {
+          "at": "spec/forms/PC.json#sections[id=header].fields[name=change_type].origin_ref",
+          "kind": "rule"
+        },
+        {
+          "at": "spec/forms/PC.json#sections[id=header].fields[name=contract_no].critical_note",
+          "kind": "rule"
+        },
+        {
+          "at": "spec/forms/PC.json#sections[id=header].fields[name=contract_no].origin_ref",
+          "kind": "rule"
+        },
+        {
+          "at": "spec/forms/PC.json#sections[id=reason].fields[name=change_reason].critical_note",
+          "kind": "rule"
+        },
+        {
+          "at": "spec/forms/PC.json#sections[id=reason].fields[name=payment_terms_change_detail].origin_ref",
+          "kind": "rule"
+        },
+        {
+          "at": "spec/forms/PC.json#sections[id=reason].fields[name=scope_change_detail].origin_ref",
+          "kind": "rule"
+        },
+        {
+          "at": "spec/forms/PC.json#sections[id=tech_opinion].fields[name=tech_opinion].origin_ref",
+          "kind": "rule"
+        },
+        {
+          "at": "spec/forms/PC.json#sections[id=thresholds].fields[name=is_reset_as_new_purchase].rule",
+          "kind": "rule"
+        },
+        {
+          "at": "spec/forms/PC.json#sections[id=thresholds].fields[name=special_explanation].origin_ref",
+          "kind": "rule"
+        },
+        {
+          "at": "spec/chain.json#sources.institution",
+          "kind": "prose"
+        },
+        {
+          "at": "spec/forms/CT.json#sources.institution",
+          "kind": "prose"
+        },
+        {
+          "at": "spec/forms/PC.json#routes._unreachable_branch.issue",
+          "kind": "prose"
+        },
+        {
+          "at": "spec/forms/PC.json#routes._unreachable_branch.proof",
+          "kind": "prose"
+        },
+        {
+          "at": "spec/forms/PC.json#routes.resubmit_to_group",
+          "kind": "prose"
+        },
+        {
+          "at": "spec/forms/PC.json#routes.tech_opinion.effect",
+          "kind": "prose"
+        },
+        {
+          "at": "spec/forms/PC.json#sections[id=amount].institution_ref",
+          "kind": "prose"
+        },
+        {
+          "at": "spec/forms/PC.json#sections[id=approval_and_filing].institution_ref",
+          "kind": "prose"
+        },
+        {
+          "at": "spec/forms/PC.json#sections[id=tech_opinion].institution_ref",
+          "kind": "prose"
+        },
+        {
+          "at": "spec/forms/PC.json#sections[id=thresholds].fields[name=is_reset_as_new_purchase].carried_by",
+          "kind": "prose"
+        },
+        {
+          "at": "spec/forms/PC.json#sources.institution",
+          "kind": "prose"
+        },
+        {
+          "at": "spec/forms/SS.json#sources.institution",
+          "kind": "prose"
+        },
+        {
+          "at": "spec/ledger-mapping.json#ledgers.L09.fields[name=change_chain].resolution",
+          "kind": "prose"
+        },
+        {
+          "at": "spec/ledger-mapping.json#ledgers.L09.institution_ref",
+          "kind": "prose"
+        },
+        {
+          "at": "spec/openapi.json#paths./api/contract/{biz_no}/changes.get.summary",
+          "kind": "prose"
+        },
+        {
+          "at": "spec/params.json#params.[contract.amount_over_pr_tolerance_percent].boundary",
+          "kind": "prose"
+        },
+        {
+          "at": "spec/params.json#sources.institution",
+          "kind": "prose"
+        }
+      ],
+      "citation_count": 39,
+      "citation_by_file": {
+        "spec/chain.json": 1,
+        "spec/forms/CT.json": 3,
+        "spec/forms/PC.json": 29,
+        "spec/forms/SS.json": 1,
+        "spec/ledger-mapping.json": 2,
+        "spec/openapi.json": 1,
+        "spec/params.json": 2
       },
       "unstable_count": 1
     },
     {
-      "clause": "第三十四条",
+      "clause": "第二十二条",
+      "quoted_phrases": [],
+      "spec": [
+        {
+          "at": "spec/forms/GR.json#checks[id=ledger_l07_written].origin_ref",
+          "kind": "checks"
+        },
+        {
+          "at": "spec/forms/SUB.json#checks[id=ledger_l06_written].origin_ref",
+          "kind": "checks"
+        },
+        {
+          "at": "spec/forms/BA.json#sections[id=approval_node].fields[name=petty_cash_approver].origin_ref",
+          "kind": "rule"
+        },
+        {
+          "at": "spec/forms/BA.json#sections[id=header].fields[name=applicant].origin_ref",
+          "kind": "rule"
+        },
+        {
+          "at": "spec/forms/BA.json#sections[id=header].fields[name=applicant_department].origin_ref",
+          "kind": "rule"
+        },
+        {
+          "at": "spec/forms/BA.json#sections[id=header].fields[name=record_date].origin_ref",
+          "kind": "rule"
+        },
+        {
+          "at": "spec/forms/BA.json#sections[id=periodic].fields[name=is_key_sample_range].origin_ref",
+          "kind": "rule"
+        },
+        {
+          "at": "spec/forms/BA.json#sections[id=periodic].fields[name=sample_status].origin_ref",
+          "kind": "rule"
+        },
+        {
+          "at": "spec/forms/CT.json#sections[id=clauses].fields[name=prepay_ratio].critical_note",
+          "kind": "rule"
+        },
+        {
+          "at": "spec/forms/CT.json#sections[id=filing].fields[name=group_payment_status].critical_note",
+          "kind": "rule"
+        },
+        {
+          "at": "spec/forms/CT.json#sections[id=filing].fields[name=group_payment_status].origin_ref",
+          "kind": "rule"
+        },
+        {
+          "at": "spec/forms/CT.json#sections[id=filing].fields[name=original_to_group].origin_ref",
+          "kind": "rule"
+        },
+        {
+          "at": "spec/forms/CT.json#sections[id=filing].fields[name=performance_status].origin_ref",
+          "kind": "rule"
+        },
+        {
+          "at": "spec/forms/CT.json#sections[id=filing].fields[name=submit_group_at].origin_ref",
+          "kind": "rule"
+        },
+        {
+          "at": "spec/forms/CT.json#sections[id=header].fields[name=approval_levels].origin_ref",
+          "kind": "rule"
+        },
+        {
+          "at": "spec/forms/CT.json#sections[id=header].fields[name=signed_at].origin_ref",
+          "kind": "rule"
+        },
+        {
+          "at": "spec/ledger-mapping.json#ledgers.L04.fields[name=prepay_ratio].note",
+          "kind": "note"
+        },
+        {
+          "at": "spec/dashboard.json#sources.institution",
+          "kind": "prose"
+        },
+        {
+          "at": "spec/forms/BA.json#sections[id=header].fields[name=record_date].carried_by",
+          "kind": "prose"
+        },
+        {
+          "at": "spec/forms/BA.json#sources.institution",
+          "kind": "prose"
+        },
+        {
+          "at": "spec/forms/CT.json#sections[id=clauses].fields[name=prepay_ratio].spec_bridge._why",
+          "kind": "prose"
+        },
+        {
+          "at": "spec/forms/CT.json#sections[id=filing].institution_ref",
+          "kind": "prose"
+        },
+        {
+          "at": "spec/forms/CT.json#sections[id=filing].label",
+          "kind": "prose"
+        },
+        {
+          "at": "spec/forms/CT.json#sources.institution",
+          "kind": "prose"
+        },
+        {
+          "at": "spec/forms/GR.json#sources.institution",
+          "kind": "prose"
+        },
+        {
+          "at": "spec/forms/QC.json#sources.institution",
+          "kind": "prose"
+        },
+        {
+          "at": "spec/forms/SUB.json#sources.institution",
+          "kind": "prose"
+        },
+        {
+          "at": "spec/ledger-mapping.json#ledgers.L01.institution_ref",
+          "kind": "prose"
+        },
+        {
+          "at": "spec/ledger-mapping.json#ledgers.L02.institution_ref",
+          "kind": "prose"
+        },
+        {
+          "at": "spec/ledger-mapping.json#ledgers.L04.fields[name=group_payment_status].resolution",
+          "kind": "prose"
+        },
+        {
+          "at": "spec/ledger-mapping.json#ledgers.L04.fields[name=submit_group_at].resolution",
+          "kind": "prose"
+        },
+        {
+          "at": "spec/ledger-mapping.json#ledgers.L04.institution_ref",
+          "kind": "prose"
+        },
+        {
+          "at": "spec/ledger-mapping.json#ledgers.L05.institution_ref",
+          "kind": "prose"
+        },
+        {
+          "at": "spec/ledger-mapping.json#ledgers.L06.institution_ref",
+          "kind": "prose"
+        },
+        {
+          "at": "spec/ledger-mapping.json#ledgers.L07.institution_ref",
+          "kind": "prose"
+        },
+        {
+          "at": "spec/ledger-mapping.json#open_items[id=R-21#15].status",
+          "kind": "prose"
+        },
+        {
+          "at": "spec/ledger-mapping.json#sources.institution",
+          "kind": "prose"
+        }
+      ],
+      "citation_count": 38,
+      "citation_by_file": {
+        "spec/dashboard.json": 1,
+        "spec/forms/BA.json": 8,
+        "spec/forms/CT.json": 13,
+        "spec/forms/GR.json": 2,
+        "spec/forms/QC.json": 1,
+        "spec/forms/SUB.json": 2,
+        "spec/ledger-mapping.json": 11
+      },
+      "unstable_count": 1
+    },
+    {
+      "clause": "第二十三条",
       "quoted_phrases": [],
       "spec": [
         {
@@ -767,609 +1306,15 @@
       "unstable_count": 3
     },
     {
-      "clause": "第三十五条",
+      "clause": "第二十五条",
       "quoted_phrases": [
-        "合同必备条款",
-        "缺任一项不得进入合同审批"
+        "例外事项的统计与复盘"
       ],
-      "spec": [
-        {
-          "at": "spec/checks.json#checks[id=S13].desc",
-          "kind": "checks"
-        },
-        {
-          "at": "spec/forms/CT.json#checks[id=equipment_after_sales].origin_ref",
-          "kind": "checks"
-        },
-        {
-          "at": "spec/forms/CT.json#checks[id=mandatory_clauses_complete].else",
-          "kind": "checks"
-        },
-        {
-          "at": "spec/forms/CT.json#checks[id=mandatory_clauses_complete].origin_ref",
-          "kind": "checks"
-        },
-        {
-          "at": "spec/forms/CT.json#checks[id=payee_name_matches_supplier].origin_ref",
-          "kind": "checks"
-        },
-        {
-          "at": "spec/forms/CT.json#checks[id=prepay_pair].origin_ref",
-          "kind": "checks"
-        },
-        {
-          "at": "spec/constants.json#tables[key=unit].critical_note",
-          "kind": "rule"
-        },
-        {
-          "at": "spec/forms/CT.json#sections[id=clauses].fields[name=acceptance_standard].origin_ref",
-          "kind": "rule"
-        },
-        {
-          "at": "spec/forms/CT.json#sections[id=clauses].fields[name=breach_liability].origin_ref",
-          "kind": "rule"
-        },
-        {
-          "at": "spec/forms/CT.json#sections[id=clauses].fields[name=delivery_date].origin_ref",
-          "kind": "rule"
-        },
-        {
-          "at": "spec/forms/CT.json#sections[id=clauses].fields[name=delivery_place].origin_ref",
-          "kind": "rule"
-        },
-        {
-          "at": "spec/forms/CT.json#sections[id=clauses].fields[name=dispute_resolution].origin_ref",
-          "kind": "rule"
-        },
-        {
-          "at": "spec/forms/CT.json#sections[id=clauses].fields[name=nonconformity_handling].origin_ref",
-          "kind": "rule"
-        },
-        {
-          "at": "spec/forms/CT.json#sections[id=clauses].fields[name=payee_account].origin_ref",
-          "kind": "rule"
-        },
-        {
-          "at": "spec/forms/CT.json#sections[id=clauses].fields[name=payee_bank].origin_ref",
-          "kind": "rule"
-        },
-        {
-          "at": "spec/forms/CT.json#sections[id=clauses].fields[name=payee_name].origin_ref",
-          "kind": "rule"
-        },
-        {
-          "at": "spec/forms/CT.json#sections[id=clauses].fields[name=payment_terms].origin_ref",
-          "kind": "rule"
-        },
-        {
-          "at": "spec/forms/CT.json#sections[id=clauses].fields[name=prepay_guarantee_kind].origin_ref",
-          "kind": "rule"
-        },
-        {
-          "at": "spec/forms/CT.json#sections[id=clauses].fields[name=prepay_ratio].origin_ref",
-          "kind": "rule"
-        },
-        {
-          "at": "spec/forms/CT.json#sections[id=clauses].fields[name=price_is_tax_included].origin_ref",
-          "kind": "rule"
-        },
-        {
-          "at": "spec/forms/CT.json#sections[id=clauses].fields[name=price_is_tax_included].rule",
-          "kind": "rule"
-        },
-        {
-          "at": "spec/forms/CT.json#sections[id=clauses].fields[name=quantity].origin_ref",
-          "kind": "rule"
-        },
-        {
-          "at": "spec/forms/CT.json#sections[id=clauses].fields[name=response_time_hours].origin_ref",
-          "kind": "rule"
-        },
-        {
-          "at": "spec/forms/CT.json#sections[id=clauses].fields[name=shipping_duty].origin_ref",
-          "kind": "rule"
-        },
-        {
-          "at": "spec/forms/CT.json#sections[id=clauses].fields[name=spare_parts_commitment].origin_ref",
-          "kind": "rule"
-        },
-        {
-          "at": "spec/forms/CT.json#sections[id=clauses].fields[name=subject_spec].origin_ref",
-          "kind": "rule"
-        },
-        {
-          "at": "spec/forms/CT.json#sections[id=clauses].fields[name=tax_rate_percent].origin_ref",
-          "kind": "rule"
-        },
-        {
-          "at": "spec/forms/CT.json#sections[id=clauses].fields[name=unit].critical_note",
-          "kind": "rule"
-        },
-        {
-          "at": "spec/forms/CT.json#sections[id=clauses].fields[name=unit].origin_ref",
-          "kind": "rule"
-        },
-        {
-          "at": "spec/forms/CT.json#sections[id=clauses].fields[name=unit_price_cents].origin_ref",
-          "kind": "rule"
-        },
-        {
-          "at": "spec/forms/CT.json#sections[id=clauses].fields[name=warranty_period_months].origin_ref",
-          "kind": "rule"
-        },
-        {
-          "at": "spec/forms/CT.json#sections[id=header].fields[name=contract_name].origin_ref",
-          "kind": "rule"
-        },
-        {
-          "at": "spec/checks.json#change_log[version=1.5].change",
-          "kind": "prose"
-        },
-        {
-          "at": "spec/constants.json#sources.institution",
-          "kind": "prose"
-        },
-        {
-          "at": "spec/forms/CT.json#sections[id=clauses]._note",
-          "kind": "prose"
-        },
-        {
-          "at": "spec/forms/CT.json#sections[id=clauses].fields[name=payment_terms].spec_bridge._why",
-          "kind": "prose"
-        },
-        {
-          "at": "spec/forms/CT.json#sections[id=clauses].hard_rule",
-          "kind": "prose"
-        },
-        {
-          "at": "spec/forms/CT.json#sections[id=clauses].institution_ref",
-          "kind": "prose"
-        },
-        {
-          "at": "spec/forms/CT.json#sections[id=clauses].label",
-          "kind": "prose"
-        },
-        {
-          "at": "spec/forms/CT.json#sources.institution",
-          "kind": "prose"
-        },
-        {
-          "at": "spec/forms/GR.json#sources.institution",
-          "kind": "prose"
-        }
-      ],
-      "citation_count": 44,
-      "citation_by_file": {
-        "spec/checks.json": 2,
-        "spec/constants.json": 2,
-        "spec/forms/CT.json": 38,
-        "spec/forms/GR.json": 2
-      },
-      "unstable_count": 3
-    },
-    {
-      "clause": "第三十六条",
-      "quoted_phrases": [],
-      "spec": [
-        {
-          "at": "spec/forms/CT.json#checks[id=non_template_reason].origin_ref",
-          "kind": "checks"
-        },
-        {
-          "at": "spec/constants.json#tables[key=contract_template].critical_note",
-          "kind": "rule"
-        },
-        {
-          "at": "spec/constants.json#tables[key=contract_template].origin_ref",
-          "kind": "rule"
-        },
-        {
-          "at": "spec/forms/CT.json#sections[id=header].fields[name=contract_type].critical_note",
-          "kind": "rule"
-        },
-        {
-          "at": "spec/forms/CT.json#sections[id=header].fields[name=contract_type].origin_ref",
-          "kind": "rule"
-        },
-        {
-          "at": "spec/forms/CT.json#sections[id=header].fields[name=is_standard_template].critical_note",
-          "kind": "rule"
-        },
-        {
-          "at": "spec/forms/CT.json#sections[id=header].fields[name=is_standard_template].origin_ref",
-          "kind": "rule"
-        },
-        {
-          "at": "spec/forms/CT.json#sections[id=header].fields[name=is_standard_template].rule",
-          "kind": "rule"
-        },
-        {
-          "at": "spec/forms/CT.json#sections[id=header].fields[name=non_template_reason].origin_ref",
-          "kind": "rule"
-        },
-        {
-          "at": "spec/constants.json#sources.institution",
-          "kind": "prose"
-        },
-        {
-          "at": "spec/forms/CT.json#sources.institution",
-          "kind": "prose"
-        }
-      ],
-      "citation_count": 11,
-      "citation_by_file": {
-        "spec/constants.json": 3,
-        "spec/forms/CT.json": 8
-      },
-      "unstable_count": 0
-    },
-    {
-      "clause": "第三十七条",
-      "quoted_phrases": [],
-      "spec": [
-        {
-          "at": "spec/forms/CT.json#sections[id=clauses].fields[name=prepay_ratio].critical_note",
-          "kind": "rule"
-        },
-        {
-          "at": "spec/forms/CT.json#sections[id=filing].fields[name=group_payment_status].critical_note",
-          "kind": "rule"
-        },
-        {
-          "at": "spec/forms/CT.json#sections[id=filing].fields[name=group_payment_status].origin_ref",
-          "kind": "rule"
-        },
-        {
-          "at": "spec/forms/CT.json#sections[id=filing].fields[name=original_to_group].origin_ref",
-          "kind": "rule"
-        },
-        {
-          "at": "spec/forms/CT.json#sections[id=filing].fields[name=performance_status].origin_ref",
-          "kind": "rule"
-        },
-        {
-          "at": "spec/forms/CT.json#sections[id=filing].fields[name=submit_group_at].origin_ref",
-          "kind": "rule"
-        },
-        {
-          "at": "spec/forms/CT.json#sections[id=header].fields[name=approval_levels].origin_ref",
-          "kind": "rule"
-        },
-        {
-          "at": "spec/forms/CT.json#sections[id=header].fields[name=signed_at].origin_ref",
-          "kind": "rule"
-        },
-        {
-          "at": "spec/ledger-mapping.json#ledgers.L04.fields[name=prepay_ratio].note",
-          "kind": "note"
-        },
-        {
-          "at": "spec/forms/CT.json#sections[id=clauses].fields[name=prepay_ratio].spec_bridge._why",
-          "kind": "prose"
-        },
-        {
-          "at": "spec/forms/CT.json#sections[id=filing].institution_ref",
-          "kind": "prose"
-        },
-        {
-          "at": "spec/forms/CT.json#sections[id=filing].label",
-          "kind": "prose"
-        },
-        {
-          "at": "spec/forms/CT.json#sources.institution",
-          "kind": "prose"
-        },
-        {
-          "at": "spec/ledger-mapping.json#ledgers.L04.fields[name=group_payment_status].resolution",
-          "kind": "prose"
-        },
-        {
-          "at": "spec/ledger-mapping.json#ledgers.L04.fields[name=submit_group_at].resolution",
-          "kind": "prose"
-        },
-        {
-          "at": "spec/ledger-mapping.json#ledgers.L04.institution_ref",
-          "kind": "prose"
-        },
-        {
-          "at": "spec/ledger-mapping.json#sources.institution",
-          "kind": "prose"
-        }
-      ],
-      "citation_count": 18,
-      "citation_by_file": {
-        "spec/forms/CT.json": 13,
-        "spec/ledger-mapping.json": 5
-      },
-      "unstable_count": 1
-    },
-    {
-      "clause": "第三十九条",
-      "quoted_phrases": [],
-      "spec": [
-        {
-          "at": "spec/params.json#params.[petty_cash.reimburse_deadline].critical_note",
-          "kind": "rule"
-        },
-        {
-          "at": "spec/params.json#params.[reporting.monthly_cutoff_day].critical_note",
-          "kind": "rule"
-        },
-        {
-          "at": "spec/params.json#params.[reporting.monthly_cutoff_day].reconfirmed_2026_10_04",
-          "kind": "prose"
-        },
-        {
-          "at": "spec/params.json#sources.institution",
-          "kind": "prose"
-        }
-      ],
-      "citation_count": 6,
-      "citation_by_file": {
-        "spec/chain.json": 1,
-        "spec/forms/CT.json": 1,
-        "spec/params.json": 4
-      },
-      "unstable_count": 2
-    },
-    {
-      "clause": "第四十二条",
-      "quoted_phrases": [],
-      "spec": [
-        {
-          "at": "spec/forms/CT.json#checks[id=amount_vs_pr].note",
-          "kind": "checks"
-        },
-        {
-          "at": "spec/forms/CT.json#checks[id=amount_vs_pr].origin_ref",
-          "kind": "checks"
-        },
-        {
-          "at": "spec/forms/CT.json#sources.institution",
-          "kind": "prose"
-        },
-        {
-          "at": "spec/forms/PC.json#sources.institution",
-          "kind": "prose"
-        },
-        {
-          "at": "spec/params.json#params.[contract.amount_over_pr_tolerance_percent].boundary",
-          "kind": "prose"
-        },
-        {
-          "at": "spec/params.json#sources.institution",
-          "kind": "prose"
-        }
-      ],
-      "citation_count": 6,
-      "citation_by_file": {
-        "spec/forms/CT.json": 3,
-        "spec/forms/PC.json": 1,
-        "spec/params.json": 2
-      },
-      "unstable_count": 0
-    },
-    {
-      "clause": "第四十七条",
-      "quoted_phrases": [],
-      "spec": [
-        {
-          "at": "spec/ledger-mapping.json#open_items[id=R-21#15].status",
-          "kind": "prose"
-        }
-      ],
-      "citation_count": 1,
-      "citation_by_file": {
-        "spec/ledger-mapping.json": 1
-      },
-      "unstable_count": 0
-    },
-    {
-      "clause": "第五十条",
-      "quoted_phrases": [],
       "spec": [
         {
           "at": "spec/forms/BJ.json#checks[id=not_single_source].origin_ref",
           "kind": "checks"
         },
-        {
-          "at": "spec/forms/RFQ.json#checks[id=not_single_source].origin_ref",
-          "kind": "checks"
-        },
-        {
-          "at": "spec/forms/SS.json#checks[id=fixed_asset_conflict].note",
-          "kind": "checks"
-        },
-        {
-          "at": "spec/forms/SS.json#sections[id=sole_source_reason].institution_ref",
-          "kind": "prose"
-        },
-        {
-          "at": "spec/forms/SS.json#sources.institution",
-          "kind": "prose"
-        },
-        {
-          "at": "spec/ledger-mapping.json#ledgers.L09.institution_ref",
-          "kind": "prose"
-        }
-      ],
-      "citation_count": 8,
-      "citation_by_file": {
-        "spec/forms/BJ.json": 1,
-        "spec/forms/RFQ.json": 1,
-        "spec/forms/SS.json": 5,
-        "spec/ledger-mapping.json": 1
-      },
-      "unstable_count": 2
-    },
-    {
-      "clause": "第五十一条",
-      "quoted_phrases": [],
-      "spec": [
-        {
-          "at": "spec/forms/SS.json#sections[id=sole_source_reason]._note",
-          "kind": "prose"
-        }
-      ],
-      "citation_count": 1,
-      "citation_by_file": {
-        "spec/forms/SS.json": 1
-      },
-      "unstable_count": 0
-    },
-    {
-      "clause": "第五十二条",
-      "quoted_phrases": [],
-      "spec": [
-        {
-          "at": "spec/forms/PC.json#checks[id=contract_no_required_and_exists].origin_ref",
-          "kind": "checks"
-        },
-        {
-          "at": "spec/forms/PC.json#checks[id=new_supplier_when_supplier_change].origin_ref",
-          "kind": "checks"
-        },
-        {
-          "at": "spec/forms/PC.json#checks[id=reset_as_new_purchase_block].origin_ref",
-          "kind": "checks"
-        },
-        {
-          "at": "spec/forms/PC.json#checks[id=resubmit_to_group].origin_ref",
-          "kind": "checks"
-        },
-        {
-          "at": "spec/forms/PC.json#checks[id=special_explanation_required].origin_ref",
-          "kind": "checks"
-        },
-        {
-          "at": "spec/forms/PC.json#checks[id=tech_opinion_for_engineering].origin_ref",
-          "kind": "checks"
-        },
-        {
-          "at": "spec/forms/PC.json#checks[id=tier_never_tier1].note",
-          "kind": "checks"
-        },
-        {
-          "at": "spec/forms/PC.json#sections[id=amount].fields[name=change_count_to_date].origin_ref",
-          "kind": "rule"
-        },
-        {
-          "at": "spec/forms/PC.json#sections[id=approval_and_filing].fields[name=resubmitted_to_group_at].origin_ref",
-          "kind": "rule"
-        },
-        {
-          "at": "spec/forms/PC.json#sections[id=approval_and_filing].fields[name=tier_approval_record].origin_ref",
-          "kind": "rule"
-        },
-        {
-          "at": "spec/forms/PC.json#sections[id=header].fields[name=change_type].origin_ref",
-          "kind": "rule"
-        },
-        {
-          "at": "spec/forms/PC.json#sections[id=header].fields[name=contract_no].critical_note",
-          "kind": "rule"
-        },
-        {
-          "at": "spec/forms/PC.json#sections[id=header].fields[name=contract_no].origin_ref",
-          "kind": "rule"
-        },
-        {
-          "at": "spec/forms/PC.json#sections[id=reason].fields[name=change_reason].critical_note",
-          "kind": "rule"
-        },
-        {
-          "at": "spec/forms/PC.json#sections[id=reason].fields[name=payment_terms_change_detail].origin_ref",
-          "kind": "rule"
-        },
-        {
-          "at": "spec/forms/PC.json#sections[id=reason].fields[name=scope_change_detail].origin_ref",
-          "kind": "rule"
-        },
-        {
-          "at": "spec/forms/PC.json#sections[id=tech_opinion].fields[name=tech_opinion].origin_ref",
-          "kind": "rule"
-        },
-        {
-          "at": "spec/forms/PC.json#sections[id=thresholds].fields[name=is_reset_as_new_purchase].rule",
-          "kind": "rule"
-        },
-        {
-          "at": "spec/forms/PC.json#sections[id=thresholds].fields[name=special_explanation].origin_ref",
-          "kind": "rule"
-        },
-        {
-          "at": "spec/chain.json#sources.institution",
-          "kind": "prose"
-        },
-        {
-          "at": "spec/forms/PC.json#routes._unreachable_branch.issue",
-          "kind": "prose"
-        },
-        {
-          "at": "spec/forms/PC.json#routes._unreachable_branch.proof",
-          "kind": "prose"
-        },
-        {
-          "at": "spec/forms/PC.json#routes.resubmit_to_group",
-          "kind": "prose"
-        },
-        {
-          "at": "spec/forms/PC.json#routes.tech_opinion.effect",
-          "kind": "prose"
-        },
-        {
-          "at": "spec/forms/PC.json#sections[id=amount].institution_ref",
-          "kind": "prose"
-        },
-        {
-          "at": "spec/forms/PC.json#sections[id=approval_and_filing].institution_ref",
-          "kind": "prose"
-        },
-        {
-          "at": "spec/forms/PC.json#sections[id=tech_opinion].institution_ref",
-          "kind": "prose"
-        },
-        {
-          "at": "spec/forms/PC.json#sections[id=thresholds].fields[name=is_reset_as_new_purchase].carried_by",
-          "kind": "prose"
-        },
-        {
-          "at": "spec/forms/PC.json#sources.institution",
-          "kind": "prose"
-        },
-        {
-          "at": "spec/forms/SS.json#sources.institution",
-          "kind": "prose"
-        },
-        {
-          "at": "spec/ledger-mapping.json#ledgers.L09.fields[name=change_chain].resolution",
-          "kind": "prose"
-        },
-        {
-          "at": "spec/ledger-mapping.json#ledgers.L09.institution_ref",
-          "kind": "prose"
-        },
-        {
-          "at": "spec/openapi.json#paths./api/contract/{biz_no}/changes.get.summary",
-          "kind": "prose"
-        }
-      ],
-      "citation_count": 34,
-      "citation_by_file": {
-        "spec/chain.json": 1,
-        "spec/forms/PC.json": 29,
-        "spec/forms/SS.json": 1,
-        "spec/ledger-mapping.json": 2,
-        "spec/openapi.json": 1
-      },
-      "unstable_count": 1
-    },
-    {
-      "clause": "第五十三条",
-      "quoted_phrases": [
-        "例外事项的统计与复盘"
-      ],
-      "spec": [
         {
           "at": "spec/forms/PC.json#checks[id=anomaly_list_and_report].origin_ref",
           "kind": "checks"
@@ -1384,6 +1329,14 @@
         },
         {
           "at": "spec/forms/PC.json#checks[id=special_explanation_required].origin_ref",
+          "kind": "checks"
+        },
+        {
+          "at": "spec/forms/RFQ.json#checks[id=not_single_source].origin_ref",
+          "kind": "checks"
+        },
+        {
+          "at": "spec/forms/SS.json#checks[id=fixed_asset_conflict].note",
           "kind": "checks"
         },
         {
@@ -1421,19 +1374,83 @@
         {
           "at": "spec/forms/PC.json#sources.institution",
           "kind": "prose"
+        },
+        {
+          "at": "spec/forms/SS.json#sections[id=sole_source_reason]._note",
+          "kind": "prose"
+        },
+        {
+          "at": "spec/forms/SS.json#sections[id=sole_source_reason].institution_ref",
+          "kind": "prose"
+        },
+        {
+          "at": "spec/forms/SS.json#sources.institution",
+          "kind": "prose"
+        },
+        {
+          "at": "spec/ledger-mapping.json#ledgers.L09.institution_ref",
+          "kind": "prose"
         }
       ],
-      "citation_count": 16,
+      "citation_count": 25,
       "citation_by_file": {
         "spec/chain.json": 1,
         "spec/dashboard.json": 1,
+        "spec/forms/BJ.json": 1,
         "spec/forms/PC.json": 13,
-        "spec/ledger-mapping.json": 1
+        "spec/forms/RFQ.json": 1,
+        "spec/forms/SS.json": 6,
+        "spec/ledger-mapping.json": 2
       },
-      "unstable_count": 3
+      "unstable_count": 5
     },
     {
-      "clause": "第五十八条",
+      "clause": "第二十六条",
+      "quoted_phrases": [],
+      "spec": [
+        {
+          "at": "spec/authority.json#checks[id=no_agent_for_petty_cash].origin_ref",
+          "kind": "checks"
+        },
+        {
+          "at": "spec/authority.json#checks[id=no_shared_agent_across_two_levels].origin_ref",
+          "kind": "checks"
+        },
+        {
+          "at": "spec/authority.json#checks[id=single_active_agent_per_role].origin_ref",
+          "kind": "checks"
+        },
+        {
+          "at": "spec/authority.json#change_log[version=1.1].what",
+          "kind": "prose"
+        },
+        {
+          "at": "spec/authority.json#sources.institution",
+          "kind": "prose"
+        },
+        {
+          "at": "spec/chain.json#conventions.agent_allowed",
+          "kind": "prose"
+        },
+        {
+          "at": "spec/forms/CT.json#routes.then_by_supervisor",
+          "kind": "prose"
+        },
+        {
+          "at": "spec/forms/CT.json#sources.institution",
+          "kind": "prose"
+        }
+      ],
+      "citation_count": 9,
+      "citation_by_file": {
+        "spec/authority.json": 6,
+        "spec/chain.json": 1,
+        "spec/forms/CT.json": 2
+      },
+      "unstable_count": 1
+    },
+    {
+      "clause": "第二十七条",
       "quoted_phrases": [],
       "spec": [
         {
@@ -1444,222 +1461,6 @@
       "citation_count": 1,
       "citation_by_file": {
         "spec/dashboard.json": 1
-      },
-      "unstable_count": 0
-    },
-    {
-      "clause": "第五十九条",
-      "quoted_phrases": [],
-      "spec": [
-        {
-          "at": "spec/forms/GR.json#checks[id=ledger_l07_written].origin_ref",
-          "kind": "checks"
-        },
-        {
-          "at": "spec/forms/SUB.json#checks[id=ledger_l06_written].origin_ref",
-          "kind": "checks"
-        },
-        {
-          "at": "spec/forms/BA.json#sections[id=approval_node].fields[name=petty_cash_approver].origin_ref",
-          "kind": "rule"
-        },
-        {
-          "at": "spec/forms/BA.json#sections[id=header].fields[name=applicant].origin_ref",
-          "kind": "rule"
-        },
-        {
-          "at": "spec/forms/BA.json#sections[id=header].fields[name=applicant_department].origin_ref",
-          "kind": "rule"
-        },
-        {
-          "at": "spec/forms/BA.json#sections[id=header].fields[name=record_date].origin_ref",
-          "kind": "rule"
-        },
-        {
-          "at": "spec/forms/BA.json#sections[id=periodic].fields[name=is_key_sample_range].origin_ref",
-          "kind": "rule"
-        },
-        {
-          "at": "spec/forms/BA.json#sections[id=periodic].fields[name=sample_status].origin_ref",
-          "kind": "rule"
-        },
-        {
-          "at": "spec/dashboard.json#sources.institution",
-          "kind": "prose"
-        },
-        {
-          "at": "spec/forms/BA.json#sections[id=header].fields[name=record_date].carried_by",
-          "kind": "prose"
-        },
-        {
-          "at": "spec/forms/BA.json#sources.institution",
-          "kind": "prose"
-        },
-        {
-          "at": "spec/forms/GR.json#sources.institution",
-          "kind": "prose"
-        },
-        {
-          "at": "spec/forms/QC.json#sources.institution",
-          "kind": "prose"
-        },
-        {
-          "at": "spec/forms/SUB.json#sources.institution",
-          "kind": "prose"
-        },
-        {
-          "at": "spec/ledger-mapping.json#ledgers.L01.institution_ref",
-          "kind": "prose"
-        },
-        {
-          "at": "spec/ledger-mapping.json#ledgers.L02.institution_ref",
-          "kind": "prose"
-        },
-        {
-          "at": "spec/ledger-mapping.json#ledgers.L05.institution_ref",
-          "kind": "prose"
-        },
-        {
-          "at": "spec/ledger-mapping.json#ledgers.L06.institution_ref",
-          "kind": "prose"
-        },
-        {
-          "at": "spec/ledger-mapping.json#ledgers.L07.institution_ref",
-          "kind": "prose"
-        },
-        {
-          "at": "spec/ledger-mapping.json#sources.institution",
-          "kind": "prose"
-        }
-      ],
-      "citation_count": 20,
-      "citation_by_file": {
-        "spec/dashboard.json": 1,
-        "spec/forms/BA.json": 8,
-        "spec/forms/GR.json": 2,
-        "spec/forms/QC.json": 1,
-        "spec/forms/SUB.json": 2,
-        "spec/ledger-mapping.json": 6
-      },
-      "unstable_count": 0
-    },
-    {
-      "clause": "第六十条",
-      "quoted_phrases": [],
-      "spec": [
-        {
-          "at": "spec/forms/CT.json#checks[id=no_self_purchaser].origin_ref",
-          "kind": "checks"
-        },
-        {
-          "at": "spec/forms/PR.json#checks[id=no_self_purchaser].origin_ref",
-          "kind": "checks"
-        },
-        {
-          "at": "spec/forms/PR.json#checks[id=no_self_purchaser_at_designation].origin_ref",
-          "kind": "checks"
-        },
-        {
-          "at": "spec/chain.json#sources.institution",
-          "kind": "prose"
-        },
-        {
-          "at": "spec/enums.json#sources.institution",
-          "kind": "prose"
-        },
-        {
-          "at": "spec/forms/PR.json#sections[id=approval_node].fields[name=designated_purchaser].known_cost",
-          "kind": "prose"
-        },
-        {
-          "at": "spec/forms/PR.json#sections[id=approval_node].fields[name=designation_basis].resolution_note",
-          "kind": "prose"
-        },
-        {
-          "at": "spec/forms/PR.json#sources.institution",
-          "kind": "prose"
-        },
-        {
-          "at": "spec/ledger-mapping.json#ledgers.L03.extra_note",
-          "kind": "prose"
-        },
-        {
-          "at": "spec/ledger-mapping.json#ledgers.L03.institution_ref",
-          "kind": "prose"
-        }
-      ],
-      "citation_count": 10,
-      "citation_by_file": {
-        "spec/chain.json": 1,
-        "spec/enums.json": 1,
-        "spec/forms/CT.json": 1,
-        "spec/forms/PR.json": 5,
-        "spec/ledger-mapping.json": 2
-      },
-      "unstable_count": 0
-    },
-    {
-      "clause": "第六十一条",
-      "quoted_phrases": [],
-      "spec": [
-        {
-          "at": "spec/chain.json#sources.institution",
-          "kind": "prose"
-        },
-        {
-          "at": "spec/enums.json#sources.institution",
-          "kind": "prose"
-        },
-        {
-          "at": "spec/forms/SA.json#sources.institution",
-          "kind": "prose"
-        },
-        {
-          "at": "spec/ledger-mapping.json#sources.institution",
-          "kind": "prose"
-        }
-      ],
-      "citation_count": 4,
-      "citation_by_file": {
-        "spec/chain.json": 1,
-        "spec/enums.json": 1,
-        "spec/forms/SA.json": 1,
-        "spec/ledger-mapping.json": 1
-      },
-      "unstable_count": 0
-    },
-    {
-      "clause": "第六十二条",
-      "quoted_phrases": [],
-      "spec": [
-        {
-          "at": "spec/constants.json#sources.institution",
-          "kind": "prose"
-        },
-        {
-          "at": "spec/forms/BA.json#sources.institution",
-          "kind": "prose"
-        }
-      ],
-      "citation_count": 2,
-      "citation_by_file": {
-        "spec/constants.json": 1,
-        "spec/forms/BA.json": 1
-      },
-      "unstable_count": 0
-    },
-    {
-      "clause": "第七十一条",
-      "quoted_phrases": [],
-      "spec": [
-        {
-          "at": "spec/chain.json#payment_route_rule.consequences.for_institution",
-          "kind": "prose"
-        }
-      ],
-      "citation_count": 1,
-      "citation_by_file": {
-        "spec/chain.json": 1
       },
       "unstable_count": 0
     }
@@ -1695,6 +1496,26 @@
     {
       "id": "quoted_phrases_not_generated",
       "note": "★ `quoted_phrases` 仍为**人工**收录（生成器**不生成、不覆盖**）：它仅供人读核对（见 `topic_not_invented`），★ **不在任何判据面内** ⇒ 无漂移风险，但也**不受门禁保护**。★ 同理，`clauses[]` 的**新增/删除**不由脚本自动执行 —— 索引缺条款 / 含 spec 已不引用的条款，门禁分别报 **`E3`** / **`E6`**，由人决定（★ **不臆造结构**）。"
+    },
+    {
+      "id": "reanchored_2026_10_09",
+      "status": "★ 本版（V1.5 · 2026-10-09 · N-078 D10）全量重锚",
+      "note": "制度换版：正本 28 条 + 附录一/二。`spec/**/*.json` 内 331 处「第X条」引用已按《旧→新》映射重锚（映射表见 change_log V1.5），索引机械重生为 17 条（旧 29 条 → 新 17 条）。"
+    },
+    {
+      "id": "reanchor_low_confidence",
+      "status": "★ 待人工复核（低置信映射）",
+      "note": "以下旧条款在新版**无逐字对应条**，映射为**主题就近**（低置信），须制度/规格负责人复核：旧第十一条（申请人/各部门全员 → 新第七条 岗位设置）· 旧第十二条（回避与代理 → 新第二十六条 合规红线；★ 新版**已无「代理人」条款**，而 `spec/authority.json` 仍实现代理人机制 —— 属「系统实现超出新制度」）· 旧第二十二条（→ 新第十二条 采三档）· 旧第三十六条（标准范本优先 → 新第二十条；★ 新版**无标准范本条**）· 旧第五十九条（台账 → 新第二十二条 合同归档；★ 新版**无台账条**，而 spec 有 L01–L15 台账体系）· 旧第六十一条（运营销售费用 → 新第十五条 事前申请）· 旧第二条（→ 新第二条）。"
+    },
+    {
+      "id": "institution_clauses_without_landing",
+      "status": "★ 待办（如实登记）",
+      "note": "新版 28 条中，以下条款在 spec 内**无任何落点**（重锚后仍无引用）：第一条(目的)· 第三条(管理原则)· 第四条(采购分档)· 第六条(合同审批)· 第八条(分管关系)· 第十一条(采二档)· 第十六条(垫付与提前支出)· 第十八条(报销要求)· 第十九条(合同审批·预付款对价保障)· 第二十四条(不得提交付款的情形)· 第二十八条(附则)· 附录一(用途分类)· 附录二(审批链速查)。★★ 其中 **第二十四条（六种「不得提交付款」）** 与 **第十九条（预付款对价保障）** 经 `N-078` 差异核查已确认为**系统缺口**，尤须处理。"
+    },
+    {
+      "id": "provenance_strings_reanchored",
+      "status": "★ 已知代价（如实登记）",
+      "note": "约 40 处含「V3.0/V4.0」字样的**历史沿革串**（多为表单 `sources.institution`）内的条款号**一并被重锚**到新编号；★ 这使这些串的**版本标签**（V3.0/V4.0）与其**编号**不再同版。★ 建议由 spec 负责人决定是否把此类历史串改为**主题引用**或加注「旧版号对应见本文件 change_log」。★ 原旧条款号可由 git 历史追溯。"
     }
   ],
   "change_log": [
@@ -1722,6 +1543,11 @@
       "version": "1.4",
       "date": "2026-10-05",
       "change": "★★★ **数据回填（`N-059`）—— 由 `spec/forms/CT.json` 补齐 `applicant` / `applicant_department` 连带触发**：① ★ **条款 `第十一条`**：该对字段带 `origin_ref` 指向「制度第十一条（申请人 / 所属部门）」（★ 补它治的是 `docs/07 §4.2` 的「`department` 缺失 ⇒ **行级权限（`DEPT`/`CHARGE_DEPT`）失去依据**」）⇒ `citation_count` **5 → 8**、`spec[]` **4 → 7 条**；② ★ **条款 `第三十五条`**：本批**改写 / 去掉了该条的一处引用** ⇒ `citation_count` **45 → 44**、`unstable_count` **4 → 3**（★ 少的那条恰落在**无稳定键数组**里 ⇒ **只计数、不建指针**，与该约定一致）。③ ★★ **合计**：`spec[]` **304 → 307** · `unstable_count` **22 → 21** · 引用总数 **326 → 328** ⇒ **不变式 `len(spec[]) + unstable_count == citation_count` 逐条款仍成立**（`E1`–`E6` 零命中）。★★ **本版据实登记一条机制缺口（非缺陷、是覆盖面）**：`scripts/gen_institution_anchors.py --rewrite` **只回填 `clauses[]` 的四项**，**版本 / `scope` 散文 / `change_log` 一律原样保留** ⇒ ★ **数据回填后散文会静默失真**，且 `check_spec.py` 的 `[META]` 自审**只比 `clauses[]`、看不到散文** ⇒ 故**回填与散文同步必须由人手工成对完成**（本版即如此：`scope` 计数与 `change_log` 同批改）。★ **零新增判据、零原语改动**。"
+    },
+    {
+      "version": "1.5",
+      "date": "2026-10-09",
+      "change": "★★★ **制度换版 · 条款锚点全量重扫（`N-078` D10）**：正本改为 **2026-10-09 修改后正本（28 条 + 附录一/二）**，旧索引（V4.0 · 71 条）条款号整体错位 ⇒ ① 把 `spec/**/*.json` 内 **331 处**「第X条」引用按《旧→新》映射**一次性重锚**；② 机械重生 `clauses`：**29 条 → 17 条**（全部 ∈ 新 1–28 条）。★ **《旧→新》映射表**：旧10/14/60→新9（经办人）· 旧13/18→新10（采一档/备付金）· 旧20/22/23→新12（采三档/询比价）· 旧16→新13（加强采购）· 旧21→新14（防拆分）· 旧39→新17（报销时限）· 旧35/36→新20（合同必备/范本）· 旧42/52→新21（金额与变更）· 旧37/47/59→新22（合同归档/归口提交）· 旧34→新23（三单匹配）· 旧50/51/53→新25（例外事项）· 旧58→新27（违规处理）· 旧71→新5（付款路径）· 旧11/62→新7（岗位/职责）· 旧61→新15（费用事前申请）· 旧2→新2 · 旧12→新26（合规红线）。★ 低置信项与「新版无落点条款」见 `known_gaps.reanchor_low_confidence` / `institution_clauses_without_landing`。"
     }
   ]
 }

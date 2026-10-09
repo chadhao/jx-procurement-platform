@@ -11,7 +11,7 @@
     "tool_table": "★ **工具表 `表单字段清单` 未列 QC 字段组**（该表只到 6 组：PR／SA／PO／到货验收单／集团提交流转单／结算补录）⇒ 本表字段**由 `L07` 台账列需求 ＋ 制度 ＋ 代码侧推导**，且**逐条标注来源**（见 `known_gaps` 第 1 条）。",
     "chain": "spec/chain.json#doc_chains.QC —— 「★ **无独立审批链、不落账**；结论并入 `L07`」＋ `required_config`：**必须配 `related_biz_no → GR 单号`，否则 `L07`「检验结论」列永远为空**；**必须配 `inspection_result`（判定结论）**。",
     "ledger": "spec/ledger-mapping.json#ledgers.L07.fields[inspection_conclusion] —— `writable: true`，`writer: 质检技术部`，`when: 到货验收当日`，`naming: R-20#6`（制度写「检验结论」、工具表写「判定结论」⇒ **统一用制度名**）。",
-    "institution": "费用管理办法V3.0（第五十九条 到货验收台账；第三十四条 不得先付后验）＋ **2026-09-25 批复 A2**（验收人按品类分三组）",
+    "institution": "费用管理办法V3.0（第二十二条 到货验收台账；第二十三条 不得先付后验）＋ **2026-09-25 批复 A2**（验收人按品类分三组）",
     "resolution": "spec/RESOLUTIONS.md（**R-22**：RFQ／QC 侧字段以工具表 C6 ＋ 代码侧为准，须标注「制度未明说」/ **R-20#6**：检验结论统一用制度名 / **R-16**：经办人已纳入验收组，旧「经办人不得验收」口径作废）"
   },
   "ledger": [],

@@ -5,7 +5,7 @@
   "sources": {
     "tool_table": "采购与费用审批体系配置工具表_v3.0.xlsx → sheet「用途分类表」（A1:G33）与各字段「枚举」列",
     "recon": "_scratch/recon-table-v3-fields.md（字段级取证）",
-    "institution": "费用管理办法V3.0（第十八条 / 第二十条 / 第六十条 / 第六十一条）"
+    "institution": "费用管理办法V3.0（第十条 / 第十二条 / 第九条 / 第十五条）"
   },
   "note": "★ 本文件是 `spec/forms/*.json` 的**枚举唯一来源**。表单字段的 `enum_ref` 一律指向本文件路径，禁止在各表单里另抄一份枚举（避免多份真相）。",
   "usage_categories": {

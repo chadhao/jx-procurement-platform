@@ -4,7 +4,7 @@
   "date": "2026-10-06",
   "sources": {
     "tool_table": "deliverables/procurement-approval/采购与费用审批体系配置工具表_v3.0.xlsx（14 sheet，审批阈值矩阵 / 采购方式与留痕 / 角色权限矩阵 / 单据清单）",
-    "institution": "deliverables/procurement-approval/费用管理办法V3.0.html（第二十条 / 第三十四条 / 第五十二条 / 第五十三条 / 第六十条 / 第六十一条）",
+    "institution": "deliverables/procurement-approval/费用管理办法V3.0.html（第十二条 / 第二十三条 / 第二十一条 / 第二十五条 / 第九条 / 第十五条）",
     "code_side": "deliverables/procurement-approval/_build/tplguide/data_templates.py（11 类审批定义 DEFS）★ **更正**：本路径**不在代码库内**，属交付物目录（代码库全库仅 5 个 .py，无该文件）；首版误写为 `docs/_build/…`，已按取证核实改正（2026-09-29）",
     "recon": "_scratch/recon-table-v3-fields.md（字段级取证，含 18 条口径冲突）",
     "user": "用户 2026-09-30 定案（B2 付款路径：有合同即对公 / B5 合同额容差）"
@@ -14,7 +14,7 @@
   "conventions": {
     "no_approval_chain": "★★ **「无审批链单据（登记型）」的判定与提交口径 —— 本键是唯一机读来源**（2026-10-05 立；`COLLAB.md#N-056` · `REMAINING.md#A8`）。★ **它治什么**：`doc_chains` 里哪些单据无审批链、无链时「提交」到底做什么，此前**只有散文** —— `forms/*.json#routes` 写「无独立审批链」· `forms/GR.json#checks[id=ledger_l07_written].when` 括注「提交即终态」· `docs/07 §9`「『验收入库』一步合并，无独立审批链」· `docs/02` 用例主流程「验收登记类，通常无需推三方实例」 ⇒ ★ **不可机检、也无法据以接线**（实测：`ResolveRoute` 无 `DocGR`/`DocQC`/`DocRFQ`/`DocBJ` case ⇒ 提交直接 400）。★ **判定**：`doc_chains.<doc>.no_approval_chain == true` ⇒ 该单据为**登记型**。当前 **4 张**：`GR`／`QC`／`RFQ`／`BJ`。★★ **明示排除 `SUB`**：它同样**无 `route` 键**，但走**独立通道** `POST /api/submission`（`docs/05-API`）⇒ ★ 「无 `route` 键」**不等于**「登记型」，这正是本键必须显式存在的原因；`SUB` **不得**被本口径吸收。★ **提交行为（三条硬性 ＋ 一条边界）**：① **链为空** —— `ResolveRoute` 返回**空路线**（`RouteID == \"\"`）且**不报错**；`BuildNodes` 对该返回**零节点**（`t_flow_task` 零行）、**不得**报 `ErrRouteMissing`。② **提交即终态** —— `flow.Submit` 在「零审批任务」时**于同一事务内**直接进入终态（`APPROVED`），语义＝「本单无需审批，提交即生效」；★★ **不新增状态值**（与「审批通过」共用同一终态 —— 新增状态会牵动 `t_instance.status` 值域及其看板/台账/权限既有消费面，代价远大于收益）。★ 依据＝`forms/GR.json#checks[id=ledger_l07_written].when` 明文「对 GR／QC 这类**无审批链**的单据，**提交即终态**」。③ **落账按 `doc_chains.<doc>.ledger`** —— `GR` → `L07`（一行）；`QC`／`RFQ`／`BJ` → **不落账**（`ledger: []` 是**合法事实**，不是缺口；与 `ledger-mapping.json#doc_to_ledger` 同口径）。★★ **顺序不可颠倒**：**提交 →（同事务）终态 → 落账自检**（该 `when` 括注已写明）。④ **边界（不新造行为）**：三方实例推送**不在本口径内** —— `docs/02` 原文是「**通常**无需推三方实例」（**事实描述**，非硬约束）⇒ ★ 本批**不新增推送分支**；★ 若 mimo 实测发现零任务实例在推送／定义装载环节会**出错**，须**如实回执并按可见失败处置**，**不得静默吞掉**。★ **不适用本口径**：`BA`／`PR`／`SA`／`CT`／`SS`／`PC`（有链，走各自 `route`／`route_by_tier`／`route_by_condition`）· `SUB`（独立通道）。★ **新增登记型单据必须同时补本键**（否则等于没有约定）。★ **与 `env_count` 无关**：本口径**不读** `env_count`（`conventions.env_count` 已明文禁止消费）—— ★ 实测二者**并不一致**（`doc_chains.GR.env_count = 1` 而 `RFQ`／`BJ`／`QC` = `0`），**再次印证**不得依赖该键。★ **仍未闭合（具名，不静默）**：`routes.emergency`（`when: is_emergency == true`）亦**无可达通路**（`ResolveRoute` 无 case、无 `doc_chains` 引用）⇒ ★ 它**不属登记型**（链有 6 节点）；★ 其接线缺的是「紧急采购由**哪张单据**承载」的口径（`when` 只给布尔条件、未绑定 `doc_type`）⇒ 属**需求澄清**，已登记 `COLLAB.md#N-056` 的「本批不做」。",
     "env_count": "★★ **本键语义待定，当前不得依赖它做任何判定**（2026-10-01 立）—— 两种候选：① 该链**节点总数**；② 相对基准**新增的必经环节数**。★ 实测：`routes.purchase_tier1.env_count = 6` 与其 **6 个节点一致**，而 `routes.sole_source.env_count = 1` 却有 **5 个节点** ⇒ **两种候选都无法同时解释现有数据**。⇒ ★ 属**数据问题**（不是文档问题）：须在补链时统一口径**并同步修正**已有值；★ 在此之前消费端**不得**用本键做判定。",
-    "agent_allowed": "★ **节点是否接受代理人操作**（`routes.*.nodes[*].agent_allowed`）：**缺省 true**；显式 `false` ＝ 制度禁止代理（第十二条「备付金审批不得代理」）。★★ **判据＝数据** —— 节点名单**必须写在 spec**，**不得在代码里写字面量**：否则改链（节点改名 / 增删备付金节点）会**静默漏拦**（代理人被放行、且没有任何东西报错）。★ **消费端**：`chain.NodeAllowsAgent`（`M9` 转交/回退入口）＋ 后台 `GET /api/admin/role-agents` 回传 `denied_node_ids`。★ **迁移状态（如实）**：本标记于 2026-09-30 加入，`chain.PettyCashAgentDeniedNodeIDs` **当前仍按 id 字面量判定**（行为正确但非数据驱动）⇒ 由 `COLLAB.md` 的 `N-031` 收口（**两侧同批**）。",
+    "agent_allowed": "★ **节点是否接受代理人操作**（`routes.*.nodes[*].agent_allowed`）：**缺省 true**；显式 `false` ＝ 制度禁止代理（第二十六条「备付金审批不得代理」）。★★ **判据＝数据** —— 节点名单**必须写在 spec**，**不得在代码里写字面量**：否则改链（节点改名 / 增删备付金节点）会**静默漏拦**（代理人被放行、且没有任何东西报错）。★ **消费端**：`chain.NodeAllowsAgent`（`M9` 转交/回退入口）＋ 后台 `GET /api/admin/role-agents` 回传 `denied_node_ids`。★ **迁移状态（如实）**：本标记于 2026-09-30 加入，`chain.PettyCashAgentDeniedNodeIDs` **当前仍按 id 字面量判定**（行为正确但非数据驱动）⇒ 由 `COLLAB.md` 的 `N-031` 收口（**两侧同批**）。",
     "money_unit": "cents",
     "money_note": "金额一律用「分」（整数）。1000 元 = 100000；5000 元 = 500000。禁止用浮点元。",
     "amount_field": "单笔含税总额（对应 PR 的「预估总金额」计算列）",
@@ -509,7 +509,7 @@
             }
           ],
           "resolution": "R-09：★ **本条节点顺序为 WorkBuddy 设计**（制度只规定「应升级为招标或竞争性谈判」，未给节点）⇒ **已标注待用户确认**",
-          "source": "工具表 采购方式与留痕 R7；制度第二十条"
+          "source": "工具表 采购方式与留痕 R7；制度第十二条"
         }
       }
     },
@@ -1075,7 +1075,7 @@
           "单据类型",
           "是否对公直付类"
         ],
-        "note": "★ **不论金额**。★ 与「采一档 <1,000 元不签合同、备付金直接支出」**不冲突** —— 那条**根本不签合同**（第十八条）。",
+        "note": "★ **不论金额**。★ 与「采一档 <1,000 元不签合同、备付金直接支出」**不冲突** —— 那条**根本不签合同**（第十条）。",
         "payment_route": "group_public_account"
       },
       {
@@ -1089,26 +1089,26 @@
         "priority": 3,
         "when": "has_contract == false && tier == 'purchase_tier1'",
         "label": "备付金直接支出（不签合同、不走公户、不提交集团）",
-        "note": "★ 制度第十八条。★ **备付金不设报销时限**（随时报销、随时向集团支取）—— 见 `spec/params.json#petty_cash.reimburse_deadline`。",
+        "note": "★ 制度第十条。★ **备付金不设报销时限**（随时报销、随时向集团支取）—— 见 `spec/params.json#petty_cash.reimburse_deadline`。",
         "payment_route": "petty_cash"
       },
       {
         "priority": 4,
         "when": "otherwise",
         "label": "个人垫付 + 报销（集团付款至本人账户）",
-        "note": "★ **报销每月 20 日截止**（★ 2026-10-09 按制度【报销时限】条款，原 25 日）—— 见 `spec/params.json#reporting.monthly_cutoff_day`。★ 这类支出**业务可先行发生**（第三十九条：走报销的费用都可以提前支出），不受集团付款进度约束。",
+        "note": "★ **报销每月 20 日截止**（★ 2026-10-09 按制度【报销时限】条款，原 25 日）—— 见 `spec/params.json#reporting.monthly_cutoff_day`。★ 这类支出**业务可先行发生**（第十七条：走报销的费用都可以提前支出），不受集团付款进度约束。",
         "payment_route": "personal_advance_reimburse"
       }
     ],
     "boundary_decided_by_us": {
       "case": "**< 1,000 元但签了合同** 的支出",
       "decision": "★ 付款走**公户（集团）**；且 ★ **合同审批统一两级照走**（**不因金额减免**）",
-      "why": "★★ 用户只讲了**付款路径**（有合同即对公）。★ 若合同审批却因金额不足 1,000 元而减免，就会出现「**有合同、但没经过合同审批**」—— 那正是**制度第三十四条明文禁止**的（未完成审批即盖章/下单视为违规）。⇒ **两者口径必须一致**：有合同 ⇒ 既走公户付款、也走两级合同审批。",
+      "why": "★★ 用户只讲了**付款路径**（有合同即对公）。★ 若合同审批却因金额不足 1,000 元而减免，就会出现「**有合同、但没经过合同审批**」—— 那正是**制度第二十三条明文禁止**的（未完成审批即盖章/下单视为违规）。⇒ **两者口径必须一致**：有合同 ⇒ 既走公户付款、也走两级合同审批。",
       "corollary": "★ 因此「合同审批统一两级」的触发条件是 **是否签合同**，而**不是**金额是否 ≥1,000（`contract_approval` 节同口径）。"
     },
     "consequences": {
       "for_system": "付款路径不再是「按金额查表」，而是**先判 `has_contract`** ⇒ 提交集团（SUB）的「可提交判断」须以**付款路径＝公户**为前提。",
-      "for_institution": "★ 制度 V4.0 第七十一条（付款管理）须按本条重述：**付款路径由「是否签合同」决定**；金额只决定审批链档位。"
+      "for_institution": "★ 制度 V4.0 第五条（付款管理）须按本条重述：**付款路径由「是否签合同」决定**；金额只决定审批链档位。"
     },
     "_key_naming": "★★ **键名纪律**：本块用 `payment_route` 而**不是** `route` —— 在 `chain.json` 里 **`route` 已被占用为「**审批流程线**」**（值域＝`routes` 的键：purchase_tier1 / expense_sales / …）。若复用同名，判据 `S6`（`collect: \"**.route\"`）会把**付款路径**当成**审批流程线**去校验 ⇒ **同名异义**，正是 `R-20` 要治的病。★ 本条是**被门禁当场拦下后**改的（首次落库即报 3 处 S6 违规）。"
   }

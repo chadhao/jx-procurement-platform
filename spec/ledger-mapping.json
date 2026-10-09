@@ -4,7 +4,7 @@
   "date": "2026-10-05",
   "sources": {
     "tool_table": "采购与费用审批体系配置工具表_v3.0.xlsx → sheet「台账与看板设计」R4–R15（12 张台账）＋ R2（张数口径）",
-    "institution": "费用管理办法V3.0 第五十九条（第 691–702 行，业务视角 11 张）· 第三十七条（第 472 行）· 第六十一条（第 717 行）",
+    "institution": "费用管理办法V3.0 第二十二条（第 691–702 行，业务视角 11 张）· 第二十二条（第 472 行）· 第十五条（第 717 行）",
     "q14": "deliverables/procurement-approval/.Q14待确认清单-台账可写字段与登记责任人.ref/build.py（逐台账「可写字段 / 登记责任人 / 触发时点」）",
     "recon": "_scratch/recon-table-v3-fields.md §3 · _scratch/recon-institution-fields.md §2",
     "resolution": "spec/RESOLUTIONS.md（R-02 / R-04 / R-12 / R-13 / R-21）"
@@ -113,7 +113,7 @@
       "producer": [
         "BA"
       ],
-      "institution_ref": "费用管理办法V3.0 第五十九条",
+      "institution_ref": "费用管理办法V3.0 第二十二条",
       "fields": [
         {
           "name": "biz_no",
@@ -220,7 +220,7 @@
       "producer": [
         "PR"
       ],
-      "institution_ref": "费用管理办法V3.0 第五十九条",
+      "institution_ref": "费用管理办法V3.0 第二十二条",
       "fields": [
         {
           "name": "biz_no",
@@ -292,7 +292,7 @@
       "producer": [
         "PR"
       ],
-      "institution_ref": "费用管理办法V3.0 第六十条（第 707–714 行）",
+      "institution_ref": "费用管理办法V3.0 第九条（第 707–714 行）",
       "writer_raw_text": "工具表 `台账与看板设计` E6 原文：「**「物资采购申请单」审批节点指定经办人后自动写入**」",
       "fields": [
         {
@@ -382,7 +382,7 @@
       ],
       "resolution_note": "★★ **R-02（最高优先）**：本台账原实现**恒空**（`doc_type → ledger_type` 一对一使 PR 只落 L02）⇒ 已裁定**放宽为一对多**。不修则「需求提出人任经办人的笔数」恒为 0 —— **而 0 恰是期望值，永远发现不了违规**。",
       "split_note": "★ **必拆两张**：① 同步存档表（只读，作凭证：指定经办人 / 指定人 / 指定时间 / 档位金额 / 指定依据）；② 运营表（可写：经办状态 / 完成日期 / 是否按期）",
-      "extra_note": "★ 制度第六十条另要求登记「**冲突核对**」「**可指定范围核对**」两列（由综合运营主管在三单匹配初审环节填）—— 属**运营表**字段（R-21#8）",
+      "extra_note": "★ 制度第九条另要求登记「**冲突核对**」「**可指定范围核对**」两列（由综合运营主管在三单匹配初审环节填）—— 属**运营表**字段（R-21#8）",
       "extra_fields": [
         {
           "name": "conflict_check_result",
@@ -409,7 +409,7 @@
       "producer": [
         "CT"
       ],
-      "institution_ref": "费用管理办法V3.0 第三十七条（第 472 行）",
+      "institution_ref": "费用管理办法V3.0 第二十二条（第 472 行）",
       "fields": [
         {
           "name": "contract_no",
@@ -448,7 +448,7 @@
           "writable": true,
           "writer": "采购经办人",
           "when": "审批通过后即时",
-          "note": "★ 制度第三十七条要求「单列预付比例（便于统计与抽查核对）」"
+          "note": "★ 制度第二十二条要求「单列预付比例（便于统计与抽查核对）」"
         },
         {
           "name": "signed_at",
@@ -474,14 +474,14 @@
           "writable": true,
           "writer": "综合运营主管",
           "when": "依集团人工反馈",
-          "resolution": "R-21#12：★ 工具表 L04 **无此项**（仅 L06 有近似项），但制度第三十七条明确要求合同台账含「集团付款状态」⇒ 补入。不补则「合同台账看不出付没付」"
+          "resolution": "R-21#12：★ 工具表 L04 **无此项**（仅 L06 有近似项），但制度第二十二条明确要求合同台账含「集团付款状态」⇒ 补入。不补则「合同台账看不出付没付」"
         },
         {
           "name": "submit_group_at",
           "label": "提交集团日期",
           "writable": true,
           "writer": "综合运营主管",
-          "resolution": "R-21#12 同源（制度第三十七条）"
+          "resolution": "R-21#12 同源（制度第二十二条）"
         }
       ],
       "split_note": "★ 承接原「预付款例外」的全部留痕；D8 简式订单等一并入本表并标注「视为已签合同」；建议拆两张"
@@ -493,7 +493,7 @@
       "producer": [
         "SA"
       ],
-      "institution_ref": "费用管理办法V3.0 第五十九条",
+      "institution_ref": "费用管理办法V3.0 第二十二条",
       "fields": [
         {
           "name": "biz_no",
@@ -586,7 +586,7 @@
       "producer": [
         "SUB"
       ],
-      "institution_ref": "费用管理办法V3.0 第五十九条（★ 制度侧为 #6 与 #10 **两条**，工具表合并为本表 —— 见 R-04）",
+      "institution_ref": "费用管理办法V3.0 第二十二条（★ 制度侧为 #6 与 #10 **两条**，工具表合并为本表 —— 见 R-04）",
       "fields": [
         {
           "name": "biz_no",
@@ -688,8 +688,8 @@
       "critical_note": "★★ 工具表原文：「它仍是全表里**唯一「没有人工维护就会完全失去意义」的台账**」",
       "split_note": "★ **必拆两张**：① 同步存档表（只读：SUB 号 / 关联单据 / 金额 / 付款方式 / 湖南侧完成日期）；② 运营表（可写：提交集团日期 / 集团流程编号 / 集团流程状态 / 付款完成日期 —— ★ **四个字段全部人工登记**，B8 定案「非系统回填、不作数据对齐」）",
       "institution_mapping": {
-        "制度第五十九条 #6": "集团报销跟踪表",
-        "制度第五十九条 #10": "集团提交与付款衔接台账",
+        "制度第二十二条 #6": "集团报销跟踪表",
+        "制度第二十二条 #10": "集团提交与付款衔接台账",
         "resolution": "R-04：制度侧分立两条、工具表合并为本表 ⇒ 机读侧主键用 L06，**附制度条号映射**"
       }
     },
@@ -701,7 +701,7 @@
         "GR",
         "QC"
       ],
-      "institution_ref": "费用管理办法V3.0 第五十九条（第 698 行）",
+      "institution_ref": "费用管理办法V3.0 第二十二条（第 698 行）",
       "fields": [
         {
           "name": "biz_no",
@@ -805,7 +805,7 @@
           "label": "关联关系申报",
           "writable": true,
           "writer": "综合运营主管",
-          "note": "★ 对应制度第二十条「报价单位之间不得存在关联关系」"
+          "note": "★ 对应制度第十二条「报价单位之间不得存在关联关系」"
         }
       ],
       "resolution_note": "R-12：★ 工具表 `台账与看板设计` R2 说第 8 号「建议拆」，而 R11 C7 又写「手工维护表，本身可写，**无拆分问题**」⇒ **按后者**（与 PRD §5.5、架构 §3.4 一致）。",
@@ -827,7 +827,7 @@
         "SS",
         "PC"
       ],
-      "institution_ref": "费用管理办法V3.0 第五十条（第 613 行）· 第五十二条",
+      "institution_ref": "费用管理办法V3.0 第二十五条（第 613 行）· 第二十一条",
       "fields": [
         {
           "name": "exception_type",
@@ -879,7 +879,7 @@
           "name": "change_chain",
           "label": "变更链（历次变更次数 / 累计金额 / 所取档位）",
           "writable": false,
-          "resolution": "R-21#7：★ 制度第五十二条要求「台账须能按合同号查看历次变更的次数、累计金额与所取档位」⇒ 补入；不补则「档位就高」缺数据支撑、化整为零难发现"
+          "resolution": "R-21#7：★ 制度第二十一条要求「台账须能按合同号查看历次变更的次数、累计金额与所取档位」⇒ 补入；不补则「档位就高」缺数据支撑、化整为零难发现"
         },
         {
           "name": "is_anomaly_listed",
@@ -893,7 +893,7 @@
           "writable": true,
           "writer": "综合运营主管",
           "when": "月度报送时",
-          "note": "★★ **`B3` 落点（2026-10-04）：制度第五十三条「例外事项的统计与复盘」的「月度报送专项说明」在本系统的承载列** —— ★ 与既有唯一可写列 `is_emergency_closed`（紧急单销假）**同范式**：`writable: true` ＋ `writer` ＋ `when`，**不新增单据类型**（避免第二份真相）。★ 存储＝`t_ledger_ops.ops_json` 的键（`field_key` ＝本 `label`），写入走台账页既有通用通道；字段定义经 `docs/reference/config-mapping.sample.json#ledger_field` 登记。★ **绑定守卫**：`cmd/jxapproval#TestUnregisteredWritableLedgerFields`（spec 可写列 ↔ 配置登记**双向绑定**：本列 `writable: true` 而配置未登记 ⇒ 门禁红）"
+          "note": "★★ **`B3` 落点（2026-10-04）：制度第二十五条「例外事项的统计与复盘」的「月度报送专项说明」在本系统的承载列** —— ★ 与既有唯一可写列 `is_emergency_closed`（紧急单销假）**同范式**：`writable: true` ＋ `writer` ＋ `when`，**不新增单据类型**（避免第二份真相）。★ 存储＝`t_ledger_ops.ops_json` 的键（`field_key` ＝本 `label`），写入走台账页既有通用通道；字段定义经 `docs/reference/config-mapping.sample.json#ledger_field` 登记。★ **绑定守卫**：`cmd/jxapproval#TestUnregisteredWritableLedgerFields`（spec 可写列 ↔ 配置登记**双向绑定**：本列 `writable: true` 而配置未登记 ⇒ 门禁红）"
         }
       ],
       "split_note": "实例级台账，单表"
@@ -1034,7 +1034,7 @@
     {
       "id": "R-21#15",
       "item": "集团衔接字段（是否需报集团流程 / 本流程完成日期 / 集团流程编号 / 集团流程状态 / 集团付款日期与金额）",
-      "status": "已裁定补入 SUB（L06 有、7 张单据字段表均无）—— 制度第四十七条"
+      "status": "已裁定补入 SUB（L06 有、7 张单据字段表均无）—— 制度第二十二条"
     },
     {
       "id": "GAP-1",

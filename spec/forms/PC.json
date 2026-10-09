@@ -8,7 +8,7 @@
   "generated_by": "WorkBuddy",
   "sources": {
     "tool_table": "采购与费用审批体系配置工具表_v3.0.xlsx → `单据清单` R11（PC 在 `表单字段清单` 中【未列出】逐条字段，本表 R11 的 C6「关键字段」为次级来源）：关联合同号、变更原因、原金额、变更后金额、差额、变更依据",
-    "institution": "费用管理办法V3.0（**第五十二条 采购变更** / 第五十三条 例外事项的统计与复盘 / 第四十二条 付款额超过原合同金额 / 第十八条 采一档不签合同）＋ 2026-09-25 批复 A8（档位就高）",
+    "institution": "费用管理办法V3.0（**第二十一条 采购变更** / 第二十五条 例外事项的统计与复盘 / 第二十一条 付款额超过原合同金额 / 第十条 采一档不签合同）＋ 2026-09-25 批复 A8（档位就高）",
     "recon": "_scratch/recon-table-v3-fields.md §1.7（PC 次级来源）/ §3（L09 台账字段）",
     "resolution": "spec/RESOLUTIONS.md（**R-20#7**：变更理由统一名为「变更原因」`change_reason` / **R-20#8**：`contract_no` 与 `related_biz_no` 另列 / **R-21#7**：变更链字段 / **R-15**：150% 与 30% 不是冲突，分别挂到不同规则）"
   },
@@ -45,16 +45,16 @@
     },
     "anomaly_list": {
       "when": "same contract changes >= 2 times within 90 days",
-      "effect": "进**异常清单** ＋ 月度报送专项说明（制度第五十三条）"
+      "effect": "进**异常清单** ＋ 月度报送专项说明（制度第二十五条）"
     },
     "tech_opinion": {
       "when": "engineering category",
-      "effect": "须由**质检技术岗或工程负责人**出具技术意见（制度第五十二条最后一段）"
+      "effect": "须由**质检技术岗或工程负责人**出具技术意见（制度第二十一条最后一段）"
     },
-    "resubmit_to_group": "★ 制度第五十二条：**变更后的合同须重新归口提交集团**",
+    "resubmit_to_group": "★ 制度第二十一条：**变更后的合同须重新归口提交集团**",
     "_unreachable_branch": {
-      "issue": "★ 制度第五十二条列举「按正常采购分档补／重审批」时含「**采一档由综合运营主管审批备付金**」，而 `chain.json#routes.change.nodes[2]` 的 actor 是「主管领导 → 项目总经理」⇒ **表面看是冲突**",
-      "proof": "★★ **实际不冲突，采一档分支不可达 —— 可证**：PC 的**前提是「合同签订后」发生变更**（制度第五十二条首句），而**采一档（<1,000 元）按第十八条不签合同** ⇒ 存在合同 ⇒ `original_contract_amount_cents ≥ 100000 分`；又「档位就高」取 `max(变更差额, 原合同金额)` ⇒ 档位 **≥ 采二档**。⇒ **采一档分支在本单中不可达**，故 `chain.json` 的 actor 与制度**并无矛盾**。★ 该证明留于此，**免得后人再当成冲突报一次**"
+      "issue": "★ 制度第二十一条列举「按正常采购分档补／重审批」时含「**采一档由综合运营主管审批备付金**」，而 `chain.json#routes.change.nodes[2]` 的 actor 是「主管领导 → 项目总经理」⇒ **表面看是冲突**",
+      "proof": "★★ **实际不冲突，采一档分支不可达 —— 可证**：PC 的**前提是「合同签订后」发生变更**（制度第二十一条首句），而**采一档（<1,000 元）按第十条不签合同** ⇒ 存在合同 ⇒ `original_contract_amount_cents ≥ 100000 分`；又「档位就高」取 `max(变更差额, 原合同金额)` ⇒ 档位 **≥ 采二档**。⇒ **采一档分支在本单中不可达**，故 `chain.json` 的 actor 与制度**并无矛盾**。★ 该证明留于此，**免得后人再当成冲突报一次**"
     },
     "change_chain_lookup": "★★ **变更链检索必须按 `contract_no` 等值匹配，绝不使用前缀匹配（`LIKE '%x%'`）** —— 前缀匹配会让 `CT-1` 捞到 `CT-1X`，属**越权/串链**原型（代码侧 `internal/flow/finalize_test.go` 已有对应断言）。★ 本单是变更链的**生产者**，`contract_no` 是**唯一键**（`bizfields.go#BizFieldContractNo`，Q14 定稿）"
   },
@@ -113,9 +113,9 @@
           "immutable": true,
           "is_change_chain_key": true,
           "origin": "resolution",
-          "origin_ref": "R-20#8 ＋ R-21#7 ＋ 制度第五十二条",
+          "origin_ref": "R-20#8 ＋ R-21#7 ＋ 制度第二十一条",
           "rule": "★ 填写本次变更所指向的合同编号（合同台账 `L04.contract_no`）",
-          "critical_note": "★★★ **本字段是变更链回溯的唯一键**（`internal/config/bizfields.go#BizFieldContractNo`，**Q14 定稿**：合同链用 `contract_no`）。★ 制度第五十二条明文「变更单须**关联合同号**，保留完整变更链」；★ 变更链检索一律**等值匹配**，**绝不前缀匹配**（否则 `CT-1` 会捞到 `CT-1X` —— **串链/越权**）。★ `chain.json#routes.change.nodes[0].required_fields = [\"关联合同号\"]` —— 它是**提交节点的必填项**，缺则**不可提交**（无源变更）"
+          "critical_note": "★★★ **本字段是变更链回溯的唯一键**（`internal/config/bizfields.go#BizFieldContractNo`，**Q14 定稿**：合同链用 `contract_no`）。★ 制度第二十一条明文「变更单须**关联合同号**，保留完整变更链」；★ 变更链检索一律**等值匹配**，**绝不前缀匹配**（否则 `CT-1` 会捞到 `CT-1X` —— **串链/越权**）。★ `chain.json#routes.change.nodes[0].required_fields = [\"关联合同号\"]` —— 它是**提交节点的必填项**，缺则**不可提交**（无源变更）"
         },
         {
           "name": "related_biz_no",
@@ -170,7 +170,7 @@
             "付款条件修改"
           ],
           "origin": "institution",
-          "origin_ref": "制度第五十二条首句（逐字列举）",
+          "origin_ref": "制度第二十一条首句（逐字列举）",
           "rule": "★ 制度原文列举的**五类**触发情形，逐字取用；★ 可多选时**拆为多张变更单**（同一事项的变更应在一张单里说清）",
           "critical_note": "★ 本字段决定后续分支：选「供应商变更」⇒ `new_supplier` 必填；选「范围调整」⇒ 建议附变更依据附件"
         }
@@ -180,7 +180,7 @@
       "id": "amount",
       "label": "金额与档位（节点②·档位就高）",
       "filled_at": "node2_tier_judge",
-      "institution_ref": "制度第五十二条 ＋ 批复 A8 ＋ `chain.json#routes.change.rules`",
+      "institution_ref": "制度第二十一条 ＋ 批复 A8 ＋ `chain.json#routes.change.rules`",
       "hard_rule": "★★ **审批档位 ＝ `tier_of( max(变更差额, 原合同金额) )`** —— **拆多少笔都一样**，审批层级不因拆分而下降",
       "fields": [
         {
@@ -262,7 +262,7 @@
           "carried_by_kind": "code",
           "carried_by": "httpapi#injectPCSSSystemFields 聚合 L09 同合同号历史行（含本次）；★ 同受「非空不覆盖」影响",
           "origin": "resolution",
-          "origin_ref": "R-21#7 ＋ 制度第五十二条（变更链可回溯）",
+          "origin_ref": "R-21#7 ＋ 制度第二十一条（变更链可回溯）",
           "rule": "★ 按 `contract_no` 统计（等值匹配），含本次",
           "critical_note": "★ 本字段是「90 天内 ≥2 次入异常清单」的**数据基础**，也是 L09 `change_chain` 的组成部分"
         },
@@ -298,7 +298,7 @@
           "origin": "resolution",
           "origin_ref": "R-20#7（以制度为准）",
           "rule": "★ 说清「**为什么必须变**」：对方来函、设计变更、现场条件变化、不可抗力、法规要求等",
-          "critical_note": "★ 本字段是 L09 台账 `reason`（通用「理由」列）的**唯一数据源**；★ 制度第五十二条要求变更「须提交采购变更单」—— 理由是变更单存在的意义，**不接受「领导让改」这类理由**"
+          "critical_note": "★ 本字段是 L09 台账 `reason`（通用「理由」列）的**唯一数据源**；★ 制度第二十一条要求变更「须提交采购变更单」—— 理由是变更单存在的意义，**不接受「领导让改」这类理由**"
         },
         {
           "name": "change_basis_attachment",
@@ -319,7 +319,7 @@
           "source": "user",
           "required_when": "change_type == 范围调整",
           "origin": "institution",
-          "origin_ref": "制度第五十二条（范围调整属触发情形）",
+          "origin_ref": "制度第二十一条（范围调整属触发情形）",
           "rule": "★ 增加／减少的具体标的与数量（对照原合同）"
         },
         {
@@ -330,9 +330,9 @@
           "source": "user",
           "required_when": "change_type == 付款条件修改",
           "origin": "institution",
-          "origin_ref": "制度第五十二条（付款条件修改属触发情形）",
+          "origin_ref": "制度第二十一条（付款条件修改属触发情形）",
           "rule": "★ 修改前后的付款节点／比例／账期对照",
-          "critical_note": "★ 付款条件是**合同审批的审查要点**之一（第三十四条）⇒ 修改付款条件须在本单中显式对照，否则审批人无从判断"
+          "critical_note": "★ 付款条件是**合同审批的审查要点**之一（第二十三条）⇒ 修改付款条件须在本单中显式对照，否则审批人无从判断"
         }
       ]
     },
@@ -354,7 +354,7 @@
           "verified_at": "c1eb311",
           "origin": "resolution",
           "origin_ref": "R-15 ＋ chain.json#routes.change.rules.special_explanation",
-          "rule": "★ ＝ `total_change_cents > original_contract_amount_cents * 0.3`（制度第五十三条同口径）"
+          "rule": "★ ＝ `total_change_cents > original_contract_amount_cents * 0.3`（制度第二十五条同口径）"
         },
         {
           "name": "special_explanation",
@@ -364,7 +364,7 @@
           "source": "user",
           "required_when": "special_explanation_required == true",
           "origin": "institution",
-          "origin_ref": "制度第五十二条 / 第五十三条",
+          "origin_ref": "制度第二十一条 / 第二十五条",
           "rule": "★ 说明累计变更已超原合同金额 30% 的原因与合理性",
           "critical_note": "★ 缺此项 ⇒ **审批人看不到累计偏离**（单笔看都不大，合起来很大）—— 这正是「化整为零」的另一条通道"
         },
@@ -376,11 +376,11 @@
           "source": "computed",
           "immutable": true,
           "carried_by_kind": "code",
-          "carried_by": "httpapi/handlers_approval_pcss_inject.go#injectPCSSSystemFields L144-145：`newTotal > original × 1.5`（制度第五十二条 150%）经 `putSysField` 恒覆盖写入。★ 与之配套的 `checks#reset_as_new_purchase_block` 是**提交期 hard 拦**（拒绝提交、要求改走 `PR`）⇒ 该标记**不再由用户自填说了算**",
+          "carried_by": "httpapi/handlers_approval_pcss_inject.go#injectPCSSSystemFields L144-145：`newTotal > original × 1.5`（制度第二十一条 150%）经 `putSysField` 恒覆盖写入。★ 与之配套的 `checks#reset_as_new_purchase_block` 是**提交期 hard 拦**（拒绝提交、要求改走 `PR`）⇒ 该标记**不再由用户自填说了算**",
           "verified_at": "9fd0227",
           "origin": "resolution",
           "origin_ref": "R-15 ＋ chain.json#routes.change.rules.reset_as_new_purchase",
-          "rule": "★ ＝ `new_total_cents > original_contract_amount_cents * 1.5`（制度第五十二条 150% 口径）",
+          "rule": "★ ＝ `new_total_cents > original_contract_amount_cents * 1.5`（制度第二十一条 150% 口径）",
           "critical_note": "★★ 为真时**本单不能作为采购通道** —— 须**重走全套流程**（询比价 → 拟成交审批 → 合同两级审批）。判据落点 `checks#reset_as_new_purchase_block`"
         },
         {
@@ -393,16 +393,16 @@
           "carried_by_kind": "code",
           "carried_by": "httpapi#injectPCSSSystemFields 按 90 天窗口聚合（★ 实测 4 用例全对：无历史/1 次近期/200 天前/2 次近期）；★ 同受「非空不覆盖」影响",
           "origin": "institution",
-          "origin_ref": "制度第五十三条 ＋ chain.json#routes.change.rules.anomaly_list",
+          "origin_ref": "制度第二十五条 ＋ chain.json#routes.change.rules.anomaly_list",
           "rule": "★ 同一合同 90 天内变更 ≥2 次（含本次）⇒ 标记并进月度报送",
-          "critical_note": "★ 与采一档的「拆分嫌疑清单」同源（制度第五十三条把两者并列）—— **两条口子（采一档拆分、变更拆分）须一并执行，缺一不可**"
+          "critical_note": "★ 与采一档的「拆分嫌疑清单」同源（制度第二十五条把两者并列）—— **两条口子（采一档拆分、变更拆分）须一并执行，缺一不可**"
         }
       ]
     },
     {
       "id": "tech_opinion",
       "label": "技术意见（工程类变更·条件必填）",
-      "institution_ref": "制度第五十二条（「工程类变更须由质检技术岗或工程负责人出具技术意见」）",
+      "institution_ref": "制度第二十一条（「工程类变更须由质检技术岗或工程负责人出具技术意见」）",
       "fields": [
         {
           "name": "is_engineering_category",
@@ -441,7 +441,7 @@
           "source": "inspector_at_node",
           "required_when": "is_engineering_category == true",
           "origin": "institution",
-          "origin_ref": "制度第五十二条",
+          "origin_ref": "制度第二十一条",
           "rule": "★ 由**质检技术岗或工程负责人**出具；须回答本次工程类变更在技术上是否可行／是否必要"
         },
         {
@@ -478,7 +478,7 @@
       "id": "approval_and_filing",
       "label": "审批记录与归档（节点③④）",
       "filled_at": "node3_tier_approval_and_node4_ledger_submit",
-      "institution_ref": "chain.json#routes.change.nodes[2..3] ＋ 制度第五十二条末段",
+      "institution_ref": "chain.json#routes.change.nodes[2..3] ＋ 制度第二十一条末段",
       "fields": [
         {
           "name": "tier_approval_record",
@@ -489,7 +489,7 @@
           "required": true,
           "source": "system",
           "origin": "institution",
-          "origin_ref": "制度第五十二条（按正常采购分档补／重审批）",
+          "origin_ref": "制度第二十一条（按正常采购分档补／重审批）",
           "rule": "系统自动关联本单按所取档位走的审批实例与结论（含审批人／时间／意见）",
           "critical_note": "★ 本字段为空则**该档位实际未经审批却无从发现** ⇒ L09 台账「审批记录」列取本字段"
         },
@@ -500,7 +500,7 @@
           "required": true,
           "source": "user",
           "origin": "institution",
-          "origin_ref": "制度第五十二条末段（变更后的合同须重新归口提交集团）",
+          "origin_ref": "制度第二十一条末段（变更后的合同须重新归口提交集团）",
           "rule": "★ 综合运营主管登记实际提交日期",
           "critical_note": "★ 本字段不是可选项：制度明文「**变更后的合同须重新归口提交集团**」—— 变更了却不重新提交，等于集团拿到的是旧合同"
         }
@@ -515,7 +515,7 @@
       "assert": "contract_no 非空 且 在合同台账 L04 中**等值命中**一行",
       "else": "★ **拒绝提交**（可见失败）—— 提示「关联合同号不存在，无法建立变更链」",
       "origin": "resolution",
-      "origin_ref": "chain.json#routes.change.nodes[0].required_fields ＋ 制度第五十二条",
+      "origin_ref": "chain.json#routes.change.nodes[0].required_fields ＋ 制度第二十一条",
       "severity": "hard",
       "carried_by_kind": "submit",
       "note": "★★ **必须等值匹配，绝不前缀匹配** —— 前缀匹配会让 `CT-1` 命中 `CT-1X`（串链/越权）。★ 代码侧已有对应断言（`internal/flow/finalize_test.go`），本判据是规格侧的同口径声明"
@@ -541,7 +541,7 @@
       "origin_ref": "本文件 `routes._unreachable_branch`（可证）",
       "severity": "hard",
       "carried_by_kind": "structural",
-      "note": "★★ **可证的不变量**：PC 前提是「合同签订后」⇒ 采一档（<1,000 元）**不签合同** ⇒ `original_contract_amount_cents ≥ 100000` ⇒ `max(...) ≥ 100000` ⇒ **档位恒 ≥ 采二档**。★ 制度第五十二条列举的「采一档由综合运营主管审批」在本单中**不可达**（与 `chain.json` 的 actor 不构成冲突）"
+      "note": "★★ **可证的不变量**：PC 前提是「合同签订后」⇒ 采一档（<1,000 元）**不签合同** ⇒ `original_contract_amount_cents ≥ 100000` ⇒ `max(...) ≥ 100000` ⇒ **档位恒 ≥ 采二档**。★ 制度第二十一条列举的「采一档由综合运营主管审批」在本单中**不可达**（与 `chain.json` 的 actor 不构成冲突）"
     },
     {
       "id": "change_amount_nonzero",
@@ -559,7 +559,7 @@
       "assert": "NOT (new_total_cents > original_contract_amount_cents * 1.5)",
       "else": "★ **拒绝**，提示「变更后总额已超原合同 150%，须重走全套流程（询比价 → 拟成交审批 → 合同两级审批）」",
       "origin": "institution",
-      "origin_ref": "制度第五十二条（150%）",
+      "origin_ref": "制度第二十一条（150%）",
       "severity": "hard",
       "carried_by_kind": "submit",
       "note": "★ 与 30% 门槛**不是同一条规则**（`R-15`）：本判据管「**重走全套**」，30% 管「**专项说明**」"
@@ -570,7 +570,7 @@
       "assert": "total_change_cents > original_contract_amount_cents * 0.3 ⇒ special_explanation 非空",
       "else": "拒绝提交",
       "origin": "institution",
-      "origin_ref": "制度第五十二条 / 第五十三条（30%）",
+      "origin_ref": "制度第二十一条 / 第二十五条（30%）",
       "severity": "hard",
       "carried_by_kind": "submit"
     },
@@ -580,7 +580,7 @@
       "assert": "90 天内同一 contract_no 变更 ≥2 次 ⇒ is_anomaly_listed = true",
       "else": "★ 告警（未标记异常）",
       "origin": "institution",
-      "origin_ref": "制度第五十三条",
+      "origin_ref": "制度第二十五条",
       "severity": "hard",
       "carried_by_kind": "code",
       "carried_by": "httpapi/handlers_approval_pcss_inject.go#injectPCSSSystemFields L111-126（cutoff=now-90d，recent>=1 ⇒ 含本次 ≥2）；落 L09 后由 flow/finalize.go L154-191 列自检纳入 `is_anomaly_listed` 必存",
@@ -593,10 +593,10 @@
       "assert": "is_anomaly_listed = true ⇒ L09 行有**专项说明落点**（`anomaly_note` 可写列，由综合运营主管在月度报送时填写）",
       "else": "★ 告警（已列异常但无报送落点）",
       "origin": "institution",
-      "origin_ref": "制度第五十三条（例外事项的统计与复盘 · 月度报送专项说明）",
+      "origin_ref": "制度第二十五条（例外事项的统计与复盘 · 月度报送专项说明）",
       "severity": "hard",
       "carried_by_kind": "manual",
-      "carried_by": "**落点＝`spec/ledger-mapping.json#ledgers.L09.fields[name=anomaly_note]`**（`label`「异常变更专项说明」，`writable: true`，`writer: 综合运营主管`，`when: 月度报送时`）⇒ 存储为 `t_ledger_ops.ops_json` 的键，写入走台账页既有通用通道；字段定义经 `docs/reference/config-mapping.sample.json#ledger_field` 登记。★ **机检绑定**：`cmd/jxapproval#TestUnregisteredWritableLedgerFields`（spec 可写列 ↔ 配置登记**双向绑定**：本列在 spec 声明可写而配置未登记 ⇒ 门禁转红）。★ 与既有唯一可写列 `is_emergency_closed`（紧急单销假）**同范式** —— 制度第五十三条的两条口子（紧急未闭合 / 变更异常）承载方式一致。★ 同伴落点：`is_anomaly_listed` 已同批补登记进 `L09.fields`（此前**从未登记**，而它是 `flow/finalize.go` 落账自检的 6 列之一）",
+      "carried_by": "**落点＝`spec/ledger-mapping.json#ledgers.L09.fields[name=anomaly_note]`**（`label`「异常变更专项说明」，`writable: true`，`writer: 综合运营主管`，`when: 月度报送时`）⇒ 存储为 `t_ledger_ops.ops_json` 的键，写入走台账页既有通用通道；字段定义经 `docs/reference/config-mapping.sample.json#ledger_field` 登记。★ **机检绑定**：`cmd/jxapproval#TestUnregisteredWritableLedgerFields`（spec 可写列 ↔ 配置登记**双向绑定**：本列在 spec 声明可写而配置未登记 ⇒ 门禁转红）。★ 与既有唯一可写列 `is_emergency_closed`（紧急单销假）**同范式** —— 制度第二十五条的两条口子（紧急未闭合 / 变更异常）承载方式一致。★ 同伴落点：`is_anomaly_listed` 已同批补登记进 `L09.fields`（此前**从未登记**，而它是 `flow/finalize.go` 落账自检的 6 列之一）",
       "split_from": "anomaly_list_and_report",
       "verify_note": "★★ **B3 裁定（2026-10-04）：落点＝表列（`L09.anomaly_note`）** —— 选「表列」而非「看板指标」的理由：① 本判据的字面诉求是「须有**专项说明**落点」，而**专项说明是文本**，看板指标（计数/清单）承载不了它；② 列落点有**现成同范式先例**（`is_emergency_closed`）且**零新增单据类型**（不制造第二份真相）；③ ★ **实测**：只落 spec 会让 `cmd/jxapproval#TestUnregisteredWritableLedgerFields` 转红 ⇒ **落点与配置登记必须同批**（已同批落地，门禁 8/8）。★★ **仍缺的「列示面」已另立** `N-046`（看板 16「异常预警面板」有 `emergency_purchase`/`emergency_not_closed_24h`/`sole_source` 三条 alert，**唯独「采购变更异常」缺** ⇒ 三种例外类型在看板 16 不对称）；★ 该缺口**必须与实现同批** —— 实测：单独给看板 16 加指标 ⇒ `internal/httpapi#TestDashboardAlertKeysMatchSpec` **精确转红**（『输出指标数 = 11, spec 指标数 = 12 —— 数量必须相等』）",
       "verified_at": "9fd0227"
@@ -607,7 +607,7 @@
       "assert": "is_engineering_category == true ⇒ tech_opinion 非空 且 tech_opinion_by 非空",
       "else": "拒绝提交",
       "origin": "institution",
-      "origin_ref": "制度第五十二条（工程类变更须质检技术岗／工程负责人出技术意见）",
+      "origin_ref": "制度第二十一条（工程类变更须质检技术岗／工程负责人出技术意见）",
       "severity": "hard",
       "carried_by_kind": "submit"
     },
@@ -617,10 +617,10 @@
       "assert": "change_type == '供应商变更' ⇒ new_supplier 非空 且 new_supplier != original_supplier",
       "else": "拒绝提交",
       "origin": "institution",
-      "origin_ref": "制度第五十二条（供应商变更属触发情形）",
+      "origin_ref": "制度第二十一条（供应商变更属触发情形）",
       "severity": "hard",
       "carried_by_kind": "submit",
-      "note": "★ 供应商变更 = **合同主体变了** ⇒ 除本单外**须重新走合同审批**（第三十四条）；本判据只保证「填了」，无法替代合同审批"
+      "note": "★ 供应商变更 = **合同主体变了** ⇒ 除本单外**须重新走合同审批**（第二十三条）；本判据只保证「填了」，无法替代合同审批"
     },
     {
       "id": "resubmit_to_group",
@@ -628,7 +628,7 @@
       "assert": "resubmitted_to_group_at 非空",
       "else": "★ **不得标记为已闭环**（提示「变更后的合同须重新归口提交集团」）",
       "origin": "institution",
-      "origin_ref": "制度第五十二条末段",
+      "origin_ref": "制度第二十一条末段",
       "severity": "hard",
       "carried_by_kind": "code",
       "carried_by": "flow/designation.go#nodeFieldSpecFor L164-166（`PC×ledger_submit` ⇒ `resubmitted_to_group_at` 必填）→ #applyNodeFieldMapTx 缺值即拒、不推进节点（service.go L508 通道）；★ 节点归属见 `approval_and_filing.filled_at=node3_tier_approval_and_node4_ledger_submit` —— **只在 node4 填**（field rule 明写「综合运营主管登记」，node4 actor=ops_supervisor）",
@@ -653,7 +653,7 @@
       "assert": "NOT (applicant == 需求提出人 AND designated_by == 需求提出人)",
       "else": "拒绝（硬拦截）",
       "origin": "resolution",
-      "origin_ref": "R-27（B7 定案）＋ 制度第十四条",
+      "origin_ref": "R-27（B7 定案）＋ 制度第九条",
       "severity": "hard",
       "carried_by_kind": "submit",
       "note": "★ **必须与 `PR.json` / `CT.json` / `SS.json` 同款判据一致**（四处同口径）"
@@ -673,17 +673,17 @@
     {
       "gap": "★ `total_change_cents` / `new_total_cents` 的**口径**（是否含历次变更）",
       "status": "我方按最合理口径定义，**请确认**",
-      "note": "★ `chain.json#routes.change.rules` 用了两个量：`new_total_cents`（150% 门槛）与 `total_change_cents`（30% 门槛），但**未定义它们是否含历次**。⇒ 本文件显式定义为：`total_change_cents` ＝ **历次差额累计（含本次）**；`new_total_cents` ＝ `原合同金额 + total_change_cents`。★ 依据＝字段名含 `total`，且制度第五十三条的「同一合同 90 天内 ≥2 次」也要求**按合同累计**看。★ **若口径相反（只看本次），两个门槛都会失真** —— 请确认。"
+      "note": "★ `chain.json#routes.change.rules` 用了两个量：`new_total_cents`（150% 门槛）与 `total_change_cents`（30% 门槛），但**未定义它们是否含历次**。⇒ 本文件显式定义为：`total_change_cents` ＝ **历次差额累计（含本次）**；`new_total_cents` ＝ `原合同金额 + total_change_cents`。★ 依据＝字段名含 `total`，且制度第二十五条的「同一合同 90 天内 ≥2 次」也要求**按合同累计**看。★ **若口径相反（只看本次），两个门槛都会失真** —— 请确认。"
     },
     {
       "gap": "★ 「工程类」的**判定依据**（制度未给）",
       "status": "我方补入（P05／P06），**请确认或替换为集团口径**",
-      "note": "★ 制度第五十二条只说「工程类变更须质检技术岗／工程负责人出技术意见」，**未给判定依据**。⇒ 本表单按 `usage_category_l1 ∈ {P05 设备与周转设施租赁, P06 工程与安装}` 判定。★ 风险：若把「设备采购（P04）+ 安装」也视为工程类，则本判定会**漏判**。★ 需用户／集团确认。"
+      "note": "★ 制度第二十一条只说「工程类变更须质检技术岗／工程负责人出技术意见」，**未给判定依据**。⇒ 本表单按 `usage_category_l1 ∈ {P05 设备与周转设施租赁, P06 工程与安装}` 判定。★ 风险：若把「设备采购（P04）+ 安装」也视为工程类，则本判定会**漏判**。★ 需用户／集团确认。"
     },
     {
       "gap": "「90 天窗口」的**起点口径**",
       "status": "我方按滚动窗口实现",
-      "note": "★ 制度第五十三条写「同一合同 **90 天内**发生 2 次及以上变更」，**未说 90 天从何时起算**（首次变更？上次变更？自然季？）⇒ 本表单按**距上次变更 ≤90 天**（滚动窗口）实现。★ 不同口径会给出不同的异常清单 ⇒ 需明确。"
+      "note": "★ 制度第二十五条写「同一合同 **90 天内**发生 2 次及以上变更」，**未说 90 天从何时起算**（首次变更？上次变更？自然季？）⇒ 本表单按**距上次变更 ≤90 天**（滚动窗口）实现。★ 不同口径会给出不同的异常清单 ⇒ 需明确。"
     },
     {
       "gap": "「变更后总额超 150% 视为新采购」时，**本单如何处置**",
@@ -701,7 +701,7 @@
       "gap": "「供应商变更」与**合同审批**的衔接",
       "status": "★★ **已定（`COLLAB §9.2`）**",
       "decision": "★ **不自动、人工发起** —— 制度未规定联动；且合同重审有独立审批链。",
-      "note": "★ 变更供应商 = 合同主体变了 ⇒ 除本单外**须重新走合同审批**（第三十四条：审查付款条件／验收标准／质保金）。但制度**未明说**「PC 通过后是否自动触发合同重审」。⇒ 现行只在本单判据里要求填 `new_supplier`，**合同重审须人工发起**。★ 需定是否要系统联动。"
+      "note": "★ 变更供应商 = 合同主体变了 ⇒ 除本单外**须重新走合同审批**（第二十三条：审查付款条件／验收标准／质保金）。但制度**未明说**「PC 通过后是否自动触发合同重审」。⇒ 现行只在本单判据里要求填 `new_supplier`，**合同重审须人工发起**。★ 需定是否要系统联动。"
     },
     {
       "gap": "变更是否**需要附件强制**",
@@ -712,7 +712,7 @@
     {
       "gap": "★ **看板 16「异常预警面板」缺「采购变更异常」指标**（三种例外类型不对称）",
       "status": "✅ **已落地（2026-10-04 · 批 10，spec 与实现同批）** —— ★ `spec/dashboard.json` 看板 16 已补第 12 个指标 `change_anomaly_listed`，实现（`internal/dashboard#buildAnomaly` ＋ 列级守卫 `countExtRegistered(r09,\"is_anomaly_listed\")`）由 mimo 落地、我方独立验收通过（**两处单点变异精确转红** ＋ `sha256` 还原）⇒ `COLLAB §4 · N-046` 结案 `AGREED`",
-      "note": "★★ `spec/dashboard.json` 看板 16 已有 `emergency_purchase`（紧急采购）· `emergency_not_closed_24h`（紧急未闭合）· `sole_source`（独家采购）三条 alert，★ **唯独「采购变更异常」没有** —— 而制度第五十三条把**三条口子并列**（`is_anomaly_listed.critical_note` 原文：「采一档拆分、变更拆分**须一并执行，缺一不可**」）。⇒ 已列异常的采购变更**在事后监管面上看不见**。★★ **本条不可单独落 spec**：实测把指标加进 `indicators` ⇒ `internal/httpapi#TestDashboardAlertKeysMatchSpec` **精确转红**（『输出指标数 = 11, spec 指标数 = 12 —— 数量必须相等』，`dashboard_key_align_test.go:75`）⇒ **必须与 `internal/dashboard` 聚合实现同批**（与 `N-044` 的「判据与实现同批」同理）。★ 拟补定义：`key=change_anomaly_listed`、`render=alert`、`formula`＝`L09.exception_type = 采购变更` 且 `是否进入异常清单 = true` 的单数、`fields=[L09.例外类型, L09.是否进入异常清单]`。★ 另：本单的「专项说明」落点（`L09.anomaly_note`）**已落**，见 `checks#anomaly_monthly_report`"
+      "note": "★★ `spec/dashboard.json` 看板 16 已有 `emergency_purchase`（紧急采购）· `emergency_not_closed_24h`（紧急未闭合）· `sole_source`（独家采购）三条 alert，★ **唯独「采购变更异常」没有** —— 而制度第二十五条把**三条口子并列**（`is_anomaly_listed.critical_note` 原文：「采一档拆分、变更拆分**须一并执行，缺一不可**」）。⇒ 已列异常的采购变更**在事后监管面上看不见**。★★ **本条不可单独落 spec**：实测把指标加进 `indicators` ⇒ `internal/httpapi#TestDashboardAlertKeysMatchSpec` **精确转红**（『输出指标数 = 11, spec 指标数 = 12 —— 数量必须相等』，`dashboard_key_align_test.go:75`）⇒ **必须与 `internal/dashboard` 聚合实现同批**（与 `N-044` 的「判据与实现同批」同理）。★ 拟补定义：`key=change_anomaly_listed`、`render=alert`、`formula`＝`L09.exception_type = 采购变更` 且 `是否进入异常清单 = true` 的单数、`fields=[L09.例外类型, L09.是否进入异常清单]`。★ 另：本单的「专项说明」落点（`L09.anomaly_note`）**已落**，见 `checks#anomaly_monthly_report`"
     }
   ]
 }

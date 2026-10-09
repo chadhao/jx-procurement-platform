@@ -8,7 +8,7 @@
   "generated_by": "WorkBuddy",
   "sources": {
     "tool_table": "采购与费用审批体系配置工具表_v3.0.xlsx → sheet「表单字段清单」R22–R29（表头 8 字段）＋ R48–R51（结算补录组 4 字段）",
-    "institution": "费用管理办法V3.0（第四章 运营销售费用流程 / 第三十四条 / 第六十一条）",
+    "institution": "费用管理办法V3.0（第四章 运营销售费用流程 / 第二十三条 / 第十五条）",
     "recon": "_scratch/recon-table-v3-fields.md §1.2、§1.3",
     "resolution": "spec/RESOLUTIONS.md（R-10 / R-11 / R-20 / R-21）"
   },
@@ -51,8 +51,8 @@
           "carried_by_kind": "code",
           "carried_by": "httpapi#handleApprovalSubmit 取 `idn.OpenID`（飞书免登身份）写入 `t_instance.applicant_open_id` 规范列；★ 客户端 `body.Fields[\"applicant\"]` **写不进规范列**（实测探针）",
           "origin": "institution",
-          "origin_ref": "制度第十一条「申请人」",
-          "note": "★ 工具表 SA 字段组（R22–R29）**未列出**申请人字段（PR 有）；依制度第十一条「各部门全员」为发起人 ⇒ 判定为**工具表缺漏**，补入。理由：D5 与「本人发起」判定（R-03 上抬分支）都依赖本字段"
+          "origin_ref": "制度第七条「申请人」",
+          "note": "★ 工具表 SA 字段组（R22–R29）**未列出**申请人字段（PR 有）；依制度第七条「各部门全员」为发起人 ⇒ 判定为**工具表缺漏**，补入。理由：D5 与「本人发起」判定（R-03 上抬分支）都依赖本字段"
         },
         {
           "name": "applicant_department",
@@ -64,7 +64,7 @@
           "carried_by_kind": "code",
           "carried_by": "httpapi#handleApprovalSubmit 取 `idn.Department` 写入 `t_instance.department` 规范列；★★ **但客户端同名值会残留 `ext_json`**（2026-10-03 实测：`{\"applicant\":\"ou_攻击者\"}` 与规范列并存）⇒ 见 `N-038` 交办收口",
           "origin": "institution",
-          "origin_ref": "制度第十一条「申请人 / 所属部门」",
+          "origin_ref": "制度第七条「申请人 / 所属部门」",
           "note": "同上；且**决定主管领导是谁**（生产部/销售部 → 副总；综合运营部/质检技术部 → 项目总经理）"
         },
         {
@@ -342,7 +342,7 @@
     {
       "gap": "SA 在工具表字段组中**缺「申请人 / 所属部门」**",
       "status": "已按制度补入并存疑",
-      "note": "★ 依制度第十一条补入（`origin: institution`）。若工具表维护方认为应走「系统带入」而非字段，不影响实现（两处都要求「自动带入、不可手改」）"
+      "note": "★ 依制度第七条补入（`origin: institution`）。若工具表维护方认为应走「系统带入」而非字段，不影响实现（两处都要求「自动带入、不可手改」）"
     },
     {
       "gap": "「超支确认」的载体与流程未定义",

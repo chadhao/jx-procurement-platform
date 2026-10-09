@@ -8,7 +8,7 @@
   "generated_by": "WorkBuddy",
   "sources": {
     "tool_table": "采购与费用审批体系配置工具表_v3.0.xlsx → sheet「表单字段清单」R4–R21（本单据是 11 张里字段最完整的一张）",
-    "institution": "费用管理办法V3.0（第十三条禁止自我经办 / 第十四条 / 第十八条 / 第二十条 / 第六十条）",
+    "institution": "费用管理办法V3.0（第十条禁止自我经办 / 第九条 / 第十条 / 第十二条 / 第九条）",
     "recon": "_scratch/recon-table-v3-fields.md §1.1",
     "resolution": "spec/RESOLUTIONS.md（R-02 / R-05 / R-06 / R-17）"
   },
@@ -215,8 +215,8 @@
           "source": "user",
           "origin": "resolution",
           "origin_ref": "N-013 裁定",
-          "resolution_note": "★★ **本字段在工具表 PR 字段组中【未列出】**，但 `spec/chain.json#routes.purchase_tier3.branches.tier3_plus.when` 含 `is_fixed_asset == true`，而**制度第二十条**的条件是「合同金额超过 500,000 元 **或属于固定资产类**」—— 后者是**独立条件** ⇒ **无本字段则该分支在批 1 内不可达**。",
-          "why_not_use_category": "★ **不得用 `usage_category_l1 == P04`（设备类）代理判定** —— 制度第二十条的「固定资产类」是**会计口径**（是否资本化），而「设备类」是**品类口径**；设备可以不资本化 ⇒ 代理会造成**误触发**（把非固定资产的设备单拉进招标/竞谈流程）。",
+          "resolution_note": "★★ **本字段在工具表 PR 字段组中【未列出】**，但 `spec/chain.json#routes.purchase_tier3.branches.tier3_plus.when` 含 `is_fixed_asset == true`，而**制度第十二条**的条件是「合同金额超过 500,000 元 **或属于固定资产类**」—— 后者是**独立条件** ⇒ **无本字段则该分支在批 1 内不可达**。",
+          "why_not_use_category": "★ **不得用 `usage_category_l1 == P04`（设备类）代理判定** —— 制度第十二条的「固定资产类」是**会计口径**（是否资本化），而「设备类」是**品类口径**；设备可以不资本化 ⇒ 代理会造成**误触发**（把非固定资产的设备单拉进招标/竞谈流程）。",
           "rule": "由申请人按**公司固定资产标准**判定并勾选；★ 因判定带主观性，**审批人可在审批意见中复核**（不阻断）"
         }
       ]
@@ -240,7 +240,7 @@
             "★★ **禁止的是「自批自派自经办」，不是「经办人＝需求提出人」本身**（★ B7 定案 2026-09-30 口径变更：**上级领导指派的，经办人可以是需求提出人**）；★ 判定＝「**指定人**（`designated_by`，系统带入＝审批操作人）≠ 需求提出人」即放行；★ 采一档豁免",
             "★ 可指定范围＝**需求部门或综合运营部人员**；**跨部门指定须经被指定部门主管领导同意**（D2）"
           ],
-          "known_cost": "★ 平台**无跨字段校验能力** ⇒ 由综合运营主管在三单匹配初审环节**人工核对**（制度第十四条 / 第六十条；第 7 项已定 0925）"
+          "known_cost": "★ 平台**无跨字段校验能力** ⇒ 由综合运营主管在三单匹配初审环节**人工核对**（制度第九条 / 第九条；第 7 项已定 0925）"
         },
         {
           "name": "designated_by",
@@ -277,7 +277,7 @@
           "source": "supervisor_at_approval",
           "origin": "resolution",
           "origin_ref": "R-17",
-          "resolution_note": "★★ **本字段在工具表 PR 审批节点字段（R14/R15）中【未列出】**，但**制度第六十条明确要求登记**「指定依据（审批意见中简述为何指定该人员）」⇒ **判定为漏项，予以补入**",
+          "resolution_note": "★★ **本字段在工具表 PR 审批节点字段（R14/R15）中【未列出】**，但**制度第九条明确要求登记**「指定依据（审批意见中简述为何指定该人员）」⇒ **判定为漏项，予以补入**",
           "rule": "必填 —— 未填理由则无法事后核对「指定是否合理」"
         }
       ]
@@ -398,7 +398,7 @@
       "severity": "hard",
       "carried_by_kind": "submit",
       "origin": "resolution",
-      "origin_ref": "B7（2026-09-30 定案）＋ 制度第十四条 / 第六十条",
+      "origin_ref": "B7（2026-09-30 定案）＋ 制度第九条 / 第九条",
       "note": "★★★ **2026-10-01 拆分（`N-035`）**：原 `when` 写「`approval(supervisor) 指定时 + 提交前`」—— ★ 它**声称覆盖两个时点**，而 checks 引擎的白名单按「含『提交前』」只收**提交**那一个；★ 且**提交时 `designated_*` 尚未填写**（本节 `filled_at` ＝ `supervisor_approval`）⇒ ★★ **审批时点的那一半从未被评估**，而它 `else` 承诺的「拒绝（硬拦截）」在「**主管领导当场指定经办人**」这个真实场景上**是空的**。⇒ ★ 按「**一条判据只声称一个时点**」（`chain.json#conventions.checks_when`）拆为两条：本条＝**提交时点**（防伪造）；`no_self_purchaser_at_designation`＝**节点时点**（拦自批自派）。★ 两条**同源、同断言、不同时点**。"
     },
     {
@@ -410,7 +410,7 @@
       "severity": "hard",
       "carried_by_kind": "code",
       "origin": "resolution",
-      "origin_ref": "B7（2026-09-30 定案）＋ 制度第十四条 / 第六十条 ＋ N-015 裁定①（必填时点＝supervisor_approval＋approve）",
+      "origin_ref": "B7（2026-09-30 定案）＋ 制度第九条 / 第九条 ＋ N-015 裁定①（必填时点＝supervisor_approval＋approve）",
       "carried_by": "internal/flow/designation.go（★ 节点时点由该节点的 handler 承载；checks 引擎对非提交时点 `continue` 跳过 —— 详见 `chain.json#conventions.checks_when`）",
       "note": "★★★ **2026-10-01 新增（`N-035`）**：由 `no_self_purchaser` **拆出** —— 原单条判据只跑提交那一半，**审批时点的那一半从未被评估**。★ 本条才是 `else` 里「拒绝（硬拦截）」真正生效的地方。★ **为什么用「节点时点」而不是塞进提交期**：它断言的 `designated_purchaser` / `designated_by` **在提交时尚不存在**（`filled_at: supervisor_approval`），**提交期无论如何判不出**。★★ **与「两个不阻断标记」的分工**：`is_self_designated`（经办人＝提出人）与 `designation_out_of_scope`（范围外）**按要求不阻断、只落标记**（`N-015` 裁定③）；**本条拦的是「自批＋自派同时成立」**，两者不冲突。"
     },

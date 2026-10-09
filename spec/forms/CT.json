@@ -8,7 +8,7 @@
   "generated_by": "WorkBuddy",
   "sources": {
     "tool_table": "采购与费用审批体系配置工具表_v3.0.xlsx → `单据清单` R10（CT 在 `表单字段清单` 中【未列出】逐条字段，本表 R10 的 C6「关键字段」为次级来源）；`采购订单 PO` R30–R34（依 R-01 裁定整单并入本单）",
-    "institution": "费用管理办法V3.0（第十二条 / 第十四条 / 第二十条 / 第二十二条 / 第二十三条 / **第三十四条** / **第三十五条 合同必备条款** / **第三十六条 标准范本优先** / **第三十七条 归档与提交集团** / 第四十二条）",
+    "institution": "费用管理办法V3.0（第二十六条 / 第九条 / 第十二条 / 第十二条 / 第十二条 / **第二十三条** / **第二十条 合同必备条款** / **第二十条 标准范本优先** / **第二十二条 归档与提交集团** / 第二十一条）",
     "recon": "_scratch/recon-table-v3-fields.md §1.6（PO）/ §1.7（CT 次级来源）/ §1.8（制度侧可补）/ §2.4（合同审批统一两级 6 节点）/ §3（L04 台账字段）",
     "resolution": "spec/RESOLUTIONS.md（R-01 PO 并入 / R-20#2·#8·#9·#12·#14 字段名统一 / R-21#3·#4·#5·#6·#12 制度要求补字段 / ★ R-23~R-28 2026-09-30 定案）",
     "user": "用户 2026-09-30 定案（A4 常量表 / B5 合同额容差 10% / B6 补用途分类 / B7 指派例外 / B2 有合同即对公）"
@@ -22,7 +22,7 @@
     "by_amount": {
       "not_applicable": "★★ 合同审批**统一两级**，**不得再按金额插档** —— `chain.json#doc_chains.CT.hard_rules` 原文即「审批节点只有两级（主管领导 → 项目总经理），**不得再按金额插档**」"
     },
-    "then_by_supervisor": "★ 主管领导**即为**项目总经理时（综合运营部 / 质检技术部）⇒ **一级审批即为终审**，不重复设置第二个节点（制度第十二条；工具表 `审批阈值矩阵` R19）",
+    "then_by_supervisor": "★ 主管领导**即为**项目总经理时（综合运营部 / 质检技术部）⇒ **一级审批即为终审**，不重复设置第二个节点（制度第二十六条；工具表 `审批阈值矩阵` R19）",
     "six_nodes": "★ 工具表 `审批阈值矩阵` R20 原文顺序：确认拟成交单位（采三档）→ 经办人组织合同并与对方谈定条款 → 上传系统 → 主管领导审批 → 项目总经理审批 → 签署。★ 本单字段须支撑**全部 6 个节点**（节点不动，字段覆盖）"
   },
   "sections": [
@@ -60,8 +60,8 @@
           "carried_by_kind": "code",
           "carried_by": "httpapi#handleApprovalSubmit 取 `idn.OpenID`（飞书免登身份）写入 `t_instance.applicant_open_id` 规范列；★ 客户端 `body.Fields[\"applicant\"]` **写不进规范列**（同其余 10 张表，实测探针）",
           "origin": "institution",
-          "origin_ref": "制度第十一条「申请人 / 所属部门」（★ `N-059` 据实补入）",
-          "note": "★★ **本字段是 11 张表里最后补上的一张** —— 其余 **10 张全部**已有 `applicant` ＋ `applicant_department` 一对，`CT` 此前只有 `purchaser`（**1/11 缺席**）。★ 补入依据四条：① 制度第十一条「申请人 / 所属部门」；② `docs/07-Template-Build-Guide.md` §4.2 把 `department` 列为**必须登记的映射**、并写明缺失后果 ＝「**部门维度统计与行级权限（`DEPT` / `CHARGE_DEPT`）失去依据**」；③ 实现面实测：`internal/permission/dataset.go` 的 `DEPT` / `CHARGE_DEPT` 令牌即 `department IN (…)`，`internal/store/models.go` 注明该列存在的**目的**正是这两个令牌；④ ★ **同类先例**：`internal/httpapi/handlers_submission.go` 为解决「`DEPT` / `CHARGE_DEPT` 两个 `row_scope` 令牌在该报送上**永远命中 0 条**」专门补写身份字段 ⇒ 「**单据缺部门 ⇒ 行级权限无依据**」在本项目**是已确认的缺陷模式**。★ 与 `purchaser` **语义不同、并存不冲突**：`applicant` ＝ **提交人**（登录身份，落 `t_instance.applicant_open_id`）；`purchaser` ＝ **审批节点指定的采购经办人**（`N-015` 指定经办块）—— ★ `PR` / `BA` / `PR` 等表同样两者并存。",
+          "origin_ref": "制度第七条「申请人 / 所属部门」（★ `N-059` 据实补入）",
+          "note": "★★ **本字段是 11 张表里最后补上的一张** —— 其余 **10 张全部**已有 `applicant` ＋ `applicant_department` 一对，`CT` 此前只有 `purchaser`（**1/11 缺席**）。★ 补入依据四条：① 制度第七条「申请人 / 所属部门」；② `docs/07-Template-Build-Guide.md` §4.2 把 `department` 列为**必须登记的映射**、并写明缺失后果 ＝「**部门维度统计与行级权限（`DEPT` / `CHARGE_DEPT`）失去依据**」；③ 实现面实测：`internal/permission/dataset.go` 的 `DEPT` / `CHARGE_DEPT` 令牌即 `department IN (…)`，`internal/store/models.go` 注明该列存在的**目的**正是这两个令牌；④ ★ **同类先例**：`internal/httpapi/handlers_submission.go` 为解决「`DEPT` / `CHARGE_DEPT` 两个 `row_scope` 令牌在该报送上**永远命中 0 条**」专门补写身份字段 ⇒ 「**单据缺部门 ⇒ 行级权限无依据**」在本项目**是已确认的缺陷模式**。★ 与 `purchaser` **语义不同、并存不冲突**：`applicant` ＝ **提交人**（登录身份，落 `t_instance.applicant_open_id`）；`purchaser` ＝ **审批节点指定的采购经办人**（`N-015` 指定经办块）—— ★ `PR` / `BA` / `PR` 等表同样两者并存。",
           "rule": "取当前登录人，不可手改"
         },
         {
@@ -74,7 +74,7 @@
           "carried_by_kind": "code",
           "carried_by": "httpapi#handleApprovalSubmit 取 `idn.Department` 写入 `t_instance.department` 规范列（实测写法：`handlers_approval.go` 的 `firstNonEmptyStr(body.Department, idn.Department)`）",
           "origin": "institution",
-          "origin_ref": "制度第十一条「申请人 / 所属部门」（★ `N-059` 据实补入）",
+          "origin_ref": "制度第七条「申请人 / 所属部门」（★ `N-059` 据实补入）",
           "note": "★★ **行级权限的依据字段**（`docs/07 §4.2`）：`internal/permission/dataset.go` 的 `DEPT`（本部门含分管部门）与 `CHARGE_DEPT`（分管部门）两个令牌即 `department IN (…)` ⇒ ★ 缺它则**合同类记录对主管领导 / 副总的行级可见性失去依据**（同 `handlers_submission.go` 已修掉的那处，`PRD §4.2` 的行级口径即「主管领导＝本部门」「副总＝所分管部门」）。★ 本字段与其余 10 张表**逐字同范式**（`type: department` · `required: true` · `source: system` · `immutable: true` · `carried_by_kind: code`）。★ 飞书侧「部门」控件须与其余模板一致（模板侧配置，见 `docs/07 §4.5`）。★ 校验见 `scripts/_probe_n059.py` 第 3 节。",
           "rule": "取当前登录人所在部门，不可手改"
         },
@@ -104,7 +104,7 @@
           "required": true,
           "source": "user",
           "origin": "institution",
-          "origin_ref": "第三十五条（1）",
+          "origin_ref": "第二十条（1）",
           "rule": "与 `subject_spec` 一致、可读的合同名（如「XX 设备采购合同」）"
         },
         {
@@ -121,9 +121,9 @@
             "对方格式合同"
           ],
           "origin": "institution",
-          "origin_ref": "第三十六条 ＋ D8 批复",
+          "origin_ref": "第二十条 ＋ D8 批复",
           "rule": "★ D8：凡以**书面形式**（含简式订单、框架协议项下订单、采购确认单）**固定价格与交期**的，**视为已签合同**，不得因「只是下个订单」而跳过本单",
-          "critical_note": "★ 选「对方格式合同」⇒ 等同**非范本**，须填 `non_template_reason` 并在审批时提请审批人注意（第三十六条）"
+          "critical_note": "★ 选「对方格式合同」⇒ 等同**非范本**，须填 `non_template_reason` 并在审批时提请审批人注意（第二十条）"
         },
         {
           "name": "is_standard_template",
@@ -132,9 +132,9 @@
           "required": true,
           "source": "user",
           "origin": "institution",
-          "origin_ref": "第三十六条",
-          "rule": "★ **使用范本 ⇒ 视为条款已评审、无须另行评审**（第三十六条原文）；**不使用 ⇒ 必填 `non_template_reason`**",
-          "critical_note": "★ 公司标准范本由**综合运营主管牵头维护、报项目总经理批准**；建议至少覆盖**原辅料采购 / 设备采购 / 设备租赁 / 工程服务**四类（第三十六条）"
+          "origin_ref": "第二十条",
+          "rule": "★ **使用范本 ⇒ 视为条款已评审、无须另行评审**（第二十条原文）；**不使用 ⇒ 必填 `non_template_reason`**",
+          "critical_note": "★ 公司标准范本由**综合运营主管牵头维护、报项目总经理批准**；建议至少覆盖**原辅料采购 / 设备采购 / 设备租赁 / 工程服务**四类（第二十条）"
         },
         {
           "name": "non_template_reason",
@@ -144,7 +144,7 @@
           "source": "user",
           "required_when": "is_standard_template == false",
           "origin": "institution",
-          "origin_ref": "第三十六条",
+          "origin_ref": "第二十条",
           "rule": "书面说明为何不使用范本（对方提供格式合同 / 条款需实质修改），并说明**提请审批人注意的非范本条款**"
         },
         {
@@ -185,7 +185,7 @@
           "carried_by": "`N-015` 指定经办块：`flow#act` 写 ext 的 `purchaser`（＝本节点解析出的经办人，已鉴权）",
           "origin": "tool_table",
           "origin_ref": "R-20#2 统一名 ＋ PR 审批节点「指定采购经办人」",
-          "rule": "★ 取 PR 审批节点指定的采购经办人；★ **不得为需求提出人本人**（制度第十四条；采一档豁免）"
+          "rule": "★ 取 PR 审批节点指定的采购经办人；★ **不得为需求提出人本人**（制度第九条；采一档豁免）"
         },
         {
           "name": "supplier",
@@ -246,7 +246,7 @@
           "required": true,
           "source": "computed",
           "origin": "institution",
-          "origin_ref": "第三十七条（合同台账字段）",
+          "origin_ref": "第二十二条（合同台账字段）",
           "rule": "★ 固定记为「主管领导 → 项目总经理」两级；**主管领导即为总经理时**记为「一级（终审）」",
           "critical_note": "★★ **不得按金额插档**（`chain.json#doc_chains.CT.hard_rules`）—— 本字段是**结果记录**，不是可配项",
           "spec_bridge": {
@@ -285,7 +285,7 @@
           "source": "user",
           "origin": "tool_table",
           "origin_ref": "单据清单 R10「签署人」＋ 审批阈值矩阵 R20",
-          "rule": "★ **项目总经理或授权签署人**；★ 签署须在**合同审批完成之后**（第三十四条：未完成审批即下单的，视为违规操作）"
+          "rule": "★ **项目总经理或授权签署人**；★ 签署须在**合同审批完成之后**（第二十三条：未完成审批即下单的，视为违规操作）"
         },
         {
           "name": "signed_at",
@@ -294,8 +294,8 @@
           "required": true,
           "source": "user",
           "origin": "institution",
-          "origin_ref": "第三十七条 ＋ L04 `signed_at`",
-          "rule": "**不得早于末级审批通过日期** —— 否则等于「先签后批」，违反第三十四条",
+          "origin_ref": "第二十二条 ＋ L04 `signed_at`",
+          "rule": "**不得早于末级审批通过日期** —— 否则等于「先签后批」，违反第二十三条",
           "spec_bridge": {
             "ledger_column": "L04.signed_at",
             "_why": "★ L04 列"
@@ -308,17 +308,17 @@
           "required": true,
           "source": "user",
           "origin": "institution",
-          "origin_ref": "第三十四条",
+          "origin_ref": "第二十三条",
           "rule": "「合同审批完成后方可盖章、下单及提交集团」⇒ 盖章日期须 **≥ `signed_at`**"
         }
       ]
     },
     {
       "id": "clauses",
-      "label": "第三十五条 · 合同必备条款（8 组）",
-      "institution_ref": "费用管理办法V3.0 第三十五条",
-      "hard_rule": "★★★ **制度第三十五条原文：合同（含简式订单）至少应包含下列 8 组条款，缺少任一项的不得进入合同审批环节** —— 属**硬拦截**，非提示。机判落点＝ `checks#mandatory_clauses_complete`",
-      "_note": "★ 本节的 8 组按**制度第三十五条原文顺序**排列，每组以 `clause_group` 标注；★ 其中 `payment_terms` / `prepay_ratio` / `contract_amount_cents` 等**同时是 L04 台账字段的数据源** —— 故字段名按 R-20#8/#9 与台账**保持一致**，不另造同义名",
+      "label": "第二十条 · 合同必备条款（8 组）",
+      "institution_ref": "费用管理办法V3.0 第二十条",
+      "hard_rule": "★★★ **制度第二十条原文：合同（含简式订单）至少应包含下列 8 组条款，缺少任一项的不得进入合同审批环节** —— 属**硬拦截**，非提示。机判落点＝ `checks#mandatory_clauses_complete`",
+      "_note": "★ 本节的 8 组按**制度第二十条原文顺序**排列，每组以 `clause_group` 标注；★ 其中 `payment_terms` / `prepay_ratio` / `contract_amount_cents` 等**同时是 L04 台账字段的数据源** —— 故字段名按 R-20#8/#9 与台账**保持一致**，不另造同义名",
       "fields": [
         {
           "name": "subject_spec",
@@ -328,7 +328,7 @@
           "source": "user",
           "clause_group": 1,
           "origin": "institution",
-          "origin_ref": "第三十五条（1）",
+          "origin_ref": "第二十条（1）",
           "rule": "品名、型号、技术参数（数量与单位见 `quantity` / `unit`）"
         },
         {
@@ -339,7 +339,7 @@
           "source": "user",
           "clause_group": 1,
           "origin": "institution",
-          "origin_ref": "第三十五条（1）",
+          "origin_ref": "第二十条（1）",
           "rule": "须为正数"
         },
         {
@@ -350,10 +350,10 @@
           "source": "user",
           "clause_group": 1,
           "origin": "resolution",
-          "origin_ref": "A4（2026-09-30 定案）＋ 第三十五条（1）",
+          "origin_ref": "A4（2026-09-30 定案）＋ 第二十条（1）",
           "rule": "★ 从**系统常量表**中选取（单位字典，**后台可增删改**）",
           "constant_ref": "spec/constants.json#tables[key=unit]",
-          "critical_note": "★★ 此处**不是硬编码枚举** —— 单位从来就是**业务字典**（制度第三十五条只要求「写明单位」，**制度与工具表均未给候选集**）。★ 我（WorkBuddy）**刻意不自行编造一套单位**（那会变成**事实上的标准**且无依据），改为**后台可维护的常量表**（`spec/constants.json#tables.unit`），由业务按实际使用增删 —— 这正是用户 2026-09-30 定案（A4）的口径。★ 划界：单位是**运营性常量**（改了不影响审批链），故**不进** `spec/enums.json`。"
+          "critical_note": "★★ 此处**不是硬编码枚举** —— 单位从来就是**业务字典**（制度第二十条只要求「写明单位」，**制度与工具表均未给候选集**）。★ 我（WorkBuddy）**刻意不自行编造一套单位**（那会变成**事实上的标准**且无依据），改为**后台可维护的常量表**（`spec/constants.json#tables.unit`），由业务按实际使用增删 —— 这正是用户 2026-09-30 定案（A4）的口径。★ 划界：单位是**运营性常量**（改了不影响审批链），故**不进** `spec/enums.json`。"
         },
         {
           "name": "unit_price_cents",
@@ -363,7 +363,7 @@
           "source": "user",
           "clause_group": 2,
           "origin": "institution",
-          "origin_ref": "第三十五条（2）",
+          "origin_ref": "第二十条（2）",
           "rule": "★ `unit_price_cents × quantity` 应为 `contract_amount_cents`（同一标的时）；多标的场景见 `known_gaps`"
         },
         {
@@ -374,8 +374,8 @@
           "source": "user",
           "clause_group": 2,
           "origin": "institution",
-          "origin_ref": "第三十五条（2）",
-          "rule": "★ **含税口径必须明确** —— 否则「集团执行付款」时金额口径不清（第三十五条（3）「本条是集团执行付款的唯一依据」同理）"
+          "origin_ref": "第二十条（2）",
+          "rule": "★ **含税口径必须明确** —— 否则「集团执行付款」时金额口径不清（第二十条（3）「本条是集团执行付款的唯一依据」同理）"
         },
         {
           "name": "tax_rate_percent",
@@ -385,7 +385,7 @@
           "source": "user",
           "clause_group": 2,
           "origin": "institution",
-          "origin_ref": "第三十五条（2）",
+          "origin_ref": "第二十条（2）",
           "rule": "★ 即使填「不含税」也须给税率（用于换算与三单匹配的「税率」项核对）"
         },
         {
@@ -396,12 +396,12 @@
           "source": "user",
           "clause_group": 3,
           "origin": "institution",
-          "origin_ref": "第三十五条（3）＋ 采购订单 R34",
+          "origin_ref": "第二十条（3）＋ 采购订单 R34",
           "rule": "★ 须写明四项：**付款节点（预付 / 到货 / 验收 / 质保）· 各节点比例 · 账期天数 · 票据要求**",
           "critical_note": "★★ 制度原文：**本条是集团执行付款的唯一依据**；**付款一律依合同约定执行，不做例外处理**。★ 与 L04 `payment_terms` **同名同义**（唯一真相）",
           "spec_bridge": {
             "ledger_column": "L04.payment_terms",
-            "_why": "★ L04 列；制度第三十五条（3）「集团执行付款的唯一依据」"
+            "_why": "★ L04 列；制度第二十条（3）「集团执行付款的唯一依据」"
           }
         },
         {
@@ -413,12 +413,12 @@
           "required_when": "约定预付款时",
           "clause_group": 3,
           "origin": "resolution",
-          "origin_ref": "R-20#9 ＋ 第三十五条（3）",
+          "origin_ref": "R-20#9 ＋ 第二十条（3）",
           "rule": "★ **预付比例不设上限**，依合同约定（批复 A9 / D8）",
-          "critical_note": "★ 与 L04 `prepay_ratio` **同名字段**；制度第三十七条要求台账**单列预付比例**（便于统计与抽查核对）⇒ 本字段是该列的唯一数据源",
+          "critical_note": "★ 与 L04 `prepay_ratio` **同名字段**；制度第二十二条要求台账**单列预付比例**（便于统计与抽查核对）⇒ 本字段是该列的唯一数据源",
           "spec_bridge": {
             "ledger_column": "L04.prepay_ratio",
-            "_why": "★ L04 列（`writable:true`，采购经办人 审批通过后即时）—— 制度第三十七条要求台账**单列预付比例**"
+            "_why": "★ L04 列（`writable:true`，采购经办人 审批通过后即时）—— 制度第二十二条要求台账**单列预付比例**"
           }
         },
         {
@@ -435,9 +435,9 @@
           ],
           "clause_group": 3,
           "origin": "resolution",
-          "origin_ref": "R-21#5 ＋ 第三十四条 / 第三十五条（3）",
+          "origin_ref": "R-21#5 ＋ 第二十三条 / 第二十条（3）",
           "rule": "★ **三者至少具备其一**（制度原文「预付款保函 / 分阶段进度证明 / 缩短预付比例＋押质保金，三者至少具备其一」）",
-          "hard_rule": "★ 审核结论须在**审批意见中留痕**（第三十四条）"
+          "hard_rule": "★ 审核结论须在**审批意见中留痕**（第二十三条）"
         },
         {
           "name": "prepay_guarantee_file",
@@ -448,8 +448,8 @@
           "required_when": "prepay_ratio > 0",
           "clause_group": 3,
           "origin": "institution",
-          "origin_ref": "第三十四条",
-          "rule": "★ 保障措施须**可核验**（第三十四条原文）⇒ 必须上传可核验件，不得仅文字声明"
+          "origin_ref": "第二十三条",
+          "rule": "★ 保障措施须**可核验**（第二十三条原文）⇒ 必须上传可核验件，不得仅文字声明"
         },
         {
           "name": "delivery_date",
@@ -459,7 +459,7 @@
           "source": "user",
           "clause_group": 4,
           "origin": "institution",
-          "origin_ref": "第三十五条（4）",
+          "origin_ref": "第二十条（4）",
           "rule": "不得早于提交日期；★ 建议与 PR `required_date` 对齐（偏差须说明）",
           "spec_bridge": {
             "biz_field": "delivery_date",
@@ -474,7 +474,7 @@
           "source": "user",
           "clause_group": 4,
           "origin": "institution",
-          "origin_ref": "第三十五条（4）"
+          "origin_ref": "第二十条（4）"
         },
         {
           "name": "shipping_duty",
@@ -484,7 +484,7 @@
           "source": "user",
           "clause_group": 4,
           "origin": "institution",
-          "origin_ref": "第三十五条（4）",
+          "origin_ref": "第二十条（4）",
           "rule": "明确由何方承担运输、装卸、保险及相应费用"
         },
         {
@@ -495,7 +495,7 @@
           "source": "user",
           "clause_group": 5,
           "origin": "institution",
-          "origin_ref": "第三十五条（5）＋ 单据清单 R10「验收标准」",
+          "origin_ref": "第二十条（5）＋ 单据清单 R10「验收标准」",
           "rule": "★ 须写明**验收方式**与**判定标准**（可引用国标 / 行标 / 企业标准）"
         },
         {
@@ -511,7 +511,7 @@
           ],
           "clause_group": 5,
           "origin": "institution",
-          "origin_ref": "第三十五条（5）",
+          "origin_ref": "第二十条（5）",
           "rule": "★ 制度括注的三选一（退换 / 折价 / 让步接收）；★ 该值将决定 `GR` 与 `QC` 的处理分支"
         },
         {
@@ -523,7 +523,7 @@
           "required_when": "设备类（P04）必备",
           "clause_group": 6,
           "origin": "institution",
-          "origin_ref": "第三十五条（6）",
+          "origin_ref": "第二十条（6）",
           "rule": "★ 制度原文：**质保期 / 响应时限 / 备件供应承诺 —— 设备类必备**"
         },
         {
@@ -535,7 +535,7 @@
           "required_when": "设备类（P04）必备",
           "clause_group": 6,
           "origin": "institution",
-          "origin_ref": "第三十五条（6）"
+          "origin_ref": "第二十条（6）"
         },
         {
           "name": "spare_parts_commitment",
@@ -546,7 +546,7 @@
           "required_when": "设备类（P04）必备",
           "clause_group": 6,
           "origin": "institution",
-          "origin_ref": "第三十五条（6）"
+          "origin_ref": "第二十条（6）"
         },
         {
           "name": "warranty_deposit_cents",
@@ -567,7 +567,7 @@
           "source": "user",
           "clause_group": 7,
           "origin": "institution",
-          "origin_ref": "第三十五条（7）＋ 采购订单 R31",
+          "origin_ref": "第二十条（7）＋ 采购订单 R31",
           "rule": "★★ **开户名称须与合同相对方（`supplier`）一致**（制度原文）—— 机判落点＝ `checks#payee_name_matches_supplier`"
         },
         {
@@ -578,7 +578,7 @@
           "source": "user",
           "clause_group": 7,
           "origin": "institution",
-          "origin_ref": "第三十五条（7）＋ 采购订单 R31",
+          "origin_ref": "第二十条（7）＋ 采购订单 R31",
           "rule": "★ 账户变更**须触发独立审批**，并**电话回拨确认**（工具表 PO R31 原文；同 `SUB` 的收款账户核验）"
         },
         {
@@ -589,7 +589,7 @@
           "source": "user",
           "clause_group": 7,
           "origin": "institution",
-          "origin_ref": "第三十五条（7）"
+          "origin_ref": "第二十条（7）"
         },
         {
           "name": "breach_liability",
@@ -599,7 +599,7 @@
           "source": "user",
           "clause_group": 8,
           "origin": "institution",
-          "origin_ref": "第三十五条（8）"
+          "origin_ref": "第二十条（8）"
         },
         {
           "name": "dispute_resolution",
@@ -609,7 +609,7 @@
           "source": "user",
           "clause_group": 8,
           "origin": "institution",
-          "origin_ref": "第三十五条（8）",
+          "origin_ref": "第二十条（8）",
           "rule": "诉讼或仲裁、管辖地 / 仲裁机构；★ 不得留空（本期不再单设合同评审环节，条款风险由本组字段兜底）"
         }
       ]
@@ -627,7 +627,7 @@
           "source": "user",
           "required_when": "采三档（合同金额 > 5,000 元）",
           "origin": "institution",
-          "origin_ref": "第二十条 ＋ 工具表 比价表 R8",
+          "origin_ref": "第十二条 ＋ 工具表 比价表 R8",
           "rule": "★ 采三档须**不少于 3 家**报价对比（`BJ`）；缺则**不得进入合同审批**",
           "critical_note": "★ 家数与「报价单位之间无关联关系」的核查落点在 `BJ` / `RFQ`（R-21#2）—— 本单只校验**存在性**，不重复校验家数（避免双源）"
         },
@@ -639,7 +639,7 @@
           "source": "user",
           "required_when": "procure_method == 单一来源",
           "origin": "institution",
-          "origin_ref": "第二十三条 ＋ 批复 A6",
+          "origin_ref": "第十二条 ＋ 批复 A6",
           "rule": "★ 批复 A6：独家采购改**项目总经理终审**＋**月度 / 季度报送备案**；本单须随月度报送单列「独家采购清单」（`SS` 侧）"
         },
         {
@@ -660,7 +660,7 @@
           "source": "user",
           "required_when": "用途分类 P04（设备类）且合同金额 ≥ 20,000 元",
           "origin": "resolution",
-          "origin_ref": "R-21#4 ＋ 第二十二条",
+          "origin_ref": "R-21#4 ＋ 第十二条",
           "critical_note": "★ 与 `BJ` 的「技术符合性评价」**不是同一物**（R-20#12 明确不合并）：本字段＝**附件**（`tech_review_opinion`）；后者＝**表内评价栏**（`tech_compliance_assessment`）"
         },
         {
@@ -671,15 +671,15 @@
           "source": "user",
           "required_when": "用途分类 P06 / P07（无论金额大小）",
           "origin": "resolution",
-          "origin_ref": "R-21#3 ＋ 第二十三条",
+          "origin_ref": "R-21#3 ＋ 第十二条",
           "rule": "营业执照 / 专业资质 / 安全许可；★ **P06/P07 无论金额大小均须附**（准入类采购的资质前置）"
         }
       ]
     },
     {
       "id": "filing",
-      "label": "归档与提交集团（第三十七条）",
-      "institution_ref": "费用管理办法V3.0 第三十七条",
+      "label": "归档与提交集团（第二十二条）",
+      "institution_ref": "费用管理办法V3.0 第二十二条",
       "_note": "★ 本节字段**不是签约时填写**，而是在**归档 / 提交集团 / 履约**阶段由综合运营主管登记（对应 L04 台账的可写列）。★ 这些字段是「湖南侧没有付款能力，职责是把单据做对、做全、归口送出去」在合同台账上的落点",
       "fields": [
         {
@@ -689,7 +689,7 @@
           "required": true,
           "source": "user",
           "origin": "institution",
-          "origin_ref": "第三十七条",
+          "origin_ref": "第二十二条",
           "rule": "★ 制度原文：**湖南侧留存合同复印件或扫描件；合同原件交集团财务留存**（因付款由集团执行）"
         },
         {
@@ -699,7 +699,7 @@
           "required": true,
           "source": "user",
           "origin": "institution",
-          "origin_ref": "第三十七条 ＋ L04 `submit_group_at`",
+          "origin_ref": "第二十二条 ＋ L04 `submit_group_at`",
           "rule": "综合运营主管登记合同台账后**归口提交集团**之日",
           "spec_bridge": {
             "ledger_column": "L04.submit_group_at",
@@ -720,7 +720,7 @@
             "已终止"
           ],
           "origin": "institution",
-          "origin_ref": "第三十七条 ＋ L04 `performance_status`",
+          "origin_ref": "第二十二条 ＋ L04 `performance_status`",
           "spec_bridge": {
             "ledger_column": "L04.performance_status",
             "_why": "★ L04 列（`writable:true`，综合运营主管）"
@@ -740,8 +740,8 @@
             "已驳回"
           ],
           "origin": "resolution",
-          "origin_ref": "R-21#12 ＋ 第三十七条",
-          "critical_note": "★ 工具表 L04 **无此项**（仅 L06 有近似项），但**制度第三十七条明确要求合同台账含「集团付款状态」** ⇒ 补入。**不补则「合同台账看不出付没付」** —— 而合同台账正是湖南侧对付款进度的唯一可见面",
+          "origin_ref": "R-21#12 ＋ 第二十二条",
+          "critical_note": "★ 工具表 L04 **无此项**（仅 L06 有近似项），但**制度第二十二条明确要求合同台账含「集团付款状态」** ⇒ 补入。**不补则「合同台账看不出付没付」** —— 而合同台账正是湖南侧对付款进度的唯一可见面",
           "spec_bridge": {
             "ledger_column": "L04.group_payment_status",
             "_why": "★ L04 列（`writable:true`，综合运营主管；R-21#12 补入）"
@@ -758,9 +758,9 @@
       "id": "mandatory_clauses_complete",
       "when": "submit / 进入合同审批前",
       "assert": "8 组必备条款均有实质内容：①subject_spec·quantity·unit ②unit_price_cents·price_is_tax_included·tax_rate_percent ③payment_terms ④delivery_date·delivery_place·shipping_duty ⑤acceptance_standard·nonconformity_handling ⑥（设备类）warranty_period_months·response_time_hours·spare_parts_commitment ⑦payee_name·payee_account·payee_bank ⑧breach_liability·dispute_resolution",
-      "else": "★★ **拒绝进入合同审批环节**（第三十五条原文：缺少任一项的不得进入）",
+      "else": "★★ **拒绝进入合同审批环节**（第二十条原文：缺少任一项的不得进入）",
       "origin": "institution",
-      "origin_ref": "第三十五条",
+      "origin_ref": "第二十条",
       "severity": "hard",
       "carried_by_kind": "submit"
     },
@@ -770,7 +770,7 @@
       "assert": "payee_name == supplier",
       "else": "拒绝提交",
       "origin": "institution",
-      "origin_ref": "第三十五条（7）（开户名称须与合同相对方一致）",
+      "origin_ref": "第二十条（7）（开户名称须与合同相对方一致）",
       "severity": "hard",
       "carried_by_kind": "submit",
       "note": "★ 跨字段校验 —— 属转向 ③ 后我方可自建的能力（原生平台做不到，见 `docs/13` 结论位点映射）"
@@ -781,7 +781,7 @@
       "assert": "prepay_ratio > 0 ⇒ prepay_guarantee_kind 非空 且 prepay_guarantee_file 非空",
       "else": "拒绝提交",
       "origin": "institution",
-      "origin_ref": "第三十四条 / 第三十五条（3）＋ R-21#5",
+      "origin_ref": "第二十三条 / 第二十条（3）＋ R-21#5",
       "severity": "hard",
       "carried_by_kind": "submit"
     },
@@ -791,7 +791,7 @@
       "assert": "procure_method == 单一来源 ⇒ linked_ss_biz_no 非空",
       "else": "拒绝提交",
       "origin": "institution",
-      "origin_ref": "第二十三条 ＋ 批复 A6",
+      "origin_ref": "第十二条 ＋ 批复 A6",
       "severity": "hard",
       "carried_by_kind": "submit"
     },
@@ -801,7 +801,7 @@
       "assert": "contract_amount_cents > 500000 ⇒ linked_bj_biz_no 非空",
       "else": "拒绝提交",
       "origin": "institution",
-      "origin_ref": "第二十条",
+      "origin_ref": "第十二条",
       "severity": "hard",
       "carried_by_kind": "submit",
       "note": "★ 阈值 500000 分（＝5,000 元）取自 `chain.json#thresholds.purchase.bands` 的采三档下界，**不另立数值**"
@@ -812,7 +812,7 @@
       "assert": "is_standard_template == false ⇒ non_template_reason 非空",
       "else": "拒绝提交",
       "origin": "institution",
-      "origin_ref": "第三十六条",
+      "origin_ref": "第二十条",
       "severity": "hard",
       "carried_by_kind": "submit"
     },
@@ -822,7 +822,7 @@
       "assert": "用途分类 == P04 ⇒ warranty_period_months / response_time_hours / spare_parts_commitment 三者非空",
       "else": "拒绝提交",
       "origin": "institution",
-      "origin_ref": "第三十五条（6）（设备类必备）",
+      "origin_ref": "第二十条（6）（设备类必备）",
       "severity": "hard",
       "carried_by_kind": "submit"
     },
@@ -832,7 +832,7 @@
       "assert": "用途分类 == P04 且 contract_amount_cents >= 2000000 ⇒ tech_review_opinion 非空",
       "else": "拒绝提交",
       "origin": "resolution",
-      "origin_ref": "R-21#4 ＋ 第二十二条",
+      "origin_ref": "R-21#4 ＋ 第十二条",
       "severity": "hard",
       "carried_by_kind": "submit"
     },
@@ -852,7 +852,7 @@
       "assert": "signed_at >= 末级审批通过日期 且 sealed_at >= signed_at",
       "else": "拒绝签署（不得先签后批、不得先盖章后审批）",
       "origin": "institution",
-      "origin_ref": "第三十四条",
+      "origin_ref": "第二十三条",
       "severity": "hard",
       "carried_by_kind": "manual"
     },
@@ -873,10 +873,10 @@
       "assert": "contract_amount_cents <= PR.estimated_total_cents * (1 + spec/params.json#params[\"contract.amount_over_pr_tolerance_percent\"].value / 100)",
       "else": "★ **拒绝进入合同审批**，并提示「已超出容差，请先行采购变更（PC）」",
       "origin": "resolution",
-      "origin_ref": "B5（2026-09-30 定案）＋ 第四十二条（精神）",
+      "origin_ref": "B5（2026-09-30 定案）＋ 第二十一条（精神）",
       "severity": "hard",
       "carried_by_kind": "submit",
-      "note": "★ 阈值**不写死在本文件**，取 `spec/params.json` 的 `contract.amount_over_pr_tolerance_percent`（★ 2026-10-09 按制度【金额与变更】条款由 10 改为 **5**）。★ 与制度第四十二条的「**付款额**超**原合同金额**」**不是同一场景、不得混用**（那条走 PC，这条是签约前的闸门）。★ 本条同时关闭「先报低价拿审批、再签高价合同」的通道。",
+      "note": "★ 阈值**不写死在本文件**，取 `spec/params.json` 的 `contract.amount_over_pr_tolerance_percent`（★ 2026-10-09 按制度【金额与变更】条款由 10 改为 **5**）。★ 与制度第二十一条的「**付款额**超**原合同金额**」**不是同一场景、不得混用**（那条走 PC，这条是签约前的闸门）。★ 本条同时关闭「先报低价拿审批、再签高价合同」的通道。",
       "assert_readable": "合同金额 **≤ PR 预估金额 × 1.10**（容差 10%）⇒ 直接放行（须在合同单写说明）；**超出 10% ⇒ 必须先走采购变更（PC）后方可签约**"
     },
     {
@@ -885,10 +885,10 @@
       "assert": "NOT (purchaser == 需求提出人 AND designated_by == 需求提出人)",
       "else": "★ **拒绝**（硬拦截）：提示「指定人不能是需求提出人本人」",
       "origin": "resolution",
-      "origin_ref": "B7（2026-09-30 定案）＋ 制度第十四条 / 第六十条",
+      "origin_ref": "B7（2026-09-30 定案）＋ 制度第九条 / 第九条",
       "severity": "hard",
       "carried_by_kind": "submit",
-      "note": "★★ **口径变更记录（重要）**：原为「**经办人不得＝需求提出人**」（PR 侧因原生平台**无跨字段校验**只能人工核对）。用户 2026-09-30 定案：**上级领导指派的，经办人可以是需求提出人** ⇒ 本条改为「**禁止的是「自批自派自经办」，而不是「经办人＝需求提出人」本身**」。★ **无新增字段**：`designated_by`（指定人）本就在 PR 上，取审批节点操作人 —— 「是不是上级领导指派」用「**指定人是否等于需求提出人**」即可机判，不必另加勾选框。★ 采一档仍豁免（第十八条）。★ **必须与 `PR.json` 的同款判据保持一致**（两处口径同改）。",
+      "note": "★★ **口径变更记录（重要）**：原为「**经办人不得＝需求提出人**」（PR 侧因原生平台**无跨字段校验**只能人工核对）。用户 2026-09-30 定案：**上级领导指派的，经办人可以是需求提出人** ⇒ 本条改为「**禁止的是「自批自派自经办」，而不是「经办人＝需求提出人」本身**」。★ **无新增字段**：`designated_by`（指定人）本就在 PR 上，取审批节点操作人 —— 「是不是上级领导指派」用「**指定人是否等于需求提出人**」即可机判，不必另加勾选框。★ 采一档仍豁免（第十条）。★ **必须与 `PR.json` 的同款判据保持一致**（两处口径同改）。",
       "assert_readable": "★ **经办人可以＝需求提出人**（**上级领导指派**的情形）；★ **但「指定人」不得是需求提出人本人** —— 即**不得自批、自派、自经办**。判定＝只要「指定人 ≠ 需求提出人」（说明是**别人（上级领导）指派的**）即放行。"
     },
     {
@@ -914,14 +914,14 @@
       "note": "本版 `quantity` / `unit` / `unit_price_cents` 按**单标的**设计（适配简式订单与多数采购）。含多标的的合同须改为 `repeating` 明细结构 —— 会对 `contract_amount_cents` 的汇总口径与校验产生影响 ⇒ 批 2+ 处理"
     },
     {
-      "gap": "★ `R-21#6` 只列举了 **4 组**必备条款，而制度第三十五条实为 **8 组**",
+      "gap": "★ `R-21#6` 只列举了 **4 组**必备条款，而制度第二十条实为 **8 组**",
       "status": "✅ **已闭环（2026-10-05 · `N-059` 据实订正）** —— ★ 本处建议「回填 `RESOLUTIONS.md#R-21` 加注」**已于 2026-09-29 落实**（★ **建议已执行、只是本处 `known_gaps` 未销项**）",
-      "note": "`R-21#6` 原文括注为「标的与规格 / 价格与含税口径 / 交付与工期 / 违约责任与争议解决」＝**8 组里的 4 组**（疑为简写）。★ **以制度第三十五条的 8 组为准**（本表单按 8 组落字段与硬拦截）。建议回填 `RESOLUTIONS.md#R-21` 加注，避免后人以为只有 4 组 ★★ **据实核验（非推断）**：`spec/RESOLUTIONS.md#R-21` 段内**已有**「★ 对 #6 的澄清（2026-09-29 补注，写 `spec/forms/CT.json` 时发现）」整段（含 8 组逐项对照与「少一组即少一道硬拦截」的说明），且该文件 `change_log` **V1.3**（2026-09-30）明文「对 `R-21#6` 加澄清附注」⇒ ★ 本笔属「**建议已执行、台账未销项**」（与 `GR.json#known_gaps` 第 1 条、`SS.json#known_gaps` 第 1 条同族）。★ 校验见 `scripts/_probe_n059.py` 第 2 节。"
+      "note": "`R-21#6` 原文括注为「标的与规格 / 价格与含税口径 / 交付与工期 / 违约责任与争议解决」＝**8 组里的 4 组**（疑为简写）。★ **以制度第二十条的 8 组为准**（本表单按 8 组落字段与硬拦截）。建议回填 `RESOLUTIONS.md#R-21` 加注，避免后人以为只有 4 组 ★★ **据实核验（非推断）**：`spec/RESOLUTIONS.md#R-21` 段内**已有**「★ 对 #6 的澄清（2026-09-29 补注，写 `spec/forms/CT.json` 时发现）」整段（含 8 组逐项对照与「少一组即少一道硬拦截」的说明），且该文件 `change_log` **V1.3**（2026-09-30）明文「对 `R-21#6` 加澄清附注」⇒ ★ 本笔属「**建议已执行、台账未销项**」（与 `GR.json#known_gaps` 第 1 条、`SS.json#known_gaps` 第 1 条同族）。★ 校验见 `scripts/_probe_n059.py` 第 2 节。"
     },
     {
       "gap": "★ 配置映射样例 `ledger_field` 未登记 L04 的 3 个运营列 ⇒ 台账页无写入入口",
       "status": "本轮已修样例（`docs/reference/config-mapping.sample.json`，已在 COLLAB 登记）",
-      "note": "`R-21#12` 依制度第三十七条把『履约状态』/『集团付款状态』/『提交集团日期』补进 `ledger-mapping.json#ledgers.L04.fields`（`writable:true`），但**样例的 `ledger_field` 白名单没有同步登记这三项**。★ 后果：`PATCH /api/ledger/L04/{id}` 的键名白名单不认它们 ⇒ **台账页没有写入入口，制度第三十七条要求的列永远填不上，且不报错** —— 与 `B47`『恒空 ≡ 无违规』同族。★ 同理 `L06` 还在用 `R-20#13` 已否定的旧名（`集团受理编号` → 应为 `集团流程编号`；`提交日期` → `提交集团日期`）。本次一并修正。"
+      "note": "`R-21#12` 依制度第二十二条把『履约状态』/『集团付款状态』/『提交集团日期』补进 `ledger-mapping.json#ledgers.L04.fields`（`writable:true`），但**样例的 `ledger_field` 白名单没有同步登记这三项**。★ 后果：`PATCH /api/ledger/L04/{id}` 的键名白名单不认它们 ⇒ **台账页没有写入入口，制度第二十二条要求的列永远填不上，且不报错** —— 与 `B47`『恒空 ≡ 无违规』同族。★ 同理 `L06` 还在用 `R-20#13` 已否定的旧名（`集团受理编号` → 应为 `集团流程编号`；`提交日期` → `提交集团日期`）。本次一并修正。"
     },
     {
       "gap": "★ 配置映射样例的 `field_id` 给 CT 映射了本单【不存在】的控件",
@@ -939,7 +939,7 @@
       "note": "用户定案：**凡签有合同，不论金额一律公户（走集团）**。★ 影响本单＝「付款条件」条款必须与**付款路径**一致：有合同 ⇒ 付款走公对公（集团执行）；★ 与「采一档 <1,000 元不签合同、备付金直接支出」**不冲突**（那条不签合同）。★ 边界（我方判定并已落库）：**<1,000 元但签了合同的**，付款走公户，且**合同审批统一两级照走**（不因金额减免）。"
     },
     {
-      "gap": "★ 报销时限口径已变更 ⇒ 制度 V4.0 第三十九条须改写（A2）",
+      "gap": "★ 报销时限口径已变更 ⇒ 制度 V4.0 第十七条须改写（A2）",
       "status": "参数已落 `spec/params.json`（个人报销每月 **20 日**截止〔2026-10-09 按制度【报销时限】条款，原 25 日〕；备付金不设时限）",
       "note": "★ 制度原文（`审批阈值矩阵` R7 C7）写「业务完成后 **15 个工作日**内提交报销」—— 该数字**不采用**，已由 2026-09-30 定案取代。★ 待办＝制度 V4.0 改写 ＋ 附录 C-2 第 16 项标注取代关系。"
     }

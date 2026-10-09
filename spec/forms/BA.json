@@ -8,7 +8,7 @@
   "generated_by": "WorkBuddy",
   "sources": {
     "tool_table": "采购与费用审批体系配置工具表_v3.0.xlsx → sheet「单据清单」R4 C6「关键字段（表头外）」（★ 本单据**不在** `表单字段清单` 的逐条字段组内）",
-    "institution": "费用管理办法V3.0 第十八条（第 285–297 行）、第二十一条（第 315–321 行）、第五十九条（第 692 行）、第六十二条（第 723 行）",
+    "institution": "费用管理办法V3.0 第十条（第 285–297 行）、第十四条（第 315–321 行）、第二十二条（第 692 行）、第七条（第 723 行）",
     "recon": "_scratch/recon-institution-fields.md §1.1（BA 25 项，含条款号与原文引述）",
     "resolution": "spec/RESOLUTIONS.md（R-02 / R-11 / R-21 / R-22）"
   },
@@ -23,7 +23,7 @@
     "payment": "★ 备付金直接支出（不签合同、不走公户、不提交集团）",
     "fixed_timing": "先领款、后购买",
     "exemptions": {
-      "self_handling": "★ 明文豁免「禁止自我经办」（制度第十八条第 288 行：「由申请人本人购买」）⇒ **BA 无「采购经办人」字段，schema 不得误加**（R-22 已记）"
+      "self_handling": "★ 明文豁免「禁止自我经办」（制度第十条第 288 行：「由申请人本人购买」）⇒ **BA 无「采购经办人」字段，schema 不得误加**（R-22 已记）"
     },
     "known_cost": "★ 平台**无跨字段校验能力** ⇒ 「防拆分／次数校验」只能做**公式列红标 + 人工核对**，**不能在提交时硬拦截**（制度与技术方案书均已明文承认这是「用制度换取平台可行性的对价」）"
   },
@@ -32,7 +32,7 @@
       "id": "header",
       "label": "表头（备案基本信息）",
       "_origin": "institution",
-      "origin_ref": "第十八条第 290 行",
+      "origin_ref": "第十条第 290 行",
       "_raw_text": "「备案单必填：用途分类、二级明细、数量、金额、供应商、事由、到货日期」",
       "fields": [
         {
@@ -58,7 +58,7 @@
           "carried_by_kind": "code",
           "carried_by": "httpapi#handleApprovalSubmit 取 `idn.OpenID`（飞书免登身份）写入 `t_instance.applicant_open_id` 规范列；★ 客户端 `body.Fields[\"applicant\"]` **写不进规范列**（实测探针）",
           "origin": "institution",
-          "origin_ref": "第五十九条（台账 L01 字段「需求人」）",
+          "origin_ref": "第二十二条（台账 L01 字段「需求人」）",
           "note": "★ 制度与工具表均未把「需求人」写进 BA 的必填清单，但 **L01 台账字段有「需求人」**、且「[本人发起]」判定（R-03 上抬分支）需要它 ⇒ **判定为缺漏，补入**"
         },
         {
@@ -71,19 +71,19 @@
           "carried_by_kind": "code",
           "carried_by": "httpapi#handleApprovalSubmit 取 `idn.Department` 写入 `t_instance.department` 规范列；★★ **但客户端同名值会残留 `ext_json`**（2026-10-03 实测：`{\"applicant\":\"ou_攻击者\"}` 与规范列并存）⇒ 见 `N-038` 交办收口",
           "origin": "institution",
-          "origin_ref": "第五十九条（台账 L01 字段「部门」）",
+          "origin_ref": "第二十二条（台账 L01 字段「部门」）",
           "note": "同上；★ 且**决定主管领导是谁**（综合运营部/质检技术部 → 项目总经理；生产部/销售部 → 副总）"
         },
         {
           "name": "record_date",
           "carried_by_kind": "code",
-          "carried_by": "★ 生产者＝internal/httpapi/handlers_approval_ba_inject.go#injectBASystemFields（提交期注入 record_date＝提交当日 YYYY-MM-DD；口径＝制度第五十九条 L01「日期」＝备案当日）；判据＝TestBASystemFieldsInjected",
+          "carried_by": "★ 生产者＝internal/httpapi/handlers_approval_ba_inject.go#injectBASystemFields（提交期注入 record_date＝提交当日 YYYY-MM-DD；口径＝制度第二十二条 L01「日期」＝备案当日）；判据＝TestBASystemFieldsInjected",
           "label": "备案日期",
           "type": "date",
           "required": true,
           "source": "system",
           "origin": "institution",
-          "origin_ref": "第五十九条（台账 L01 字段「日期」）"
+          "origin_ref": "第二十二条（台账 L01 字段「日期」）"
         },
         {
           "name": "usage_category_l1",
@@ -94,7 +94,7 @@
           "enum_ref": "spec/enums.json#usage_categories",
           "enum_size": 23,
           "origin": "institution",
-          "origin_ref": "第十八条第 290 行",
+          "origin_ref": "第十条第 290 行",
           "critical_note": "★ 决定流程线与所需附加材料（用途分类表 R2）"
         },
         {
@@ -105,8 +105,8 @@
           "source": "user",
           "enum_ref": "spec/enums.json#usage_categories（按 usage_category_l1 联动）",
           "origin": "institution",
-          "origin_ref": "第十八条第 290 行",
-          "critical_note": "★★ **本字段是「同供应商＋同二级明细当月累计 ≥1,000 元 ⇒ 强制转采二档」这条反拆分规则的判定键**（制度第二十一条第 315 行）"
+          "origin_ref": "第十条第 290 行",
+          "critical_note": "★★ **本字段是「同供应商＋同二级明细当月累计 ≥1,000 元 ⇒ 强制转采二档」这条反拆分规则的判定键**（制度第十四条第 315 行）"
         },
         {
           "name": "quantity",
@@ -115,7 +115,7 @@
           "required": true,
           "source": "user",
           "origin": "institution",
-          "origin_ref": "第十八条第 290 行",
+          "origin_ref": "第十条第 290 行",
           "rule": "须为正数"
         },
         {
@@ -126,7 +126,7 @@
           "source": "user",
           "is_amount_basis": true,
           "origin": "institution",
-          "origin_ref": "第十八条第 290 行",
+          "origin_ref": "第十条第 290 行",
           "rule": "必须 > 0；★ **同时是「是否落入 800–1,000 元重点抽查区间」的判定依据**"
         },
         {
@@ -136,7 +136,7 @@
           "required": true,
           "source": "user",
           "origin": "institution",
-          "origin_ref": "第十八条第 290 行",
+          "origin_ref": "第十条第 290 行",
           "critical_note": "★★ **本字段是「同供应商当月累计」转档预警的判定键之一**（与 `usage_category_l2` 组合）"
         },
         {
@@ -146,7 +146,7 @@
           "required": true,
           "source": "user",
           "origin": "institution",
-          "origin_ref": "第十八条第 290 行"
+          "origin_ref": "第十条第 290 行"
         },
         {
           "name": "arrival_date",
@@ -155,7 +155,7 @@
           "required": true,
           "source": "user",
           "origin": "institution",
-          "origin_ref": "第十八条第 290 行"
+          "origin_ref": "第十条第 290 行"
         },
         {
           "name": "qualified_certificate",
@@ -164,7 +164,7 @@
           "required_conditional": "用途分类 == P03（劳保与安环用品）",
           "source": "user",
           "origin": "institution",
-          "origin_ref": "第十八条第 292 行「涉及安全的品类（P03）须索取合格证明并存档」"
+          "origin_ref": "第十条第 292 行「涉及安全的品类（P03）须索取合格证明并存档」"
         }
       ]
     },
@@ -183,7 +183,7 @@
           "carried_by_kind": "manual",
           "carried_by": "备付金审批人，★ 由主管领导在审批节点指定（`BA` 备付金例外流程）",
           "origin": "tool_table",
-          "origin_ref": "单据清单 R4 C6「审批人（备付金）」＋ 第五十九条 L01 字段",
+          "origin_ref": "单据清单 R4 C6「审批人（备付金）」＋ 第二十二条 L01 字段",
           "critical_note": "★★ 常规＝**综合运营主管**；**仅当申请人＝综合运营主管本人时，本节点上抬至主管领导**（R-03）⇒ 本字段取值即该分支的结果"
         },
         {
@@ -197,8 +197,8 @@
             "备付金不足"
           ],
           "origin": "institution",
-          "origin_ref": "第十八条第 287 行「够则同意；不够时，由综合运营主管在三项处置中择一」",
-          "note": "★ 审批要点**只判「备付金是否充足」，不判需求必要性**（制度第十一条）"
+          "origin_ref": "第十条第 287 行「够则同意；不够时，由综合运营主管在三项处置中择一」",
+          "note": "★ 审批要点**只判「备付金是否充足」，不判需求必要性**（制度第七条）"
         },
         {
           "name": "shortfall_disposition",
@@ -212,8 +212,8 @@
             "拒绝审批"
           ],
           "origin": "tool_table",
-          "origin_ref": "单据清单 R4 C6「备付金不足时的三项处置结论」；制度第十八条第 287 行",
-          "rule": "★ 「三项处置须在单据上**留痕，不得空转**」（第十八条第 287 行）"
+          "origin_ref": "单据清单 R4 C6「备付金不足时的三项处置结论」；制度第十条第 287 行",
+          "rule": "★ 「三项处置须在单据上**留痕，不得空转**」（第十条第 287 行）"
         },
         {
           "name": "shortfall_disposition_at",
@@ -237,12 +237,12 @@
           "source": "system",
           "origin": "resolution",
           "origin_ref": "R-21#14",
-          "resolution_note": "★ **工具表 C6 R4 无此字段**，但制度第十八条第 286 行要求「防拆分校验 → 次数上限校验（两项不通过即转档或退回，**须在拨付款项之前完成**）」⇒ **不记则该硬约束无证据**（拨款后可补校验无痕）",
+          "resolution_note": "★ **工具表 C6 R4 无此字段**，但制度第十条第 286 行要求「防拆分校验 → 次数上限校验（两项不通过即转档或退回，**须在拨付款项之前完成**）」⇒ **不记则该硬约束无证据**（拨款后可补校验无痕）",
           "checks": [
             {
               "id": "same_supplier_same_l2_monthly",
               "rule": "同供应商 + 同二级明细当月累计 ≥ 1,000 元 ⇒ **强制转采二档**",
-              "source": "制度第二十一条第 315 行；第 9 项已定 0925"
+              "source": "制度第十四条第 315 行；第 9 项已定 0925"
             },
             {
               "id": "dept_monthly_count",
@@ -250,7 +250,7 @@
               "source": "第 9 项已定 0925"
             }
           ],
-          "prerequisite": "★★ **必须在拨款（`disburse`）之前完成**（制度第十八条第 286 行）",
+          "prerequisite": "★★ **必须在拨款（`disburse`）之前完成**（制度第十条第 286 行）",
           "known_cost": "★ 本档**无跨字段校验能力** ⇒ 结果为**公式列 + 人工核对**，不产生硬拦截（制度与技术方案书均承认）"
         }
       ]
@@ -260,7 +260,7 @@
       "label": "拨付与签领（先领款、后购买）",
       "filled_at": "拨付时",
       "_origin": "institution",
-      "origin_ref": "第十八条第 290 行（「由申请人在备案单上签领备付金（签领人、签领金额、签领日期）」）",
+      "origin_ref": "第十条第 290 行（「由申请人在备案单上签领备付金（签领人、签领金额、签领日期）」）",
       "_raw_text": "「审批通过并完成校验后，由申请人在备案单上签领备付金（签领人、签领金额、签领日期），购买后回交付款凭据并补录付款凭据号。」",
       "fields": [
         {
@@ -272,7 +272,7 @@
           "required": true,
           "source": "user",
           "origin": "institution",
-          "origin_ref": "第十八条第 290 行",
+          "origin_ref": "第十条第 290 行",
           "naming": "R-20#4：统一名 `申请人（备付金签领人）` → 字段名 `petty_cash_receiver`；★ 制度原文即「由申请人在备案单上签领」⇒ **通常等于申请人**，但仍独立成字段（留痕需要）"
         },
         {
@@ -282,7 +282,7 @@
           "required": true,
           "source": "user",
           "origin": "institution",
-          "origin_ref": "第十八条第 290 行"
+          "origin_ref": "第十条第 290 行"
         },
         {
           "name": "petty_cash_received_at",
@@ -291,7 +291,7 @@
           "required": true,
           "source": "user",
           "origin": "institution",
-          "origin_ref": "第十八条第 290 行"
+          "origin_ref": "第十条第 290 行"
         }
       ]
     },
@@ -307,7 +307,7 @@
           "required": true,
           "source": "user",
           "origin": "institution",
-          "origin_ref": "第十八条第 290 行「购买后回交付款凭据并补录付款凭据号」",
+          "origin_ref": "第十条第 290 行「购买后回交付款凭据并补录付款凭据号」",
           "naming": "R-20#5：统一名 `付款凭据号`；★ 凭据**附件**另挂（见 `payment_receipt_file`）",
           "ledger_writer": "L01：付款凭据号由**综合运营主管**在付款完成后补录（Q14 登记责任人）★★ **2026-10-06 批 49 分界具名（`R-36`）**：本键只写「**台账列（`ops`）的登记责任人**」那一半 —— `L01.付款凭据号` 走 `t_ledger_ops.ops_json`、`writer = 综合运营主管`（**Q14 定案不变**，依据 `docs/01-PRD.md:464` 与 `internal/config/bizfields.go:101-111`）。★ 另有一半是「**节点留存**」：`return_receipt` 节点上由**申请人**录入并落**实例 `ext_json`**（见 `chain.json#conventions.node_record_fields` 与 `R-36` 裁定 4）。⇒ ★★ **两者是两个动作**（原始凭据留存／台账列登记与更正），**不是同一值的两份真相**；★ 据此 `docs/01-PRD.md:376` 的「（综合运营主管补录）」**只写了登记那一半**，**待据实订正**为「申请人回交（节点留存）；综合运营主管登记（台账列）」。"
         },
@@ -318,7 +318,7 @@
           "required": true,
           "source": "user",
           "origin": "institution",
-          "origin_ref": "第十八条第 291 行「本档支出须**逐笔留存付款凭据并与备案单一一对应**」"
+          "origin_ref": "第十条第 291 行「本档支出须**逐笔留存付款凭据并与备案单一一对应**」"
         },
         {
           "name": "arrival_registration_ref",
@@ -328,7 +328,7 @@
           "source": "user",
           "origin": "resolution",
           "origin_ref": "R-21#10（★ 制度未定落点）",
-          "resolution_note": "★ 制度第十八条第 286 行要求「到货后由申请部门或仓储完成**到货登记与入库**」，但**未规定该登记落在 BA 还是 GR** ⇒ **裁定落在 GR**（与全档位一致），**BA 只留关联引用**。若不落，则「1,000 元以下货到没到」在系统上无记录（采一档是湖南侧唯一自主闭环的支出，尤其需要）"
+          "resolution_note": "★ 制度第十条第 286 行要求「到货后由申请部门或仓储完成**到货登记与入库**」，但**未规定该登记落在 BA 还是 GR** ⇒ **裁定落在 GR**（与全档位一致），**BA 只留关联引用**。若不落，则「1,000 元以下货到没到」在系统上无记录（采一档是湖南侧唯一自主闭环的支出，尤其需要）"
         }
       ]
     },
@@ -346,7 +346,7 @@
           "required": false,
           "source": "system",
           "origin": "institution",
-          "origin_ref": "第五十九条 L01 字段；第二十一条第 321 行「800–1,000 元 区间列为重点抽查区间，抽查比例**不低于该区间笔数的 50%**」"
+          "origin_ref": "第二十二条 L01 字段；第十四条第 321 行「800–1,000 元 区间列为重点抽查区间，抽查比例**不低于该区间笔数的 50%**」"
         },
         {
           "name": "sample_status",
@@ -360,9 +360,9 @@
             "已抽查-异常"
           ],
           "origin": "institution",
-          "origin_ref": "第五十九条 L01 字段「抽查状态」",
+          "origin_ref": "第二十二条 L01 字段「抽查状态」",
           "ledger_writer": "L01：抽查状态由**综合运营主管**在月度核销时登记（Q14 登记责任人）",
-          "note": "★ 制度**未规定**该枚举的取值集合 ⇒ 三档取值系按「抽查结果＋明细报送集团财务复核」（第二十一条第 317 行）推导，**标记为 `origin: workbuddy_derived`，待工具表维护方确认**"
+          "note": "★ 制度**未规定**该枚举的取值集合 ⇒ 三档取值系按「抽查结果＋明细报送集团财务复核」（第十四条第 317 行）推导，**标记为 `origin: workbuddy_derived`，待工具表维护方确认**"
         },
         {
           "name": "petty_cash_balance_after_close_cents",
@@ -372,7 +372,7 @@
           "source": "user",
           "origin": "resolution",
           "origin_ref": "R-21#11",
-          "resolution_note": "★ 制度第十八条第 294 行「按月凭单据向集团核销并补足，余额以核销后的实有金额为准」—— ★★ **备付金「不设定额、有多少用多少」之后，这是唯一可被外部核对的锚点** ⇒ **必须记**。落 L01（工具表 C6 R4 BA 字段无此项）"
+          "resolution_note": "★ 制度第十条第 294 行「按月凭单据向集团核销并补足，余额以核销后的实有金额为准」—— ★★ **备付金「不设定额、有多少用多少」之后，这是唯一可被外部核对的锚点** ⇒ **必须记**。落 L01（工具表 C6 R4 BA 字段无此项）"
         },
         {
           "name": "is_monthly_supplier_rollover_warned",
@@ -383,7 +383,7 @@
           "required": false,
           "source": "system",
           "origin": "institution",
-          "origin_ref": "第二十一条第 315 行"
+          "origin_ref": "第十四条第 315 行"
         }
       ]
     }
@@ -431,7 +431,7 @@
       "assert": "qualified_certificate 非空",
       "else": "拒绝提交",
       "origin": "institution",
-      "origin_ref": "第十八条第 292 行"
+      "origin_ref": "第十条第 292 行"
     },
     {
       "id": "receipt_per_purchase",
@@ -442,7 +442,7 @@
       "assert": "payment_receipt_no 与 payment_receipt_file 均非空",
       "else": "不得闭合",
       "origin": "institution",
-      "origin_ref": "第十八条第 290–291 行（逐笔对应）"
+      "origin_ref": "第十条第 290–291 行（逐笔对应）"
     },
     {
       "id": "anti_split_before_disburse",
@@ -453,7 +453,7 @@
       "assert": "anti_split_check_result 必须先于 disburse 完成",
       "else": "★ 违反制度「须在拨付款项之前完成」",
       "origin": "institution",
-      "origin_ref": "第十八条第 286 行",
+      "origin_ref": "第十条第 286 行",
       "known_cost": "平台无跨字段校验 ⇒ 只能公式列提示 + 人工核对"
     },
     {
@@ -465,7 +465,7 @@
       "assert": "★ **BA 不得有「采购经办人」字段**",
       "else": "—",
       "origin": "institution",
-      "origin_ref": "第十八条第 288 行明文豁免自我经办（R-22 已记）"
+      "origin_ref": "第十条第 288 行明文豁免自我经办（R-22 已记）"
     },
     {
       "id": "idempotency_key",
