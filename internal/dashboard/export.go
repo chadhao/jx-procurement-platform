@@ -30,8 +30,25 @@ func Flatten(res Result) []map[string]any {
 		}
 	}
 	for _, a := range res.Alerts {
+		alertKey, _ := a["key"].(string)
+		// ★ N-078：清单型告警（「1,000 元以下高频供应商」/「拆分嫌疑」）的组明细
+		//   **逐条展开为独立导出行** —— 使清单可**逐笔回溯**（供应商 / 金额 / 日期 / 单号），
+		//   而不是把整份清单挤进一个单元格。★ 无 detail 的告警行为不变。
+		for i, d := range detailRows(a["detail"]) {
+			dr := map[string]any{
+				"section": "alert_detail", "dashboard": res.Name, "period": res.Period,
+				"alert_key": alertKey, "detail_index": i + 1,
+			}
+			mergeRow(dr, d)
+			out = append(out, dr)
+		}
 		row := map[string]any{"section": "alert", "dashboard": res.Name, "period": res.Period}
-		mergeRow(row, a)
+		for k, v := range a {
+			if k == "detail" {
+				continue // detail 已展开为独立行（section=alert_detail），摘要行不再重复整份清单
+			}
+			row[k] = v
+		}
 		out = append(out, row)
 	}
 	if res.Supervision != nil {
@@ -88,6 +105,27 @@ func Stringify(headers []string, rows []map[string]any) [][]string {
 func mergeRow(dst, src map[string]any) {
 	for k, v := range src {
 		dst[k] = v
+	}
+}
+
+// detailRows 归一「组明细」为 []map[string]any。
+//
+// ★ 兼容两种形态：未经列投影的 `[]map[string]any`（聚合直造）与经 `permission.ProjectDeep`
+// 投影后的 `[]any`（其 `[]map[string]any` 分支返回的是 `[]any` —— 见 permission/projectNested）。
+func detailRows(v any) []map[string]any {
+	switch t := v.(type) {
+	case []map[string]any:
+		return t
+	case []any:
+		out := make([]map[string]any, 0, len(t))
+		for _, e := range t {
+			if m, ok := e.(map[string]any); ok {
+				out = append(out, m)
+			}
+		}
+		return out
+	default:
+		return nil
 	}
 }
 

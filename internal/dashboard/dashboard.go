@@ -41,6 +41,16 @@ const (
 	submitOverdueLabel  = "提交超期（湖南侧完成 3 个工作日未提交集团）"
 	defaultEmergencyHrs = 24 // 紧急采购补录/闭合时限（小时）
 	defaultReviewHours  = 72 // 超时未审口径（3 个工作日近似）
+	// N-078 Q3：low_value_high_freq_supplier 的 key/label 单源（制度『防拆分』月度报送清单）。
+	// ★ 与 split_suspicion 同族「同供应商当月」，共用 supplierGroupKey 分组键 —— 口径不另写一份。
+	lowValueHighFreqKey   = "low_value_high_freq_supplier"
+	lowValueHighFreqLabel = "1,000 元以下高频供应商（当月 ≥3 笔）"
+	// defaultTier1UpperCents 采一档上界（分）：amount_cents < 100000 ⇒ 采一档（< 1,000 元）。
+	// ★ 出处＝spec/chain.json#thresholds.purchase.bands[purchase_tier1].upper_inclusive=99999
+	//   （与 httpapi#checkBAAmountTier1Only 的 assert 同源，不另立第二份口径）。
+	defaultTier1UpperCents = int64(100000)
+	// minHighFreqCount 高频供应商入列笔数下限（同供应商当月 ≥3 笔）。
+	minHighFreqCount = 3
 )
 
 // 运营表（ops_json）与存档表（ext_json）中使用的业务键。
@@ -397,10 +407,7 @@ func (b *Builder) buildPurchase(ctx context.Context, res Result, period string, 
 		if monthOf(r.BizDate) != period || strings.TrimSpace(r.Supplier) == "" {
 			continue
 		}
-		k := r.SupplierNorm
-		if k == "" { // 极端兜底：历史行未回填归一值时退回原名，绝不因缺归一值而漏计
-			k = r.Supplier
-		}
+		k := supplierGroupKey(r) // 归一分组键（★ 与 split_suspicion 同源，绝不因缺归一值而漏计）
 		supSum[k] += r.AmountCents
 		if _, ok := supName[k]; !ok {
 			supName[k] = r.Supplier // 展示用：取该组**首个出现的原名**
@@ -519,9 +526,24 @@ func (b *Builder) buildAnomaly(ctx context.Context, res Result, period string, q
 		func() map[string]any {
 			// ★ N-060 F9（FR-M4-06）：计数之外挂**组明细 detail**（按月清单可导出）；
 			//   仅 count>0 时附带（not_connected/0 不挂 —— 与「不显示假 0」同精神）。
+			//   ★ detail 转 []map[string]any（toDetailMaps）：使列级投影递归裁掉明细里的金额列。
 			a := guardedAlert("split_suspicion", "拆分嫌疑", b.countSplitSuspect(r01), len(r01), true)
 			if groups := b.listSplitSuspect(r01); len(groups) > 0 {
-				a["detail"] = groups
+				a["detail"] = toDetailMaps(groups)
+			}
+			return a
+		}(),
+
+		// ⑥′ 1,000 元以下高频供应商（N-078 Q3 · 制度『防拆分』月度报送清单）：
+		//   同供应商（supplierGroupKey）＋ 当月，采一档（<1,000 元）备案笔数 ≥3 的清单。
+		//   ★ 与 split_suspicion **同族**（同一把供应商尺子）；★ 抽查动作与结论属人工，
+		//   本指标**只产出清单**（不做抽查执行率）。守卫＝L01 行数（len(r01)）：无行 ⇒
+		//   not_connected（0 会被读成「没有高频供应商」，真相可能是「源为空」，r3）。
+		func() map[string]any {
+			a := guardedAlert(lowValueHighFreqKey, lowValueHighFreqLabel,
+				b.countHighFreqSuppliersUnder1000(r01), len(r01), true)
+			if groups := b.listHighFreqSuppliersUnder1000(r01); len(groups) > 0 {
+				a["detail"] = toDetailMaps(groups)
 			}
 			return a
 		}(),
@@ -809,11 +831,9 @@ func (b *Builder) listSplitSuspect(rows []Row) []SplitSuspectGroup {
 		if m == "" {
 			continue
 		}
-		// ★ Q20：按**归一分组键**分组 —— 用原名分组会让"换个写法"直接绕过转档预警。
-		sup := r.SupplierNorm
-		if sup == "" {
-			sup = r.Supplier
-		}
+		// ★ Q20 / R-20：按**归一分组键**分组 —— 用原名分组会让"换个写法"直接绕过转档预警。
+		//   ★ 与 split_suspicion / low_value_high_freq_supplier **同一分组函数**（不另写一份）。
+		sup := supplierGroupKey(r)
 		k := gk{sup, r.PurposeL2, m}
 		g := groups[k]
 		if g == nil {
@@ -874,6 +894,113 @@ func countSubmitOverdue(rows []Row, deadlineWorkdays int, now time.Time) int {
 // countSplitSuspect 统计拆分嫌疑组数（＝命中组数；F9 改为 list 的薄封装，调用面不变）。
 func (b *Builder) countSplitSuspect(rows []Row) int {
 	return len(b.listSplitSuspect(rows))
+}
+
+// supplierGroupKey 返回「同供应商」族的**归一分组键**（R-20 / Q20 定案）：
+// 优先取落库的 `supplier_norm`（去空白 ＋ 全半角归一 ＋ 大小写归一），为空时退回原名字符串
+// （历史行未回填归一值时的兜底，绝不因缺归一值而漏计）。
+//
+// ★★ 本函数是**同族三个指标**（`split_suspicion` / `supplier_monthly_accum_top` /
+// `low_value_high_freq_supplier`）分组键的**唯一来源** —— ★ 三处一律调用它，不各写一份字面量，
+// 否则口径会**分裂**（同一家换个写法在一条指标里合并、在另一条里拆开 ⇒ 防拆分形同虚设）。
+func supplierGroupKey(r Row) string {
+	if k := r.SupplierNorm; k != "" {
+		return k
+	}
+	return r.Supplier
+}
+
+// HighFreqEntry 清单中的**一笔**（逐笔回溯 L01 采购备案台账原始行）。
+type HighFreqEntry struct {
+	BizNo       string `json:"biz_no"`       // 备案单号（回溯定位）
+	Supplier    string `json:"supplier"`     // 供应商**原名**（展示；分组用归一键）
+	AmountCents int64  `json:"amount_cents"` // 金额（分）
+	Date        string `json:"date"`         // 业务日期（L01.biz_date）
+}
+
+// HighFreqSupplierGroup 「1,000 元以下高频供应商」清单项
+// （同供应商 ＋ 当月，采一档笔数 ≥3 —— N-078 Q3 · 制度『防拆分』月度报送清单）。
+type HighFreqSupplierGroup struct {
+	Supplier string          `json:"supplier"` // 归一分组键（supplier_norm）
+	Month    string          `json:"month"`
+	Count    int             `json:"count"`
+	SumCents int64           `json:"sum_cents"`
+	Entries  []HighFreqEntry `json:"entries"` // 逐笔回溯 L01（供应商原名 / 金额 / 日期 / 单号）
+}
+
+// listHighFreqSuppliersUnder1000 产出「1,000 元以下高频供应商」清单：
+//   - 分组键＝supplierGroupKey(row)（★ 与 split_suspicion **同一函数**）＋ 当月；
+//   - 范围＝采一档（amount_cents < defaultTier1UpperCents，即 < 1,000 元）；
+//   - 入列＝该组笔数 ≥ minHighFreqCount（≥3 笔）。
+//
+// ★ 与 listSplitSuspect 的区别：那条按「供应商 + 二级明细 + 当月」且看**累计金额 ≥ 阈值**；
+// 本条按「供应商 + 当月」且看**笔数 ≥3**（高频小额）—— ★ 两者同族（同一把供应商尺子）、互补。
+func (b *Builder) listHighFreqSuppliersUnder1000(rows []Row) []HighFreqSupplierGroup {
+	type gk struct{ supplier, month string }
+	type gval struct {
+		sum     int64
+		entries []HighFreqEntry
+	}
+	groups := map[gk]*gval{}
+	order := []gk{}
+	for _, r := range rows {
+		if strings.TrimSpace(r.Supplier) == "" {
+			continue
+		}
+		m := monthOf(r.BizDate)
+		if m == "" {
+			continue
+		}
+		if r.AmountCents >= defaultTier1UpperCents {
+			continue // 范围＝采一档（< 1,000 元）：金额达 1,000 元及以上属采二档，不入本清单
+		}
+		k := gk{supplierGroupKey(r), m}
+		g := groups[k]
+		if g == nil {
+			g = &gval{}
+			groups[k] = g
+			order = append(order, k)
+		}
+		g.sum += r.AmountCents
+		g.entries = append(g.entries, HighFreqEntry{
+			BizNo: r.BizNo, Supplier: r.Supplier, AmountCents: r.AmountCents, Date: r.BizDate,
+		})
+	}
+	out := []HighFreqSupplierGroup{}
+	for _, k := range order { // 按行序稳定输出（可测、可复算）
+		g := groups[k]
+		if len(g.entries) < minHighFreqCount {
+			continue // 当月 <3 笔 ⇒ 不入列
+		}
+		out = append(out, HighFreqSupplierGroup{
+			Supplier: k.supplier, Month: k.month,
+			Count: len(g.entries), SumCents: g.sum, Entries: g.entries,
+		})
+	}
+	return out
+}
+
+// countHighFreqSuppliersUnder1000 高频供应商**组数**（＝命中供应商数；供 alert count）。
+func (b *Builder) countHighFreqSuppliersUnder1000(rows []Row) int {
+	return len(b.listHighFreqSuppliersUnder1000(rows))
+}
+
+// toDetailMaps 把组明细转为 `[]map[string]any`。
+//
+// ★ 必要性（越权硬化）：列级投影 `permission.ProjectDeep` 只对 `map[string]any` / `[]any` /
+// `[]map[string]any` 递归；**typed slice（如 `[]...Group`）会落 default 分支、不被递归** ⇒
+// 明细里的金额类键（`amount_cents` / `sum_cents`）对「禁金额」角色**原样泄漏**且不报错。
+// ⇒ 挂到 alert 的 `detail` 前统一转成 `[]map[string]any`，使投影能裁剪其金额列。
+func toDetailMaps(v any) []map[string]any {
+	raw, err := json.Marshal(v)
+	if err != nil {
+		return nil
+	}
+	var out []map[string]any
+	if err := json.Unmarshal(raw, &out); err != nil {
+		return nil
+	}
+	return out
 }
 
 // countEmergencyUnclosed 统计紧急采购超 24 小时未补录或未核销闭合。
