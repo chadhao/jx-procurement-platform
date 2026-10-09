@@ -50,7 +50,7 @@
     "supervisor": {
       "node_actor_kind": "approver",
       "label": "主管领导",
-      "desc": "按需求提出部门确定：综合运营部/质检技术部 → 项目总经理；生产部/销售部 → 副总（销售部由项目总经理协管）。★ 回避：不得审批本人发起的事项、或与本人有关联关系的供应商事项",
+      "desc": "★★ **实际解析看 `fallback`（下行），本 desc 仅作制度对接口径说明**：制度【分管关系】条款＝综合运营部→总经理；**质检技术部→总工（总工任命前暂由总经理代管）**；生产部/销售部→副总。★ 系统实现＝在 `t_user_role` 中按 `department`/`extra_depts` 命中申请部门、且 `role=主管领导` 者（★ 故 **总工到位后，后台把该人的 role 设为「主管领导」、department 设为「质检技术部」即可生效，无需改代码** —— 2026-10-09 用户裁定）。★ 回避：不得审批本人发起的事项、或与本人有关联关系的供应商事项",
       "resolve_by": "需求提出部门",
       "fallback": {
         "match_by": [
@@ -1058,7 +1058,7 @@
   },
   "open_items": {
     "_note": "★★ **本键原为「待决策清单」，现已改为指针** —— ★ 自 2026-10-01 起，**待决策项的唯一边权威清单是 `COLLAB.md §9 决策筛选登记`**（`§9.1` 留待用户 / `§9.2` 我方按建议值定稿 / `§9.3` 留待集团口径）。★ 本处**不另列**（同一件事两处各列一份 ⇒ 必然漂移，本条正是一次实例）。",
-    "_history": "★ 原列 **4 项**，**均已解决**，留档备查：① `R-09` 采三档（加强）节点顺序 ⇒ 用户 2026-09-30 批复「B 组其他按推荐」⇒ 落 `routes.purchase_tier3.branches.tier3_plus`；② `R-08` 报销时限参数默认值 ⇒ ★ **已被 `R-23` 取代**（个人报销每月 25 日截止、备付金不设时限）；③ `params_pending_group.reporting.deadline_workdays`（第 16 项）⇒ 同上已定；④ `params_pending_group.group_process_trigger`（第 11 项）⇒ ★ **已剔除出项目范围**（`R-28`：只处理湖南的问题、不写集团的事）。",
+    "_history": "★ 原列 **4 项**，**均已解决**，留档备查：① `R-09` 采三档（加强）节点顺序 ⇒ 用户 2026-09-30 批复「B 组其他按推荐」⇒ 落 `routes.purchase_tier3.branches.tier3_plus`；② `R-08` 报销时限参数默认值 ⇒ ★ **已被 `R-23` 取代**（个人报销截止日：★ 2026-10-09 按制度【报销时限】条款定为 **20 日**；备付金不设时限）；③ `params_pending_group.reporting.deadline_workdays`（第 16 项）⇒ 同上已定；④ `params_pending_group.group_process_trigger`（第 11 项）⇒ ★ **已剔除出项目范围**（`R-28`：只处理湖南的问题、不写集团的事）。",
     "_result": "★★ **原清单已清空**；★ 现行待决策项见 `COLLAB.md §9`。"
   },
   "payment_route_rule": {
@@ -1096,7 +1096,7 @@
         "priority": 4,
         "when": "otherwise",
         "label": "个人垫付 + 报销（集团付款至本人账户）",
-        "note": "★ **报销每月 25 日截止** —— 见 `spec/params.json#reporting.monthly_cutoff_day`。★ 这类支出**业务可先行发生**（第三十九条：走报销的费用都可以提前支出），不受集团付款进度约束。",
+        "note": "★ **报销每月 20 日截止**（★ 2026-10-09 按制度【报销时限】条款，原 25 日）—— 见 `spec/params.json#reporting.monthly_cutoff_day`。★ 这类支出**业务可先行发生**（第三十九条：走报销的费用都可以提前支出），不受集团付款进度约束。",
         "payment_route": "personal_advance_reimburse"
       }
     ],

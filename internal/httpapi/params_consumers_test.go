@@ -40,36 +40,36 @@ func TestBatchPeriodCutoff(t *testing.T) {
 func TestParamsProbeChangeValueChangesBehavior(t *testing.T) {
 	b := metaTestBundle(t)
 
-	// ① cutoff：真源读出 25；改内存副本为 31 ⇒ 同一时刻的批次归集结果不同
-	got25, ok := b.ParamInt("reporting.monthly_cutoff_day")
-	if !ok || got25 != 25 {
-		t.Fatalf("cutoff 应从 spec 读出 25，实为 (%d,%v)", got25, ok)
+	// ① cutoff：真源读出 20（2026-10-09 按制度第十七条由 25 改）；改内存副本为 31 ⇒ 同一时刻的批次归集结果不同
+	gotCutoff, ok := b.ParamInt("reporting.monthly_cutoff_day")
+	if !ok || gotCutoff != 20 {
+		t.Fatalf("cutoff 应从 spec 读出 20，实为 (%d,%v)", gotCutoff, ok)
 	}
 	at := time.Date(2026, 9, 26, 12, 0, 0, 0, time.UTC)
-	period25, rolled25 := batchPeriod(at, got25)
+	periodCutoff, rolledCutoff := batchPeriod(at, gotCutoff)
 	period31, rolled31 := batchPeriod(at, 31)
-	if !rolled25 || rolled31 || period25 == period31 {
-		t.Fatalf("改 cutoff 应改变行为：25→(%s,%v) / 31→(%s,%v)", period25, rolled25, period31, rolled31)
+	if !rolledCutoff || rolled31 || periodCutoff == period31 {
+		t.Fatalf("改 cutoff 应改变行为：20→(%s,%v) / 31→(%s,%v)", periodCutoff, rolledCutoff, period31, rolled31)
 	}
 
-	// ② 合同容差：真源 10；改内存副本为 5 ⇒ accessor 随之变化
+	// ② 合同容差：真源 5（2026-10-09 按制度第二十一条由 10 改）；改内存副本为 10 ⇒ accessor 随之变化
 	mutated := *b
 	mutated.Params = &specload.ParamsDoc{Params: map[string]specload.ParamEntry{}}
 	for k, v := range b.Params.Params {
 		mutated.Params.Params[k] = v
 	}
-	tol10, _ := (Deps{Spec: b}).contractAmountTolerance()
-	if tol10 != 10 {
-		t.Fatalf("容差应读出 10，实为 %d", tol10)
+	tolBase, _ := (Deps{Spec: b}).contractAmountTolerance()
+	if tolBase != 5 {
+		t.Fatalf("容差应读出 5，实为 %d", tolBase)
 	}
-	raw5 := json.RawMessage("5")
+	raw10 := json.RawMessage("10")
 	e := mutated.Params.Params["contract.amount_over_pr_tolerance_percent"]
-	e.Value = raw5
+	e.Value = raw10
 	mutated.Params.Params["contract.amount_over_pr_tolerance_percent"] = e
 	d := Deps{Spec: &mutated}
-	tol5, ok2 := d.contractAmountTolerance()
-	if !ok2 || tol5 != 5 {
-		t.Fatalf("改 params 后容差应为 5，实为 (%d,%v) —— 疑似写死", tol5, ok2)
+	tolMut, ok2 := d.contractAmountTolerance()
+	if !ok2 || tolMut != 10 {
+		t.Fatalf("改 params 后容差应为 10，实为 (%d,%v) —— 疑似写死", tolMut, ok2)
 	}
 
 	// ③ 备付金时限：type=none ⇒ enforced=false（不设时限的分支由参数驱动）
@@ -96,8 +96,8 @@ func TestReimbursementReportingWired(t *testing.T) {
 	if reporting == nil {
 		t.Fatal("响应缺 reporting（T1 参数消费未接线）")
 	}
-	if day, _ := reporting["cutoff_day"].(float64); int(day) != 25 {
-		t.Errorf("cutoff_day = %v，应为 spec 里的 25", reporting["cutoff_day"])
+	if day, _ := reporting["cutoff_day"].(float64); int(day) != 20 {
+		t.Errorf("cutoff_day = %v，应为 spec 里的 20", reporting["cutoff_day"])
 	}
 	// 批次与独立重算一致
 	b := metaTestBundle(t)
@@ -121,7 +121,7 @@ func TestReimbursementReportingWired(t *testing.T) {
 		t.Errorf("overdue_handling 已定案，pending 不应为 true：%v", overdue)
 	}
 	if rolled, _ := reporting["rolled_to_next"].(bool); rolled {
-		// 超期场景（今天 >25）：批次必须已归次月（「已归入次月批次」标注的数据基础）
+		// 超期场景（今天 >20，2026-10-09 按制度第十七条由 25 改）：批次必须已归次月（「已归入次月批次」标注的数据基础）
 		thisMonth, _ := batchPeriod(time.Now(), 0) // cutoff=0 ⇒ 永不跨月＝本月
 		if got, _ := reporting["batch_period"].(string); got == thisMonth {
 			t.Errorf("超期（rolled）时 batch_period 应归次月，仍为本月 %q", got)
