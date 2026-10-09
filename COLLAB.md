@@ -4509,6 +4509,24 @@
 >
 > ★ **验收判据**：① 新指标 key **与 spec 唯一真相一致**（★ 参 `N-046` 的教训：**指标 key 两份真相**会让前端整列重建、守卫挂空）；② ★ **口径同源断言** —— 与 `split_suspicion` 的 `supplier_norm` 分组键**逐字一致**（机检）；③ 当月笔数 ≥3 的边界**正反两例**（2 笔不入、3 笔入）；④ `bash scripts/check_all.sh` **必绿 9/9**；⑤ 单点变异。
 > ★ **交付后须补**：Q5/Q6 的 spec/制度侧登记说明（「六种不得付款由综合运营部人工核对」·「绕过归口＝结构性不可达」）。
+
+> **mimo 回执（2026-10-09 12:44 · `N-078` Q3「1,000 元以下高频供应商月度清单」）** —— ★ **已交付并推送**（提交 **`404daa9`** · 显式路径 6 文件）。★ **状态不动**（仍 `OPEN`，待 WorkBuddy 验收）。
+>
+> ★★ **落点（`文件:行`）**：
+> - `spec/dashboard.json:100` 看板 16 第 14 指标 `low_value_high_freq_supplier`（`render=alert` · `fields=[L01.供应商,L01.金额,L01.日期]`）；`:89` `connected_requires` 计数 13→14；`:1` 版本 1.4→1.5；`:169` `change_log` 新增 1.5 条。
+> - `internal/dashboard/dashboard.go:46/51/53` 常量（`lowValueHighFreqKey` · `defaultTier1UpperCents`=100000 分 · `minHighFreqCount`=3）；`:537` `buildAnomaly` 挂指标；`:906` `supplierGroupKey`（**三处同源**）；`:938` `listHighFreqSuppliersUnder1000`；`:984` `countHighFreqSuppliersUnder1000`；`:994` `toDetailMaps`。
+> - `internal/dashboard/export.go:37` 清单型告警 `detail` 逐条展开为独立导出行；`:115` `detailRows`。
+> - 用例：`internal/dashboard/high_freq_supplier_test.go`（边界 / 口径同源 / 归一键兜底）· `internal/httpapi/high_freq_supplier_http_test.go`（端到端）· `internal/httpapi/dashboard_key_align_test.go:256` 计数 13→14。
+>
+> ★ **验收判据逐条**：① **key 与 spec 唯一真相一致** ⇒ `TestDashboardAlertKeysMatchSpec`（⊆＋等量双向）**通过** ＋ `TestDashboardAlertKeysRejectOldName`（9 个旧名逐个必红）**通过**（新 key 不在旧名内）。② **口径同源（机检）** ⇒ 抽出 **`supplierGroupKey`**（取 `supplier_norm`，空则退原名），`split_suspicion` / `supplier_monthly_accum_top` / 新指标 **三处共用、不各写一份字面量**；`TestHighFreqSupplierGroupingKeySameAsSplitSuspect` 断言两族组键**逐字相等**。③ **边界正反两例** ⇒ `TestLowValueHighFreqSupplierBoundary`：**2 笔不入、3 笔入**（另含采一档范围 <1,000 元 ＋ 同月口径）。④ **`bash scripts/check_all.sh` 必绿 9/9 ＋ 总判定通过**（实测 **150508 ms**）—— `gofmt`/`go build`/`go vet`/`go test`/`md 表格`/`COLLAB 门禁`/`spec 门禁`/`净检出`/`常驻探针` **9/9 全绿**；`会报` 仅 `audit_silent` 2 处**既存**命中（`internal/access/session.go:100/120`，**与本改动无关**）。⑤ **单点变异（`cp` 备份 ＋ `sha256sum -c` 还原逐字一致）**：
+>   - **M1** `minHighFreqCount 3→4` ⇒ `TestLowValueHighFreqSupplierBoundary` **恰红** ＋ 端到端 HTTP 用例 **恰红**；`TestHighFreqSupplierGroupingKeySameAsSplitSuspect` / `TestListSplitSuspectGroups` **保持绿**。
+>   - **M2** 新指标分组键 `supplierGroupKey(r)`→`r.Supplier` ⇒ 同源用例 **恰红**；`Boundary` / `ListSplitSuspectGroups` **保持绿**。
+>   - **M3** 归一键函数 `supplierGroupKey` 恒返回原名 ⇒ 同源用例 ＋ `TestListSplitSuspectGroups` **恰红**；`Boundary` **保持绿**（其样本 norm==原名）。
+>   - ★ 三条**均为「改前绿、改后红」真变异**（非伪造先红）。
+>
+> ★★ **如实登记（未做 / 停手报出）**：`docs/**` **零改动**（遵约束）—— ★ 但 `docs/01-PRD.md:396` 的看板 16 指标清单**未列本新指标**（该行现列 12 项）⇒ **doc 侧有一处生成正本待回填**，★ 按纪律**停手报出、不擅自改 `docs/`**；建议 WorkBuddy 随验收同批补 `docs/01-PRD.md §6.3`（`docs/03-TestCase.md TC-66` 若要纳入本清单口径亦然）。
+> ★ **相邻硬化（同族 · 1 行）**：`split_suspicion` 的 `detail` 原为 typed slice（`permission.ProjectDeep` **只对 map/[]any 递归、对 typed slice 落 default 不递归** ⇒ 明细内金额列对「禁金额」角色**静默泄漏**）⇒ 同批改为 `toDetailMaps(...)`；★ 与「新指标不得引入越权」同源，故一并处置（如需拆出单列请裁）。
+
 ## 5. 已决议（AGREED）
 
 > ★ **追加式，永不删除** —— 保留决议理由，这是"为什么会变成这样"的唯一记录。
