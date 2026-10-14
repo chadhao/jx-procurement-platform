@@ -290,6 +290,50 @@ func (d Deps) handleAdminUsersPatch(c echo.Context) error {
 	return ok(c, userRoleMap(row))
 }
 
+// ---------- 通讯录同步（管理端手动入口） ----------
+
+// handleAdminOrgSync `POST /api/admin/org/sync` —— 系统管理员手动触发飞书通讯录全量同步。
+//
+// ★ 动因（用户原话 2026-10-09）：「人员管理」页需要「手动同步飞书人员和部门」的按钮。
+//
+//	全量同步能力早已具备，但既有入口 `POST /internal/org/sync`（handleOrgSync）挂在
+//	internal 路由组、**需 `X-Internal-Token`** ⇒ 前端（带会话 cookie、无内部凭据）调不到。
+//	故在管理端配置本入口，让「系统管理员」能在页面上自助触发。
+//
+// ★ 复用：同步逻辑**不重写** —— 直接调用 `d.OrgSync.RunNow(ctx)`（与内部端点同一运行器），
+//
+//	返回结构经 `orgSyncReportMap` 与 handleOrgSync **逐字段同构**。
+//
+// ★ 鉴权：走 `requireSysAdmin`（admin 域既有口径）；非系统管理员 ⇒ 40300 并留痕
+//
+//	（deny 记录在 requireSysAdmin 内落，不重复）。
+//
+// ★ 可见失败：`d.OrgSync == nil` ⇒ 503（不静默）；同步失败 ⇒ 502 + 明确错误。
+// ★ 审计：Action=org_sync、Resource=org_directory、Result=allow；TargetID/DetailJSON
+//
+//	标注来源为「管理端」，以便与内部端点触发**区分入口**（同一动作、不同来源）。
+func (d Deps) handleAdminOrgSync(c echo.Context) error {
+	idn, isAdmin := d.requireSysAdmin(c)
+	if !isAdmin {
+		return nil // requireSysAdmin 已写出 40300 并留痕
+	}
+	if d.OrgSync == nil {
+		return fail(c, http.StatusServiceUnavailable, codeInternal, "组织同步未装配（Runner 为 nil）")
+	}
+	ctx := c.Request().Context()
+	rep, err := d.OrgSync.RunNow(ctx)
+	if err != nil {
+		return fail(c, http.StatusBadGateway, codeInternal, "通讯录全量同步失败: "+err.Error())
+	}
+	d.audit(ctx, &store.AuditLogRow{
+		ActorOpenID: idn.OpenID, ActorRole: actorRoleOf(idn),
+		Action: "org_sync", Resource: "org_directory",
+		TargetID: "admin/org/sync", Result: "allow",
+		DetailJSON: `{"source":"admin"}`,
+	})
+	return ok(c, orgSyncReportMap(rep))
+}
+
 // ---------- 序列化与辅助 ----------
 
 func permissionRuleMap(r store.PermissionRule) map[string]any {

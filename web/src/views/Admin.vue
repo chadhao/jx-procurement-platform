@@ -16,6 +16,7 @@ import {
   createRoleAgent,
   patchRoleAgent,
   fetchOrgUsers,
+  syncOrgDirectory,
 } from '../api'
 import { session } from '../store'
 import { isSysAdminOf } from '../sysRole'
@@ -168,6 +169,35 @@ async function saveUser(u) {
     await loadUsers()
   } catch (e) {
     err.value = e.message || String(e)
+  }
+}
+
+// ---- 手动同步飞书通讯录（★ 用户需求：「人员管理」页「手动同步飞书人员和部门」按钮）----
+// 现状：全量同步能力早已具备，但既有入口 POST /internal/org/sync 属内部凭据域、前端调不到
+// ⇒ 新增管理员端入口 POST /api/admin/org/sync（走 requireSysAdmin），本按钮即其前端入口。
+const syncing = ref(false)
+const syncResult = ref(null)
+
+async function syncDirectory() {
+  err.value = ''
+  msg.value = ''
+  syncResult.value = null
+  syncing.value = true // ★ 请求期间置 loading/禁用按钮，防重复点击
+  try {
+    const data = await syncOrgDirectory()
+    syncResult.value = data
+    msg.value =
+      `飞书通讯录同步完成：部门 ${data.dept_total}` +
+      `（新增 ${data.dept_added} / 更新 ${data.dept_updated} / 停用 ${data.dept_soft_deleted}），` +
+      `人员 ${data.user_total}` +
+      `（新增 ${data.user_added} / 更新 ${data.user_updated} / 停用 ${data.user_soft_deleted}）`
+    // ★ 同步完刷新人员列表与镜像选人源 —— 否则页面仍是旧数据（本功能的目的：让新增人员立刻可用）。
+    await Promise.all([loadUsers(), loadOrgUsers()])
+  } catch (e) {
+    // ★ 失败可见：不吞错误。
+    err.value = e.message || String(e)
+  } finally {
+    syncing.value = false
   }
 }
 
@@ -381,6 +411,22 @@ onMounted(loadAll)
       <!-- ② 人员角色 -->
       <div v-if="activeTab === 'users'" class="panel">
         <h2>人员角色（open_id ↔ 角色 / 部门 / 分管部门）</h2>
+        <!-- ★ 手动同步飞书通讯录（用户需求）：仅系统管理员可见本页，后端 requireSysAdmin 二次校验 -->
+        <div class="toolbar">
+          <button class="primary" :disabled="syncing" @click="syncDirectory">
+            {{ syncing ? '同步中…' : '同步飞书通讯录' }}
+          </button>
+          <span class="muted">
+            从飞书拉取最新的人员与部门（全量）；完成后自动刷新下方列表，新增人员立即可用
+          </span>
+        </div>
+        <div v-if="syncResult" class="tag ok">
+          同步结果：部门 {{ syncResult.dept_total }}（新增 {{ syncResult.dept_added }} /
+          更新 {{ syncResult.dept_updated }} / 停用 {{ syncResult.dept_soft_deleted }}）；
+          人员 {{ syncResult.user_total }}（新增 {{ syncResult.user_added }} /
+          更新 {{ syncResult.user_updated }} / 停用 {{ syncResult.user_soft_deleted }}）；
+          耗时 {{ syncResult.duration_ms }} ms
+        </div>
         <div class="toolbar">
           <select v-model="newUser.open_id">
             <option value="" disabled>点选人员（镜像）</option>

@@ -8,6 +8,7 @@ import (
 
 	"github.com/labstack/echo/v4"
 
+	"github.com/chadhao/jx-procurement-platform/internal/orgsync"
 	"github.com/chadhao/jx-procurement-platform/internal/store"
 )
 
@@ -135,10 +136,33 @@ func (d Deps) assigneeRoleViews(ctx context.Context, tasks []store.FlowTask) map
 	return m
 }
 
+// orgSyncReportMap 把全量同步差异报告序列化为对外 JSON。
+//
+// ★ 唯一真相：`POST /internal/org/sync`（handleOrgSync）与 `POST /api/admin/org/sync`
+// （handleAdminOrgSync）**共用本函数** ⇒ 两个入口的返回结构**逐字段同构**，
+// 不会各自维护一份键名而悄悄漂移（前后端字段名一致性由一处保证）。
+func orgSyncReportMap(rep *orgsync.Report) map[string]any {
+	return map[string]any{
+		"trigger":           rep.Trigger,
+		"dept_total":        rep.DeptTotal,
+		"user_total":        rep.UserTotal,
+		"dept_added":        rep.DeptAdded,
+		"dept_updated":      rep.DeptUpdated,
+		"dept_soft_deleted": rep.DeptSoftDeleted,
+		"user_added":        rep.UserAdded,
+		"user_updated":      rep.UserUpdated,
+		"user_soft_deleted": rep.UserSoftDeleted,
+		"duration_ms":       rep.DurationMS,
+	}
+}
+
 // handleOrgSync `POST /internal/org/sync` —— 手动触发通讯录全量同步（内部运维端点）。
 //
 // ★ 复用内部端点风格（X-Internal-Token，与 /internal/sync/* 同组）；
 // 无视新鲜度阈值强制拉取；返回差异报告。失败 ⇒ 5xx + 明确错误（不静默）。
+//
+// ★ 本端点保留不动（供内部/脚本用）；前端因属会话域、无内部凭据而调不到它，
+// 故另有管理端入口 `POST /api/admin/org/sync`（handleAdminOrgSync）。
 func (d Deps) handleOrgSync(c echo.Context) error {
 	if d.OrgSync == nil {
 		return fail(c, http.StatusServiceUnavailable, codeInternal, "组织同步未装配（Runner 为 nil）")
@@ -150,16 +174,5 @@ func (d Deps) handleOrgSync(c echo.Context) error {
 	d.audit(c.Request().Context(), &store.AuditLogRow{
 		Action: "org_sync", Resource: "org_directory", Result: "allow",
 	})
-	return ok(c, map[string]any{
-		"trigger":           rep.Trigger,
-		"dept_total":        rep.DeptTotal,
-		"user_total":        rep.UserTotal,
-		"dept_added":        rep.DeptAdded,
-		"dept_updated":      rep.DeptUpdated,
-		"dept_soft_deleted": rep.DeptSoftDeleted,
-		"user_added":        rep.UserAdded,
-		"user_updated":      rep.UserUpdated,
-		"user_soft_deleted": rep.UserSoftDeleted,
-		"duration_ms":       rep.DurationMS,
-	})
+	return ok(c, orgSyncReportMap(rep))
 }

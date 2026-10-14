@@ -208,6 +208,10 @@ func NewRouter(d Deps) *echo.Echo {
 	admin.GET("/users", d.handleAdminUsersGet)
 	admin.POST("/users", d.handleAdminUsersPost)
 	admin.PATCH("/users/:open_id", d.handleAdminUsersPatch)
+	// ---- 通讯录手动同步（用户需求：「人员管理」页「手动同步飞书人员和部门」按钮）----
+	// ★ 全量同步逻辑复用 Runner（不重写）；★ 走 requireSysAdmin；返回结构与内部端点同构。
+	//   内部端点 `POST /internal/org/sync` 保留不动（供内部/脚本用）。
+	admin.POST("/org/sync", d.handleAdminOrgSync)
 	// ---- 运营性常量表（T2 / R-24）：增改 + **只停用不删**（DELETE 显式拒绝）----
 	admin.GET("/constants", d.handleAdminConstantsList)
 	admin.POST("/constants", d.handleAdminConstantsCreate)

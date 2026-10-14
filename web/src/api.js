@@ -116,6 +116,15 @@ export const createAdminUser = (payload) => api.post('/api/admin/users', payload
 export const patchAdminUser = (openId, payload) =>
   api.patch(`/api/admin/users/${encodeURIComponent(openId)}`, payload)
 
+/**
+ * ★ 手动触发飞书通讯录全量同步（管理员端入口，用户需求：「人员管理」页「手动同步飞书人员和部门」）。
+ * 后端复用 OrgSync.RunNow（与内部端点 POST /internal/org/sync 同一运行器、同一返回结构）。
+ * 返回差异报告：{ trigger, dept_total, user_total, dept_added, dept_updated, dept_soft_deleted,
+ *               user_added, user_updated, user_soft_deleted, duration_ms }。
+ * 非系统管理员 ⇒ 40300；Runner 未装配 ⇒ 50300；同步失败 ⇒ 50000（可见失败，不静默）。
+ */
+export const syncOrgDirectory = () => api.post('/api/admin/org/sync')
+
 // ---- 运营性常量（T2 · R-24；只停用不删 —— DELETE 恒 40900，故不封装删除）----
 
 /** 列出某常量表（table ∈ spec/constants.json；响应含 {table:{key,label,...}, items[]}）。 */
