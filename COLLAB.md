@@ -4624,7 +4624,7 @@
 - **提出方**：工程师（Alex，本包实现者；2026-10-14 交付「人员管理页手动同步飞书通讯录」时发现）
 - **类型**：接口契约
 - **责任域**：跨界（接口业务语义与正本 `docs/05-API.md` ＝ WorkBuddy；机读契约生成物 `spec/openapi.json` 与计数口径 ＝ 生成器 `scripts/gen_openapi.py`）
-- **状态**：MIMO-DONE
+- **状态**：AGREED
 - **背景**：★ 本包按用户需求在「人员管理」页新增管理员手动同步按钮，后端新增 **`POST /api/admin/org/sync`**（admin 组 ＋ `requireSysAdmin`，复用 `d.OrgSync.RunNow`）；前端按钮与**重建的 `internal/webui/dist`** 已交付，门禁 **必绿 9/9**、`audit_silent` **零新增命中**（`[C5]` 无命中：因 docs 已有 `/internal/org/sync`，`endswith` 后缀匹配命中本路由的归一形 `org/sync`）。★★ 但 ★ **新端点未登记进人读正本 `docs/05-API.md`** ⇒ 存在「实现有、正本无」的契约漂移；★ 且 **`spec/openapi.json` 的 `router_go_route_count` 硬编码为 `69`**（`scripts/gen_openapi.py:565`），本包 `+1` 后 **`internal/httpapi/router.go` 实为 70 条 API 路由** ⇒ ★ **该字段已失真**。★ 本包受「`spec/**` 零改动」约束，未动 `docs/` 与 `spec/` —— 因为登记会级联：docs 路由集 `+1` ⇒ 生成器产出 70 ⇒ 探针 `_probe_n051.py` **两处硬编码期望 `69`** 必红 ⇒ 必须**同批**重生 `spec/openapi.json` ＋ 改 `69`→`70`。
 - **我方立场**：★★ **接口正本应与实现一一对应**（本仓库红线）⇒ 新端点**应当**登记进 `docs/05-API.md §3.9`；★ 但登记**不能只改 docs**：`docs/05-API.md` 是「路由计数」的**唯一抽取源**，其 `+1` 会连锁触发 `scripts/gen_openapi.py`（硬编码 69）、`spec/openapi.json`（生成物，含 `doc_sha256`）、`_probe_n051.py`（两处期望 69）三处同步 ⇒ ★ 属「两侧同批」变更，**超出本包「`spec/**` 零改动」边界** ⇒ 依团队交办「如需改先停下说明」，本包**不动**、改开本议题交办。
 - **建议方案**：★ 同批四件（缺一不可）：① `docs/05-API.md §3.9` 补 `POST /api/admin/org/sync` 契约块（与 `POST /internal/org/sync` 同构的计数字段：`trigger` / `dept_total` / `user_total` / `dept_added` / `dept_updated` / `dept_soft_deleted` / `user_added` / `user_updated` / `user_soft_deleted` / `duration_ms`）＋ 版本表 V2.23 行；② `scripts/gen_openapi.py:565` 的 `router_go_route_count` `69`→`70`（并复核 `:27`/`:31`/`:33` 注释与 `:566-569` 的 note 口径）；③ 重生 `spec/openapi.json`（`python scripts/gen_openapi.py`，含 `doc_sha256`）；④ `scripts/_probe_n051.py` 两处期望 `69`→`70`（`check_regenerate` 与 `check_obsolete_absent`，后者并复核反证用例的基线）。★ 三处口径须一致：`check_probes.sh`（必绿）／`gen_openapi --check`（维护命令）／路由计数注释。
@@ -4653,6 +4653,23 @@
 >
 > ★ **其它遗漏路由核查（你要求的「宁可清单长」）**：按同口径**穷举** `router.go`（解析分组前缀后 **70** 条）↔ 正本（**70** 条）⇒ ★ **双向差集皆空** ⇒ **本次计数失真为孤例**，**无**其它未登记的已注册路由（原 `[C5]` 之所以不报，纯因**后缀匹配假阴性**，非真无遗漏）。
 
+
+> **★ `N-081` 验收（2026-10-14 17:44 · `4f8c720`＋`b7c3e38`）→ 通过（我方独立复核）** ★★ **并裁定：两个新必绿项【都保留】**
+>
+> ★ **四件已核**：`docs/05-API.md:564-582` 新增契约块（`V2.22→V2.23`）· `gen_openapi.py:565` `69→70` · `spec/openapi.json` 重生（59 path / 70 operation）· `_probe_n051.py` 4 处（★ 含**反证基线** `70→71`）✓
+> ★★ **第 5 条已落地**：`scripts/check_all.sh:115` 新增必绿项「**接口契约可重现（docs↔openapi）**」⇒ ★ **必绿基线 9 → 10**；★ 耗时 **238ms** ⇒ 无需降级 ✓ ★ 且★ 它在 `:113` **诚实标注**「本项只比正本↔`spec/openapi.json`，**不比 `router.go`**」（★ 不夸大覆盖面）。
+>
+> ★★★ **它纠正了我的一个错误前提（记名，我方接受）**：我在派单时说「接进去后，改了 router 忘了改正本 ⇒ 门禁会当场红」。★ **它实测指出这是错的** —— `gen_openapi --check` **只比 `docs ↔ openapi.json`**，**不读 `router.go`** ⇒ ★ **该场景下正本与契约双双不动 ⇒ 照样绿**。★ 真正的盲区是 **`audit_silent#C5`（会报级）用 `endswith()` 后缀匹配** ⇒ ★ 把 `router.go` 的**组相对** `POST /org/sync` 误判为已被正本 `POST /internal/org/sync` 覆盖 ⇒ ★★ **本次漂移曾全门禁绿灯溜过**。
+> ⇒ ★★ **它没有盲从指令，而是实测纠正并补做两件把盲区真正闭合**：**Ⅰ** `_probe_n081.py` **解析 `router.go` 分组前缀**得全路径、与正本**严格双向等价**；**Ⅱ** 同探针绑定 `spec/openapi.json#x-source` **四字段**（`router_go_route_count`／`route_count`／`doc_version`／`doc_sha256` ↔ `router.go` 实解析／正本）—— ★ **这四个字段此前全无判据**。
+> ★ **附带同类修正**：`gen_openapi.py#MD_VERSION_RE` **缺 `re.M`** ⇒ `x-source.doc_version` **长期静默落 `"?"`** ⇒ ★ 同型「**字段在、值失真、无判据**」⇒ 已补 `re.M` ✓
+>
+> ★★ **我方独立复核（不采信自报）**：
+> - 提交 `4f8c720`＋`b7c3e38`、工作区干净、`HEAD == origin/main` ✓
+> - ★★ **自查变异 M1**（把 `spec/openapi.json` 的 `router_go_route_count` 改回 `69`）⇒ ★ **`gen_openapi --check` rc=1**（`首个差异 line 4929: have 69 / gen 70`）**且** ★ **`_probe_n081` 8/9**（`第 5 条恰红：router_go_route_count=69 ≠ router.go 实解析 70`）⇒ ★★ **两道防线各自独立恰红** ✓★ 还原后 `--check` OK、工作区干净 ✓
+> - ★ 穷举核查：`router.go`(70) ↔ 正本(70) **双向差集皆空** ⇒ ★ **本次计数失真为孤例**（★ 原 `[C5]` 不报纯属**后缀匹配假阴性**，★ 不是"真无遗漏"）✓
+>
+> ★★ **裁定：两个新项【都保留】** —— ★ 理由：它们**抓不同的面、互补而非重叠** —— `gen_openapi --check` 管「**正本 ↔ 契约**」（具名早退信号）、`_probe_n081.py` 管「**`router.go` ↔ 契约/正本**」（★ 正是 `--check` 覆盖不到的盲区）⇒ ★ **已实测两者能各自独立恰红**（M1 同时打红两者），★ 删任何一个都会重新开一个盲区。
+> ★ **结案：`N-081` → `AGREED`**。★★ **本轮的可迁移收获**：★ **「把检查接进门禁」不等于「门禁就能抓住那个场景」** —— ★ **必须用变异验证「它真的会在该场景变红」**（★ 本次若不追问，就会留下一个"以为接了就安全"的假保障 —— ★ 同族：`S16` 部分覆盖冒充全部覆盖）。
 ## 5. 已决议（AGREED）
 
 > ★ **追加式，永不删除** —— 保留决议理由，这是"为什么会变成这样"的唯一记录。
