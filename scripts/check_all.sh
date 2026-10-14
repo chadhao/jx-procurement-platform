@@ -104,6 +104,15 @@ green       "COLLAB 协商台账门禁"        "$PY" scripts/check_collab.py
 #   开发会拿到**静默错误的前提**。★ 首跑即抓到 WorkBuddy 自己写的 3 处中文引号误用（打断 JSON）；
 #   另已用探针自证（删流程线 / ledger 指向禁落账的 L10 / route 悬空 / 档位重叠 ⇒ 逐条报出）。
 green       "spec 机读规格门禁"          "$PY" scripts/check_spec.py
+# ★ N-081（2026-10-14）新增：接口契约**可重现**门禁 —— `spec/openapi.json`（机读契约）必须能由
+#   人读正本 `docs/05-API.md` **逐字重建**（`gen_openapi.py --check`；只读、约 0.4s、无外网依赖）。
+#   动因＝「文档/契约与实现不一致」是本项目最怕的形态，而此前 `gen_openapi --check` **不在本脚本内**
+#   ⇒ 该类失真「只有人想起来才查得到」（`N-081`）。
+#   ★ 与常驻探针 `_probe_n051.py`（含同一「重现一致性」断言）**非冗余**：本项是**具名、早退、可直读**
+#     的信号（探针项把 12 条断言打包成一个 rc）；两者一并保留。
+#   ★ 补齐说明：`gen_openapi --check` 只比 **正本 ↔ `spec/openapi.json`**，**不比 `router.go`**；
+#     「改了 `router` 忘了改正本」由常驻探针 `scripts/_probe_n081.py`（解析分组前缀后严格比对）把关。
+green       "接口契约可重现（docs↔openapi）" "$PY" scripts/gen_openapi.py --check
 green       "净检出可构建门禁"          bash scripts/check_head_buildable.sh
 # N-060 T4：常驻探针回归按**必绿**级入闸（T1 隔离副本执行 ⇒ 主工作区零污染；
 # T2 各探针 rc 表达失败；T3 残目录已清）。★ 探针红不降级为会报 —— 先修探针或修规格。
