@@ -4923,7 +4923,7 @@
     "human_readable_authority": "docs/05-API.md",
     "doc_version": "V2.24",
     "doc_lines": 1245,
-    "doc_sha256": "08ad6b66895550bcfd60ba9774c21fbc425687c1ba7378d8f83e2d380a947760",
+    "doc_sha256": "d7a03e512f7d1ff052ebfb7af041f2655147db9634d59a16c9ae3d9524ca5ab6",
     "generator": "scripts/gen_openapi.py",
     "route_count": 70,
     "router_go_route_count": 70,
