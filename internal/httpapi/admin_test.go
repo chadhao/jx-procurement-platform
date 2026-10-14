@@ -262,7 +262,10 @@ func TestAdminPermissionChangeAuditDiff(t *testing.T) {
 	}
 
 	// 变更二：改人员角色（C 改为 主管领导）。
-	if rec, _ := doRequest(e, http.MethodPatch, "/api/admin/users/ou_c", adminCookie, `{"role":"主管领导","department":"生产部"}`); rec.Code != http.StatusOK {
+	// ★ 不再随带 `department`：姓名/主部门是飞书权威数据，PATCH 已显式拒绝其变更
+	//   （见 handleAdminUsersPatch；用例 TestAdminUserNameDepartmentReadOnly）。
+	//   本用例的目的是"权限变更留痕含 before/after"，与部门无关。
+	if rec, _ := doRequest(e, http.MethodPatch, "/api/admin/users/ou_c", adminCookie, `{"role":"主管领导"}`); rec.Code != http.StatusOK {
 		t.Fatalf("改人员角色失败: %s", rec.Body.String())
 	}
 

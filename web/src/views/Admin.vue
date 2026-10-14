@@ -140,7 +140,8 @@ async function loadOrgUsers() {
     err.value = e.message || String(e)
   }
 }
-const newUser = reactive({ open_id: '', name: '', role: '', department: '', extra_depts: '', active: true })
+// ★ 姓名 / 主部门**不在本页维护**（飞书权威）——新增表单只需"点选镜像内的人 + 选角色"。
+const newUser = reactive({ open_id: '', role: '', extra_depts: '', active: true })
 
 async function loadUsers() {
   loading.value = true
@@ -150,6 +151,9 @@ async function loadUsers() {
     users.value = (data.items || []).map((u) => ({
       ...u,
       _extra: joinList(u.extra_depts),
+      // ★ 未绑角色者后端返回 active=null（无启用态）。此处默认勾选，使「选角色 + 保存」
+      //   后新人**立即启用**——否则会写出 active=false 的行，正是本 bug 的形态。
+      active: u.active === null || u.active === undefined ? true : u.active,
     }))
   } catch (e) {
     err.value = e.message || String(e)
@@ -162,16 +166,15 @@ async function addUser() {
   err.value = ''
   msg.value = ''
   try {
+    // ★ 不提交 name / department：后端按 open_id 从飞书镜像取值（值域＝镜像在册者）。
     await createAdminUser({
       open_id: newUser.open_id,
-      name: newUser.name,
       role: newUser.role,
-      department: newUser.department,
       extra_depts: splitList(newUser.extra_depts),
       active: newUser.active,
     })
     msg.value = `已新增人员角色：${newUser.open_id}`
-    Object.assign(newUser, { open_id: '', name: '', role: '', department: '', extra_depts: '', active: true })
+    Object.assign(newUser, { open_id: '', role: '', extra_depts: '', active: true })
     await loadUsers()
   } catch (e) {
     err.value = e.message || String(e)
@@ -182,10 +185,9 @@ async function saveUser(u) {
   err.value = ''
   msg.value = ''
   try {
+    // ★ 只提交可改字段：角色 / 分管部门 / 启用（姓名、主部门来自飞书，后端拒绝其变更）。
     await patchAdminUser(u.open_id, {
-      name: u.name,
       role: u.role,
-      department: u.department,
       extra_depts: splitList(u._extra),
       active: u.active,
     })
@@ -450,7 +452,7 @@ onMounted(loadAll)
 
       <!-- ② 人员角色 -->
       <div v-if="activeTab === 'users'" class="panel">
-        <h2>人员角色（open_id ↔ 角色 / 部门 / 分管部门）</h2>
+        <h2>人员角色（open_id ↔ 角色 / 分管部门；姓名 · 主部门来自飞书 · 只读）</h2>
         <!-- ★ 手动同步飞书通讯录（用户需求）：仅系统管理员可见本页，后端 requireSysAdmin 二次校验 -->
         <div class="toolbar">
           <button class="primary" :disabled="syncing" @click="syncDirectory">
@@ -474,24 +476,26 @@ onMounted(loadAll)
               {{ u.name || u.open_id }}（{{ u.department || '—' }}）· {{ u.open_id }}
             </option>
           </select>
-          <input v-model="newUser.name" placeholder="姓名" />
           <select v-model="newUser.role">
             <option value="">选择角色</option>
             <option v-for="r in roles" :key="r" :value="r">{{ r }}</option>
           </select>
-          <input v-model="newUser.department" placeholder="主部门" />
           <input v-model="newUser.extra_depts" placeholder="分管部门(逗号)" />
           <label class="muted"><input type="checkbox" v-model="newUser.active" /> 启用</label>
           <button class="primary" @click="addUser">新增</button>
         </div>
-        <div v-if="!users.length" class="empty">暂无人员映射（未映射人员默认拒绝）</div>
+        <p class="muted">
+          列表＝<strong>飞书通讯录在册人员</strong>（未分配角色者也在列，可当场下拉分配）；
+          <strong>姓名 / 主部门来自飞书，本页只读</strong> —— 如需修改请在飞书端改好后点「同步飞书通讯录」。
+        </p>
+        <div v-if="!users.length" class="empty">暂无人员（通讯录镜像为空，请先「同步飞书通讯录」）</div>
         <table v-else>
           <thead>
             <tr>
               <th>open_id</th>
-              <th>姓名</th>
+              <th>姓名（来自飞书）</th>
               <th>角色</th>
-              <th>主部门</th>
+              <th>主部门（来自飞书）</th>
               <th>分管部门</th>
               <th>启用</th>
               <th>更新时间</th>
@@ -501,13 +505,14 @@ onMounted(loadAll)
           <tbody>
             <tr v-for="u in users" :key="u.open_id">
               <td>{{ u.open_id }}</td>
-              <td><input v-model="u.name" /></td>
+              <td>{{ u.name || '—' }}</td>
               <td>
                 <select v-model="u.role">
+                  <option value="" disabled>未分配</option>
                   <option v-for="r in roles" :key="r" :value="r">{{ r }}</option>
                 </select>
               </td>
-              <td><input v-model="u.department" /></td>
+              <td>{{ u.department || '—' }}</td>
               <td><input v-model="u._extra" placeholder="逗号分隔" /></td>
               <td><input type="checkbox" v-model="u.active" /></td>
               <td class="muted">{{ fmtTime(u.updated_at) }}</td>

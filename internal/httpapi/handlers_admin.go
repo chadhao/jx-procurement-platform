@@ -2,6 +2,7 @@ package httpapi
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"sort"
 	"strconv"
@@ -167,23 +168,40 @@ func (d Deps) handleAdminPermissionRulesPut(c echo.Context) error {
 
 // ---------- 人员角色 ----------
 
-// handleAdminUsersGet 列出全部人员角色映射（含已停用）。
+// handleAdminUsersGet 列出「通讯录在册者」的人员角色视图。
+//
+// ★ 数据源＝**通讯录镜像 `t_org_user`（在册：is_deleted=0 ∧ is_resigned=0，全员覆盖）**，
+// `role` / `extra_depts` / `active` / `updated_at` 来自 `t_user_role` **LEFT JOIN**（只读借用；
+// 未绑角色者 role 为空串、无启用态与更新时间——不编造、不伪造）。
+//
+// ★ 动因（用户原话 2026-10-14）：「人员同步后，显示共 5 人，实际列表只有 4 人」——
+// 旧实现以 `t_user_role` 为基（＝只列"已绑角色者"），通讯录新同步进来、尚未绑角色的人
+// **不在列表里 ⇒ 无法给他分配角色** ⇒ 同步按钮承诺的"新增人员立刻可用"是假的。
+// 以镜像为基后，列表条数＝通讯录在册人数（与同步报告口径一致），未绑角色者显示「未分配」。
+//
+// ★ 姓名 / 主部门一律取自镜像（飞书权威）——用户口径「不允许在后台修改」（见 PATCH 注释）。
 func (d Deps) handleAdminUsersGet(c echo.Context) error {
 	if _, ok := d.requireSysAdmin(c); !ok {
 		return nil
 	}
-	rows, err := d.DB.ListUserRoles(c.Request().Context())
+	rows, err := d.DB.ListAdminUsers(c.Request().Context())
 	if err != nil {
 		return fail(c, http.StatusInternalServerError, codeInternal, err.Error())
 	}
 	items := make([]map[string]any, 0, len(rows))
 	for _, r := range rows {
-		items = append(items, userRoleMap(r))
+		items = append(items, adminUserMap(r))
 	}
 	return ok(c, map[string]any{"items": items, "roles": permission.Roles})
 }
 
-// handleAdminUsersPost 新增人员角色映射。
+// handleAdminUsersPost 给「通讯录在册者」新增角色映射。
+//
+// ★ 姓名 / 主部门**取自飞书镜像**（按 open_id 解析），**不接受后台传入**（用户口径
+// 2026-10-14：「姓名和主部门需保持和飞书一致，不允许在我们的后台修改」）——
+// 带了这两字段 ⇒ **显式 400 拒绝**（静默忽略＝"看不见的失败"）。
+// ★ 值域：open_id **必须在通讯录镜像在册**（is_deleted=0 ∧ is_resigned=0）——否则
+// 分配出来的是一个"系统里查无此人"的映射（与「点选镜像内用户」的口径一致）。
 func (d Deps) handleAdminUsersPost(c echo.Context) error {
 	idn, isAdmin := d.requireSysAdmin(c)
 	if !isAdmin {
@@ -210,8 +228,21 @@ func (d Deps) handleAdminUsersPost(c echo.Context) error {
 	if !validRole(role) {
 		return fail(c, http.StatusBadRequest, codeBadRequest, "角色非法: "+role)
 	}
+	// ★ 飞书权威列：显式拒绝（不写入、不静默忽略）。
+	if strings.TrimSpace(req.Name) != "" || strings.TrimSpace(req.Department) != "" {
+		return fail(c, http.StatusBadRequest, codeBadRequest,
+			"姓名 / 主部门来自飞书通讯录，本后台不可修改（请在飞书端修改后同步）")
+	}
 	if _, err := d.DB.GetUserRoleAny(ctx, openID); err == nil {
 		return fail(c, http.StatusConflict, codeConflict, "该 open_id 已存在，请改用 PATCH 修改")
+	}
+	// ★ 姓名 / 主部门以镜像为唯一来源（不编造：不在册则拒绝）。
+	name, department, inService, err := d.DB.GetOrgUserDisplay(ctx, openID)
+	if err != nil {
+		return fail(c, http.StatusNotFound, codeNotFound, "open_id 不在通讯录在册名单: "+openID+"（请先在飞书端添加并同步）")
+	}
+	if !inService {
+		return fail(c, http.StatusNotFound, codeNotFound, "open_id 已离职/注销，不可分配角色: "+openID)
 	}
 
 	active := true
@@ -219,8 +250,8 @@ func (d Deps) handleAdminUsersPost(c echo.Context) error {
 		active = *req.Active
 	}
 	row := store.UserRole{
-		OpenID: openID, Name: strings.TrimSpace(req.Name), Role: role,
-		Department: strings.TrimSpace(req.Department), ExtraDepts: trimAll(req.ExtraDepts), Active: active,
+		OpenID: openID, Name: name, Role: role,
+		Department: department, ExtraDepts: trimAll(req.ExtraDepts), Active: active,
 	}
 	if err := d.DB.UpsertUserRole(ctx, row); err != nil {
 		return fail(c, http.StatusInternalServerError, codeInternal, err.Error())
@@ -233,7 +264,16 @@ func (d Deps) handleAdminUsersPost(c echo.Context) error {
 	return ok(c, userRoleMap(row))
 }
 
-// handleAdminUsersPatch 修改人员角色映射（角色 / 部门 / 分管部门 / 启用停用）。
+// handleAdminUsersPatch 修改人员角色映射（**角色 / 分管部门 / 启用停用**）。
+//
+// ★ 姓名 / 主部门**不接受**修改（用户原话 2026-10-14：「姓名和主部门需保持和飞书一致，
+// 不允许在我们的后台修改（除非飞书端修改好了，同步过来）」）——二者是**飞书权威数据**，
+// 以镜像为准。★ 带这两字段 ⇒ **显式 400 拒绝并说明原因**（静默忽略＝"看不见的失败"：
+// 调用方以为改了、其实没改）。★ 至少要"不写入"——本实现直接拒绝，连写路径都不进。
+//
+// ★ 未绑角色者（镜像在册、但无 t_user_role 行）**可由此首次分配角色**：以镜像的
+// 姓名 / 主部门播种新行——否则「同步进来的新人无法分配角色」，正是本页要修的问题。
+// ★ 分管部门（extra_depts）是**我方业务配置**（非飞书数据）⇒ 仍可编辑。
 func (d Deps) handleAdminUsersPatch(c echo.Context) error {
 	idn, isAdmin := d.requireSysAdmin(c)
 	if !isAdmin {
@@ -241,10 +281,8 @@ func (d Deps) handleAdminUsersPatch(c echo.Context) error {
 	}
 	ctx := c.Request().Context()
 	openID := strings.TrimSpace(c.Param("open_id"))
-
-	before, err := d.DB.GetUserRoleAny(ctx, openID)
-	if err != nil {
-		return fail(c, http.StatusNotFound, codeNotFound, "open_id 不存在: "+openID)
+	if openID == "" {
+		return fail(c, http.StatusBadRequest, codeBadRequest, "open_id 必填")
 	}
 
 	var req struct {
@@ -257,11 +295,31 @@ func (d Deps) handleAdminUsersPatch(c echo.Context) error {
 	if err := decodeBody(c, &req); err != nil {
 		return fail(c, http.StatusBadRequest, codeBadRequest, "请求体非法: "+err.Error())
 	}
+	// ★ 飞书权威列：显式拒绝（不写入、不静默忽略）。
+	if req.Name != nil || req.Department != nil {
+		return fail(c, http.StatusBadRequest, codeBadRequest,
+			"姓名 / 主部门来自飞书通讯录，本后台不可修改（请在飞书端修改后同步）")
+	}
+
+	before, err := d.DB.GetUserRoleAny(ctx, openID)
+	created := false
+	if err != nil {
+		if !errors.Is(err, store.ErrNotFound) {
+			return fail(c, http.StatusInternalServerError, codeInternal, err.Error())
+		}
+		// 未绑角色者：以镜像为基新建映射行（本页目的＝让在册者都能被分配角色）。
+		name, dept, inService, oerr := d.DB.GetOrgUserDisplay(ctx, openID)
+		if oerr != nil {
+			return fail(c, http.StatusNotFound, codeNotFound, "open_id 不在通讯录在册名单: "+openID)
+		}
+		if !inService {
+			return fail(c, http.StatusNotFound, codeNotFound, "open_id 已离职/注销，不可分配角色: "+openID)
+		}
+		before = &store.UserRole{OpenID: openID, Name: name, Department: dept}
+		created = true
+	}
 
 	row := *before
-	if req.Name != nil {
-		row.Name = strings.TrimSpace(*req.Name)
-	}
 	if req.Role != nil {
 		r := strings.TrimSpace(*req.Role)
 		if !validRole(r) {
@@ -269,23 +327,30 @@ func (d Deps) handleAdminUsersPatch(c echo.Context) error {
 		}
 		row.Role = r
 	}
-	if req.Department != nil {
-		row.Department = strings.TrimSpace(*req.Department)
+	if created && strings.TrimSpace(row.Role) == "" {
+		return fail(c, http.StatusBadRequest, codeBadRequest, "首次分配必须提供合法 role")
 	}
 	if req.ExtraDepts != nil {
 		row.ExtraDepts = trimAll(*req.ExtraDepts)
 	}
 	if req.Active != nil {
 		row.Active = *req.Active
+	} else if created {
+		row.Active = true // 首次分配默认启用（否则新人不生效＝本 bug 的形态）
 	}
 
 	if err := d.DB.UpsertUserRole(ctx, row); err != nil {
 		return fail(c, http.StatusInternalServerError, codeInternal, err.Error())
 	}
+	// 新建时 before 为 nil（无改前行），diff 只列 after。
+	var beforeArg *store.UserRole
+	if !created {
+		beforeArg = before
+	}
 	d.audit(ctx, &store.AuditLogRow{
 		ActorOpenID: idn.OpenID, ActorRole: actorRoleOf(idn), Action: "permission_update",
 		Resource: "user_role", TargetID: openID, Result: "allow",
-		DetailJSON: diffUserRole(before, row),
+		DetailJSON: diffUserRole(beforeArg, row),
 	})
 	return ok(c, userRoleMap(row))
 }
@@ -363,6 +428,33 @@ func userRoleMap(r store.UserRole) map[string]any {
 		"extra_depts": emptyIfNil(r.ExtraDepts),
 		"active":      r.Active,
 		"updated_at":  r.UpdatedAt.Format(time.RFC3339),
+	}
+}
+
+// adminUserMap 序列化「通讯录在册者」行视图（GET /api/admin/users 的 items[]）。
+//
+// ★ 未绑角色者：role=""（前端显示「未分配」）、extra_depts=[]、active=null、
+//
+//	updated_at=null —— **不编造**（无角色行就没有启用态与更新时间）。
+//
+// ★ 字段名保持既有（前端依赖）：open_id / name / role / department / extra_depts / active / updated_at。
+func adminUserMap(r store.AdminUserRow) map[string]any {
+	var active any
+	if r.Active != nil {
+		active = *r.Active
+	}
+	var updated any
+	if r.UpdatedAt != nil {
+		updated = r.UpdatedAt.Format(time.RFC3339)
+	}
+	return map[string]any{
+		"open_id":     r.OpenID,
+		"name":        r.Name,
+		"role":        r.Role,
+		"department":  r.Department,
+		"extra_depts": emptyIfNil(r.ExtraDepts),
+		"active":      active,
+		"updated_at":  updated,
 	}
 }
 
