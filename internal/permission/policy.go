@@ -1,6 +1,10 @@
 package permission
 
-import "strings"
+import (
+	"encoding/json"
+	"reflect"
+	"strings"
+)
 
 // Project 列级投影：在序列化阶段裁剪字段，无权限字段「连字段名都不出现」（TC-07）。
 //
@@ -101,8 +105,22 @@ func keepKey(k string, allowSet, denySet map[string]bool, hasAllow bool, sensiti
 }
 
 // projectNested 递归裁剪嵌套结构：只施加 deny 与敏感列两类规则（不做 allow 白名单）。
+//
+// ★★ N-079（治本）：**不再按具体类型枚举**。原实现只识别 `map[string]any` / `[]any` /
+// `[]map[string]any` 三类，其余一律 `default: return v`（**原样返回、不裁列、不报错**）——
+// 于是**每一种新容器类型**（typed slice `[]T` / `[]*T` / array / 裸 struct / 非 string-key map…）
+// 都会**静默落 `default`**，其内的金额类键照漏（与 `S16`「部分覆盖冒充全部覆盖」同族）。
+// ⇒ 现按 `reflect.Kind` 判定：**凡「容器类」（map / slice / array / struct / 指针）**
+// 一律先经 **JSON 往返归一** 为 `map[string]any` / `[]any` / 标量，**再递归投影** ——
+// 归一后的形态**与最终线缆 JSON 逐字一致**（`time.Time`→字符串、`[]byte`→base64、自定义
+// `MarshalJSON` 被尊重）⇒ **语义不丢**，且金额键在任意容器内都会被裁掉。
+// ★ 为什么不「反射直接改结构体字段」：无法安全重建带未导出字段 / 自定义序列化器的类型
+// （典型 `time.Time`：反射取不到字段值、重建即失真），而 **JSON 往返把「如何序列化」交回
+// 标准库这一唯一权威**。
 func projectNested(v any, denySet, sensitive map[string]bool, amountsDenied bool) any {
 	switch t := v.(type) {
+	case nil:
+		return nil
 	case map[string]any:
 		out := make(map[string]any, len(t))
 		for k, vv := range t {
@@ -128,8 +146,48 @@ func projectNested(v any, denySet, sensitive map[string]bool, amountsDenied bool
 		}
 		return out
 	default:
+		// ★ 容器类（未在上列显式枚举的 map/slice/array/struct/指针）：JSON 往返归一后再递归
+		//   —— 从根上消除「按具体类型枚举」的漏面：**任何新容器类型都不会再静默落 `default`**。
+		if rv := reflect.ValueOf(v); rv.IsValid() && isContainerKind(rv.Kind()) {
+			if norm, ok := jsonNormalize(v); ok {
+				return projectNested(norm, denySet, sensitive, amountsDenied)
+			}
+		}
+		// 标量（string / number / bool …）原样：**无键可漏**；
+		// 不可 JSON 序列化的值（chan / func）原样 ⇒ 序列化阶段必然**可见失败**（非静默放过）。
 		return v
 	}
+}
+
+// isContainerKind 判定某 `reflect.Kind` 是否为「可能承载任意键、**必须递归投影**」的容器类。
+//
+// ★ 这是 N-079 机制的**唯一白名单**：任何**容器类** Kind 必须在此集合内，否则其内键值
+// 不会被裁剪（漏面）。★ 标量类（string / int / float / bool / complex）无键可漏，天然安全。
+// ★ 由 `TestProjectDeepContainerKindWhitelist` 逐 Kind 机检（白名单少一类 ⇒ **恰红**）。
+func isContainerKind(k reflect.Kind) bool {
+	switch k {
+	case reflect.Map, reflect.Slice, reflect.Array, reflect.Struct, reflect.Pointer:
+		return true
+	default:
+		return false
+	}
+}
+
+// jsonNormalize 把任意值与其**线缆 JSON 形态**对齐：`Marshal` → `Unmarshal` into `any`。
+//
+// ★ 用标准库作「如何序列化」的唯一权威（尊重 `MarshalJSON`、时间 / 字节 / 字段标签语义）。
+// 第二个返回值＝是否成功；**不可序列化**的类型会失败 ⇒ 由调用方原样保留，
+// 该值在序列化阶段必然**可见失败**（非静默放过）。
+func jsonNormalize(v any) (any, bool) {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return nil, false
+	}
+	var out any
+	if err := json.Unmarshal(b, &out); err != nil {
+		return nil, false
+	}
+	return out, true
 }
 
 // RuleHidesAmounts 判断「角色 × 规则」是否禁看金额（供 handler 决定是否输出"金额已隐藏"提示）。
