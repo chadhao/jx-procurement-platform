@@ -4,7 +4,7 @@
 scripts/gen_openapi.py —— 由 `docs/05-API.md`（**人读正本**）**机械生成** `spec/openapi.json`（**机读形态**）。
 
 ★★ 为什么必须「生成」而不是「手写」（本项目纪律的直接推论）：
-   `docs/05-API.md` 是接口契约的**人读正本**（V2.23 · 1243 行 · **70 条 API 路由**）。手抄一份 OpenAPI
+   `docs/05-API.md` 是接口契约的**人读正本**（V2.25 · 1261 行 · **71 条 API 路由**）。手抄一份 OpenAPI
    就是**第二份真相** —— 它必然漂（与 `docs/11 §5.1` vs `§5.2`、`N-033` 的「凭印象写指标 key」同源）。
    ⇒ 本脚本把 `md → json` 的**映射规则写死在代码里**，让机读形态**永远可从正本重现**；
      任何人为改动 `spec/openapi.json` 都会被 `bash scripts/check_all.sh` 的「会报」项 `C9`
@@ -24,13 +24,14 @@ scripts/gen_openapi.py —— 由 `docs/05-API.md`（**人读正本**）**机械
       ★ **降噪规则**：弱声明**仅在「未被强声明覆盖」时**才计入 —— 这自动排除
         `GET /api/ledger/L11/{id}`（正文举例，已被 `GET /api/ledger/{table}/{id}` 覆盖）、
         以及飞书外部路径（`/open-apis/…`，被前缀白名单排除）。
-   ⇒ 强 ∪ 弱 = **70 条**（`V2.23` 起；V2.22 时为 69 条，`V2.23` 同批新增管理端入口
-     `POST /api/admin/org/sync` ⇒ 70）；与
-     `internal/httpapi/router.go` 的 **70 条 API 路由**一一对应
+   ⇒ 强 ∪ 弱 = **71 条**（`V2.25` 起；V2.23 起为 70 条，`V2.25` 同批新增管理端入口
+     `GET /api/admin/permission-column-catalog` ⇒ 71）；与
+     `internal/httpapi/router.go` 的 **71 条 API 路由**一一对应
      ★ **口径（两侧一致）**：`GET /` 与 `GET /*` 是**前端 SPA 静态兜底**，**两侧均不计**
        —— ★ 历史上曾出现「正本 69 ⇔ router 69」的**巧合**（正本多出的是 §3.4 作废声明、
        router 多出的是 `GET /*`）；V2.21 删作废声明后真实基数曾收敛为 68 ⇔ 68，
-       V2.22 起 backfill 双侧同批 +1，V2.23 起 org/sync 双侧同批 +1 ⇒ 70 ⇔ 70
+       V2.22 起 backfill 双侧同批 +1，V2.23 起 org/sync 双侧同批 +1，
+       V2.25 起 column-catalog 双侧同批 +1 ⇒ 71 ⇔ 71
        （**非巧合**：两侧同批登记）。
      （★ 正本 ↔ `router.go` 的**严格双向等价**由常驻探针 `scripts/_probe_n081.py` 独立把关
        —— 该探针解析 `router.go` 的分组前缀后比对全路径，闭合了 `audit_silent.py#C5`
@@ -569,11 +570,11 @@ def build():
             "doc_sha256": hashlib.sha256(md.encode("utf-8")).hexdigest(),
             "generator": "scripts/gen_openapi.py",
             "route_count": len(routes),
-            "router_go_route_count": 70,
+            "router_go_route_count": 71,
             "router_go_route_count_note": (
                 "`internal/httpapi/router.go` 已注册 **API 路由**条数 —— ★ 口径：`GET /` 与 `GET /*` "
-                "两条**前端 SPA 静态兜底不计**。`V2.23` 起两侧基数一致（正本 70 ⇔ router 70，"
-                "backfill / org sync 各自同批登记）；V2.22 曾 69 ⇔ 69；V2.21 曾 68 ⇔ 68；"
+                "两条**前端 SPA 静态兜底不计**。`V2.25` 起两侧基数一致（正本 71 ⇔ router 71，"
+                "backfill / org sync / column-catalog 各自同批登记）；V2.23 曾 70 ⇔ 70；V2.22 曾 69 ⇔ 69；V2.21 曾 68 ⇔ 68；"
                 "更早的「69 ⇔ 69」属**巧合**（正本多的是 §3.4 作废声明、router 多的是 `GET /*`）。"
                 "★ 严格双向等价由常驻探针 `scripts/_probe_n081.py` 把关（解析分组前缀后比对全路径）。"),
         },

@@ -30,7 +30,7 @@
   收尾核对 `router.go` 与 `docs/05-API.md` 的 `sha256` 与开跑前相同。
 
 它证明六件事（★ 每条都是可复现实测，不是推断）：
-  1. **双向等价（当前态）**：`router.go` 解析后路由集 == 正本路由集（两侧各 **70** 条），
+  1. **双向等价（当前态）**：`router.go` 解析后路由集 == 正本路由集（两侧各 **71** 条），
      双向差集**皆空**。
   2. **鉴别力 A（正本有、router 无）**：把新增路由从 `router.go` **内存副本**删掉
      ⇒ 必须报「正本有、router 无」**恰 1 条**。
@@ -44,8 +44,8 @@
      `router_go_route_count`（== `router.go` 实解析数）· `route_count`（== 正本路由数）·
      `doc_version`（== 正本版本标记）· `doc_sha256`（== 正本 sha256）**四项逐一对上** ——
      ★ 这四个字段此前**全无判据绑定**（`N-081` 的「失真长期无人发现」即由此而来）。
-  6. ★★ **鉴别力 D（`router_go_route_count` 失真）**：把该字段在**内存副本**改回 `69`
-     ⇒ 必须报「≠ `router.go` 实解析 70」**恰 1 条** ⇒ 证明元数据判据能分辨失真态。
+  6. ★★ **鉴别力 D（`router_go_route_count` 失真）**：把该字段在**内存副本**改回 `70`
+     ⇒ 必须报「≠ `router.go` 实解析 71」**恰 1 条** ⇒ 证明元数据判据能分辨失真态。
 '''
 import hashlib
 import io
@@ -67,7 +67,7 @@ P_OPENAPI = os.path.join(ROOT, 'spec', 'openapi.json')
 NEW_ROUTE = ('POST', '/api/admin/org/sync')
 NEW_HEADING = '#### `POST /api/admin/org/sync`'
 
-EXPECT_COUNT = 70  # 两侧基数（正本 70 ⇔ router 70；`GET /` 与 `GET /*` 不计）
+EXPECT_COUNT = 71  # 两侧基数（正本 71 ⇔ router 71；`GET /` 与 `GET /*` 不计）
 
 RESULT = []
 BEFORE = {}
@@ -209,11 +209,11 @@ def main():
     ok(u'5 契约元数据一致（router_go_route_count / route_count / doc_version / doc_sha256 ↔ 实现·正本）',
        not probs5, u' / '.join(probs5) or u'四项皆一致')
 
-    # ── 用例 6：★★ 鉴别力 D —— 把 `router_go_route_count` 改回 69（内存副本）⇒ 必须报红 ──
+    # ── 用例 6：★★ 鉴别力 D —— 把 `router_go_route_count` 改回 70（内存副本）⇒ 必须报红 ──
     mut_meta = json.loads(json.dumps(meta))
-    mut_meta['x-source']['router_go_route_count'] = 69
+    mut_meta['x-source']['router_go_route_count'] = 70
     probs6 = meta_problems(mut_meta, len(rset_now), len(dset_now), doc_ver, sha(P_DOC05))
-    ok(u'6 ★★ 鉴别力D：把 `router_go_route_count` 改回 69 ⇒ 报「≠ router.go 实解析 70」',
+    ok(u'6 ★★ 鉴别力D：把 `router_go_route_count` 改回 70 ⇒ 报「≠ router.go 实解析 71」',
        len(probs6) == 1 and u'router_go_route_count' in probs6[0], u'%s' % probs6)
 
     # ── 收尾：仓库真源逐字节未变（探针只在内存里变异）──

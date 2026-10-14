@@ -3149,6 +3149,90 @@
         }
       }
     },
+    "/api/admin/permission-column-catalog": {
+      "get": {
+        "operationId": "get_api_admin_permission_column_catalog",
+        "tags": [
+          "3.9 系统管理（M5，★ 仅「系统管理员」角色）"
+        ],
+        "summary": "**字段值域目录**（权限矩阵填表辅助）：列白/黑名单（英文键）与可写字段（中文列名）的**全量合法值 + 中文标签 + 类别 + 出现表单**",
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "x-auth-domain": "飞书免登会话（§1.2；`open_id` 未映射 ⇒ 40101）",
+        "x-error-codes": [
+          40100,
+          40300,
+          50300,
+          50000
+        ],
+        "x-doc-ref": "docs/05-API.md#L579-L594",
+        "responses": {
+          "200": {
+            "description": "成功（`code=0`）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "错误码 40100（HTTP 401；含义见 docs/05-API.md §2.1 错误码表）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "错误码 40300（HTTP 403；含义见 docs/05-API.md §2.1 错误码表）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "错误码 50000（HTTP 500；含义见 docs/05-API.md §2.1 错误码表）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "错误码 50300（HTTP 503；含义见 docs/05-API.md §2.1 错误码表）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "未列举的错误码（统一错误包裹 `code != 0`；完整码表见 docs/05-API.md §2.1）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/reimbursement": {
       "post": {
         "operationId": "post_api_reimbursement",
@@ -3169,7 +3253,7 @@
         "x-related-fr": [
           "FR-M1-02"
         ],
-        "x-doc-ref": "docs/05-API.md#L588-L599",
+        "x-doc-ref": "docs/05-API.md#L604-L615",
         "responses": {
           "200": {
             "description": "成功（`code=0`）",
@@ -3231,7 +3315,7 @@
         "x-related-fr": [
           "FR-M1-02"
         ],
-        "x-doc-ref": "docs/05-API.md#L600-L610",
+        "x-doc-ref": "docs/05-API.md#L616-L626",
         "responses": {
           "200": {
             "description": "成功（`code=0`）",
@@ -3297,7 +3381,7 @@
         "x-related-fr": [
           "FR-M1-02"
         ],
-        "x-doc-ref": "docs/05-API.md#L611-L622",
+        "x-doc-ref": "docs/05-API.md#L627-L638",
         "responses": {
           "200": {
             "description": "成功（`code=0`）",
@@ -3380,7 +3464,7 @@
           40301,
           40000
         ],
-        "x-doc-ref": "docs/05-API.md#L630-L638",
+        "x-doc-ref": "docs/05-API.md#L646-L654",
         "responses": {
           "200": {
             "description": "成功（`code=0`）",
@@ -3453,7 +3537,7 @@
           40301,
           50200
         ],
-        "x-doc-ref": "docs/05-API.md#L639-L651",
+        "x-doc-ref": "docs/05-API.md#L655-L667",
         "responses": {
           "200": {
             "description": "成功（`code=0`）",
@@ -3518,7 +3602,7 @@
         "x-related-fr": [
           "FR-M4-07"
         ],
-        "x-doc-ref": "docs/05-API.md#L652-L665",
+        "x-doc-ref": "docs/05-API.md#L668-L681",
         "responses": {
           "200": {
             "description": "成功（`code=0`）",
@@ -3587,7 +3671,7 @@
           "FR-M2-01",
           "FR-M9-02"
         ],
-        "x-doc-ref": "docs/05-API.md#L678-L692",
+        "x-doc-ref": "docs/05-API.md#L694-L708",
         "responses": {
           "200": {
             "description": "成功（`code=0`）",
@@ -3658,7 +3742,7 @@
         "x-related-fr": [
           "FR-M9-03"
         ],
-        "x-doc-ref": "docs/05-API.md#L693-L701",
+        "x-doc-ref": "docs/05-API.md#L709-L717",
         "responses": {
           "200": {
             "description": "成功（`code=0`）",
@@ -3702,7 +3786,7 @@
         "x-related-fr": [
           "FR-M9-02"
         ],
-        "x-doc-ref": "docs/05-API.md#L702-L711",
+        "x-doc-ref": "docs/05-API.md#L718-L727",
         "responses": {
           "200": {
             "description": "成功（`code=0`）",
@@ -3754,7 +3838,7 @@
           "FR-M0-09",
           "FR-M9-03"
         ],
-        "x-doc-ref": "docs/05-API.md#L712-L721",
+        "x-doc-ref": "docs/05-API.md#L728-L737",
         "responses": {
           "200": {
             "description": "成功（`code=0`）",
@@ -3806,7 +3890,7 @@
           "FR-M0-09",
           "FR-M9-03"
         ],
-        "x-doc-ref": "docs/05-API.md#L712-L721",
+        "x-doc-ref": "docs/05-API.md#L728-L737",
         "responses": {
           "200": {
             "description": "成功（`code=0`）",
@@ -3864,7 +3948,7 @@
           "FR-M0-15",
           "FR-M9-18"
         ],
-        "x-doc-ref": "docs/05-API.md#L722-L733",
+        "x-doc-ref": "docs/05-API.md#L738-L749",
         "responses": {
           "200": {
             "description": "成功（`code=0`）",
@@ -3960,7 +4044,7 @@
           40000,
           50000
         ],
-        "x-doc-ref": "docs/05-API.md#L747-L759",
+        "x-doc-ref": "docs/05-API.md#L763-L775",
         "responses": {
           "200": {
             "description": "成功（`code=0`）",
@@ -4068,7 +4152,7 @@
             }
           }
         ],
-        "x-doc-ref": "docs/05-API.md#L771",
+        "x-doc-ref": "docs/05-API.md#L787",
         "x-doc-note": "正本中该路由**无独立 `####` 小节**（仅有 §3.13 全路径清单行/正文提及）⇒ 逐端点字段与语义以正本为准",
         "responses": {
           "200": {
@@ -4117,7 +4201,7 @@
             }
           }
         ],
-        "x-doc-ref": "docs/05-API.md#L772",
+        "x-doc-ref": "docs/05-API.md#L788",
         "x-doc-note": "正本中该路由**无独立 `####` 小节**（仅有 §3.13 全路径清单行/正文提及）⇒ 逐端点字段与语义以正本为准",
         "responses": {
           "200": {
@@ -4166,7 +4250,7 @@
             }
           }
         ],
-        "x-doc-ref": "docs/05-API.md#L773",
+        "x-doc-ref": "docs/05-API.md#L789",
         "x-doc-note": "正本中该路由**无独立 `####` 小节**（仅有 §3.13 全路径清单行/正文提及）⇒ 逐端点字段与语义以正本为准",
         "responses": {
           "200": {
@@ -4215,7 +4299,7 @@
             }
           }
         ],
-        "x-doc-ref": "docs/05-API.md#L774",
+        "x-doc-ref": "docs/05-API.md#L790",
         "x-doc-note": "正本中该路由**无独立 `####` 小节**（仅有 §3.13 全路径清单行/正文提及）⇒ 逐端点字段与语义以正本为准",
         "responses": {
           "200": {
@@ -4264,7 +4348,7 @@
             }
           }
         ],
-        "x-doc-ref": "docs/05-API.md#L775",
+        "x-doc-ref": "docs/05-API.md#L791",
         "x-doc-note": "正本中该路由**无独立 `####` 小节**（仅有 §3.13 全路径清单行/正文提及）⇒ 逐端点字段与语义以正本为准",
         "responses": {
           "200": {
@@ -4306,7 +4390,7 @@
         "x-related-fr": [
           "FR-M9-14"
         ],
-        "x-doc-ref": "docs/05-API.md#L785-L794",
+        "x-doc-ref": "docs/05-API.md#L801-L810",
         "responses": {
           "200": {
             "description": "成功（`code=0`）",
@@ -4363,7 +4447,7 @@
           "FR-M2-04",
           "FR-M9-14"
         ],
-        "x-doc-ref": "docs/05-API.md#L795-L804",
+        "x-doc-ref": "docs/05-API.md#L811-L820",
         "responses": {
           "200": {
             "description": "成功（`code=0`）",
@@ -4424,7 +4508,7 @@
         "x-related-fr": [
           "FR-M0-13"
         ],
-        "x-doc-ref": "docs/05-API.md#L805-L812",
+        "x-doc-ref": "docs/05-API.md#L821-L828",
         "responses": {
           "200": {
             "description": "成功（`code=0`）",
@@ -4467,7 +4551,7 @@
         "x-related-fr": [
           "FR-M0-15"
         ],
-        "x-doc-ref": "docs/05-API.md#L815-L827",
+        "x-doc-ref": "docs/05-API.md#L831-L843",
         "responses": {
           "200": {
             "description": "成功（`code=0`）",
@@ -4549,7 +4633,7 @@
           40100,
           50000
         ],
-        "x-doc-ref": "docs/05-API.md#L885-L895",
+        "x-doc-ref": "docs/05-API.md#L901-L911",
         "responses": {
           "200": {
             "description": "成功（`code=0`）",
@@ -4611,7 +4695,7 @@
           40100,
           50000
         ],
-        "x-doc-ref": "docs/05-API.md#L896-L907",
+        "x-doc-ref": "docs/05-API.md#L912-L923",
         "responses": {
           "200": {
             "description": "成功（`code=0`）",
@@ -4921,13 +5005,13 @@
   },
   "x-source": {
     "human_readable_authority": "docs/05-API.md",
-    "doc_version": "V2.24",
-    "doc_lines": 1245,
-    "doc_sha256": "d7a03e512f7d1ff052ebfb7af041f2655147db9634d59a16c9ae3d9524ca5ab6",
+    "doc_version": "V2.25",
+    "doc_lines": 1262,
+    "doc_sha256": "a7122035ff90eff24ecf227d7261b372ddfc544f0cb0966e31b1f4811d3fc628",
     "generator": "scripts/gen_openapi.py",
-    "route_count": 70,
-    "router_go_route_count": 70,
-    "router_go_route_count_note": "`internal/httpapi/router.go` 已注册 **API 路由**条数 —— ★ 口径：`GET /` 与 `GET /*` 两条**前端 SPA 静态兜底不计**。`V2.23` 起两侧基数一致（正本 70 ⇔ router 70，backfill / org sync 各自同批登记）；V2.22 曾 69 ⇔ 69；V2.21 曾 68 ⇔ 68；更早的「69 ⇔ 69」属**巧合**（正本多的是 §3.4 作废声明、router 多的是 `GET /*`）。★ 严格双向等价由常驻探针 `scripts/_probe_n081.py` 把关（解析分组前缀后比对全路径）。"
+    "route_count": 71,
+    "router_go_route_count": 71,
+    "router_go_route_count_note": "`internal/httpapi/router.go` 已注册 **API 路由**条数 —— ★ 口径：`GET /` 与 `GET /*` 两条**前端 SPA 静态兜底不计**。`V2.25` 起两侧基数一致（正本 71 ⇔ router 71，backfill / org sync / column-catalog 各自同批登记）；V2.23 曾 70 ⇔ 70；V2.22 曾 69 ⇔ 69；V2.21 曾 68 ⇔ 68；更早的「69 ⇔ 69」属**巧合**（正本多的是 §3.4 作废声明、router 多的是 `GET /*`）。★ 严格双向等价由常驻探针 `scripts/_probe_n081.py` 把关（解析分组前缀后比对全路径）。"
   },
   "x-generation": {
     "declaration_sites": [
@@ -4974,97 +5058,97 @@
       "POST /api/submission/{id}/group (line 294)",
       "POST /api/submission/{id}/reject (line 294)"
     ],
-    "prose_mentions_of_known_routes": 78,
+    "prose_mentions_of_known_routes": 81,
     "ambiguous_declarations": [
       {
         "route": "POST approval/submit",
         "sites": [
-          "heading@678",
-          "table313@764"
+          "heading@694",
+          "table313@780"
         ]
       },
       {
         "route": "GET approval/meta",
         "sites": [
-          "heading@693",
-          "table313@765"
+          "heading@709",
+          "table313@781"
         ]
       },
       {
         "route": "POST approval/preview",
         "sites": [
-          "heading@702",
-          "table313@766"
+          "heading@718",
+          "table313@782"
         ]
       },
       {
         "route": "POST approval/attachments",
         "sites": [
-          "heading@712",
-          "table313@767"
+          "heading@728",
+          "table313@783"
         ]
       },
       {
         "route": "GET approval/attachments/*",
         "sites": [
-          "heading@712",
-          "table313@768"
+          "heading@728",
+          "table313@784"
         ]
       },
       {
         "route": "POST approval/*/approve",
         "sites": [
-          "heading@722",
-          "table313@770"
+          "heading@738",
+          "table313@786"
         ]
       },
       {
         "route": "POST approval/*/backfill",
         "sites": [
-          "heading@747",
-          "table313@769"
+          "heading@763",
+          "table313@785"
         ]
       },
       {
         "route": "GET approval/tasks",
         "sites": [
-          "table313@776",
-          "heading@785"
+          "table313@792",
+          "heading@801"
         ]
       },
       {
         "route": "GET approval/*",
         "sites": [
-          "table313@777",
-          "heading@795"
+          "table313@793",
+          "heading@811"
         ]
       },
       {
         "route": "GET approval/defs",
         "sites": [
-          "table313@778",
-          "heading@805"
+          "table313@794",
+          "heading@821"
         ]
       },
       {
         "route": "GET org/users",
         "sites": [
-          "table313@779",
-          "heading@885"
+          "table313@795",
+          "heading@901"
         ]
       },
       {
         "route": "GET org/departments",
         "sites": [
-          "table313@780",
-          "heading@896"
+          "table313@796",
+          "heading@912"
         ]
       },
       {
         "route": "POST approval/external/callback",
         "sites": [
-          "table313@781",
-          "heading@815"
+          "table313@797",
+          "heading@831"
         ]
       }
     ],
