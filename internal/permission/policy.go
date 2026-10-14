@@ -67,6 +67,16 @@ func AmountsDenied(allowSet, denySet map[string]bool, sensitive map[string]bool)
 	return false
 }
 
+// IsAmountKey 导出 isAmountKey 供包外复用（权限矩阵「字段值域目录」标注金额类键名）。
+//
+// ★ 为什么导出而不是在调用方重写一遍：金额类键名的识别规则是**安全判据**
+//
+//	（禁金额角色依赖它在任意层级裁键）—— 抄一份到 httpapi 就是第二份真相，
+//	它一旦与这里漂移，「目录标注的金额键」与「真正被裁的键」就会不一致。
+func IsAmountKey(k string) bool {
+	return isAmountKey(k)
+}
+
 // amountKeySuffixes 金额类键名的识别规则（小写、后缀匹配）。
 var amountKeySuffixes = []string{"_cents", "_display"}
 

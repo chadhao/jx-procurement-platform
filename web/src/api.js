@@ -106,6 +106,15 @@ export const fetchPermissionRules = () => api.get('/api/admin/permission-rules')
 /** 整表覆盖保存权限矩阵（保存后服务端清缓存 → 下一请求生效）。 */
 export const savePermissionRules = (rules) => api.put('/api/admin/permission-rules', { rules })
 
+/**
+ * 字段值域目录（GET /api/admin/permission-column-catalog；权限矩阵填表辅助）。
+ * 返回 { items[], kinds_legend[] }：items 每项含 key（英文键）/ label（首个非空中文标签）/
+ * kinds（money/data/writable/ledger 子集）/ forms（出现的 doc_type）/ label_conflict。
+ * ★ 数据源＝运行时 specload.Bundle.Forms ＋ 既有规则取值 —— 与「真实可填值」一致。
+ * ★ 只读、不参与保存校验：PUT permission-rules 的请求结构与值域校验零变化。
+ */
+export const fetchColumnCatalog = () => api.get('/api/admin/permission-column-catalog')
+
 /** 人员角色列表（含已停用）。 */
 export const fetchAdminUsers = () => api.get('/api/admin/users')
 

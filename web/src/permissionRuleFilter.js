@@ -49,6 +49,7 @@ export function normalizeFilter(rules, filter) {
 
 // filterRules —— 按筛选态过滤明细行：资源精确匹配 · 角色精确匹配 · 关键词模糊匹配。
 // ★ 关键词匹配 `resource` / `role` / 可写字段（`_writable`），★ 大小写不敏感。
+// ★ `_writable` 两种形态都吃：字符串（改前逗号串）与数组（改后可编辑列表，Admin.vue#loadRules）。
 export function filterRules(rules, filter) {
   const f = filter || {}
   const kw = String(f.keyword || '').trim().toLowerCase()
@@ -56,7 +57,8 @@ export function filterRules(rules, filter) {
     if (f.resource && r.resource !== f.resource) return false
     if (f.role && r.role !== f.role) return false
     if (kw) {
-      const hay = `${r.resource} ${r.role} ${r._writable || ''}`.toLowerCase()
+      const writable = Array.isArray(r._writable) ? r._writable.join(', ') : r._writable || ''
+      const hay = `${r.resource} ${r.role} ${writable}`.toLowerCase()
       if (!hay.includes(kw)) return false
     }
     return true

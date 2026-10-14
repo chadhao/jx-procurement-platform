@@ -84,6 +84,22 @@ ok(filterRules(full, { keyword: '验收人' }).length === RES.length, '③关键
 ok(filterRules(full, { keyword: '付款凭据号' }).length === RES.length, '③关键词匹配可写字段（付款凭据号 ⇒ 该角色 × 全资源）')
 ok(filterRules(full, { keyword: '不存在XYZ' }).length === 0, '③无匹配 ⇒ 0 行（驱动空态文案）')
 
+// ---- ③' _writable 数组形态（★ 可编辑列表改后行内模型即数组，Admin.vue#loadRules）----
+// 同一份数据两种形态：字符串（改前逗号串）vs 数组（改后可编辑列表）⇒ 筛选结果必须一致。
+const strRows = full.filter((r) => r.role === '综合运营主管')
+const arrRows = strRows.map((r) => ({
+  ...r,
+  _writable: r._writable ? r._writable.split(',').map((s) => s.trim()).filter(Boolean) : [],
+}))
+ok(arrRows.every((r) => Array.isArray(r._writable)) && arrRows[0]._writable.length === 2, "③'夹具：数组形态 _writable（2 值）")
+ok(filterRules(arrRows, { keyword: '付款凭据号' }).length === RES.length, "③'数组 _writable：关键词命中（该角色 × 全资源）")
+ok(
+  filterRules(arrRows, { keyword: '付款凭据号' }).length === filterRules(strRows, { keyword: '付款凭据号' }).length &&
+    filterRules(arrRows, { keyword: '抽查' }).length === filterRules(strRows, { keyword: '抽查' }).length,
+  "③'数组与字符串两种 _writable 形态筛选结果一致（同数据）",
+)
+ok(filterRules(arrRows, { keyword: '不存在XYZ' }).length === 0, "③'数组 _writable：无匹配 ⇒ 0 行")
+
 // ---- ③ 计数随筛选变化（N = 过滤后行数）----
 ok(filterRules(full, { resource: 'dashboard:1' }).length === ROLES.length, '③计数：dashboard:1 ⇒ N＝全角色数')
 ok(filterRules(full, { resource: ALL, role: '副总' }).length === RES.length, '③计数：角色=副总 ⇒ N＝资源数')

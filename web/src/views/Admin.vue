@@ -17,7 +17,9 @@ import {
   patchRoleAgent,
   fetchOrgUsers,
   syncOrgDirectory,
+  fetchColumnCatalog,
 } from '../api'
+import ColumnListEditor from '../components/ColumnListEditor.vue'
 import { session } from '../store'
 import { isSysAdminOf } from '../sysRole'
 import { fmtTime } from '../utils'
@@ -29,6 +31,8 @@ import {
   normalizeFilter,
   filterRules,
 } from '../permissionRuleFilter'
+// ★ 三列「可编辑列表」纯函数（chip 文案/去重增删/目录下拉/保存载荷，可 node 直测）。
+import { buildSavePayload } from '../permissionColumnList'
 
 const activeTab = ref('matrix')
 const loading = ref(false)
@@ -39,6 +43,12 @@ const resources = ref([])
 const roles = ref([])
 const rowScopes = ref([])
 const rules = ref([])
+// ★ 字段值域目录（GET /api/admin/permission-column-catalog）：三列可编辑列表的合法值＋中文标签来源。
+//   ★ 数据源＝后端运行时 specload.Forms ＋ 既有规则取值（不新增 spec 文件 ⇒ 无第二份真相）。
+//   ★ 加载失败**可见不阻断**：catalogErr 显示在含义说明块，编辑与保存不受影响（目录是辅助不是约束）。
+const columnCatalog = ref([])
+const kindsLegend = ref([])
+const catalogErr = ref('')
 
 // ★ N-076：与 App.vue 同源判据（sysRole.js）—— role 残留值 OR sys_roles 含系统管理员；
 //   仅 sys_roles 路径下 role 为空也判真（郝端双身份 / 仅系统角色者均可见管理页）。
@@ -90,13 +100,15 @@ async function loadRules() {
     resources.value = data.resources || []
     roles.value = data.roles || []
     rowScopes.value = data.row_scopes || []
+    // ★ 三列改「可编辑列表」后，行内模型由逗号串改为**数组**（保存载荷形状不变，见 saveRules）。
+    //   ★ 两套命名：column_allow/deny＝英文键；writable_fields＝中文列名（数组直存，chip 展示时给中文）。
     rules.value = (data.items || []).map((r) => ({
       resource: r.resource,
       role: r.role,
       row_scope: r.row_scope,
-      _allow: joinList(r.column_allow),
-      _deny: joinList(r.column_deny),
-      _writable: joinList(r.writable_fields),
+      _allow: [...(r.column_allow || [])],
+      _deny: [...(r.column_deny || [])],
+      _writable: [...(r.writable_fields || [])],
     }))
   } catch (e) {
     err.value = e.message || String(e)
@@ -105,17 +117,26 @@ async function loadRules() {
   }
 }
 
+// 字段值域目录（填表辅助；失败可见但不阻断编辑/保存）。
+async function loadColumnCatalog() {
+  catalogErr.value = ''
+  try {
+    const data = await fetchColumnCatalog()
+    columnCatalog.value = data.items || []
+    kindsLegend.value = data.kinds_legend || []
+  } catch (e) {
+    columnCatalog.value = []
+    kindsLegend.value = []
+    catalogErr.value = e.message || String(e)
+  }
+}
+
 async function saveRules() {
   err.value = ''
   msg.value = ''
-  const payload = rules.value.map((r) => ({
-    resource: r.resource,
-    role: r.role,
-    row_scope: r.row_scope,
-    column_allow: splitList(r._allow),
-    column_deny: splitList(r._deny),
-    writable_fields: splitList(r._writable),
-  }))
+  // ★ 保存契约未变：仍是 { rules: [{resource, role, row_scope, column_allow[], column_deny[], writable_fields[]}] }
+  //   —— 可编辑列表只改编辑形态（数组直出，不再 join+split 往返；等价性见 permissionColumnList.spec.mjs）。
+  const payload = buildSavePayload(rules.value)
   loading.value = true
   try {
     const data = await savePermissionRules(payload)
@@ -336,7 +357,7 @@ async function saveAgent(row) {
 }
 
 async function loadAll() {
-  await Promise.all([loadRules(), loadUsers(), loadConstTables(), loadAgents(), loadOrgUsers()])
+  await Promise.all([loadRules(), loadUsers(), loadConstTables(), loadAgents(), loadOrgUsers(), loadColumnCatalog()])
   await loadConstants()
 }
 
@@ -406,7 +427,50 @@ onMounted(loadAll)
           行范围令牌：<span v-for="s in rowScopes" :key="s.token">{{ s.token }}＝{{ s.label }}；</span>
         </p>
 
-        <h2>规则明细 · 列白/黑名单与可写字段（逗号分隔）</h2>
+        <h2>规则明细 · 列白/黑名单与可写字段（可编辑列表）</h2>
+        <!-- ★ 含义说明块（用户原话：「我都不清楚黑名单、白名单和可写字段允许的值分别都有什么，
+             且每个是什么含义，很难填这些空」）—— 默认收起（<details> 无 open），不撑爆页面；
+             ★ row_scope 取值逐条来自 GET /api/admin/permission-rules 的 row_scopes（不硬编码）。 -->
+        <details class="meaning">
+          <summary>字段含义说明：行范围 / 列白名单 / 列黑名单 / 可写字段（点开展开）</summary>
+          <div class="meaning-body">
+            <p>
+              <strong>行范围（row_scope）</strong>：决定该角色<strong>能看到哪些行</strong>（先行过滤，后配列）。
+              取值（来自权限矩阵接口的 <code>row_scopes</code>，共 {{ rowScopes.length }} 个）：
+            </p>
+            <ul>
+              <li v-for="s in rowScopes" :key="s.token"><code>{{ s.token }}</code> ＝ {{ s.label }}</li>
+            </ul>
+            <p>
+              <strong>列白名单（column_allow）</strong>：<strong>只允许看</strong>这些列，其余全部隐藏；
+              <strong>留空＝不限制</strong>（除黑名单外全部允许）。取值＝<strong>英文键</strong>。
+            </p>
+            <p>
+              <strong>列黑名单（column_deny）</strong>：<strong>禁止看</strong>这些列；
+              <strong>优先级高于白名单</strong>（同一列同时出现，以黑名单为准）。取值＝<strong>英文键</strong>。
+              ★ 金额类键名（<code>amount_cents</code> / <code>amount_display</code> /
+              <code>formula_flags</code> 等）一旦被禁，嵌套结构（如公式红标）里的金额也一并裁掉。
+            </p>
+            <p>
+              <strong>可写字段（writable_fields）</strong>：允许在台账里<strong>直接修改</strong>的字段，其余只读。
+              取值＝<strong>中文列名</strong>（如「经办状态」）。
+            </p>
+            <p class="meaning-warn">
+              ★★ <strong>两套命名（务必注意）</strong>：列黑/白名单填<strong>英文键</strong>，可写字段填<strong>中文列名</strong>——
+              填错不会报错、但完全不生效。下方三列都可从「字段目录」下拉选择：<strong>英文键与中文标签一一对应</strong>，
+              chip 上中文在前、英文键在后，两处都能看到中文；也可手动输入（不在目录仍可按原值保存）。
+            </p>
+            <p v-if="catalogErr" class="error">
+              字段目录加载失败：{{ catalogErr }}（不影响手动输入与保存；合法值提示暂不可用）
+            </p>
+            <template v-else>
+              <p><strong>字段目录类别</strong>（下拉选项按此理解，共 {{ columnCatalog.length }} 个合法值）：</p>
+              <ul>
+                <li v-for="k in kindsLegend" :key="k.kind"><code>{{ k.kind }}</code> ＝ {{ k.meaning }}</li>
+              </ul>
+            </template>
+          </div>
+        </details>
         <!-- ★ 分级筛选：只影响显示；保存仍提交全量规则（下方「保存权限矩阵」） -->
         <div class="toolbar">
           <select :value="ruleFilter.resource" @change="onFilterResourceChange($event.target.value)">
@@ -422,28 +486,38 @@ onMounted(loadAll)
           <!-- ★ 计数常显（N==M 也不隐藏），让用户知道是否被筛过 -->
           <span class="muted">显示 {{ filteredRules.length }} / 共 {{ rules.length }} 条</span>
         </div>
-        <table v-if="filteredRules.length">
-          <thead>
-            <tr>
-              <th>资源</th>
-              <th>角色</th>
-              <th>行范围</th>
-              <th>列白名单</th>
-              <th>列黑名单</th>
-              <th>可写字段</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr v-for="(r, idx) in filteredRules" :key="idx">
-              <td>{{ r.resource }}</td>
-              <td>{{ r.role }}</td>
-              <td>{{ r.row_scope }}</td>
-              <td><input v-model="r._allow" placeholder="留空=全部允许" /></td>
-              <td><input v-model="r._deny" placeholder="deny 优先于 allow" /></td>
-              <td><input v-model="r._writable" placeholder="仅运营表字段" /></td>
-            </tr>
-          </tbody>
-        </table>
+        <div v-if="filteredRules.length" class="table-scroll">
+          <table>
+            <thead>
+              <tr>
+                <th>资源</th>
+                <th>角色</th>
+                <th>行范围</th>
+                <th>列白名单（英文键）</th>
+                <th>列黑名单（英文键）</th>
+                <th>可写字段（中文列名）</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="(r, idx) in filteredRules" :key="idx">
+                <td>{{ r.resource }}</td>
+                <td>{{ r.role }}</td>
+                <td>{{ r.row_scope }}</td>
+                <!-- ★ 三列可编辑列表：chip（中文 label 优先、英文 key 次级）＋ 目录下拉追加 ＋ 手动输入带合法值提示。
+                     ★ 保存形状不变：v-model 出的数组原样进 PUT 载荷（见 saveRules / permissionColumnList.js）。 -->
+                <td>
+                  <ColumnListEditor v-model="r._allow" :catalog="columnCatalog" empty-hint="（空＝除黑名单外全部允许）" />
+                </td>
+                <td>
+                  <ColumnListEditor v-model="r._deny" :catalog="columnCatalog" empty-hint="（空＝不额外禁止）" />
+                </td>
+                <td>
+                  <ColumnListEditor v-model="r._writable" :catalog="columnCatalog" empty-hint="（空＝全部只读）" />
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
         <div v-else class="empty">当前筛选条件下没有规则</div>
         <div class="toolbar" style="margin-top: 12px">
           <button class="primary" :disabled="loading" @click="saveRules">保存权限矩阵</button>

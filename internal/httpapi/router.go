@@ -205,6 +205,9 @@ func NewRouter(d Deps) *echo.Echo {
 	admin := api.Group("/admin")
 	admin.GET("/permission-rules", d.handleAdminPermissionRulesGet)
 	admin.PUT("/permission-rules", d.handleAdminPermissionRulesPut)
+	// ---- 字段值域目录（权限矩阵填表辅助：合法值 + 中文含义；只读、不参与保存校验）----
+	// ★ 数据源＝运行时 specload.Bundle.Forms ＋ 既有规则取值（不新增 spec 文件）。
+	admin.GET("/permission-column-catalog", d.handleAdminColumnCatalogGet)
 	admin.GET("/users", d.handleAdminUsersGet)
 	admin.POST("/users", d.handleAdminUsersPost)
 	admin.PATCH("/users/:open_id", d.handleAdminUsersPatch)
