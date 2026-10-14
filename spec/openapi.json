@@ -4921,9 +4921,9 @@
   },
   "x-source": {
     "human_readable_authority": "docs/05-API.md",
-    "doc_version": "V2.23",
-    "doc_lines": 1244,
-    "doc_sha256": "feba925f246f71b305808f8e445b0f07a4783ff975d096974919cb5b7832a9e4",
+    "doc_version": "V2.24",
+    "doc_lines": 1245,
+    "doc_sha256": "08ad6b66895550bcfd60ba9774c21fbc425687c1ba7378d8f83e2d380a947760",
     "generator": "scripts/gen_openapi.py",
     "route_count": 70,
     "router_go_route_count": 70,
