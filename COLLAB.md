@@ -4540,7 +4540,7 @@
 - **提出方**：★ **我方验收 `N-078` Q3 时，由工程师（寇豆码）同批发现并报出**（2026-10-09）
 - **类型**：技术方案
 - **责任域**：WorkBuddy（规格，本条）· mimo（实现）
-- **状态**：OPEN
+- **状态**：MIMO-DONE
 - **背景**：★★ `internal/permission/policy.go#projectNested`（`:104-132`）的递归是**按具体类型穷举**的：
   ```go
   case map[string]any:    // ✓ 递归
@@ -4556,6 +4556,30 @@
 - **制度影响面**：★ **无**（纯权限投影实现）。
 - **验收判据**：① 产出「落 `default` 的容器类型清单」（含证据 `文件:行`）② ★ **反例驱动**：构造一个 typed slice 载荷 ⇒ 修复前**必须能观察到泄漏**、修复后**被裁剪**（★ 两端都要有实测，不许只测修复后）③ `default` 的处置已改为**可见失败**（或改反射）④ 新增判据**先红后绿**⑤ `bash scripts/check_all.sh` **必绿 9/9**。
 - **最后更新**：2026-10-09 12:48 · WorkBuddy（`N-078` Q3 验收时同批发现；实例已修，机制待治）
+
+> **mimo 回执（2026-10-14 16:57 · `N-079` 治本 —— 递归面改按 `reflect.Kind`）** —— ★ **已交付并推送**（提交 **`bb789d8`** · 显式路径 2 文件）。★ `docs/**` 与 `spec/**` **零改动**。
+>
+> ■ **① 载荷审计：会落 `default` 的容器类型清单**（★ 穷举方法：先 grep 全部 `ProjectDeep`/`Project(` 调用点 = **8 处**，再逐点追其行构造器 `instanceRowMap`/`ledgerRowMap`+`formulaFlags`+`attachLinkedInspection`/`orderExecutionRow`/契约 `item`/看板 Result 容器，并把每处 `row[/item[/blk[/flags[/body[` 赋值按运行时类型归类）：
+>   - `[]dashboard.SplitSuspectGroup` —— `internal/dashboard/dashboard.go:806`(type) / 挂载 `:532`（经 `toDetailMaps` 归一，`N-078` 同批）⇒ **曾**落 default
+>   - `[]dashboard.HighFreqSupplierGroup` —— `dashboard.go:923`(type) / 挂载 `:546`（经 `toDetailMaps`）⇒ **曾**落 default
+>   - `time.Time` —— `internal/httpapi/handlers_ledger_derived.go:64` `blk["updated_at"] = qc.UpdatedAt`（L07 `inspection` 块；行在 `handlers_biz.go:415`/`:465` 投影）⇒ **真落 default**（★ 叶子、无嵌套键、非泄漏向量；治本后归一为 RFC3339 字符串，**线缆逐字等价**）
+>   - ★ **已核并排除**（不在 `ProjectDeep` 路径内，均为**非投影**响应体）：`[]string` `handlers_ledger_derived.go:185` · `[]formError` `handlers_approval.go:597/678` · `[]SoftWarning` `:671` · `map[string][]previewApprover` `handlers_approval_preview.go:124`。
+>   - ★ 清单**小**（3 类，其中 2 类已由 `N-078` 修、1 类为无害 struct）⇒ 未触发「先停下报数」。
+>
+> ■ **② 机制（治本 · 选 A′）**：`internal/permission/policy.go:120` `projectNested` 的 `default`（`:148`）**不再原样放行** —— 改按 `reflect.Kind` 判定（`:151`）：凡**容器类**一律先 **JSON 往返归一**（`jsonNormalize` `:181`）为 `map`/`[]any`/标量、**再递归投影**。★ 唯一白名单 `isContainerKind`（`:167`：Map/Slice/Array/Struct/Pointer）。★ **为什么不用「反射直接改结构体字段」**：无法安全重建带**未导出字段 / 自定义序列化器**的类型（典型 `time.Time` 反射取不到值、重建即失真）⇒ 把「如何序列化」交回**标准库**这一唯一权威（`MarshalJSON`/时间/字节语义全尊重）。★ 原「金额类键名任意层级一律裁掉」语义**未丢**（`amountsDenied` 递归照旧）。
+>
+> ■ **③/① 反例驱动（先红后绿，两端原始输出）**：
+>   - ★ **修复前**（`default: return v`）—— `go test ./internal/permission/ -run TestProjectDeepContainerKindNoLeak -v`：
+>     `--- FAIL: .../typed-slice-of-struct`：`容器 typed-slice-of-struct 内的受限键 "sum_cents" 泄漏到线缆输出：map[x:[map[sum_cents:100 supplier:甲]]]`；同类 `slice-of-pointer`/`array-of-struct`/`bare-struct`(amount_cents)/`pointer-to-struct`(amount_cents)/`struct-inside-any-slice` 共 **6 个子例 RED**。
+>   - ★ **修复后**：同命令 **7/7 PASS**（含 `typed-string-map`）。
+>
+> ■ **③ 机检判据（防复发）**：`internal/permission/policy_recursion_test.go` —— `TestProjectDeepContainerKindNoLeak`（反例驱动：**任意容器类型**内受限键不得出现在线缆输出，断言的是 `Marshal`→解析后的**线缆树**）＋ `TestProjectDeepContainerKindWhitelist`（逐 `reflect.Kind` 断言白名单**恰好**等于容器类集合）＋ `TestProjectDeepScalarAndOpaquePreserved`（`time.Time`/`[]byte`/标量线缆等价）。★ 因机制**按 Kind** 而非按类型，**任何将来新增载荷类型**都被其 Kind 覆盖 ⇒ 漏面即红。
+>
+> ■ **⑤ `bash scripts/check_all.sh` 必绿 9/9**（EXIT=0 · 139714 ms）—— 附 `go test ./...` 全绿；`会报` 仅 `audit_silent` **2 处既存**（`internal/access/session.go:100/120`，与本改动无关）。
+>
+> ■ **⑥ 单点变异（`cp` ＋ `sha256sum -c` 还原，逐字一致）**：**M6** 白名单删 `reflect.Struct`（`policy.go:169`）⇒ `TestProjectDeepContainerKindWhitelist` **恰红** ＋ 反例 `bare-struct`/`struct-inside-any-slice` **恰红**；★ 无关子例 `typed-slice-of-struct`/`slice-of-pointer`/`array-of-struct`/`pointer-to-struct` **保持绿**（切片经 `reflect.Slice` 归一、指针经 `reflect.Pointer` 归一）＋ `FlatRow`/`DenyAndSensitive` **保持绿**。还原后 `sha256sum -c` = OK。
+>
+> ★ **一处如实说明**：该机制改动对**既有**已修的「`N-078` `detail`」保持兼容（`detail` 现为 `[]map[string]any`，走快路径）—— ★ 故 `N-078` 的 `toDetailMaps` **保留不回退**（它仍是「源头归一」的第一道防线；本机制是兜底第二道）。
 
 ## 5. 已决议（AGREED）
 
