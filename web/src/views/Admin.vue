@@ -21,6 +21,14 @@ import {
 import { session } from '../store'
 import { isSysAdminOf } from '../sysRole'
 import { fmtTime } from '../utils'
+// ★ 规则明细分级筛选（纯函数，可 node 直测）：只影响**显示**，不改数据/不改保存。
+import {
+  ALL as FILTER_ALL,
+  resourceOptions,
+  roleOptionsFor,
+  normalizeFilter,
+  filterRules,
+} from '../permissionRuleFilter'
 
 const activeTab = ref('matrix')
 const loading = ref(false)
@@ -56,6 +64,22 @@ const ruleMap = computed(() => {
 })
 function findRule(resource, role) {
   return ruleMap.value[ruleKey(resource, role)]
+}
+
+// ---- 规则明细 · 分级筛选（★ 只影响显示，不改数据、不改保存逻辑）----
+// ★ 保存仍提交**全量** `rules`（见 saveRules）—— 筛选态只是视图层。
+const ruleFilter = reactive({ resource: FILTER_ALL, role: FILTER_ALL, keyword: '' })
+// ★ 选项从 `rules` 里**实际出现者去重**得来，不硬编码资源名/角色名（会随配置演进）。
+const filterResourceOptions = computed(() => resourceOptions(rules.value))
+// ★ ★ 分级联动：角色选项随已选资源**收窄**（资源＝「全部」时恢复全集）。
+const filterRoleOptions = computed(() => roleOptionsFor(rules.value, ruleFilter.resource))
+const filteredRules = computed(() => filterRules(rules.value, ruleFilter))
+// ★ 资源变更：若已选角色在新资源下不存在 ⇒ 归一化会**自动重置为「全部角色」**（不留查不出结果的筛选态）。
+function onFilterResourceChange(v) {
+  Object.assign(ruleFilter, normalizeFilter(rules.value, { ...ruleFilter, resource: v }))
+}
+function resetRuleFilter() {
+  Object.assign(ruleFilter, normalizeFilter(rules.value, { resource: FILTER_ALL, role: FILTER_ALL, keyword: '' }))
 }
 
 async function loadRules() {
@@ -381,7 +405,22 @@ onMounted(loadAll)
         </p>
 
         <h2>规则明细 · 列白/黑名单与可写字段（逗号分隔）</h2>
-        <table>
+        <!-- ★ 分级筛选：只影响显示；保存仍提交全量规则（下方「保存权限矩阵」） -->
+        <div class="toolbar">
+          <select :value="ruleFilter.resource" @change="onFilterResourceChange($event.target.value)">
+            <option :value="FILTER_ALL">全部资源</option>
+            <option v-for="res in filterResourceOptions" :key="res" :value="res">{{ res }}</option>
+          </select>
+          <select v-model="ruleFilter.role">
+            <option :value="FILTER_ALL">全部角色</option>
+            <option v-for="r in filterRoleOptions" :key="r" :value="r">{{ r }}</option>
+          </select>
+          <input v-model="ruleFilter.keyword" placeholder="关键词（资源 / 角色 / 可写字段）" />
+          <button class="ghost" @click="resetRuleFilter">清空筛选</button>
+          <!-- ★ 计数常显（N==M 也不隐藏），让用户知道是否被筛过 -->
+          <span class="muted">显示 {{ filteredRules.length }} / 共 {{ rules.length }} 条</span>
+        </div>
+        <table v-if="filteredRules.length">
           <thead>
             <tr>
               <th>资源</th>
@@ -393,7 +432,7 @@ onMounted(loadAll)
             </tr>
           </thead>
           <tbody>
-            <tr v-for="(r, idx) in rules" :key="idx">
+            <tr v-for="(r, idx) in filteredRules" :key="idx">
               <td>{{ r.resource }}</td>
               <td>{{ r.role }}</td>
               <td>{{ r.row_scope }}</td>
@@ -403,6 +442,7 @@ onMounted(loadAll)
             </tr>
           </tbody>
         </table>
+        <div v-else class="empty">当前筛选条件下没有规则</div>
         <div class="toolbar" style="margin-top: 12px">
           <button class="primary" :disabled="loading" @click="saveRules">保存权限矩阵</button>
         </div>
